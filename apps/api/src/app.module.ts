@@ -12,6 +12,7 @@ import { HealthModule } from './health/health.module';
 import { SalonModule } from './salon/salon.module';
 import { UserModule } from './user/user.module';
 import { CustomerModule } from './customer/customer.module';
+import { VisitModule } from './visit/visit.module';
 
 @Module({
   imports: [
@@ -56,6 +57,7 @@ import { CustomerModule } from './customer/customer.module';
     SalonModule,
     UserModule,
     CustomerModule,
+    VisitModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: HttpExceptionFilter },

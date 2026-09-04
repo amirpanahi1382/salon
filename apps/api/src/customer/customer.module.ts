@@ -17,5 +17,6 @@ import { UpdateCustomerUseCase } from './update-customer.use-case';
     GetCustomerUseCase,
     UpdateCustomerUseCase,
   ],
+  exports: [CustomerRepository],
 })
 export class CustomerModule {}

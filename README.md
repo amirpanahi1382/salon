@@ -6,7 +6,7 @@ North star: help salons generate more revenue from customers they already have.
 
 ## Current phase
 
-Phase 3 — Customer (create, search, detail, update, tenant isolation).
+Phase 4 — Visit (completed historical visits only; not booking).
 
 Product, domain, and architecture specifications live in:
 
@@ -80,6 +80,12 @@ POST /customers
 GET /customers
 GET /customers/:id
 PATCH /customers/:id
+
+POST /visits
+GET /visits/:id
+GET /customers/:customerId/visits
 ```
+
+A **Visit** is a completed historical salon interaction. It is not a booking, appointment, or calendar event.
 
 Tenant identity is always taken from the authenticated user. `salonId` in a request body is ignored and rejected when unexpected.

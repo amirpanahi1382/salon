@@ -5,6 +5,7 @@ export type {
   OutboxEvent,
   Salon,
   User,
+  Visit,
 } from '@prisma/client';
 export { createPrismaClient } from './client.js';
 export {

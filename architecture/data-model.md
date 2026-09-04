@@ -313,10 +313,12 @@ visits
 id
 salon_id
 customer_id
-visit_date
-notes
+visited_at
 created_at
+updated_at
 ```
+
+Phase 4 stores `visited_at` (UTC). There is no `service_id` until the Service domain exists. Notes are out of scope. Composite foreign key `(customer_id, salon_id)` prevents a visit from referencing another salon's customer.
 
 Relationships:
 

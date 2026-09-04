@@ -52,6 +52,7 @@ describeIfDb('claimOutboxEvents', () => {
         payload: { id },
         status: 'PROCESSING',
         attemptCount: 1,
+        createdAt: new Date('1970-01-01T00:00:00.000Z'),
         lockedAt: new Date(Date.now() - 60_000),
         lockedUntil: new Date(Date.now() - 1_000),
       },

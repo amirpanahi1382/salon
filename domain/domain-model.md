@@ -299,10 +299,11 @@ Visit
 - id
 - salonId
 - customerId
-- visitDate
-- notes
+- visitedAt
 - createdAt
 ```
+
+Phase 4 records completed visits only. `serviceId` is omitted until the Service domain exists. Visits are immutable facts (create and read; no general update/delete API).
 
 A visit is historical business data.
 

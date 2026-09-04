@@ -40,6 +40,7 @@ model Salon {
   updatedAt DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
   users     User[]
   customers Customer[]
+  visits    Visit[]
 
   @@map("salons")
 }
@@ -53,10 +54,28 @@ model Customer {
   phoneNumber String   @map("phone_number")
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  visits      Visit[]
 
+  @@unique([id, salonId])
   @@unique([salonId, phoneNumber])
   @@index([salonId, createdAt])
   @@map("customers")
+}
+
+/// Completed historical salon interaction. Not a booking, appointment, or reservation.
+model Visit {
+  id         String   @id @db.Uuid
+  salonId    String   @map("salon_id") @db.Uuid
+  salon      Salon    @relation(fields: [salonId], references: [id], onDelete: Restrict)
+  customerId String   @map("customer_id") @db.Uuid
+  customer   Customer @relation(fields: [customerId, salonId], references: [id, salonId], onDelete: Restrict)
+  visitedAt  DateTime @map("visited_at") @db.Timestamptz(3)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([salonId, visitedAt])
+  @@index([salonId, customerId, visitedAt])
+  @@map("visits")
 }
 
 model User {
