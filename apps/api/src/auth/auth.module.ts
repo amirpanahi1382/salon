@@ -1,0 +1,36 @@
+import { Module } from '@nestjs/common';
+import { JwtModule } from '@nestjs/jwt';
+import { PassportModule } from '@nestjs/passport';
+import type { SignOptions } from 'jsonwebtoken';
+import { AppConfigService } from '../infrastructure/config/app-config.service';
+import { RolesGuard } from '../infrastructure/auth/roles.guard';
+import { AuthController } from './auth.controller';
+import { JwtAuthGuard } from './jwt-auth.guard';
+import { JwtStrategy } from './jwt.strategy';
+import { LoginUseCase } from './login.use-case';
+import { RegisterSalonOwnerUseCase } from './register-salon-owner.use-case';
+
+@Module({
+  imports: [
+    PassportModule.register({ defaultStrategy: 'jwt' }),
+    JwtModule.registerAsync({
+      inject: [AppConfigService],
+      useFactory: (config: AppConfigService) => ({
+        secret: config.values.JWT_SECRET,
+        signOptions: {
+          expiresIn: config.values.JWT_EXPIRES_IN as SignOptions['expiresIn'],
+        },
+      }),
+    }),
+  ],
+  controllers: [AuthController],
+  providers: [
+    JwtStrategy,
+    JwtAuthGuard,
+    RolesGuard,
+    RegisterSalonOwnerUseCase,
+    LoginUseCase,
+  ],
+  exports: [JwtAuthGuard, RolesGuard],
+})
+export class AuthModule {}

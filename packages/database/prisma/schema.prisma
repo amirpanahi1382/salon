@@ -1,0 +1,94 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum SalonStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum UserRole {
+  OWNER
+  MANAGER
+  STAFF
+}
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum OutboxStatus {
+  PENDING
+  PROCESSING
+  PROCESSED
+  DEAD_LETTER
+}
+
+model Salon {
+  id        String      @id @db.Uuid
+  name      String
+  phone     String?
+  address   String?
+  status    SalonStatus @default(ACTIVE)
+  createdAt DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+  users     User[]
+
+  @@map("salons")
+}
+
+model User {
+  id           String     @id @db.Uuid
+  salonId      String     @map("salon_id") @db.Uuid
+  salon        Salon      @relation(fields: [salonId], references: [id], onDelete: Restrict)
+  name         String
+  email        String     @unique
+  passwordHash String     @map("password_hash")
+  role         UserRole
+  status       UserStatus @default(ACTIVE)
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([salonId])
+  @@map("users")
+}
+
+/// Reliable asynchronous business events. Payload must not include secrets or unnecessary PII.
+model OutboxEvent {
+  id           String       @id @db.Uuid
+  tenantId     String?      @map("tenant_id") @db.Uuid
+  eventType    String       @map("event_type")
+  payload      Json
+  status       OutboxStatus @default(PENDING)
+  attemptCount Int          @default(0) @map("attempt_count")
+  availableAt  DateTime     @default(now()) @map("available_at") @db.Timestamptz(3)
+  lockedAt     DateTime?    @map("locked_at") @db.Timestamptz(3)
+  lockedUntil  DateTime?    @map("locked_until") @db.Timestamptz(3)
+  processedAt  DateTime?    @map("processed_at") @db.Timestamptz(3)
+  lastError    String?      @map("last_error")
+  createdAt    DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([status, availableAt])
+  @@map("outbox_events")
+}
+
+model AuditLog {
+  id         String   @id @db.Uuid
+  tenantId   String?  @map("tenant_id") @db.Uuid
+  actorId    String?  @map("actor_id") @db.Uuid
+  action     String
+  resource   String?
+  resourceId String?  @map("resource_id")
+  result     String
+  metadata   Json?
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([tenantId, createdAt])
+  @@map("audit_logs")
+}

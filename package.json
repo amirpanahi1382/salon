@@ -1,0 +1,30 @@
+{
+  "name": "salon-platform",
+  "private": true,
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=9"
+  },
+  "scripts": {
+    "infra:up": "docker compose -f infra/docker/docker-compose.yml up -d",
+    "infra:down": "docker compose -f infra/docker/docker-compose.yml down",
+    "infra:logs": "docker compose -f infra/docker/docker-compose.yml logs -f",
+    "db:generate": "pnpm --filter @salon/database generate",
+    "db:migrate": "dotenv -e .env -- pnpm --filter @salon/database migrate:deploy",
+    "db:migrate:dev": "dotenv -e .env -- pnpm --filter @salon/database migrate:dev",
+    "build:packages": "pnpm --filter @salon/shared build && pnpm --filter @salon/config build && pnpm --filter @salon/database build",
+    "build": "pnpm build:packages && pnpm --filter @salon/api build && pnpm --filter @salon/worker build",
+    "dev:api": "pnpm build:packages && dotenv -e .env -- pnpm --filter @salon/api start:dev",
+    "dev:worker": "pnpm build:packages && dotenv -e .env -- pnpm --filter @salon/worker start:dev",
+    "start:api": "dotenv -e .env -- pnpm --filter @salon/api start",
+    "start:worker": "dotenv -e .env -- pnpm --filter @salon/worker start",
+    "test": "dotenv -e .env -- pnpm -r --if-present test",
+    "test:e2e": "dotenv -e .env -- pnpm --filter @salon/api test:e2e",
+    "typecheck": "pnpm -r --if-present typecheck"
+  },
+  "devDependencies": {
+    "dotenv-cli": "^8.0.0",
+    "typescript": "^5.7.3"
+  }
+}
