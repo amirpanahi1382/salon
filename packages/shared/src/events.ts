@@ -4,6 +4,7 @@ export const DOMAIN_EVENT_TYPES = {
   UserCreated: 'UserCreated',
   UserRoleChanged: 'UserRoleChanged',
   UserStatusChanged: 'UserStatusChanged',
+  CustomerCreated: 'CustomerCreated',
 } as const;
 
 export type DomainEventType =

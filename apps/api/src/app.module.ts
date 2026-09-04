@@ -11,6 +11,7 @@ import { HttpExceptionFilter } from './infrastructure/http/http-exception.filter
 import { HealthModule } from './health/health.module';
 import { SalonModule } from './salon/salon.module';
 import { UserModule } from './user/user.module';
+import { CustomerModule } from './customer/customer.module';
 
 @Module({
   imports: [
@@ -38,6 +39,8 @@ import { UserModule } from './user/user.module';
               'passwordHash',
               '*.password',
               '*.passwordHash',
+              'phoneNumber',
+              '*.phoneNumber',
             ],
             censor: '[redacted]',
           },
@@ -52,6 +55,7 @@ import { UserModule } from './user/user.module';
     AuthModule,
     SalonModule,
     UserModule,
+    CustomerModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: HttpExceptionFilter },

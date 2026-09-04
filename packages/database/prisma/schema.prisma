@@ -39,8 +39,24 @@ model Salon {
   createdAt DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
   users     User[]
+  customers Customer[]
 
   @@map("salons")
+}
+
+model Customer {
+  id          String   @id @db.Uuid
+  salonId     String   @map("salon_id") @db.Uuid
+  salon       Salon    @relation(fields: [salonId], references: [id], onDelete: Restrict)
+  firstName   String   @map("first_name")
+  lastName    String   @map("last_name")
+  phoneNumber String   @map("phone_number")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([salonId, phoneNumber])
+  @@index([salonId, createdAt])
+  @@map("customers")
 }
 
 model User {

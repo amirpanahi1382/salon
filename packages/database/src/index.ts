@@ -1,6 +1,7 @@
 export { Prisma, PrismaClient } from '@prisma/client';
 export type {
   AuditLog,
+  Customer,
   OutboxEvent,
   Salon,
   User,
