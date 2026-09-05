@@ -6,7 +6,7 @@ North star: help salons generate more revenue from customers they already have.
 
 ## Current phase
 
-Phase 4 — Visit (completed historical visits only; not booking).
+Phase 5 — Customer Intelligence (deterministic, visit-based; not transactions or ML).
 
 Product, domain, and architecture specifications live in:
 
@@ -25,6 +25,7 @@ This directory is the project root. The HTTP API and the async worker are **sepa
 
 - `apps/api` — REST API on port 3000
 - `apps/worker` — outbox worker via `createApplicationContext` (no HTTP server)
+- `apps/mobile` — Flutter MVP client
 - `packages/database`, `packages/config`, `packages/shared` — shared libraries used by both
 
 ## Local development
@@ -84,8 +85,15 @@ PATCH /customers/:id
 POST /visits
 GET /visits/:id
 GET /customers/:customerId/visits
+
+GET /intelligence/summary
+GET /intelligence/opportunities
+GET /intelligence/segments
+GET /intelligence/customers/:customerId
 ```
 
 A **Visit** is a completed historical salon interaction. It is not a booking, appointment, or calendar event.
+
+**Intelligence** is derived from customer + completed visit history. It is not stored as a competing source of truth. Statuses: `NEW`, `ACTIVE`, `RETURNING`, `AT_RISK`, `INACTIVE`. Opportunities in this phase are `REACTIVATION` (repeat visitors who are overdue) and `CUSTOMER_RETURN` (single-visit overdue). Spend-based and cross-sell signals wait for transactions and services.
 
 Tenant identity is always taken from the authenticated user. `salonId` in a request body is ignored and rejected when unexpected.

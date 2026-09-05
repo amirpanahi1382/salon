@@ -11,5 +11,6 @@ import { VisitRepository } from './visit.repository';
   imports: [AuthModule, CustomerModule],
   controllers: [VisitController],
   providers: [VisitRepository, CreateVisitUseCase, GetVisitUseCase, ListCustomerVisitsUseCase],
+  exports: [VisitRepository],
 })
 export class VisitModule {}

@@ -4,6 +4,7 @@ import { PrismaService } from '../infrastructure/database/prisma.service';
 import { CUSTOMER_SELECT } from './customer.mapper';
 
 const LIST_LIMIT = 200;
+const INTELLIGENCE_CUSTOMER_CAP = 5000;
 
 type CustomerDb = Prisma.TransactionClient | PrismaService['client'];
 
@@ -22,6 +23,15 @@ export class CustomerRepository {
     return db.customer.findFirst({
       where: { salonId: tenantId, phoneNumber },
       select: { id: true },
+    });
+  }
+
+  listIdentity(tenantId: string) {
+    return this.prisma.client.customer.findMany({
+      where: { salonId: tenantId },
+      select: { id: true, firstName: true, lastName: true },
+      orderBy: { createdAt: 'desc' },
+      take: INTELLIGENCE_CUSTOMER_CAP,
     });
   }
 

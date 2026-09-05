@@ -26,4 +26,20 @@ export class VisitRepository {
       take: HISTORY_LIMIT,
     });
   }
+
+  listVisitedAtForCustomer(tenantId: string, customerId: string) {
+    return this.prisma.client.visit.findMany({
+      where: { salonId: tenantId, customerId },
+      select: { visitedAt: true },
+      orderBy: { visitedAt: 'asc' },
+    });
+  }
+
+  listVisitedAtForSalon(tenantId: string) {
+    return this.prisma.client.visit.findMany({
+      where: { salonId: tenantId },
+      select: { customerId: true, visitedAt: true },
+      orderBy: { visitedAt: 'asc' },
+    });
+  }
 }

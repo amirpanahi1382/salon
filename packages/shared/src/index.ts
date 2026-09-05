@@ -7,3 +7,4 @@ export * from './roles.js';
 export * from './events.js';
 export * from './salon-user-policy.js';
 export * from './customer-identity.js';
+export * from './intelligence/index.js';

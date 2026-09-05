@@ -23,7 +23,7 @@ async function bootstrap(): Promise<void> {
   const swagger = new DocumentBuilder()
     .setTitle('Salon Revenue Intelligence API')
     .setDescription(
-      'Phase 4: authentication, salon users, customers, and completed historical visits',
+      'Phase 5: authentication, salon users, customers, completed visits, and visit-based customer intelligence',
     )
     .setVersion('0.1.0')
     .addBearerAuth()
