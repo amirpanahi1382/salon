@@ -506,6 +506,18 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
       appBar: AppBar(
         title: Text(customer.fullName),
         actions: [
+          TextButton(
+            onPressed: () async {
+              final created = await context.push<bool>('/customers/new');
+              if (!context.mounted) {
+                return;
+              }
+              if (created == true) {
+                context.go('/customers');
+              }
+            },
+            child: const Text(AppStrings.addCustomer),
+          ),
           if (canManage)
             IconButton(
               tooltip: AppStrings.editCustomer,
@@ -808,7 +820,8 @@ class _RecordSaleScreenState extends ConsumerState<RecordSaleScreen> {
   String? _serviceId;
   final _price = TextEditingController(text: '0.00');
   String? _error;
-  bool _loading = false;
+  bool _loadingServices = true;
+  bool _saving = false;
 
   @override
   void initState() {
@@ -823,20 +836,33 @@ class _RecordSaleScreenState extends ConsumerState<RecordSaleScreen> {
   }
 
   Future<void> _loadServices() async {
+    setState(() {
+      _loadingServices = true;
+      _error = null;
+    });
     try {
       final page = await ref.read(serviceRepositoryProvider).list();
       if (!mounted) {
         return;
       }
+      final active = page.items
+          .where((item) => item.status == 'ACTIVE')
+          .toList();
       setState(() {
-        _services = page.items.where((item) => item.status == 'ACTIVE').toList();
-        _serviceId = _services.isEmpty ? null : _services.first.id;
+        _services = active;
+        _serviceId = active.any((item) => item.id == _serviceId)
+            ? _serviceId
+            : (active.isEmpty ? null : active.first.id);
+        _loadingServices = false;
       });
     } catch (error) {
       if (!mounted) {
         return;
       }
-      setState(() => _error = friendlyError(error));
+      setState(() {
+        _error = friendlyError(error);
+        _loadingServices = false;
+      });
     }
   }
 
@@ -848,7 +874,7 @@ class _RecordSaleScreenState extends ConsumerState<RecordSaleScreen> {
       return;
     }
     setState(() {
-      _loading = true;
+      _saving = true;
       _error = null;
     });
     try {
@@ -868,7 +894,7 @@ class _RecordSaleScreenState extends ConsumerState<RecordSaleScreen> {
       setState(() => _error = friendlyError(error));
     } finally {
       if (mounted) {
-        setState(() => _loading = false);
+        setState(() => _saving = false);
       }
     }
   }
@@ -882,6 +908,44 @@ class _RecordSaleScreenState extends ConsumerState<RecordSaleScreen> {
     return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}';
   }
 
+  Widget _serviceSelector() {
+    if (_loadingServices) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 16),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (_error != null && _services.isEmpty) {
+      return ErrorView(message: _error!, onRetry: _loadServices);
+    }
+    if (_services.isEmpty) {
+      return const EmptyStateView(
+        title: 'No services yet.',
+        body: 'Create a service before recording a sale. This screen does not invent services.',
+      );
+    }
+    return InputDecorator(
+      decoration: const InputDecoration(labelText: 'Service'),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: _serviceId,
+          isExpanded: true,
+          items: _services
+              .map(
+                (service) => DropdownMenuItem(
+                  value: service.id,
+                  child: Text(service.name),
+                ),
+              )
+              .toList(),
+          onChanged: _saving
+              ? null
+              : (value) => setState(() => _serviceId = value),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -893,28 +957,19 @@ class _RecordSaleScreenState extends ConsumerState<RecordSaleScreen> {
             'Record completed revenue in IRR. This is not inferred from a visit. Periods are UTC.',
           ),
           const SizedBox(height: 16),
-          DropdownButtonFormField<String>(
-            value: _serviceId,
-            items: _services
-                .map(
-                  (service) => DropdownMenuItem(
-                    value: service.id,
-                    child: Text(service.name),
-                  ),
-                )
-                .toList(),
-            onChanged: (value) => setState(() => _serviceId = value),
-            decoration: const InputDecoration(labelText: 'Service'),
-          ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _price,
-            keyboardType: TextInputType.number,
-            decoration: const InputDecoration(
-              labelText: 'Amount (IRR decimal string)',
+          _serviceSelector(),
+          if (_services.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            TextField(
+              controller: _price,
+              enabled: !_saving,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: 'Amount (IRR decimal string)',
+              ),
             ),
-          ),
-          if (_error != null) ...[
+          ],
+          if (_error != null && _services.isNotEmpty) ...[
             const SizedBox(height: 12),
             Text(
               _error!,
@@ -922,7 +977,11 @@ class _RecordSaleScreenState extends ConsumerState<RecordSaleScreen> {
             ),
           ],
           const SizedBox(height: 24),
-          AppButton(label: 'Save sale', onPressed: _save, loading: _loading),
+          AppButton(
+            label: 'Save sale',
+            onPressed: _services.isEmpty || _loadingServices ? null : _save,
+            loading: _saving,
+          ),
         ],
       ),
     );

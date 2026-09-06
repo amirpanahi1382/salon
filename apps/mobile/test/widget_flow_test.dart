@@ -186,6 +186,49 @@ class FakeCustomerRepository extends CustomerRepository {
   }
 }
 
+class FakeServiceRepository extends ServiceRepository {
+  FakeServiceRepository({this.items = const []}) : super(_client());
+
+  List<SalonService> items;
+  Object? error;
+
+  @override
+  Future<ItemPage<SalonService>> list() async {
+    if (error != null) {
+      throw error!;
+    }
+    return ItemPage(items: items, hasMore: false);
+  }
+}
+
+class FakeTransactionRepository extends TransactionRepository {
+  FakeTransactionRepository() : super(_client());
+
+  String? lastServiceId;
+  String? lastAmount;
+
+  @override
+  Future<LedgerTransaction> create({
+    required String customerId,
+    required String amount,
+    required String serviceId,
+    required String unitPrice,
+    required int quantity,
+    required String idempotencyKey,
+    String? visitId,
+  }) async {
+    lastServiceId = serviceId;
+    lastAmount = amount;
+    return LedgerTransaction(
+      id: 'tx1',
+      amount: amount,
+      currency: 'IRR',
+      status: 'COMPLETED',
+      occurredAt: DateTime.utc(2026, 1, 1),
+    );
+  }
+}
+
 class FakeVisitListRepository extends VisitRepository {
   FakeVisitListRepository({this.items = const []}) : super(_client());
 
@@ -836,6 +879,141 @@ void main() {
     await tester.tap(find.text('Delete').last);
     await tester.pumpAndSettle();
     expect(visits.items, isEmpty);
+  });
+
+  testWidgets('record sale lists backend services and submits the selected one', (
+    tester,
+  ) async {
+    final transactions = FakeTransactionRepository();
+    final router = GoRouter(
+      initialLocation: '/',
+      routes: [
+        GoRoute(path: '/', builder: (context, state) => const Text('home')),
+        GoRoute(
+          path: '/sale',
+          builder: (context, state) =>
+              const RecordSaleScreen(customerId: 'c1'),
+        ),
+      ],
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          serviceRepositoryProvider.overrideWithValue(
+            FakeServiceRepository(
+              items: const [
+                SalonService(id: 'svc-cut', name: 'Haircut', status: 'ACTIVE'),
+                SalonService(id: 'svc-color', name: 'Color', status: 'ACTIVE'),
+                SalonService(
+                  id: 'svc-old',
+                  name: 'Retired',
+                  status: 'INACTIVE',
+                ),
+              ],
+            ),
+          ),
+          transactionRepositoryProvider.overrideWithValue(transactions),
+        ],
+        child: MaterialApp.router(routerConfig: router),
+      ),
+    );
+    await tester.pumpAndSettle();
+    router.push('/sale');
+    await tester.pumpAndSettle();
+    expect(find.text('Haircut'), findsOneWidget);
+    expect(find.text('Retired'), findsNothing);
+
+    await tester.tap(find.byType(DropdownButton<String>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Color').last);
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField), '150000.00');
+    await tester.tap(find.text('Save sale'));
+    await tester.pumpAndSettle();
+    expect(transactions.lastServiceId, 'svc-color');
+    expect(transactions.lastAmount, '150000.00');
+  });
+
+  testWidgets('record sale shows an empty state when the salon has no services', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          serviceRepositoryProvider.overrideWithValue(FakeServiceRepository()),
+        ],
+        child: const MaterialApp(home: RecordSaleScreen(customerId: 'c1')),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('No services yet.'), findsOneWidget);
+    expect(find.byType(DropdownButton<String>), findsNothing);
+  });
+
+  testWidgets('record sale shows retry when services fail to load', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          serviceRepositoryProvider.overrideWithValue(
+            FakeServiceRepository()..error = const NetworkException(),
+          ),
+        ],
+        child: const MaterialApp(home: RecordSaleScreen(customerId: 'c1')),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Unable to reach the salon platform.'), findsOneWidget);
+    expect(find.text('Try again'), findsOneWidget);
+  });
+
+  testWidgets('customer detail Add customer opens the existing create screen', (
+    tester,
+  ) async {
+    final repo = FakeCustomerRepository(items: [_customer()]);
+    final router = GoRouter(
+      initialLocation: '/customers/c1',
+      routes: [
+        GoRoute(
+          path: '/customers',
+          builder: (context, state) => const CustomersScreen(),
+        ),
+        GoRoute(
+          path: '/customers/new',
+          builder: (context, state) => const CustomerFormScreen(),
+        ),
+        GoRoute(
+          path: '/customers/:id',
+          builder: (context, state) =>
+              CustomerDetailScreen(customerId: state.pathParameters['id']!),
+        ),
+      ],
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          customerRepositoryProvider.overrideWithValue(repo),
+          intelligenceRepositoryProvider.overrideWith(
+            (ref) => FakeIntelligenceRepository(
+              customerIntelligence: _intelligence(),
+            ),
+          ),
+          visitRepositoryProvider.overrideWith(
+            (ref) => FakeVisitListRepository(),
+          ),
+          authControllerProvider.overrideWith(_SignedInAuth.new),
+        ],
+        child: MaterialApp.router(routerConfig: router),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Add customer'));
+    await tester.pumpAndSettle();
+    expect(find.text('First name'), findsOneWidget);
+    expect(find.text('Last name'), findsOneWidget);
+    expect(find.text('Phone number'), findsOneWidget);
   });
 }
 
