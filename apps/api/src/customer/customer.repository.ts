@@ -36,16 +36,7 @@ export class CustomerRepository {
     });
   }
 
-  listIdentity(tenantId: string) {
-    return this.prisma.client.customer.findMany({
-      where: { salonId: tenantId },
-      select: { id: true, firstName: true, lastName: true },
-      orderBy: { createdAt: 'desc' },
-      take: INTELLIGENCE_CUSTOMER_CAP + 1,
-    });
-  }
-
-  list(tenantId: string, search?: string) {
+  list(tenantId: string, search?: string, cursor?: { createdAt: Date; id: string }) {
     const q = search?.trim();
     return this.prisma.client.customer.findMany({
       where: {
@@ -59,9 +50,17 @@ export class CustomerRepository {
               ],
             }
           : {}),
+        ...(cursor
+          ? {
+              OR: [
+                { createdAt: { lt: cursor.createdAt } },
+                { createdAt: cursor.createdAt, id: { lt: cursor.id } },
+              ],
+            }
+          : {}),
       },
       select: CUSTOMER_SELECT,
-      orderBy: { createdAt: 'desc' as const },
+      orderBy: [{ createdAt: 'desc' as const }, { id: 'desc' as const }],
       take: CUSTOMER_LIST_LIMIT + 1,
     });
   }

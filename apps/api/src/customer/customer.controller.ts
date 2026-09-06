@@ -104,7 +104,7 @@ export class CustomerController {
   @Roles('OWNER', 'MANAGER', 'STAFF')
   @ApiOperation({ summary: 'List or search customers in the authenticated salon' })
   list(@CurrentUser() user: AuthenticatedPrincipal, @Query() query: ListCustomersQueryDto) {
-    return this.listCustomers.execute(user, query.q);
+    return this.listCustomers.execute(user, query.q, query.cursor);
   }
 
   @Post()

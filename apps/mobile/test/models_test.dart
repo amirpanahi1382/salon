@@ -61,22 +61,19 @@ void main() {
   );
 
   test('parses list pages with items and hasMore', () {
-    final items = parseItemList(
-      {
-        'items': [
-          {
-            'id': 'c1',
-            'firstName': 'Sara',
-            'lastName': 'Ahmadi',
-            'phoneNumber': '09121111111',
-            'createdAt': '2026-01-01T00:00:00.000Z',
-            'updatedAt': '2026-01-01T00:00:00.000Z',
-          },
-        ],
-        'hasMore': true,
-      },
-      Customer.fromJson,
-    );
+    final items = parseItemList({
+      'items': [
+        {
+          'id': 'c1',
+          'firstName': 'Sara',
+          'lastName': 'Ahmadi',
+          'phoneNumber': '09121111111',
+          'createdAt': '2026-01-01T00:00:00.000Z',
+          'updatedAt': '2026-01-01T00:00:00.000Z',
+        },
+      ],
+      'hasMore': true,
+    }, Customer.fromJson);
     expect(items, hasLength(1));
     expect(items.first.firstName, 'Sara');
   });

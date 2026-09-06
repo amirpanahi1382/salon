@@ -68,6 +68,8 @@ Delivery is **at-least-once**, not exactly-once. Consumers must be idempotent.
 - Unknown `eventType` values are **dead-lettered immediately** with `UNKNOWN_EVENT_TYPE`. They are never marked processed. Replay after deploying a handler.
 - Crash after a side effect and before `PROCESSED` will retry (duplicate delivery).
 
+Processed events older than `OUTBOX_PROCESSED_RETENTION_DAYS` (default 14) are deleted in batches (`RETENTION_CLEANUP_BATCH_SIZE`). `DEAD_LETTER` rows are not deleted. Idempotency rows older than `IDEMPOTENCY_RETENTION_DAYS` (default 7) are deleted the same way. That 7-day window is the duplicate `Idempotency-Key` guarantee.
+
 ## Timeouts
 
 - Outbound HTTP helper `fetchWithTimeout` uses `HTTP_TIMEOUT_MS` (default 5s). No automatic retries.

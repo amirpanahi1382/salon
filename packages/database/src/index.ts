@@ -16,3 +16,7 @@ export {
   markOutboxProcessed,
   markOutboxRetry,
 } from './outbox.js';
+export {
+  deleteExpiredIdempotencyBatch,
+  deleteProcessedOutboxBatch,
+} from './retention.js';

@@ -40,7 +40,13 @@ export function analyzeCustomerVisits(
   asOf: Date,
   analyzer: RetentionAnalyzer = new RuleBasedRetentionAnalyzer(),
 ): { behavior: CustomerBehavior; result: RetentionResult } {
-  const behavior = deriveCustomerBehavior(visitDates, asOf);
+  return analyzeCustomerBehavior(deriveCustomerBehavior(visitDates, asOf), analyzer);
+}
+
+export function analyzeCustomerBehavior(
+  behavior: CustomerBehavior,
+  analyzer: RetentionAnalyzer = new RuleBasedRetentionAnalyzer(),
+): { behavior: CustomerBehavior; result: RetentionResult } {
   return { behavior, result: analyzer.analyze(behavior) };
 }
 

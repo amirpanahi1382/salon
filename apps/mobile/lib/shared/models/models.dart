@@ -291,11 +291,34 @@ List<T> parseItemList<T>(
   dynamic data,
   T Function(Map<String, dynamic> json) map,
 ) {
+  return parseItemPage(data, map).items;
+}
+
+class ItemPage<T> {
+  const ItemPage({required this.items, required this.hasMore, this.nextCursor});
+
+  final List<T> items;
+  final bool hasMore;
+  final String? nextCursor;
+}
+
+ItemPage<T> parseItemPage<T>(
+  dynamic data,
+  T Function(Map<String, dynamic> json) map,
+) {
   final raw = data is Map<String, dynamic> ? data['items'] : data;
-  if (raw is! List) {
-    return const [];
-  }
-  return raw.whereType<Map<String, dynamic>>().map(map).toList();
+  final items = raw is List
+      ? raw.whereType<Map<String, dynamic>>().map(map).toList()
+      : <T>[];
+  final hasMore = data is Map<String, dynamic>
+      ? data['hasMore'] == true
+      : false;
+  final cursor = data is Map<String, dynamic> ? data['nextCursor'] : null;
+  return ItemPage(
+    items: items,
+    hasMore: hasMore,
+    nextCursor: cursor is String && cursor.isNotEmpty ? cursor : null,
+  );
 }
 
 class CustomerImportRowResult {

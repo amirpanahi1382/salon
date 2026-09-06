@@ -6,7 +6,7 @@ North star: help salons generate more revenue from customers they already have.
 
 ## Current phase
 
-Phase 5 — Customer Intelligence (deterministic, visit-based; not transactions or ML).
+Phase 5 — Customer Intelligence, plus Phase C list/intelligence scale work (`architecture/performance.md`).
 
 Product, domain, and architecture specifications live in:
 
@@ -18,6 +18,8 @@ Product, domain, and architecture specifications live in:
 - `architecture/architecture.md`
 - `architecture/data-model.md`
 - `architecture/security.md`
+- `architecture/operations.md`
+- `architecture/performance.md`
 
 ## Layout
 

@@ -43,7 +43,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       }
       setState(() {
         _summary = summary;
-        _opportunities = opportunities;
+        _opportunities = opportunities.items;
         _salon = salon;
         _loading = false;
       });

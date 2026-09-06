@@ -72,12 +72,15 @@ class CustomerRepository {
 
   final ApiClient _api;
 
-  Future<List<Customer>> list({String? query}) async {
+  Future<ItemPage<Customer>> list({String? query, String? cursor}) async {
     final data = await _api.get(
       '/customers',
-      query: query == null || query.trim().isEmpty ? null : {'q': query.trim()},
+      query: {
+        if (query != null && query.trim().isNotEmpty) 'q': query.trim(),
+        if (cursor != null && cursor.isNotEmpty) 'cursor': cursor,
+      },
     );
-    return parseItemList(data, Customer.fromJson);
+    return parseItemPage(data, Customer.fromJson);
   }
 
   Future<Customer> getById(String id) async {
@@ -105,14 +108,12 @@ class CustomerRepository {
     required List<int> bytes,
     required String filename,
   }) async {
-    final data =
-        await _api.postForm(
-              '/customers/import',
-              FormData.fromMap({
-                'file': MultipartFile.fromBytes(bytes, filename: filename),
-              }),
-            )
-            as Map<String, dynamic>;
+    final data = await _api.postForm(
+      '/customers/import',
+      FormData.fromMap({
+        'file': MultipartFile.fromBytes(bytes, filename: filename),
+      }),
+    ) as Map<String, dynamic>;
     return CustomerImportResult.fromJson(data);
   }
 
@@ -147,23 +148,23 @@ class VisitRepository {
 
   final ApiClient _api;
 
-  Future<List<Visit>> listForCustomer(String customerId) async {
-    final data = await _api.get('/customers/$customerId/visits');
-    return parseItemList(data, Visit.fromJson);
+  Future<ItemPage<Visit>> listForCustomer(
+    String customerId, {
+    String? cursor,
+  }) async {
+    final data = await _api.get(
+      '/customers/$customerId/visits',
+      query: cursor == null ? null : {'cursor': cursor},
+    );
+    return parseItemPage(data, Visit.fromJson);
   }
 
-  Future<List<Visit>> list({
-    String? customerId,
-    DateTime? day,
-  }) async {
+  Future<List<Visit>> list({String? customerId, DateTime? day}) async {
     final query = <String, dynamic>{
       'customerId': ?customerId,
       if (day != null) ..._localDayWindow(day),
     };
-    final data = await _api.get(
-      '/visits',
-      query: query.isEmpty ? null : query,
-    );
+    final data = await _api.get('/visits', query: query.isEmpty ? null : query);
     return parseItemList(data, Visit.fromJson);
   }
 
@@ -216,12 +217,18 @@ class IntelligenceRepository {
     return IntelligenceSummary.fromJson(data);
   }
 
-  Future<List<Opportunity>> opportunities({String? type}) async {
+  Future<ItemPage<Opportunity>> opportunities({
+    String? type,
+    String? cursor,
+  }) async {
     final data = await _api.get(
       '/intelligence/opportunities',
-      query: type == null ? null : {'type': type},
+      query: {
+        'type': ?type,
+        if (cursor != null && cursor.isNotEmpty) 'cursor': cursor,
+      },
     );
-    return parseItemList(data, Opportunity.fromJson);
+    return parseItemPage(data, Opportunity.fromJson);
   }
 
   Future<CustomerIntelligence> forCustomer(String customerId) async {

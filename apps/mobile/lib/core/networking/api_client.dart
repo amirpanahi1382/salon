@@ -76,7 +76,11 @@ class ApiClient {
     }
   }
 
-  Future<dynamic> post(String path, {Object? data, Map<String, String>? headers}) {
+  Future<dynamic> post(
+    String path, {
+    Object? data,
+    Map<String, String>? headers,
+  }) {
     return _send(
       () => _dio.post<dynamic>(
         path,

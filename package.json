@@ -21,6 +21,8 @@
     "start:worker": "dotenv -e .env -- pnpm --filter @salon/worker start",
     "test": "dotenv -e .env -- pnpm -r --if-present test",
     "test:e2e": "dotenv -e .env -- pnpm --filter @salon/api test:e2e",
+    "perf:bench": "dotenv -e .env -- pnpm --filter @salon/api perf:bench",
+    "perf:load": "dotenv -e .env -- pnpm --filter @salon/api perf:load",
     "typecheck": "pnpm -r --if-present typecheck"
   },
   "devDependencies": {

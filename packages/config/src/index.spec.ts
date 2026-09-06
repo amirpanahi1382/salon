@@ -15,6 +15,8 @@ describe('loadConfig', () => {
     const config = loadConfig(valid);
     expect(config.API_PORT).toBe(3000);
     expect(config.OUTBOX_BATCH_SIZE).toBe(10);
+    expect(config.OUTBOX_PROCESSED_RETENTION_DAYS).toBe(14);
+    expect(config.IDEMPOTENCY_RETENTION_DAYS).toBe(7);
     expect(config.MINIO_USE_SSL).toBe(false);
   });
 

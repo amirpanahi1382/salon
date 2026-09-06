@@ -55,6 +55,12 @@ const envSchema = z.object({
   OUTBOX_BACKOFF_BASE_MS: z.coerce.number().int().min(1).default(500),
   OUTBOX_BACKOFF_CAP_MS: z.coerce.number().int().min(1).default(60_000),
   OUTBOX_POLL_INTERVAL_MS: z.coerce.number().int().min(100).default(1000),
+  /** Keep PROCESSED outbox rows this many days for investigation. DEAD_LETTER is not deleted. */
+  OUTBOX_PROCESSED_RETENTION_DAYS: z.coerce.number().int().min(1).max(365).default(14),
+  /** Duplicate Idempotency-Key guarantee window. */
+  IDEMPOTENCY_RETENTION_DAYS: z.coerce.number().int().min(1).max(365).default(7),
+  RETENTION_CLEANUP_BATCH_SIZE: z.coerce.number().int().min(1).max(10_000).default(1000),
+  RETENTION_CLEANUP_INTERVAL_MS: z.coerce.number().int().min(10_000).max(86_400_000).default(300_000),
   API_SHUTDOWN_GRACE_MS: z.coerce.number().int().min(1000).max(120_000).default(15_000),
   HTTP_TIMEOUT_MS: z.coerce.number().int().min(100).max(120_000).default(5_000),
   HEALTH_CHECK_TIMEOUT_MS: z.coerce.number().int().min(100).max(10_000).default(2_000),

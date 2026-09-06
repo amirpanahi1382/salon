@@ -18,11 +18,15 @@ export class VisitRepository {
     });
   }
 
-  listForCustomer(tenantId: string, customerId: string) {
+  listForCustomer(tenantId: string, customerId: string, cursor?: { visitedAt: Date; createdAt: Date; id: string }) {
     return this.prisma.client.visit.findMany({
-      where: { salonId: tenantId, customerId },
+      where: {
+        salonId: tenantId,
+        customerId,
+        ...(cursor ? visitCursorWhere(cursor) : {}),
+      },
       select: VISIT_SELECT,
-      orderBy: { visitedAt: 'desc' },
+      orderBy: [{ visitedAt: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
       take: VISIT_LIST_LIMIT + 1,
     });
   }
@@ -34,6 +38,7 @@ export class VisitRepository {
       from?: Date;
       to?: Date;
       limit?: number;
+      cursor?: { visitedAt: Date; createdAt: Date; id: string };
     },
   ) {
     const take = Math.min(Math.max(filters.limit ?? VISIT_LIST_LIMIT, 1), VISIT_LIST_LIMIT);
@@ -49,12 +54,13 @@ export class VisitRepository {
               },
             }
           : {}),
+        ...(filters.cursor ? visitCursorWhere(filters.cursor) : {}),
       },
       select: {
         ...VISIT_SELECT,
         customer: { select: { firstName: true, lastName: true } },
       },
-      orderBy: [{ visitedAt: 'desc' }, { createdAt: 'desc' }],
+      orderBy: [{ visitedAt: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
       take: take + 1,
     });
   }
@@ -70,26 +76,14 @@ export class VisitRepository {
       where: { salonId: tenantId, customerId },
     });
   }
+}
 
-  listVisitedAtForCustomer(tenantId: string, customerId: string) {
-    return this.prisma.client.visit.findMany({
-      where: { salonId: tenantId, customerId },
-      select: { visitedAt: true },
-      orderBy: { visitedAt: 'asc' },
-    });
-  }
-
-  listVisitedAtForSalon(tenantId: string, customerIds?: string[]) {
-    if (customerIds && customerIds.length === 0) {
-      return Promise.resolve([]);
-    }
-    return this.prisma.client.visit.findMany({
-      where: {
-        salonId: tenantId,
-        ...(customerIds ? { customerId: { in: customerIds } } : {}),
-      },
-      select: { customerId: true, visitedAt: true },
-      orderBy: { visitedAt: 'asc' },
-    });
-  }
+function visitCursorWhere(cursor: { visitedAt: Date; createdAt: Date; id: string }) {
+  return {
+    OR: [
+      { visitedAt: { lt: cursor.visitedAt } },
+      { visitedAt: cursor.visitedAt, createdAt: { lt: cursor.createdAt } },
+      { visitedAt: cursor.visitedAt, createdAt: cursor.createdAt, id: { lt: cursor.id } },
+    ],
+  };
 }

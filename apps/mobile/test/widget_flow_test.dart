@@ -65,14 +65,17 @@ class FakeIntelligenceRepository extends IntelligenceRepository {
   }
 
   @override
-  Future<List<Opportunity>> opportunities({String? type}) async {
+  Future<ItemPage<Opportunity>> opportunities({
+    String? type,
+    String? cursor,
+  }) async {
     if (error != null) {
       throw error!;
     }
-    if (type == null) {
-      return opportunitiesData;
-    }
-    return opportunitiesData.where((item) => item.type == type).toList();
+    final filtered = type == null
+        ? opportunitiesData
+        : opportunitiesData.where((item) => item.type == type).toList();
+    return ItemPage(items: filtered, hasMore: false);
   }
 
   @override
@@ -100,18 +103,19 @@ class FakeCustomerRepository extends CustomerRepository {
   Object? error;
 
   @override
-  Future<List<Customer>> list({String? query}) async {
+  Future<ItemPage<Customer>> list({String? query, String? cursor}) async {
     if (error != null) {
       throw error!;
     }
-    if (query == null || query.isEmpty) {
-      return items;
-    }
-    return items
-        .where(
-          (item) => item.fullName.toLowerCase().contains(query.toLowerCase()),
-        )
-        .toList();
+    final filtered = query == null || query.isEmpty
+        ? items
+        : items
+              .where(
+                (item) =>
+                    item.fullName.toLowerCase().contains(query.toLowerCase()),
+              )
+              .toList();
+    return ItemPage(items: filtered, hasMore: false);
   }
 
   @override
@@ -177,9 +181,7 @@ class FakeCustomerRepository extends CustomerRepository {
       imported: 1,
       skipped: 0,
       failed: 0,
-      results: [
-        CustomerImportRowResult(row: 2, status: 'IMPORTED'),
-      ],
+      results: [CustomerImportRowResult(row: 2, status: 'IMPORTED')],
     );
   }
 }
@@ -191,11 +193,17 @@ class FakeVisitListRepository extends VisitRepository {
   Object? error;
 
   @override
-  Future<List<Visit>> listForCustomer(String customerId) async {
+  Future<ItemPage<Visit>> listForCustomer(
+    String customerId, {
+    String? cursor,
+  }) async {
     if (error != null) {
       throw error!;
     }
-    return items.where((item) => item.customerId == customerId).toList();
+    return ItemPage(
+      items: items.where((item) => item.customerId == customerId).toList(),
+      hasMore: false,
+    );
   }
 
   @override
@@ -615,9 +623,12 @@ void main() {
       customerId: 'c2',
       firstName: 'Maryam',
       lastName: 'Karimi',
-      visitedAt: DateTime(now.year, now.month, now.day, 11).subtract(
-        const Duration(days: 1),
-      ),
+      visitedAt: DateTime(
+        now.year,
+        now.month,
+        now.day,
+        11,
+      ).subtract(const Duration(days: 1)),
       createdAt: DateTime.utc(2026, 1, 1),
     );
     final visits = FakeVisitListRepository(items: [todayVisit, yesterdayVisit]);
@@ -702,9 +713,7 @@ void main() {
           ),
           authControllerProvider.overrideWith(_StaffAuth.new),
         ],
-        child: const MaterialApp(
-          home: CustomerDetailScreen(customerId: 'c1'),
-        ),
+        child: const MaterialApp(home: CustomerDetailScreen(customerId: 'c1')),
       ),
     );
     await tester.pumpAndSettle();
@@ -796,9 +805,7 @@ void main() {
           visitRepositoryProvider.overrideWith((ref) => visits),
           authControllerProvider.overrideWith(_SignedInAuth.new),
         ],
-        child: const MaterialApp(
-          home: CustomerDetailScreen(customerId: 'c1'),
-        ),
+        child: const MaterialApp(home: CustomerDetailScreen(customerId: 'c1')),
       ),
     );
     await tester.pumpAndSettle();

@@ -33,14 +33,14 @@ class _OpportunitiesScreenState extends ConsumerState<OpportunitiesScreen> {
       _error = null;
     });
     try {
-      final items = await ref
+      final page = await ref
           .read(intelligenceRepositoryProvider)
           .opportunities(type: _type);
       if (!mounted) {
         return;
       }
       setState(() {
-        _items = items;
+        _items = page.items;
         _loading = false;
       });
     } catch (error) {

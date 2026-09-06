@@ -127,9 +127,8 @@ class _VisitsScreenState extends ConsumerState<VisitsScreen> {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(friendlyError(error))));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(friendlyError(error))));
     }
   }
 
@@ -199,7 +198,8 @@ class _VisitsScreenState extends ConsumerState<VisitsScreen> {
                             children: [
                               const SizedBox(height: 48),
                               EmptyStateView(
-                                title: _day != null &&
+                                title:
+                                    _day != null &&
                                         _customer == null &&
                                         _dateOnly(_day!) ==
                                             _dateOnly(DateTime.now())
@@ -224,9 +224,7 @@ class _VisitsScreenState extends ConsumerState<VisitsScreen> {
                                     ? IconButton(
                                         tooltip: AppStrings.deleteVisit,
                                         onPressed: () => _delete(visit),
-                                        icon: const Icon(
-                                          Icons.delete_outline,
-                                        ),
+                                        icon: const Icon(Icons.delete_outline),
                                       )
                                     : null,
                               );
@@ -268,14 +266,14 @@ class _CustomerPickerDialogState extends ConsumerState<_CustomerPickerDialog> {
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
-      final items = await ref
+      final page = await ref
           .read(customerRepositoryProvider)
           .list(query: _search.text);
       if (!mounted) {
         return;
       }
       setState(() {
-        _items = items;
+        _items = page.items;
         _loading = false;
       });
     } catch (_) {

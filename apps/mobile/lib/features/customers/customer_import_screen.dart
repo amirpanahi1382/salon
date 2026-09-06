@@ -145,7 +145,10 @@ class _CustomerImportScreenState extends ConsumerState<CustomerImportScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(_filename!, style: Theme.of(context).textTheme.titleMedium),
+                  Text(
+                    _filename!,
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
                   const SizedBox(height: 4),
                   Text('${_bytes?.length ?? 0} bytes'),
                 ],

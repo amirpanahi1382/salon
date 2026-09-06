@@ -58,7 +58,7 @@ model Customer {
 
   @@unique([id, salonId])
   @@unique([salonId, phoneNumber])
-  @@index([salonId, createdAt])
+  @@index([salonId, createdAt, id])
   @@map("customers")
 }
 
@@ -110,6 +110,7 @@ model OutboxEvent {
   createdAt    DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
 
   @@index([status, availableAt])
+  @@index([processedAt])
   @@map("outbox_events")
 }
 

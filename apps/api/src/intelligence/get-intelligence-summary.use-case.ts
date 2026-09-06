@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { analyzeCustomerVisits, type AuthenticatedPrincipal } from '@salon/shared';
+import { analyzeCustomerBehavior, type AuthenticatedPrincipal } from '@salon/shared';
 import { IntelligenceQueryService } from './intelligence-query.service';
 import type { IntelligenceSummaryResponseDto } from './intelligence.dto';
 
@@ -8,9 +8,9 @@ export class GetIntelligenceSummaryUseCase {
   constructor(private readonly intelligence: IntelligenceQueryService) {}
 
   async execute(principal: AuthenticatedPrincipal): Promise<IntelligenceSummaryResponseDto> {
-    const { snapshots, truncated } = await this.intelligence.loadSalon(principal.tenantId);
+    const { rows, truncated } = await this.intelligence.loadSalon(principal.tenantId);
     const summary: IntelligenceSummaryResponseDto = {
-      customers: snapshots.length,
+      customers: rows.length,
       new: 0,
       active: 0,
       returning: 0,
@@ -22,12 +22,8 @@ export class GetIntelligenceSummaryUseCase {
       hasMore: truncated,
     };
 
-    for (const snapshot of snapshots) {
-      const { result } = analyzeCustomerVisits(
-        snapshot.visitDates,
-        snapshot.asOf,
-        this.intelligence.getAnalyzer(),
-      );
+    for (const row of rows) {
+      const { result } = analyzeCustomerBehavior(row.behavior, this.intelligence.getAnalyzer());
       switch (result.status) {
         case 'NEW':
           summary.new += 1;

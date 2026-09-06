@@ -19,7 +19,7 @@ import { RolesGuard } from '../infrastructure/auth/roles.guard';
 import { UuidParam } from '../infrastructure/http/uuid-param';
 import { CreateVisitUseCase } from './create-visit.use-case';
 import { DeleteVisitUseCase } from './delete-visit.use-case';
-import { CreateVisitDto, ListVisitsQueryDto } from './visit.dto';
+import { CreateVisitDto, ListCustomerVisitsQueryDto, ListVisitsQueryDto } from './visit.dto';
 import { GetVisitUseCase } from './get-visit.use-case';
 import { normalizeIdempotencyKey } from './idempotency';
 import { ListCustomerVisitsUseCase } from './list-customer-visits.use-case';
@@ -87,7 +87,8 @@ export class VisitController {
   history(
     @CurrentUser() user: AuthenticatedPrincipal,
     @Param('customerId', UuidParam) customerId: string,
+    @Query() query: ListCustomerVisitsQueryDto,
   ) {
-    return this.listCustomerVisits.execute(user, customerId);
+    return this.listCustomerVisits.execute(user, customerId, query.cursor);
   }
 }

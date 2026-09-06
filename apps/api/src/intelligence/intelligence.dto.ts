@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsIn, IsOptional } from 'class-validator';
+import { IsIn, IsOptional, IsString } from 'class-validator';
 import {
   CUSTOMER_STATUSES,
   OPPORTUNITY_TYPES,
@@ -18,6 +18,11 @@ export class IntelligenceQueryDto {
   @IsOptional()
   @IsIn(OPPORTUNITY_TYPES)
   type?: OpportunityType;
+
+  @ApiPropertyOptional({ description: 'Opaque cursor from the previous page' })
+  @IsOptional()
+  @IsString()
+  cursor?: string;
 }
 
 export class BehaviorMetricsDto {
@@ -152,6 +157,9 @@ export class OpportunityListPageDto {
 
   @ApiProperty()
   hasMore!: boolean;
+
+  @ApiProperty({ nullable: true, type: String })
+  nextCursor!: string | null;
 }
 
 export class CustomerSegmentListPageDto {
@@ -160,4 +168,7 @@ export class CustomerSegmentListPageDto {
 
   @ApiProperty()
   hasMore!: boolean;
+
+  @ApiProperty({ nullable: true, type: String })
+  nextCursor!: string | null;
 }

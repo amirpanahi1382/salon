@@ -6,6 +6,7 @@ export {
 export {
   RuleBasedRetentionAnalyzer,
   analyzeCustomerVisits,
+  analyzeCustomerBehavior,
   type RetentionAnalyzer,
   type RetentionOpportunity,
   type RetentionResult,

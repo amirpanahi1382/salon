@@ -41,7 +41,7 @@ export class IntelligenceController {
     @CurrentUser() user: AuthenticatedPrincipal,
     @Query() query: IntelligenceQueryDto,
   ) {
-    return this.listOpportunities.execute(user, query.type);
+    return this.listOpportunities.execute(user, query.type, query.cursor);
   }
 
   @Get('segments')
@@ -50,7 +50,7 @@ export class IntelligenceController {
     @CurrentUser() user: AuthenticatedPrincipal,
     @Query() query: IntelligenceQueryDto,
   ) {
-    return this.listSegments.execute(user, query.status);
+    return this.listSegments.execute(user, query.status, query.cursor);
   }
 
   @Get('customers/:customerId')

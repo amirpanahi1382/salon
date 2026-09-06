@@ -54,6 +54,12 @@ export class ListCustomersQueryDto {
   @IsString()
   @MaxLength(80)
   q?: string;
+
+  @ApiPropertyOptional({ description: 'Opaque cursor from the previous page' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(512)
+  cursor?: string;
 }
 
 export class CustomerImportRowResultDto {
@@ -110,4 +116,7 @@ export class CustomerListPageDto {
 
   @ApiProperty({ description: 'True when more customers exist beyond this page (max 200)' })
   hasMore!: boolean;
+
+  @ApiProperty({ nullable: true, type: String })
+  nextCursor!: string | null;
 }

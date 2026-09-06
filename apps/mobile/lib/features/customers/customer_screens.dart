@@ -42,14 +42,14 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
       _error = null;
     });
     try {
-      final items = await ref
+      final page = await ref
           .read(customerRepositoryProvider)
           .list(query: _search.text);
       if (!mounted) {
         return;
       }
       setState(() {
-        _items = items;
+        _items = page.items;
         _loading = false;
       });
     } catch (error) {
@@ -335,7 +335,9 @@ class _CustomerFormScreenState extends ConsumerState<CustomerFormScreen> {
                     const SizedBox(height: 12),
                     Text(
                       _error!,
-                      style: TextStyle(color: Theme.of(context).colorScheme.error),
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
                     ),
                   ],
                   const SizedBox(height: 24),
@@ -395,7 +397,7 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
       setState(() {
         _customer = customer;
         _intelligence = intelligence;
-        _visits = visits;
+        _visits = visits.items;
         _loading = false;
       });
     } catch (error) {
@@ -444,9 +446,8 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(friendlyError(error))));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(friendlyError(error))));
     }
   }
 
@@ -481,9 +482,8 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(friendlyError(error))));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(friendlyError(error))));
     }
   }
 

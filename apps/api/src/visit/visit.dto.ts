@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsISO8601, IsInt, IsOptional, IsUUID, Matches, Max, Min } from 'class-validator';
+import { IsISO8601, IsInt, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min } from 'class-validator';
 
 export class CreateVisitDto {
   @ApiProperty()
@@ -56,6 +56,12 @@ export class ListVisitsQueryDto {
   @Min(1)
   @Max(200)
   limit?: number;
+
+  @ApiPropertyOptional({ description: 'Opaque cursor from the previous page' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(512)
+  cursor?: string;
 }
 
 export class VisitListItemDto extends VisitResponseDto {
@@ -72,6 +78,9 @@ export class VisitListPageDto {
 
   @ApiProperty({ description: 'True when more visits exist beyond this page (max 200)' })
   hasMore!: boolean;
+
+  @ApiProperty({ nullable: true, type: String })
+  nextCursor!: string | null;
 }
 
 export class CustomerVisitListPageDto {
@@ -80,4 +89,15 @@ export class CustomerVisitListPageDto {
 
   @ApiProperty({ description: 'True when more visits exist beyond this page (max 200)' })
   hasMore!: boolean;
+
+  @ApiProperty({ nullable: true, type: String })
+  nextCursor!: string | null;
+}
+
+export class ListCustomerVisitsQueryDto {
+  @ApiPropertyOptional({ description: 'Opaque cursor from the previous page' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(512)
+  cursor?: string;
 }
