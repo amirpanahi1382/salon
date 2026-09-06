@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
 import { CustomerModule } from '../customer/customer.module';
+import { CompleteVisitWithSaleUseCase } from './complete-visit-with-sale.use-case';
 import { CreateVisitUseCase } from './create-visit.use-case';
 import { DeleteVisitUseCase } from './delete-visit.use-case';
 import { GetVisitUseCase } from './get-visit.use-case';
@@ -15,6 +16,7 @@ import { VisitRepository } from './visit.repository';
   providers: [
     VisitRepository,
     CreateVisitUseCase,
+    CompleteVisitWithSaleUseCase,
     GetVisitUseCase,
     ListVisitsUseCase,
     ListCustomerVisitsUseCase,

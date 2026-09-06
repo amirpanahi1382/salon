@@ -172,6 +172,7 @@ Examples:
 CreateCustomer
 ImportCustomers
 RecordVisit
+CompleteVisitWithSale
 RecordTransaction
 CalculateCustomerOpportunities
 CreateCampaign
@@ -784,7 +785,7 @@ List endpoints that can exceed 200 rows return `{ items, hasMore }` rather than 
 - `GET /intelligence/opportunities`
 - `GET /intelligence/segments`
 
-`GET /users` remains a full salon-scoped array (not truncated). `POST /visits` accepts optional header `Idempotency-Key` (see `adr-001-visit-idempotency.md`).
+`GET /users` remains a full salon-scoped array (not truncated). `POST /visits` accepts optional header `Idempotency-Key` (see `adr-001-visit-idempotency.md`). `POST /visits/complete-with-sale` (OWNER/MANAGER) requires `Idempotency-Key` and creates a Visit plus COMPLETED Transaction atomically using operation `VISIT_COMPLETE_WITH_SALE`.
 
 ---
 

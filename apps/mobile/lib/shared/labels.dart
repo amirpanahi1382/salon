@@ -71,6 +71,14 @@ class AppStrings {
   static const save = 'Save';
   static const editCustomer = 'Edit customer';
   static const visitDate = 'Completed visit date';
+  static const amountReceived = 'Amount received (IRR)';
+  static const saveCompletedVisit = 'Save completed visit';
+  static const complimentaryHint =
+      'Leave amount empty for a complimentary visit with no revenue.';
+  static const noActiveServices = 'No active services available.';
+  static const noActiveServicesBody =
+      'A sale needs an active service from the salon catalog. You can still record a complimentary visit with no amount.';
+  static const serviceLabel = 'Service';
   static const all = 'All';
   static const reactivation = 'Reactivation';
   static const customerReturn = 'Customer return';

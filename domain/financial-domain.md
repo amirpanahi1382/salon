@@ -20,7 +20,11 @@
 
 ## Visit link
 
-`visitId` is optional. Same salon and same customer if present. Multiple transactions per visit are allowed. Visits never auto-create transactions.
+`visitId` is optional. Same salon and same customer if present. Multiple transactions per visit are allowed.
+
+`POST /visits` never creates a transaction. Revenue is never inferred from a Visit.
+
+`POST /visits/complete-with-sale` is an explicit OWNER/MANAGER application operation that records a Visit **and** a COMPLETED Transaction (with TransactionItem → Service) in **one database transaction** when amount received is provided. Visit and Transaction remain separate entities. The Transaction remains the financial source of truth.
 
 ## Deletion
 

@@ -34,6 +34,8 @@ The product should turn salon data into:
 
 Every major MVP feature should support this loop.
 
+The salon records a **completed visit** as the primary customer event. When amount was received, that same workflow also records the financial transaction. Visit and Transaction stay separate records. Revenue still comes only from COMPLETED transactions.
+
 ---
 
 # 3. Strategic Wedges

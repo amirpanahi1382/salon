@@ -91,6 +91,7 @@ DELETE /customers/:id
 GET /visits
 GET /visits/:id
 POST /visits
+POST /visits/complete-with-sale
 DELETE /visits/:id
 GET /customers/:customerId/visits
 

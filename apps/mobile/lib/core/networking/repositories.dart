@@ -192,6 +192,35 @@ class VisitRepository {
     }
   }
 
+  Future<Visit> recordCompletedWithSale({
+    required String customerId,
+    required DateTime visitedAt,
+    required String serviceId,
+    required String amount,
+    required String idempotencyKey,
+  }) async {
+    Future<Visit> send() async {
+      final data = await _api.post(
+        '/visits/complete-with-sale',
+        data: {
+          'customerId': customerId,
+          'visitedAt': visitedAt.toUtc().toIso8601String(),
+          'serviceId': serviceId,
+          'amount': amount,
+          'currency': 'IRR',
+        },
+        headers: {'Idempotency-Key': idempotencyKey},
+      ) as Map<String, dynamic>;
+      return Visit.fromJson(data['visit'] as Map<String, dynamic>);
+    }
+
+    try {
+      return await send();
+    } on NetworkException {
+      return send();
+    }
+  }
+
   Future<void> delete(String id) {
     return _api.delete('/visits/$id');
   }

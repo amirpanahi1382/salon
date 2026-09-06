@@ -307,7 +307,7 @@ Visit
 - createdAt
 ```
 
-Phase 4 records completed visits only. `serviceId` is omitted until the Service domain exists. Visits are immutable facts (create and read; no general update/delete API).
+Phase 4 records completed visits only. Visits do not store `serviceId`. When a completed visit includes amount received, `POST /visits/complete-with-sale` creates a Visit plus a linked COMPLETED Transaction and TransactionItem. A complimentary visit uses `POST /visits` and has no revenue.
 
 A visit is historical business data.
 
@@ -1083,6 +1083,7 @@ Examples:
 CreateCustomer
 ImportCustomers
 RecordVisit
+CompleteVisitWithSale
 RecordTransaction
 CreateCampaign
 SendCampaign

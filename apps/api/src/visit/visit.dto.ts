@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { IsISO8601, IsInt, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min } from 'class-validator';
+import { TransactionResponseDto } from '../transaction/transaction.dto';
 
 export class CreateVisitDto {
   @ApiProperty()
@@ -12,6 +13,32 @@ export class CreateVisitDto {
   })
   @IsISO8601()
   visitedAt!: string;
+}
+
+export class CompleteVisitWithSaleDto {
+  @ApiProperty()
+  @IsUUID('all')
+  customerId!: string;
+
+  @ApiProperty({
+    description: 'When the completed visit happened (UTC ISO-8601). Must not be a future booking time.',
+  })
+  @IsISO8601()
+  visitedAt!: string;
+
+  @ApiProperty()
+  @IsUUID('all')
+  serviceId!: string;
+
+  @ApiProperty({ example: '8000000.00', description: 'Amount received as a decimal string in IRR. Must be greater than 0.' })
+  @IsString()
+  @Matches(/^(0|[1-9]\d*)(\.\d{1,2})?$/)
+  amount!: string;
+
+  @ApiPropertyOptional({ example: 'IRR' })
+  @IsOptional()
+  @IsString()
+  currency?: string;
 }
 
 export class VisitResponseDto {
@@ -26,6 +53,14 @@ export class VisitResponseDto {
 
   @ApiProperty()
   createdAt!: string;
+}
+
+export class CompleteVisitWithSaleResponseDto {
+  @ApiProperty({ type: VisitResponseDto })
+  visit!: VisitResponseDto;
+
+  @ApiProperty({ type: TransactionResponseDto })
+  transaction!: TransactionResponseDto;
 }
 
 export class ListVisitsQueryDto {

@@ -17,9 +17,16 @@ import { CurrentUser } from '../infrastructure/auth/current-user.decorator';
 import { Roles } from '../infrastructure/auth/roles.decorator';
 import { RolesGuard } from '../infrastructure/auth/roles.guard';
 import { UuidParam } from '../infrastructure/http/uuid-param';
+import { requireIdempotencyKey } from '../infrastructure/http/idempotency';
+import { CompleteVisitWithSaleUseCase } from './complete-visit-with-sale.use-case';
 import { CreateVisitUseCase } from './create-visit.use-case';
 import { DeleteVisitUseCase } from './delete-visit.use-case';
-import { CreateVisitDto, ListCustomerVisitsQueryDto, ListVisitsQueryDto } from './visit.dto';
+import {
+  CompleteVisitWithSaleDto,
+  CreateVisitDto,
+  ListCustomerVisitsQueryDto,
+  ListVisitsQueryDto,
+} from './visit.dto';
 import { GetVisitUseCase } from './get-visit.use-case';
 import { normalizeIdempotencyKey } from './idempotency';
 import { ListCustomerVisitsUseCase } from './list-customer-visits.use-case';
@@ -32,11 +39,33 @@ import { ListVisitsUseCase } from './list-visits.use-case';
 export class VisitController {
   constructor(
     private readonly createVisit: CreateVisitUseCase,
+    private readonly completeVisitWithSale: CompleteVisitWithSaleUseCase,
     private readonly getVisit: GetVisitUseCase,
     private readonly listVisits: ListVisitsUseCase,
     private readonly listCustomerVisits: ListCustomerVisitsUseCase,
     private readonly deleteVisit: DeleteVisitUseCase,
   ) {}
+
+  @Post('visits/complete-with-sale')
+  @Roles('OWNER', 'MANAGER')
+  @ApiHeader({
+    name: 'Idempotency-Key',
+    required: true,
+    description:
+      'Required. Same key and payload replay the original visit and transaction. Same key and different payload returns 409.',
+  })
+  @ApiOperation({
+    summary:
+      'Record a completed visit and its COMPLETED sale atomically (Visit + Transaction + TransactionItem). Not a booking.',
+  })
+  completeWithSale(
+    @CurrentUser() user: AuthenticatedPrincipal,
+    @Body() body: CompleteVisitWithSaleDto,
+    @Headers('idempotency-key') idempotencyKey?: string | string[],
+  ) {
+    requireIdempotencyKey(idempotencyKey);
+    return this.completeVisitWithSale.execute(user, body, idempotencyKey);
+  }
 
   @Post('visits')
   @Roles('OWNER', 'MANAGER', 'STAFF')

@@ -35,6 +35,7 @@ Option 2. Header `Idempotency-Key` is optional for backward compatibility. The F
 - Visit create, idempotency row, outbox, and audit remain one transaction.
 - If the visit is later deleted, a retry of the same key returns 404 rather than inserting a replacement visit.
 - Keys are not a generic framework for every POST.
+- `POST /visits/complete-with-sale` reuses this table with operation `VISIT_COMPLETE_WITH_SALE` and a fingerprint of customer, visitedAt, service, amount, and currency.
 
 ## Future considerations
 

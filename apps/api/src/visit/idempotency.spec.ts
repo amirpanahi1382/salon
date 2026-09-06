@@ -2,6 +2,7 @@ import { ConflictError, ValidationError } from '@salon/shared';
 import {
   assertSameIdempotentRequest,
   normalizeIdempotencyKey,
+  visitCompleteWithSaleRequestHash,
   visitCreateRequestHash,
 } from './idempotency';
 
@@ -22,6 +23,20 @@ describe('visit idempotency helpers', () => {
     expect(a).toBe(b);
     expect(a).not.toBe(c);
     expect(a).toHaveLength(64);
+  });
+
+  it('hashes combined visit-with-sale payload fields', () => {
+    const base = {
+      customerId: 'c1',
+      visitedAt: '2026-08-01T10:00:00.000Z',
+      serviceId: 'svc1',
+      amount: '8000000.00',
+      currency: 'IRR',
+    };
+    expect(visitCompleteWithSaleRequestHash(base)).toBe(visitCompleteWithSaleRequestHash(base));
+    expect(visitCompleteWithSaleRequestHash(base)).not.toBe(
+      visitCompleteWithSaleRequestHash({ ...base, amount: '100.00' }),
+    );
   });
 
   it('rejects reused keys with a different fingerprint', () => {

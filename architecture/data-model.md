@@ -1193,7 +1193,7 @@ Conceptually:
 
 # 47a. idempotency_records (Phase A)
 
-Stores client retry keys for selected writes. Currently used by `POST /visits`.
+Stores client retry keys for selected writes. Currently used by `POST /visits` and `POST /visits/complete-with-sale`.
 
 ```text
 idempotency_records

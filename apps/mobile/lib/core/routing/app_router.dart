@@ -110,11 +110,6 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) =>
             RecordVisitScreen(customerId: state.pathParameters['id']!),
       ),
-      GoRoute(
-        path: '/customers/:id/record-sale',
-        builder: (context, state) =>
-            RecordSaleScreen(customerId: state.pathParameters['id']!),
-      ),
     ],
   );
 });

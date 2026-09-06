@@ -638,20 +638,11 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                       Text(
                         'Avg revenue per transaction ${intelligence.revenue!.averageRevenuePerTransaction}',
                       ),
-                    if (canManage) ...[
-                      const SizedBox(height: 8),
-                      TextButton(
-                        onPressed: () async {
-                          final recorded = await context.push<bool>(
-                            '/customers/${customer.id}/record-sale',
-                          );
-                          if (recorded == true) {
-                            _load();
-                          }
-                        },
-                        child: const Text('Record sale'),
-                      ),
-                    ],
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Revenue is completed transactions only. Record it with a completed visit.',
+                      style: TextStyle(fontSize: 12),
+                    ),
                   ],
                 ),
               ),
@@ -698,11 +689,38 @@ class RecordVisitScreen extends ConsumerStatefulWidget {
   ConsumerState<RecordVisitScreen> createState() => _RecordVisitScreenState();
 }
 
+final _amountPattern = RegExp(r'^(0|[1-9]\d*)(\.\d{1,2})?$');
+
 class _RecordVisitScreenState extends ConsumerState<RecordVisitScreen> {
   DateTime _visitedAt = DateTime.now();
   String? _error;
   bool _loading = false;
   String? _idempotencyKey;
+  List<SalonService> _services = const [];
+  String? _serviceId;
+  bool _loadingServices = false;
+  final _amount = TextEditingController();
+
+  bool get _canCaptureSale {
+    final role = ref.read(authControllerProvider).user?.role;
+    return role == 'OWNER' || role == 'MANAGER';
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_canCaptureSale) {
+        _loadServices();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _amount.dispose();
+    super.dispose();
+  }
 
   String _newIdempotencyKey() {
     final rnd = Random.secure();
@@ -713,126 +731,8 @@ class _RecordVisitScreenState extends ConsumerState<RecordVisitScreen> {
     return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}';
   }
 
-  Future<void> _pick() async {
-    final date = await showDatePicker(
-      context: context,
-      initialDate: _visitedAt,
-      firstDate: DateTime(2018),
-      lastDate: DateTime.now(),
-    );
-    if (date == null || !mounted) {
-      return;
-    }
-    final time = await showTimePicker(
-      context: context,
-      initialTime: TimeOfDay.fromDateTime(_visitedAt),
-    );
-    if (time == null) {
-      return;
-    }
-    setState(() {
-      _visitedAt = DateTime(
-        date.year,
-        date.month,
-        date.day,
-        time.hour,
-        time.minute,
-      );
-      _idempotencyKey = null;
-    });
-  }
-
-  Future<void> _save() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-    try {
-      _idempotencyKey ??= _newIdempotencyKey();
-      await ref
-          .read(visitRepositoryProvider)
-          .record(
-            customerId: widget.customerId,
-            visitedAt: _visitedAt,
-            idempotencyKey: _idempotencyKey!,
-          );
-      if (!mounted) {
-        return;
-      }
-      context.pop(true);
-    } catch (error) {
-      setState(() => _error = friendlyError(error));
-    } finally {
-      if (mounted) {
-        setState(() => _loading = false);
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final label = DateFormat.yMMMd().add_jm().format(_visitedAt);
-    return Scaffold(
-      appBar: AppBar(title: const Text(AppStrings.recordVisit)),
-      body: ListView(
-        padding: const EdgeInsets.all(24),
-        children: [
-          const Text(
-            'Record a completed historical visit. This is not a booking or appointment.',
-          ),
-          const SizedBox(height: 24),
-          ListTile(
-            title: const Text(AppStrings.visitDate),
-            subtitle: Text(label),
-            trailing: const Icon(Icons.event),
-            onTap: _pick,
-          ),
-          if (_error != null) ...[
-            const SizedBox(height: 12),
-            Text(
-              _error!,
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
-            ),
-          ],
-          const SizedBox(height: 24),
-          AppButton(
-            label: AppStrings.recordVisit,
-            onPressed: _save,
-            loading: _loading,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class RecordSaleScreen extends ConsumerStatefulWidget {
-  const RecordSaleScreen({super.key, required this.customerId});
-
-  final String customerId;
-
-  @override
-  ConsumerState<RecordSaleScreen> createState() => _RecordSaleScreenState();
-}
-
-class _RecordSaleScreenState extends ConsumerState<RecordSaleScreen> {
-  List<SalonService> _services = const [];
-  String? _serviceId;
-  final _price = TextEditingController(text: '0.00');
-  String? _error;
-  bool _loadingServices = true;
-  bool _saving = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadServices();
-  }
-
-  @override
-  void dispose() {
-    _price.dispose();
-    super.dispose();
+  String _normalizedAmount() {
+    return _amount.text.replaceAll(',', '').replaceAll(' ', '').trim();
   }
 
   Future<void> _loadServices() async {
@@ -866,26 +766,72 @@ class _RecordSaleScreenState extends ConsumerState<RecordSaleScreen> {
     }
   }
 
-  Future<void> _save() async {
-    final serviceId = _serviceId;
-    final unitPrice = _price.text.trim();
-    if (serviceId == null) {
-      setState(() => _error = 'Create an active service first.');
+  Future<void> _pick() async {
+    final date = await showDatePicker(
+      context: context,
+      initialDate: _visitedAt,
+      firstDate: DateTime(2018),
+      lastDate: DateTime.now(),
+    );
+    if (date == null || !mounted) {
+      return;
+    }
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(_visitedAt),
+    );
+    if (time == null) {
       return;
     }
     setState(() {
-      _saving = true;
+      _visitedAt = DateTime(
+        date.year,
+        date.month,
+        date.day,
+        time.hour,
+        time.minute,
+      );
+      _idempotencyKey = null;
+    });
+  }
+
+  Future<void> _save() async {
+    if (_loading) {
+      return;
+    }
+    final captureSale = _canCaptureSale;
+    final amount = _normalizedAmount();
+    final wantsSale = captureSale && amount.isNotEmpty && amount != '0' && amount != '0.0' && amount != '0.00';
+    if (wantsSale && !_amountPattern.hasMatch(amount)) {
+      setState(() => _error = 'Amount must be a non-negative decimal in IRR.');
+      return;
+    }
+    if (wantsSale && _serviceId == null) {
+      setState(() => _error = 'Select an active service for the amount received.');
+      return;
+    }
+
+    _loading = true;
+    setState(() {
       _error = null;
     });
     try {
-      await ref.read(transactionRepositoryProvider).create(
-            customerId: widget.customerId,
-            amount: unitPrice,
-            serviceId: serviceId,
-            unitPrice: unitPrice,
-            quantity: 1,
-            idempotencyKey: _newKey(),
-          );
+      _idempotencyKey ??= _newIdempotencyKey();
+      if (wantsSale) {
+        await ref.read(visitRepositoryProvider).recordCompletedWithSale(
+              customerId: widget.customerId,
+              visitedAt: _visitedAt,
+              serviceId: _serviceId!,
+              amount: amount,
+              idempotencyKey: _idempotencyKey!,
+            );
+      } else {
+        await ref.read(visitRepositoryProvider).record(
+              customerId: widget.customerId,
+              visitedAt: _visitedAt,
+              idempotencyKey: _idempotencyKey!,
+            );
+      }
       if (!mounted) {
         return;
       }
@@ -894,18 +840,9 @@ class _RecordSaleScreenState extends ConsumerState<RecordSaleScreen> {
       setState(() => _error = friendlyError(error));
     } finally {
       if (mounted) {
-        setState(() => _saving = false);
+        setState(() => _loading = false);
       }
     }
-  }
-
-  String _newKey() {
-    final rnd = Random.secure();
-    final bytes = List<int>.generate(16, (_) => rnd.nextInt(256));
-    bytes[6] = (bytes[6] & 0x0f) | 0x40;
-    bytes[8] = (bytes[8] & 0x3f) | 0x80;
-    final hex = bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
-    return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}';
   }
 
   Widget _serviceSelector() {
@@ -920,12 +857,12 @@ class _RecordSaleScreenState extends ConsumerState<RecordSaleScreen> {
     }
     if (_services.isEmpty) {
       return const EmptyStateView(
-        title: 'No active services available.',
-        body: 'Create a service before recording a sale. This screen does not invent services.',
+        title: AppStrings.noActiveServices,
+        body: AppStrings.noActiveServicesBody,
       );
     }
     return InputDecorator(
-      decoration: const InputDecoration(labelText: 'Service'),
+      decoration: const InputDecoration(labelText: AppStrings.serviceLabel),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String>(
           value: _serviceId,
@@ -938,7 +875,7 @@ class _RecordSaleScreenState extends ConsumerState<RecordSaleScreen> {
                 ),
               )
               .toList(),
-          onChanged: _saving
+          onChanged: _loading
               ? null
               : (value) => setState(() => _serviceId = value),
         ),
@@ -948,28 +885,42 @@ class _RecordSaleScreenState extends ConsumerState<RecordSaleScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final label = DateFormat.yMMMd().add_jm().format(_visitedAt);
+    final captureSale = _canCaptureSale;
     return Scaffold(
-      appBar: AppBar(title: const Text('Record sale')),
+      appBar: AppBar(title: const Text(AppStrings.recordVisit)),
       body: ListView(
         padding: const EdgeInsets.all(24),
         children: [
           const Text(
-            'Record completed revenue in IRR. This is not inferred from a visit. Periods are UTC.',
+            'Record a completed historical visit. This is not a booking or appointment.',
           ),
-          const SizedBox(height: 16),
-          _serviceSelector(),
-          if (_services.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            TextField(
-              controller: _price,
-              enabled: !_saving,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: 'Amount (IRR decimal string)',
+          const SizedBox(height: 24),
+          ListTile(
+            title: const Text(AppStrings.visitDate),
+            subtitle: Text(label),
+            trailing: const Icon(Icons.event),
+            onTap: _pick,
+          ),
+          if (captureSale) ...[
+            const SizedBox(height: 8),
+            _serviceSelector(),
+            if (_services.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              TextField(
+                controller: _amount,
+                enabled: !_loading,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: AppStrings.amountReceived,
+                ),
               ),
-            ),
+              const SizedBox(height: 8),
+              const Text(AppStrings.complimentaryHint),
+            ],
           ],
-          if (_error != null && _services.isNotEmpty) ...[
+          if (_error != null &&
+              !(captureSale && _services.isEmpty && !_loadingServices)) ...[
             const SizedBox(height: 12),
             Text(
               _error!,
@@ -978,9 +929,9 @@ class _RecordSaleScreenState extends ConsumerState<RecordSaleScreen> {
           ],
           const SizedBox(height: 24),
           AppButton(
-            label: 'Save sale',
-            onPressed: _services.isEmpty || _loadingServices ? null : _save,
-            loading: _saving,
+            label: AppStrings.saveCompletedVisit,
+            onPressed: _loading ? null : _save,
+            loading: _loading,
           ),
         ],
       ),

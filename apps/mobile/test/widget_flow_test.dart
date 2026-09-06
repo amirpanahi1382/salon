@@ -208,34 +208,6 @@ class FakeServiceRepository extends ServiceRepository {
   }
 }
 
-class FakeTransactionRepository extends TransactionRepository {
-  FakeTransactionRepository() : super(_client());
-
-  String? lastServiceId;
-  String? lastAmount;
-
-  @override
-  Future<LedgerTransaction> create({
-    required String customerId,
-    required String amount,
-    required String serviceId,
-    required String unitPrice,
-    required int quantity,
-    required String idempotencyKey,
-    String? visitId,
-  }) async {
-    lastServiceId = serviceId;
-    lastAmount = amount;
-    return LedgerTransaction(
-      id: 'tx1',
-      amount: amount,
-      currency: 'IRR',
-      status: 'COMPLETED',
-      occurredAt: DateTime.utc(2026, 1, 1),
-    );
-  }
-}
-
 class FakeVisitListRepository extends VisitRepository {
   FakeVisitListRepository({this.items = const []}) : super(_client());
 
@@ -284,6 +256,64 @@ class FakeVisitListRepository extends VisitRepository {
       throw error!;
     }
     items = items.where((item) => item.id != id).toList();
+  }
+
+  String? lastServiceId;
+  String? lastAmount;
+  int saveCalls = 0;
+  Completer<void>? saveGate;
+  Object? saveError;
+
+  @override
+  Future<Visit> record({
+    required String customerId,
+    required DateTime visitedAt,
+    required String idempotencyKey,
+  }) async {
+    saveCalls += 1;
+    final pending = saveGate;
+    if (pending != null) {
+      await pending.future;
+    }
+    if (saveError != null) {
+      throw saveError!;
+    }
+    final visit = Visit(
+      id: 'v-new',
+      customerId: customerId,
+      visitedAt: visitedAt,
+      createdAt: DateTime.utc(2026, 1, 1),
+    );
+    items = [visit, ...items];
+    return visit;
+  }
+
+  @override
+  Future<Visit> recordCompletedWithSale({
+    required String customerId,
+    required DateTime visitedAt,
+    required String serviceId,
+    required String amount,
+    required String idempotencyKey,
+  }) async {
+    saveCalls += 1;
+    lastServiceId = serviceId;
+    lastAmount = amount;
+    final pending = saveGate;
+    if (pending != null) {
+      await pending.future;
+    }
+    if (saveError != null) {
+      throw saveError!;
+    }
+    final visit = Visit(
+      id: 'v-sale',
+      customerId: customerId,
+      visitedAt: visitedAt,
+      createdAt: DateTime.utc(2026, 1, 1),
+    );
+    items = [visit, ...items];
+    return visit;
   }
 }
 
@@ -888,24 +918,53 @@ void main() {
     expect(visits.items, isEmpty);
   });
 
-  testWidgets('record sale lists backend services and submits the selected one', (
+  testWidgets('customer detail uses Record completed visit and not Record sale', (
     tester,
   ) async {
-    final transactions = FakeTransactionRepository();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          customerRepositoryProvider.overrideWith(
+            (ref) => FakeCustomerRepository(items: [_customer()]),
+          ),
+          intelligenceRepositoryProvider.overrideWith(
+            (ref) => FakeIntelligenceRepository(
+              customerIntelligence: _intelligence(),
+            ),
+          ),
+          visitRepositoryProvider.overrideWith(
+            (ref) => FakeVisitListRepository(),
+          ),
+          authControllerProvider.overrideWith(_SignedInAuth.new),
+        ],
+        child: const MaterialApp(home: CustomerDetailScreen(customerId: 'c1')),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Record completed visit'), findsOneWidget);
+    expect(find.text('Record sale'), findsNothing);
+    expect(find.textContaining('Completed revenue'), findsOneWidget);
+  });
+
+  testWidgets('record completed visit lists backend services and submits the selected one', (
+    tester,
+  ) async {
+    final visits = FakeVisitListRepository();
     final router = GoRouter(
       initialLocation: '/',
       routes: [
         GoRoute(path: '/', builder: (context, state) => const Text('home')),
         GoRoute(
-          path: '/sale',
+          path: '/visit',
           builder: (context, state) =>
-              const RecordSaleScreen(customerId: 'c1'),
+              const RecordVisitScreen(customerId: 'c1'),
         ),
       ],
     );
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          authControllerProvider.overrideWith(_SignedInAuth.new),
           serviceRepositoryProvider.overrideWithValue(
             FakeServiceRepository(
               items: const [
@@ -927,13 +986,13 @@ void main() {
               ],
             ),
           ),
-          transactionRepositoryProvider.overrideWithValue(transactions),
+          visitRepositoryProvider.overrideWithValue(visits),
         ],
         child: MaterialApp.router(routerConfig: router),
       ),
     );
     await tester.pumpAndSettle();
-    router.push('/sale');
+    router.push('/visit');
     await tester.pumpAndSettle();
     expect(find.text('Hair Service'), findsOneWidget);
     expect(find.text('Retired'), findsNothing);
@@ -952,21 +1011,23 @@ void main() {
     expect(find.text('Hair Service'), findsOneWidget);
 
     await tester.enterText(find.byType(TextField), '8000000');
-    await tester.tap(find.text('Save sale'));
+    await tester.tap(find.text('Save completed visit'));
     await tester.pumpAndSettle();
-    expect(transactions.lastServiceId, 'svc-hair');
-    expect(transactions.lastAmount, '8000000');
+    expect(visits.lastServiceId, 'svc-hair');
+    expect(visits.lastAmount, '8000000');
+    expect(visits.saveCalls, 1);
   });
 
-  testWidgets('record sale shows an empty state when the salon has no services', (
+  testWidgets('record completed visit shows an empty state when the salon has no services', (
     tester,
   ) async {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          authControllerProvider.overrideWith(_SignedInAuth.new),
           serviceRepositoryProvider.overrideWithValue(FakeServiceRepository()),
         ],
-        child: const MaterialApp(home: RecordSaleScreen(customerId: 'c1')),
+        child: const MaterialApp(home: RecordVisitScreen(customerId: 'c1')),
       ),
     );
     await tester.pumpAndSettle();
@@ -974,7 +1035,7 @@ void main() {
     expect(find.byType(DropdownButton<String>), findsNothing);
   });
 
-  testWidgets('record sale shows a loading state before services arrive', (
+  testWidgets('record completed visit shows a loading state before services arrive', (
     tester,
   ) async {
     final repo = FakeServiceRepository(
@@ -984,8 +1045,11 @@ void main() {
     )..gate = Completer<void>();
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [serviceRepositoryProvider.overrideWithValue(repo)],
-        child: const MaterialApp(home: RecordSaleScreen(customerId: 'c1')),
+        overrides: [
+          authControllerProvider.overrideWith(_SignedInAuth.new),
+          serviceRepositoryProvider.overrideWithValue(repo),
+        ],
+        child: const MaterialApp(home: RecordVisitScreen(customerId: 'c1')),
       ),
     );
     await tester.pump();
@@ -996,22 +1060,122 @@ void main() {
     expect(find.text('Hair Service'), findsOneWidget);
   });
 
-  testWidgets('record sale shows retry when services fail to load', (
+  testWidgets('record completed visit shows retry when services fail to load', (
     tester,
   ) async {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          authControllerProvider.overrideWith(_SignedInAuth.new),
           serviceRepositoryProvider.overrideWithValue(
             FakeServiceRepository()..error = const NetworkException(),
           ),
         ],
-        child: const MaterialApp(home: RecordSaleScreen(customerId: 'c1')),
+        child: const MaterialApp(home: RecordVisitScreen(customerId: 'c1')),
       ),
     );
     await tester.pumpAndSettle();
     expect(find.text('Unable to reach the salon platform.'), findsOneWidget);
     expect(find.text('Try again'), findsOneWidget);
+  });
+
+  testWidgets('record completed visit does not double-submit while saving', (
+    tester,
+  ) async {
+    final visits = FakeVisitListRepository()..saveGate = Completer<void>();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          authControllerProvider.overrideWith(_SignedInAuth.new),
+          serviceRepositoryProvider.overrideWithValue(
+            FakeServiceRepository(
+              items: const [
+                SalonService(
+                  id: 'svc-hair',
+                  name: 'Hair Service',
+                  status: 'ACTIVE',
+                ),
+              ],
+            ),
+          ),
+          visitRepositoryProvider.overrideWithValue(visits),
+        ],
+        child: const MaterialApp(home: RecordVisitScreen(customerId: 'c1')),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '8000000.00');
+    await tester.tap(find.text('Save completed visit'));
+    await tester.pump();
+    expect(visits.saveCalls, 1);
+    await tester.tap(find.byType(FilledButton));
+    await tester.pump();
+    expect(visits.saveCalls, 1);
+    visits.saveGate!.complete();
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('record completed visit shows save errors and can retry', (
+    tester,
+  ) async {
+    final visits = FakeVisitListRepository()
+      ..saveError = const NetworkException();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          authControllerProvider.overrideWith(_SignedInAuth.new),
+          serviceRepositoryProvider.overrideWithValue(
+            FakeServiceRepository(
+              items: const [
+                SalonService(
+                  id: 'svc-hair',
+                  name: 'Hair Service',
+                  status: 'ACTIVE',
+                ),
+              ],
+            ),
+          ),
+          visitRepositoryProvider.overrideWithValue(visits),
+        ],
+        child: const MaterialApp(home: RecordVisitScreen(customerId: 'c1')),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '8000000.00');
+    await tester.tap(find.text('Save completed visit'));
+    await tester.pumpAndSettle();
+    expect(find.text('Unable to reach the salon platform.'), findsOneWidget);
+    visits.saveError = null;
+    await tester.tap(find.text('Save completed visit'));
+    await tester.pumpAndSettle();
+    expect(visits.saveCalls, 2);
+  });
+
+  testWidgets('staff record completed visit does not load a sale form', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          authControllerProvider.overrideWith(_StaffAuth.new),
+          serviceRepositoryProvider.overrideWithValue(
+            FakeServiceRepository(
+              items: const [
+                SalonService(
+                  id: 'svc-hair',
+                  name: 'Hair Service',
+                  status: 'ACTIVE',
+                ),
+              ],
+            ),
+          ),
+        ],
+        child: const MaterialApp(home: RecordVisitScreen(customerId: 'c1')),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Hair Service'), findsNothing);
+    expect(find.text('Amount received (IRR)'), findsNothing);
   });
 
   testWidgets('customer detail Add customer opens the existing create screen', (
