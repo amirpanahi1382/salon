@@ -375,4 +375,28 @@ describeIfDb('Services and transactions (e2e)', () => {
       expect(victimCustomer).not.toBeNull();
     }
   });
+
+  it('lists tenant-scoped Hair Service and Nail Service and isolates them', async () => {
+    const salonA = await registerOwner('svc-a');
+    const salonB = await registerOwner('svc-b');
+    await createService(salonA.token, 'Hair Service');
+    await createService(salonA.token, 'Nail Service');
+    await createService(salonB.token, 'Hair Service');
+
+    const listed = await request(app.getHttpServer())
+      .get('/services')
+      .set('Authorization', `Bearer ${salonA.token}`)
+      .expect(200);
+    const names = listItems(listed.body).map((row) => row.name as string).sort();
+    expect(names).toEqual(['Hair Service', 'Nail Service']);
+    expect(listed.body.hasMore).toBe(false);
+    expect(listed.body.nextCursor).toBeNull();
+    expect(listItems(listed.body).every((row) => row.status === 'ACTIVE')).toBe(true);
+
+    const other = await request(app.getHttpServer())
+      .get('/services')
+      .set('Authorization', `Bearer ${salonB.token}`)
+      .expect(200);
+    expect(listItems(other.body).map((row) => row.name)).toEqual(['Hair Service']);
+  });
 });

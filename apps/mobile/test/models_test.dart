@@ -84,6 +84,34 @@ void main() {
     expect(items.first.firstName, 'Sara');
   });
 
+  test('parses service pages even when JSON maps are untyped', () {
+    final page = parseItemPage(<dynamic, dynamic>{
+      'items': <dynamic>[
+        <dynamic, dynamic>{
+          'id': 'svc-hair',
+          'name': 'Hair Service',
+          'status': 'ACTIVE',
+          'createdAt': '2026-01-01T00:00:00.000Z',
+          'updatedAt': '2026-01-01T00:00:00.000Z',
+        },
+        <dynamic, dynamic>{
+          'id': 'svc-nail',
+          'name': 'Nail Service',
+          'status': 'ACTIVE',
+          'createdAt': '2026-01-01T00:00:00.000Z',
+          'updatedAt': '2026-01-01T00:00:00.000Z',
+        },
+      ],
+      'hasMore': false,
+      'nextCursor': null,
+    }, SalonService.fromJson);
+    expect(page.items.map((item) => item.name), [
+      'Hair Service',
+      'Nail Service',
+    ]);
+    expect(page.hasMore, isFalse);
+  });
+
   test('auth me uses userId from GET /auth/me', () {
     final user = AuthUser.fromMeJson({
       'userId': 'u1',

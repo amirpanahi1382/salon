@@ -394,18 +394,35 @@ class ItemPage<T> {
   final String? nextCursor;
 }
 
+Map<String, dynamic>? jsonObject(dynamic value) {
+  if (value is Map<String, dynamic>) {
+    return value;
+  }
+  if (value is Map) {
+    return {
+      for (final entry in value.entries) entry.key.toString(): entry.value,
+    };
+  }
+  return null;
+}
+
 ItemPage<T> parseItemPage<T>(
   dynamic data,
   T Function(Map<String, dynamic> json) map,
 ) {
-  final raw = data is Map<String, dynamic> ? data['items'] : data;
-  final items = raw is List
-      ? raw.whereType<Map<String, dynamic>>().map(map).toList()
-      : <T>[];
-  final hasMore = data is Map<String, dynamic>
-      ? data['hasMore'] == true
-      : false;
-  final cursor = data is Map<String, dynamic> ? data['nextCursor'] : null;
+  final page = jsonObject(data);
+  final raw = page != null ? page['items'] : data;
+  final items = <T>[];
+  if (raw is List) {
+    for (final item in raw) {
+      final json = jsonObject(item);
+      if (json != null) {
+        items.add(map(json));
+      }
+    }
+  }
+  final hasMore = page?['hasMore'] == true;
+  final cursor = page?['nextCursor'];
   return ItemPage(
     items: items,
     hasMore: hasMore,

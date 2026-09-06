@@ -920,7 +920,7 @@ class _RecordSaleScreenState extends ConsumerState<RecordSaleScreen> {
     }
     if (_services.isEmpty) {
       return const EmptyStateView(
-        title: 'No services yet.',
+        title: 'No active services available.',
         body: 'Create a service before recording a sale. This screen does not invent services.',
       );
     }

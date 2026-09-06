@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -191,9 +193,14 @@ class FakeServiceRepository extends ServiceRepository {
 
   List<SalonService> items;
   Object? error;
+  Completer<void>? gate;
 
   @override
   Future<ItemPage<SalonService>> list() async {
+    final pending = gate;
+    if (pending != null) {
+      await pending.future;
+    }
     if (error != null) {
       throw error!;
     }
@@ -902,8 +909,16 @@ void main() {
           serviceRepositoryProvider.overrideWithValue(
             FakeServiceRepository(
               items: const [
-                SalonService(id: 'svc-cut', name: 'Haircut', status: 'ACTIVE'),
-                SalonService(id: 'svc-color', name: 'Color', status: 'ACTIVE'),
+                SalonService(
+                  id: 'svc-hair',
+                  name: 'Hair Service',
+                  status: 'ACTIVE',
+                ),
+                SalonService(
+                  id: 'svc-nail',
+                  name: 'Nail Service',
+                  status: 'ACTIVE',
+                ),
                 SalonService(
                   id: 'svc-old',
                   name: 'Retired',
@@ -920,19 +935,27 @@ void main() {
     await tester.pumpAndSettle();
     router.push('/sale');
     await tester.pumpAndSettle();
-    expect(find.text('Haircut'), findsOneWidget);
+    expect(find.text('Hair Service'), findsOneWidget);
     expect(find.text('Retired'), findsNothing);
 
     await tester.tap(find.byType(DropdownButton<String>));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Color').last);
+    expect(find.text('Nail Service'), findsWidgets);
+    await tester.tap(find.text('Nail Service').last);
     await tester.pumpAndSettle();
+    expect(find.text('Nail Service'), findsOneWidget);
 
-    await tester.enterText(find.byType(TextField), '150000.00');
+    await tester.tap(find.byType(DropdownButton<String>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Hair Service').last);
+    await tester.pumpAndSettle();
+    expect(find.text('Hair Service'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), '8000000');
     await tester.tap(find.text('Save sale'));
     await tester.pumpAndSettle();
-    expect(transactions.lastServiceId, 'svc-color');
-    expect(transactions.lastAmount, '150000.00');
+    expect(transactions.lastServiceId, 'svc-hair');
+    expect(transactions.lastAmount, '8000000');
   });
 
   testWidgets('record sale shows an empty state when the salon has no services', (
@@ -947,8 +970,30 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('No services yet.'), findsOneWidget);
+    expect(find.text('No active services available.'), findsOneWidget);
     expect(find.byType(DropdownButton<String>), findsNothing);
+  });
+
+  testWidgets('record sale shows a loading state before services arrive', (
+    tester,
+  ) async {
+    final repo = FakeServiceRepository(
+      items: const [
+        SalonService(id: 'svc-hair', name: 'Hair Service', status: 'ACTIVE'),
+      ],
+    )..gate = Completer<void>();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [serviceRepositoryProvider.overrideWithValue(repo)],
+        child: const MaterialApp(home: RecordSaleScreen(customerId: 'c1')),
+      ),
+    );
+    await tester.pump();
+    expect(find.byType(CircularProgressIndicator), findsWidgets);
+    expect(find.text('Hair Service'), findsNothing);
+    repo.gate!.complete();
+    await tester.pumpAndSettle();
+    expect(find.text('Hair Service'), findsOneWidget);
   });
 
   testWidgets('record sale shows retry when services fail to load', (
