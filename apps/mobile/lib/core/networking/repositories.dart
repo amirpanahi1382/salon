@@ -249,3 +249,73 @@ class SalonRepository {
     return SalonProfile.fromJson(data);
   }
 }
+
+class ServiceRepository {
+  ServiceRepository(this._api);
+
+  final ApiClient _api;
+
+  Future<ItemPage<SalonService>> list() async {
+    final data = await _api.get('/services');
+    return parseItemPage(data, SalonService.fromJson);
+  }
+
+  Future<SalonService> create(String name) async {
+    final data = await _api.post('/services', data: {'name': name.trim()})
+        as Map<String, dynamic>;
+    return SalonService.fromJson(data);
+  }
+}
+
+class TransactionRepository {
+  TransactionRepository(this._api);
+
+  final ApiClient _api;
+
+  Future<ItemPage<LedgerTransaction>> listForCustomer(
+    String customerId, {
+    String? cursor,
+  }) async {
+    final data = await _api.get(
+      '/customers/$customerId/transactions',
+      query: cursor == null ? null : {'cursor': cursor},
+    );
+    return parseItemPage(data, LedgerTransaction.fromJson);
+  }
+
+  Future<LedgerTransaction> create({
+    required String customerId,
+    required String amount,
+    required String serviceId,
+    required String unitPrice,
+    required int quantity,
+    required String idempotencyKey,
+    String? visitId,
+  }) async {
+    final data = await _api.post(
+      '/transactions',
+      data: {
+        'customerId': customerId,
+        'occurredAt': DateTime.now().toUtc().toIso8601String(),
+        'amount': amount,
+        'currency': 'IRR',
+        'visitId': ?visitId,
+        'items': [
+          {
+            'serviceId': serviceId,
+            'quantity': quantity,
+            'unitPrice': unitPrice,
+          },
+        ],
+      },
+      headers: {'Idempotency-Key': idempotencyKey},
+    ) as Map<String, dynamic>;
+    return LedgerTransaction.fromJson(data);
+  }
+
+  Future<LedgerTransaction> voidTransaction(String id) async {
+    final data =
+        await _api.post('/transactions/$id/void') as Map<String, dynamic>;
+    return LedgerTransaction.fromJson(data);
+  }
+}

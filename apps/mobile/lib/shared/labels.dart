@@ -29,7 +29,7 @@ class AppStrings {
   static const cancel = 'Cancel';
   static const delete = 'Delete';
   static const deleteCustomerConfirm =
-      'This will permanently remove this customer and their recorded visit history.';
+      'This removes the customer and visit history only when they have no financial records.';
   static const deleteVisitConfirm = 'Delete this completed visit?';
   static const allCustomers = 'All customers';
   static const today = 'Today';
@@ -74,6 +74,7 @@ class AppStrings {
   static const all = 'All';
   static const reactivation = 'Reactivation';
   static const customerReturn = 'Customer return';
+  static const revenueDecline = 'Revenue declining';
 }
 
 String statusLabel(String value) {
@@ -99,6 +100,8 @@ String opportunityLabel(String value) {
       return 'Reactivation';
     case 'CUSTOMER_RETURN':
       return 'Customer return';
+    case 'REVENUE_DECLINE':
+      return 'Revenue declining';
     default:
       return 'Opportunity';
   }
@@ -112,6 +115,8 @@ String signalLabel(String value) {
       return 'Overdue';
     case 'FREQUENT':
       return 'Frequent visitor';
+    case 'REVENUE_DECLINING':
+      return 'Revenue declining';
     case 'RECENTLY_ACTIVE':
       return 'Recently active';
     case 'RETURNING_CUSTOMER':

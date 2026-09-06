@@ -1,24 +1,40 @@
 import { Injectable } from '@nestjs/common';
-import { analyzeCustomerBehavior, type AuthenticatedPrincipal, type OpportunityType } from '@salon/shared';
+import {
+  analyzeCustomerBehavior,
+  revenueOpportunities,
+  utcNow,
+  type AuthenticatedPrincipal,
+  type OpportunityType,
+} from '@salon/shared';
+import { PrismaService } from '../infrastructure/database/prisma.service';
 import { decodeCursor, encodeCursor, toListPage } from '../infrastructure/http/list-page';
 import { IntelligenceQueryService } from './intelligence-query.service';
+import { loadCustomerRevenueMap } from './intelligence-revenue';
 import { toOpportunityDto } from './intelligence.mapper';
 
 export const INTELLIGENCE_LIST_LIMIT = 200;
 
 @Injectable()
 export class ListOpportunitiesUseCase {
-  constructor(private readonly intelligence: IntelligenceQueryService) {}
+  constructor(
+    private readonly intelligence: IntelligenceQueryService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   async execute(
     principal: AuthenticatedPrincipal,
     type?: OpportunityType,
     cursor?: string,
   ) {
-    const { rows, truncated } = await this.intelligence.loadSalon(principal.tenantId);
+    const asOf = utcNow();
+    const [{ rows, truncated }, revenueByCustomer] = await Promise.all([
+      this.intelligence.loadSalon(principal.tenantId, asOf),
+      loadCustomerRevenueMap(this.prisma.client, principal.tenantId, asOf),
+    ]);
     const opportunities: Array<{
       daysSinceLastVisit: number;
       customerId: string;
+      type: OpportunityType;
       dto: ReturnType<typeof toOpportunityDto>;
     }> = [];
 
@@ -27,13 +43,19 @@ export class ListOpportunitiesUseCase {
         row.behavior,
         this.intelligence.getAnalyzer(),
       );
-      for (const opportunity of result.opportunities) {
+      const revenue = revenueByCustomer.get(row.customer.id);
+      const opportunitiesForCustomer = [
+        ...result.opportunities,
+        ...(revenue ? revenueOpportunities(revenue) : []),
+      ];
+      for (const opportunity of opportunitiesForCustomer) {
         if (!this.intelligence.filterByOpportunityType(type, [opportunity.type])) {
           continue;
         }
         opportunities.push({
           daysSinceLastVisit: behavior.daysSinceLastVisit ?? 0,
           customerId: row.customer.id,
+          type: opportunity.type,
           dto: toOpportunityDto(row.customer, result.status, opportunity),
         });
       }
@@ -43,18 +65,21 @@ export class ListOpportunitiesUseCase {
       if (b.daysSinceLastVisit !== a.daysSinceLastVisit) {
         return b.daysSinceLastVisit - a.daysSinceLastVisit;
       }
-      return a.customerId < b.customerId ? 1 : a.customerId > b.customerId ? -1 : 0;
+      if (a.customerId !== b.customerId) {
+        return a.customerId < b.customerId ? 1 : -1;
+      }
+      return a.type < b.type ? 1 : a.type > b.type ? -1 : 0;
     });
 
-    const cursorParts = decodeCursor(cursor, 2);
+    const cursorParts = decodeCursor(cursor, 3);
     const filtered = cursorParts
       ? opportunities.filter((item) =>
-          isAfterOpportunityCursor(item, Number(cursorParts[0]), cursorParts[1]!),
+          isAfterOpportunityCursor(item, Number(cursorParts[0]), cursorParts[1]!, cursorParts[2]!),
         )
       : opportunities;
 
     const page = toListPage(filtered, INTELLIGENCE_LIST_LIMIT, (item) =>
-      encodeCursor([String(item.daysSinceLastVisit), item.customerId]),
+      encodeCursor([String(item.daysSinceLastVisit), item.customerId, item.type]),
     );
     return {
       items: page.items.map((item) => item.dto),
@@ -65,9 +90,10 @@ export class ListOpportunitiesUseCase {
 }
 
 function isAfterOpportunityCursor(
-  item: { daysSinceLastVisit: number; customerId: string },
+  item: { daysSinceLastVisit: number; customerId: string; type: OpportunityType },
   days: number,
   customerId: string,
+  type: string,
 ): boolean {
   if (item.daysSinceLastVisit < days) {
     return true;
@@ -75,5 +101,8 @@ function isAfterOpportunityCursor(
   if (item.daysSinceLastVisit > days) {
     return false;
   }
-  return item.customerId < customerId;
+  if (item.customerId !== customerId) {
+    return item.customerId < customerId;
+  }
+  return item.type < type;
 }

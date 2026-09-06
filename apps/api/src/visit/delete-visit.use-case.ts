@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import {
+  ConflictError,
   createId,
   DOMAIN_EVENT_TYPES,
   NotFoundError,
@@ -22,6 +23,13 @@ export class DeleteVisitUseCase {
     }
 
     await this.prisma.client.$transaction(async (tx) => {
+      const linked = await tx.ledgerTransaction.count({
+        where: { salonId: principal.tenantId, visitId: existing.id },
+      });
+      if (linked > 0) {
+        throw new ConflictError('Visit cannot be deleted while financial records reference it');
+      }
+
       const deleted = await this.visits.deleteById(principal.tenantId, existing.id, tx);
       if (deleted.count === 0) {
         throw new NotFoundError('Visit not found');

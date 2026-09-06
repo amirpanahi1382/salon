@@ -141,7 +141,7 @@ Additional fields may be added only when there is a clear product reason.
 
 Do not create a large customer profile unnecessarily.
 
-OWNER and MANAGER may delete a customer. STAFF may not. Deletion is a hard delete of that customer and their completed visit records only, in one tenant-scoped transaction. Audit logs and outbox history are not deleted. There is no booking or appointment to cancel.
+OWNER and MANAGER may delete a customer. STAFF may not. Deletion is a hard delete of that customer and their completed visit records only, in one tenant-scoped transaction, **and only when the customer has no financial records**. If any transaction exists, the API returns 409. Audit logs and outbox history are not deleted. There is no booking or appointment to cancel.
 
 ---
 

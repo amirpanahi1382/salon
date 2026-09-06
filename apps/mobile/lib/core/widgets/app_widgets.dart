@@ -172,7 +172,7 @@ class MetricCard extends StatelessWidget {
   const MetricCard({super.key, required this.label, required this.value});
 
   final String label;
-  final int value;
+  final Object value;
 
   @override
   Widget build(BuildContext context) {

@@ -289,6 +289,11 @@ CustomerIntelligence _intelligence() {
     ),
     signals: const ['OVERDUE'],
     opportunities: [_opportunity()],
+    revenue: const CustomerRevenue(
+      totalRevenue: '0.00',
+      transactionCount: 0,
+      currency: 'IRR',
+    ),
   );
 }
 
@@ -341,6 +346,8 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('Rose Salon'), findsOneWidget);
+    await tester.drag(find.byType(ListView), const Offset(0, -800));
+    await tester.pumpAndSettle();
     expect(find.text('Sara Ahmadi'), findsOneWidget);
     expect(find.textContaining('52 days'), findsOneWidget);
     expect(find.textContaining('Send a reactivation message'), findsOneWidget);
@@ -358,6 +365,8 @@ void main() {
         child: const MaterialApp(home: DashboardScreen()),
       ),
     );
+    await tester.pumpAndSettle();
+    await tester.drag(find.byType(ListView), const Offset(0, -800));
     await tester.pumpAndSettle();
     expect(find.text("You're all caught up."), findsOneWidget);
   });
@@ -459,6 +468,8 @@ void main() {
     expect(find.text('At risk'), findsWidgets);
     expect(find.textContaining('52 days'), findsWidgets);
     expect(find.textContaining('Send a reactivation message'), findsOneWidget);
+    await tester.drag(find.byType(ListView), const Offset(0, -800));
+    await tester.pumpAndSettle();
     expect(find.text('Completed visit'), findsOneWidget);
   });
 
@@ -770,8 +781,9 @@ void main() {
     await tester.pumpAndSettle();
     expect(
       find.textContaining('permanently remove this customer'),
-      findsOneWidget,
+      findsNothing,
     );
+    expect(find.textContaining('no financial records'), findsOneWidget);
     await tester.tap(find.text('Delete').last);
     await tester.pumpAndSettle();
     expect(repo.items, isEmpty);
@@ -809,14 +821,16 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.byTooltip('Delete visit'));
+    await tester.drag(find.byType(ListView), const Offset(0, -800));
+    await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('Delete visit'));
     await tester.pumpAndSettle();
     expect(find.text('Delete this completed visit?'), findsOneWidget);
     await tester.tap(find.text('Cancel'));
     await tester.pumpAndSettle();
     expect(visits.items, hasLength(1));
-    await tester.ensureVisible(find.byTooltip('Delete visit'));
+    await tester.drag(find.byType(ListView), const Offset(0, -800));
+    await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('Delete visit'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Delete').last);

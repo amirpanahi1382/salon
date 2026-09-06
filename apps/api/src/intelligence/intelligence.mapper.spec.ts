@@ -2,7 +2,7 @@ import { toCustomerIntelligenceResponse } from './intelligence.mapper';
 
 describe('toCustomerIntelligenceResponse', () => {
   it('does not include phone numbers on intelligence DTOs', () => {
-    const response = toCustomerIntelligenceResponse(
+    const response =     toCustomerIntelligenceResponse(
       { id: 'cust-1', firstName: 'Sara', lastName: 'Ahmadi' },
       {
         visitCount: 2,
@@ -23,6 +23,17 @@ describe('toCustomerIntelligenceResponse', () => {
             recommendedAction: 'Send a reactivation message.',
           },
         ],
+      },
+      {
+        currency: 'IRR',
+        totalRevenueMinor: 0n,
+        transactionCount: 0,
+        linkedVisitCount: 0,
+        linkedRevenueMinor: 0n,
+        lastRevenueAt: null,
+        thisUtcMonthMinor: 0n,
+        previousUtcMonthMinor: 0n,
+        previousUtcMonthTransactionCount: 0,
       },
     );
 

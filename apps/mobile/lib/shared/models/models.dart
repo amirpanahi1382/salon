@@ -200,6 +200,84 @@ class Opportunity {
   }
 }
 
+class CustomerRevenue {
+  const CustomerRevenue({
+    required this.totalRevenue,
+    required this.transactionCount,
+    required this.currency,
+    this.averageSpendPerVisit,
+    this.averageRevenuePerTransaction,
+    this.lastRevenueAt,
+    this.revenueTrend,
+  });
+
+  final String totalRevenue;
+  final int transactionCount;
+  final String currency;
+  final String? averageSpendPerVisit;
+  final String? averageRevenuePerTransaction;
+  final DateTime? lastRevenueAt;
+  final String? revenueTrend;
+
+  factory CustomerRevenue.fromJson(Map<String, dynamic> json) {
+    return CustomerRevenue(
+      totalRevenue: json['totalRevenue'] as String,
+      transactionCount: json['transactionCount'] as int,
+      currency: json['currency'] as String? ?? 'IRR',
+      averageSpendPerVisit: json['averageSpendPerVisit'] as String?,
+      averageRevenuePerTransaction: json['averageRevenuePerTransaction'] as String?,
+      lastRevenueAt: _parseDate(json['lastRevenueAt']),
+      revenueTrend: json['revenueTrend'] as String?,
+    );
+  }
+}
+
+class SalonService {
+  const SalonService({
+    required this.id,
+    required this.name,
+    required this.status,
+  });
+
+  final String id;
+  final String name;
+  final String status;
+
+  factory SalonService.fromJson(Map<String, dynamic> json) {
+    return SalonService(
+      id: json['id'] as String,
+      name: json['name'] as String,
+      status: json['status'] as String,
+    );
+  }
+}
+
+class LedgerTransaction {
+  const LedgerTransaction({
+    required this.id,
+    required this.amount,
+    required this.currency,
+    required this.status,
+    required this.occurredAt,
+  });
+
+  final String id;
+  final String amount;
+  final String currency;
+  final String status;
+  final DateTime occurredAt;
+
+  factory LedgerTransaction.fromJson(Map<String, dynamic> json) {
+    return LedgerTransaction(
+      id: json['id'] as String,
+      amount: json['amount'] as String,
+      currency: json['currency'] as String,
+      status: json['status'] as String,
+      occurredAt: DateTime.parse(json['occurredAt'] as String),
+    );
+  }
+}
+
 class CustomerIntelligence {
   const CustomerIntelligence({
     required this.customerId,
@@ -209,7 +287,8 @@ class CustomerIntelligence {
     required this.explanation,
     required this.behavior,
     required this.signals,
-    required this.opportunities,
+    required     this.opportunities,
+    this.revenue,
   });
 
   final String customerId;
@@ -220,6 +299,7 @@ class CustomerIntelligence {
   final BehaviorMetrics behavior;
   final List<String> signals;
   final List<Opportunity> opportunities;
+  final CustomerRevenue? revenue;
 
   factory CustomerIntelligence.fromJson(Map<String, dynamic> json) {
     return CustomerIntelligence(
@@ -238,6 +318,9 @@ class CustomerIntelligence {
           .whereType<Map<String, dynamic>>()
           .map(Opportunity.fromJson)
           .toList(),
+      revenue: json['revenue'] is Map<String, dynamic>
+          ? CustomerRevenue.fromJson(json['revenue'] as Map<String, dynamic>)
+          : null,
     );
   }
 }
@@ -253,6 +336,9 @@ class IntelligenceSummary {
     required this.reactivationOpportunities,
     required this.customerReturnOpportunities,
     required this.frequent,
+    this.totalRevenue = '0.00',
+    this.revenueThisUtcMonth = '0.00',
+    this.reportingTime = 'UTC',
   });
 
   final int customers;
@@ -264,6 +350,9 @@ class IntelligenceSummary {
   final int reactivationOpportunities;
   final int customerReturnOpportunities;
   final int frequent;
+  final String totalRevenue;
+  final String revenueThisUtcMonth;
+  final String reportingTime;
 
   factory IntelligenceSummary.fromJson(Map<String, dynamic> json) {
     return IntelligenceSummary(
@@ -276,6 +365,9 @@ class IntelligenceSummary {
       reactivationOpportunities: json['reactivationOpportunities'] as int,
       customerReturnOpportunities: json['customerReturnOpportunities'] as int,
       frequent: json['frequent'] as int,
+      totalRevenue: json['totalRevenue'] as String? ?? '0.00',
+      revenueThisUtcMonth: json['revenueThisUtcMonth'] as String? ?? '0.00',
+      reportingTime: json['reportingTime'] as String? ?? 'UTC',
     );
   }
 }

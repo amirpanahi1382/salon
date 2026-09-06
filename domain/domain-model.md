@@ -208,7 +208,7 @@ phoneNumber
 
 This prevents different salons from accidentally sharing the same customer record.
 
-OWNER and MANAGER may hard-delete a customer in their salon. That also deletes the customer's completed visits. It does not delete audit logs. STAFF cannot delete customers.
+OWNER and MANAGER may hard-delete a customer in their salon when the customer has **no** financial records. That also deletes the customer's completed visits. Customers with any transaction (including VOIDED) cannot be deleted (409). Financial rows are never cascade-deleted. It does not delete audit logs. STAFF cannot delete customers.
 
 ---
 

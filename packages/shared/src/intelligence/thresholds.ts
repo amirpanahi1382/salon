@@ -13,7 +13,8 @@
  * - FREQUENT: six or more visits and a measured average interval of 28 days
  *   or less. This is a signal, not a customer status.
  *
- * HIGH_VALUE and CROSS_SELL are omitted until transactions and services exist.
+ * HIGH_VALUE segmentation is omitted until a salon-specific spend rule is chosen.
+ * Revenue metrics come from COMPLETED transactions only (see revenue.ts).
  */
 export const DEFAULT_EXPECTED_RETURN_DAYS = 35;
 export const INACTIVE_MULTIPLIER = 2;
@@ -30,10 +31,10 @@ export const CUSTOMER_STATUSES = [
 
 export type CustomerStatus = (typeof CUSTOMER_STATUSES)[number];
 
-export const OPPORTUNITY_TYPES = ['REACTIVATION', 'CUSTOMER_RETURN'] as const;
+export const OPPORTUNITY_TYPES = ['REACTIVATION', 'CUSTOMER_RETURN', 'REVENUE_DECLINE'] as const;
 
 export type OpportunityType = (typeof OPPORTUNITY_TYPES)[number];
 
-export const INTELLIGENCE_SIGNALS = ['NEW_CUSTOMER', 'OVERDUE', 'FREQUENT'] as const;
+export const INTELLIGENCE_SIGNALS = ['NEW_CUSTOMER', 'OVERDUE', 'FREQUENT', 'REVENUE_DECLINING'] as const;
 
 export type IntelligenceSignal = (typeof INTELLIGENCE_SIGNALS)[number];

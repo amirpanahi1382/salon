@@ -111,6 +111,20 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                     metric('Inactive', summary.inactive),
                     metric('Reactivation', summary.reactivationOpportunities),
                     metric('New', summary.newCustomers),
+                    SizedBox(
+                      width: cardWidth,
+                      child: MetricCard(
+                        label: 'Revenue (UTC month)',
+                        value: '${summary.revenueThisUtcMonth} IRR',
+                      ),
+                    ),
+                    SizedBox(
+                      width: cardWidth,
+                      child: MetricCard(
+                        label: 'Completed revenue',
+                        value: '${summary.totalRevenue} IRR',
+                      ),
+                    ),
                   ],
                 );
               },

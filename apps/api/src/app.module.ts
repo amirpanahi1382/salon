@@ -16,6 +16,8 @@ import { SalonModule } from './salon/salon.module';
 import { UserModule } from './user/user.module';
 import { CustomerModule } from './customer/customer.module';
 import { VisitModule } from './visit/visit.module';
+import { ServiceModule } from './service/service.module';
+import { TransactionModule } from './transaction/transaction.module';
 import { IntelligenceModule } from './intelligence/intelligence.module';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { AppRequest } from './infrastructure/http/request-context';
@@ -86,6 +88,8 @@ import type { AppRequest } from './infrastructure/http/request-context';
     UserModule,
     CustomerModule,
     VisitModule,
+    ServiceModule,
+    TransactionModule,
     IntelligenceModule,
   ],
   providers: [

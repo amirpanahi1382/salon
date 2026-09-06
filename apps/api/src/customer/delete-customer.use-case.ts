@@ -26,7 +26,13 @@ export class DeleteCustomerUseCase {
     for (let attempt = 0; attempt < 3; attempt += 1) {
       try {
         await this.prisma.client.$transaction(async (tx) => {
-          const removedVisits = await tx.visit.deleteMany({
+        const financialCount = await tx.ledgerTransaction.count({
+          where: { salonId: principal.tenantId, customerId: existing.id },
+        });
+        if (financialCount > 0) {
+          throw new ConflictError('Customer cannot be deleted while financial records exist');
+        }
+        const removedVisits = await tx.visit.deleteMany({
             where: { salonId: principal.tenantId, customerId: existing.id },
           });
           const deleted = await tx.customer.deleteMany({
@@ -64,18 +70,20 @@ export class DeleteCustomerUseCase {
         });
         return;
       } catch (error: unknown) {
-        if (error instanceof NotFoundError) {
+        if (error instanceof NotFoundError || error instanceof ConflictError) {
           throw error;
         }
         // A visit can be inserted after deleteMany(visits) and before customer delete.
-        if (
-          error instanceof Prisma.PrismaClientKnownRequestError &&
-          error.code === 'P2003' &&
-          attempt < 2
-        ) {
-          continue;
-        }
         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2003') {
+          const financialCount = await this.prisma.client.ledgerTransaction.count({
+            where: { salonId: principal.tenantId, customerId: existing.id },
+          });
+          if (financialCount > 0) {
+            throw new ConflictError('Customer cannot be deleted while financial records exist');
+          }
+          if (attempt < 2) {
+            continue;
+          }
           throw new ConflictError('Customer could not be deleted because related records changed');
         }
         throw error;

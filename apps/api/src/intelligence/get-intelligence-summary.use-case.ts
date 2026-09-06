@@ -1,14 +1,31 @@
 import { Injectable } from '@nestjs/common';
-import { analyzeCustomerBehavior, type AuthenticatedPrincipal } from '@salon/shared';
+import {
+  analyzeCustomerBehavior,
+  deriveRevenueTrend,
+  formatMoneyString,
+  revenueOpportunities,
+  utcNow,
+  type AuthenticatedPrincipal,
+} from '@salon/shared';
+import { PrismaService } from '../infrastructure/database/prisma.service';
 import { IntelligenceQueryService } from './intelligence-query.service';
+import { loadCustomerRevenueMap, loadSalonRevenueTotals } from './intelligence-revenue';
 import type { IntelligenceSummaryResponseDto } from './intelligence.dto';
 
 @Injectable()
 export class GetIntelligenceSummaryUseCase {
-  constructor(private readonly intelligence: IntelligenceQueryService) {}
+  constructor(
+    private readonly intelligence: IntelligenceQueryService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   async execute(principal: AuthenticatedPrincipal): Promise<IntelligenceSummaryResponseDto> {
-    const { rows, truncated } = await this.intelligence.loadSalon(principal.tenantId);
+    const asOf = utcNow();
+    const [{ rows, truncated }, salonRevenue, revenueByCustomer] = await Promise.all([
+      this.intelligence.loadSalon(principal.tenantId, asOf),
+      loadSalonRevenueTotals(this.prisma.client, principal.tenantId, asOf),
+      loadCustomerRevenueMap(this.prisma.client, principal.tenantId, asOf),
+    ]);
     const summary: IntelligenceSummaryResponseDto = {
       customers: rows.length,
       new: 0,
@@ -20,10 +37,19 @@ export class GetIntelligenceSummaryUseCase {
       customerReturnOpportunities: 0,
       frequent: 0,
       hasMore: truncated,
+      currency: 'IRR',
+      totalRevenue: formatMoneyString(salonRevenue.totalRevenueMinor),
+      completedTransactionCount: salonRevenue.transactionCount,
+      revenueThisUtcMonth: formatMoneyString(salonRevenue.thisUtcMonthMinor),
+      revenuePreviousUtcMonth: formatMoneyString(salonRevenue.previousUtcMonthMinor),
+      revenueTrend: deriveRevenueTrend(salonRevenue),
+      revenueDeclineOpportunities: 0,
+      reportingTime: 'UTC',
     };
 
     for (const row of rows) {
       const { result } = analyzeCustomerBehavior(row.behavior, this.intelligence.getAnalyzer());
+      const revenue = revenueByCustomer.get(row.customer.id);
       switch (result.status) {
         case 'NEW':
           summary.new += 1;
@@ -51,6 +77,9 @@ export class GetIntelligenceSummaryUseCase {
         if (opportunity.type === 'CUSTOMER_RETURN') {
           summary.customerReturnOpportunities += 1;
         }
+      }
+      if (revenue && revenueOpportunities(revenue).length > 0) {
+        summary.revenueDeclineOpportunities += 1;
       }
     }
 

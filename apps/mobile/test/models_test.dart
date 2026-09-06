@@ -14,9 +14,15 @@ void main() {
       'reactivationOpportunities': 2,
       'customerReturnOpportunities': 0,
       'frequent': 0,
+      'currency': 'IRR',
+      'totalRevenue': '1500000.00',
+      'revenueThisUtcMonth': '200000.00',
+      'reportingTime': 'UTC',
     });
     expect(summary.atRisk, 1);
     expect(summary.reactivationOpportunities, 2);
+    expect(summary.totalRevenue, '1500000.00');
+    expect(summary.reportingTime, 'UTC');
   });
 
   test(

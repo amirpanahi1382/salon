@@ -1,6 +1,13 @@
-import type { CustomerBehavior, RetentionResult } from '@salon/shared';
+import type { CustomerBehavior, CustomerRevenueMetrics, RetentionResult } from '@salon/shared';
+import {
+  averageRevenuePerTransaction,
+  averageSpendPerVisit,
+  deriveRevenueTrend,
+  formatMoneyString,
+} from '@salon/shared';
 import type {
   CustomerIntelligenceResponseDto,
+  CustomerRevenueDto,
   CustomerSegmentItemDto,
   OpportunityDto,
 } from './intelligence.dto';
@@ -22,10 +29,26 @@ export function toBehaviorDto(behavior: CustomerBehavior) {
   };
 }
 
+export function toRevenueDto(metrics: CustomerRevenueMetrics): CustomerRevenueDto {
+  return {
+    currency: 'IRR',
+    totalRevenue: formatMoneyString(metrics.totalRevenueMinor),
+    transactionCount: metrics.transactionCount,
+    averageRevenuePerTransaction: averageRevenuePerTransaction(metrics),
+    averageSpendPerVisit: averageSpendPerVisit(metrics),
+    lastRevenueAt: metrics.lastRevenueAt?.toISOString() ?? null,
+    revenueThisUtcMonth: formatMoneyString(metrics.thisUtcMonthMinor),
+    revenuePreviousUtcMonth: formatMoneyString(metrics.previousUtcMonthMinor),
+    revenueTrend: deriveRevenueTrend(metrics),
+    reportingTime: 'UTC',
+  };
+}
+
 export function toCustomerIntelligenceResponse(
   customer: CustomerIdentity,
   behavior: CustomerBehavior,
   result: RetentionResult,
+  revenue: CustomerRevenueMetrics,
 ): CustomerIntelligenceResponseDto {
   return {
     customerId: customer.id,
@@ -38,6 +61,7 @@ export function toCustomerIntelligenceResponse(
     opportunities: result.opportunities.map((opportunity) =>
       toOpportunityDto(customer, result.status, opportunity),
     ),
+    revenue: toRevenueDto(revenue),
   };
 }
 

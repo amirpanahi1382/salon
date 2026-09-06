@@ -6,7 +6,7 @@ North star: help salons generate more revenue from customers they already have.
 
 ## Current phase
 
-Phase 5 — Customer Intelligence, plus Phase C list/intelligence scale work (`architecture/performance.md`).
+Phase 5 intelligence plus financial source-of-truth (services, transactions) and Phase C scale work (`architecture/performance.md`, `domain/financial-domain.md`).
 
 Product, domain, and architecture specifications live in:
 

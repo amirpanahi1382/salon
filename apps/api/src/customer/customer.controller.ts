@@ -136,7 +136,8 @@ export class CustomerController {
   @HttpCode(204)
   @Roles('OWNER', 'MANAGER')
   @ApiOperation({
-    summary: 'Delete a customer and their completed visit history in the authenticated salon',
+    summary:
+      'Delete a customer and visit history when they have no financial records',
   })
   remove(@CurrentUser() user: AuthenticatedPrincipal, @Param('id', UuidParam) id: string) {
     return this.deleteCustomer.execute(user, id);

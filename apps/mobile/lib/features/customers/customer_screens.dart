@@ -603,6 +603,48 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
               ),
               const SizedBox(height: 16),
             ],
+            if (intelligence != null) ...[
+              AppCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Completed revenue (IRR, UTC)',
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(intelligence.revenue?.totalRevenue ?? '0.00'),
+                    Text(
+                      '${intelligence.revenue?.transactionCount ?? 0} completed transactions · reporting UTC',
+                    ),
+                    if (intelligence.revenue?.averageSpendPerVisit != null)
+                      Text(
+                        'Avg spend per visit ${intelligence.revenue!.averageSpendPerVisit}',
+                      ),
+                    if (intelligence.revenue?.averageRevenuePerTransaction !=
+                        null)
+                      Text(
+                        'Avg revenue per transaction ${intelligence.revenue!.averageRevenuePerTransaction}',
+                      ),
+                    if (canManage) ...[
+                      const SizedBox(height: 8),
+                      TextButton(
+                        onPressed: () async {
+                          final recorded = await context.push<bool>(
+                            '/customers/${customer.id}/record-sale',
+                          );
+                          if (recorded == true) {
+                            _load();
+                          }
+                        },
+                        child: const Text('Record sale'),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
             Text(
               AppStrings.visitHistory,
               style: Theme.of(context).textTheme.titleMedium,
@@ -751,3 +793,139 @@ class _RecordVisitScreenState extends ConsumerState<RecordVisitScreen> {
     );
   }
 }
+
+class RecordSaleScreen extends ConsumerStatefulWidget {
+  const RecordSaleScreen({super.key, required this.customerId});
+
+  final String customerId;
+
+  @override
+  ConsumerState<RecordSaleScreen> createState() => _RecordSaleScreenState();
+}
+
+class _RecordSaleScreenState extends ConsumerState<RecordSaleScreen> {
+  List<SalonService> _services = const [];
+  String? _serviceId;
+  final _price = TextEditingController(text: '0.00');
+  String? _error;
+  bool _loading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadServices();
+  }
+
+  @override
+  void dispose() {
+    _price.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadServices() async {
+    try {
+      final page = await ref.read(serviceRepositoryProvider).list();
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _services = page.items.where((item) => item.status == 'ACTIVE').toList();
+        _serviceId = _services.isEmpty ? null : _services.first.id;
+      });
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _error = friendlyError(error));
+    }
+  }
+
+  Future<void> _save() async {
+    final serviceId = _serviceId;
+    final unitPrice = _price.text.trim();
+    if (serviceId == null) {
+      setState(() => _error = 'Create an active service first.');
+      return;
+    }
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      await ref.read(transactionRepositoryProvider).create(
+            customerId: widget.customerId,
+            amount: unitPrice,
+            serviceId: serviceId,
+            unitPrice: unitPrice,
+            quantity: 1,
+            idempotencyKey: _newKey(),
+          );
+      if (!mounted) {
+        return;
+      }
+      context.pop(true);
+    } catch (error) {
+      setState(() => _error = friendlyError(error));
+    } finally {
+      if (mounted) {
+        setState(() => _loading = false);
+      }
+    }
+  }
+
+  String _newKey() {
+    final rnd = Random.secure();
+    final bytes = List<int>.generate(16, (_) => rnd.nextInt(256));
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    final hex = bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+    return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Record sale')),
+      body: ListView(
+        padding: const EdgeInsets.all(24),
+        children: [
+          const Text(
+            'Record completed revenue in IRR. This is not inferred from a visit. Periods are UTC.',
+          ),
+          const SizedBox(height: 16),
+          DropdownButtonFormField<String>(
+            value: _serviceId,
+            items: _services
+                .map(
+                  (service) => DropdownMenuItem(
+                    value: service.id,
+                    child: Text(service.name),
+                  ),
+                )
+                .toList(),
+            onChanged: (value) => setState(() => _serviceId = value),
+            decoration: const InputDecoration(labelText: 'Service'),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _price,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+              labelText: 'Amount (IRR decimal string)',
+            ),
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: 12),
+            Text(
+              _error!,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+          ],
+          const SizedBox(height: 24),
+          AppButton(label: 'Save sale', onPressed: _save, loading: _loading),
+        ],
+      ),
+    );
+  }
+}
+

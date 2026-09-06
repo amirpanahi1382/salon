@@ -89,6 +89,14 @@ class _OpportunitiesScreenState extends ConsumerState<OpportunitiesScreen> {
                     _load();
                   },
                 ),
+                ChoiceChip(
+                  label: const Text(AppStrings.revenueDecline),
+                  selected: _type == 'REVENUE_DECLINE',
+                  onSelected: (_) {
+                    _type = 'REVENUE_DECLINE';
+                    _load();
+                  },
+                ),
               ],
             ),
           ),

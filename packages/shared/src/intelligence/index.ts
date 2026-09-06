@@ -23,3 +23,16 @@ export {
   type IntelligenceSignal,
   type OpportunityType,
 } from './thresholds.js';
+export {
+  REVENUE_TRENDS,
+  averageRevenuePerTransaction,
+  averageSpendPerVisit,
+  deriveRevenueTrend,
+  emptyRevenueMetrics,
+  revenueOpportunities,
+  revenueSignals,
+  utcMonthStart,
+  utcNextMonth,
+  type CustomerRevenueMetrics,
+  type RevenueTrend,
+} from './revenue.js';

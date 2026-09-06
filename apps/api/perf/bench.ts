@@ -13,6 +13,7 @@ import { deriveCustomerBehavior, analyzeCustomerVisits } from '@salon/shared';
 
 const CUSTOMERS = Number(process.env.PHASE_C_CUSTOMERS ?? 3000);
 const VISITS = Number(process.env.PHASE_C_VISITS ?? 15000);
+const TRANSACTIONS = Number(process.env.PHASE_C_TRANSACTIONS ?? 10000);
 const DATABASE_URL = process.env.DATABASE_URL;
 const BENCH_NAME = 'phase-c-bench';
 
@@ -52,6 +53,9 @@ async function explain(label: string, sql: string): Promise<string> {
 async function seed() {
   const existing = await prisma.salon.findMany({ where: { name: BENCH_NAME } });
   for (const salon of existing) {
+    await prisma.transactionItem.deleteMany({ where: { salonId: salon.id } });
+    await prisma.ledgerTransaction.deleteMany({ where: { salonId: salon.id } });
+    await prisma.service.deleteMany({ where: { salonId: salon.id } });
     await prisma.visit.deleteMany({ where: { salonId: salon.id } });
     await prisma.customer.deleteMany({ where: { salonId: salon.id } });
     await prisma.user.deleteMany({ where: { salonId: salon.id } });
@@ -96,6 +100,47 @@ async function seed() {
   }
   for (let i = 0; i < visits.length; i += 500) {
     await prisma.visit.createMany({ data: visits.slice(i, i + 500) });
+  }
+
+  const serviceId = randomUUID();
+  await prisma.service.create({
+    data: { id: serviceId, salonId, name: 'Bench cut', status: 'ACTIVE', updatedAt: now },
+  });
+
+  const transactions = [];
+  const items = [];
+  for (let i = 0; i < TRANSACTIONS; i += 1) {
+    const visit = visits[i % visits.length]!;
+    const linked = i % 3 === 0;
+    const id = randomUUID();
+    const amount = ((i % 9) + 1) * 100000;
+    transactions.push({
+      id,
+      salonId,
+      customerId: visit.customerId,
+      visitId: linked ? visit.id : null,
+      occurredAt: new Date(now.getTime() - (i % 90) * 86_400_000),
+      amount: new Prisma.Decimal(((i % 9) + 1) * 100000),
+      currency: 'IRR',
+      status: i % 17 === 0 ? 'VOIDED' : 'COMPLETED',
+      createdAt: now,
+      updatedAt: now,
+    });
+    items.push({
+      id: randomUUID(),
+      salonId,
+      transactionId: id,
+      serviceId,
+      quantity: 1,
+      unitPrice: new Prisma.Decimal(amount),
+      totalAmount: new Prisma.Decimal(amount),
+    });
+  }
+  for (let i = 0; i < transactions.length; i += 500) {
+    await prisma.ledgerTransaction.createMany({ data: transactions.slice(i, i + 500) });
+  }
+  for (let i = 0; i < items.length; i += 500) {
+    await prisma.transactionItem.createMany({ data: items.slice(i, i + 500) });
   }
 
   return { salonId, firstCustomerId: customers[0]!.id, searchPhone: customers[0]!.phoneNumber };
@@ -178,6 +223,26 @@ async function sqlWindowGaps(salonId: string) {
   `);
 }
 
+async function sqlRevenue(salonId: string) {
+  return prisma.$queryRaw<
+    Array<{
+      customerId: string;
+      total: string;
+      transactionCount: number;
+      linkedVisitCount: number;
+    }>
+  >(Prisma.sql`
+    SELECT
+      customer_id AS "customerId",
+      COALESCE(SUM(amount) FILTER (WHERE status = 'COMPLETED'), 0)::text AS total,
+      COUNT(*) FILTER (WHERE status = 'COMPLETED')::int AS "transactionCount",
+      COUNT(DISTINCT visit_id) FILTER (WHERE status = 'COMPLETED' AND visit_id IS NOT NULL)::int AS "linkedVisitCount"
+    FROM transactions
+    WHERE salon_id = ${salonId}::uuid
+    GROUP BY customer_id
+  `);
+}
+
 async function sqlIntelligence(salonId: string) {
   const rows = await prisma.$queryRaw<
     Array<{
@@ -246,7 +311,7 @@ async function sqlIntelligence(salonId: string) {
 
 async function main() {
   const memBefore = process.memoryUsage();
-  console.log(`Seeding ${CUSTOMERS} customers and ${VISITS} visits...`);
+  console.log(`Seeding ${CUSTOMERS} customers, ${VISITS} visits, ${TRANSACTIONS} transactions...`);
   const seedStart = performance.now();
   const { salonId, firstCustomerId, searchPhone } = await seed();
   const seedMs = performance.now() - seedStart;
@@ -348,6 +413,7 @@ async function main() {
   const windowGaps = await timeMs(() => sqlWindowGaps(salonId), 3);
   const legacy = await timeMs(() => legacyIntelligence(salonId), 3);
   const sql = await timeMs(() => sqlIntelligence(salonId), 3);
+  const revenue = await timeMs(() => sqlRevenue(salonId), 3);
 
   const outboxInsert = await timeMs(async () => {
     await prisma.outboxEvent.create({
@@ -377,6 +443,10 @@ async function main() {
       'intelligence visit load',
       `SELECT customer_id, visited_at FROM visits WHERE salon_id = '${salonId}' ORDER BY visited_at ASC`,
     ),
+    revenueByCustomer: await explain(
+      'completed revenue by customer',
+      `SELECT customer_id, COALESCE(SUM(amount) FILTER (WHERE status = 'COMPLETED'), 0) FROM transactions WHERE salon_id = '${salonId}' GROUP BY customer_id`,
+    ),
     outboxClaim: await explain(
       'outbox claim',
       `SELECT id FROM outbox_events WHERE (status = 'PENDING' AND available_at <= NOW()) OR (status = 'PROCESSING' AND locked_until < NOW()) ORDER BY created_at ASC LIMIT 10`,
@@ -386,7 +456,7 @@ async function main() {
   const memAfter = process.memoryUsage();
   const report = {
     measuredAt: new Date().toISOString(),
-    dataset: { customers: CUSTOMERS, visits: VISITS, seedMs },
+    dataset: { customers: CUSTOMERS, visits: VISITS, transactions: TRANSACTIONS, seedMs },
     memoryMb: {
       beforeRss: memBefore.rss / 1_048_576,
       afterRss: memAfter.rss / 1_048_576,
@@ -411,6 +481,7 @@ async function main() {
       sqlWindowGapAverage: { ...windowGaps.stats, rows: windowGaps.result.length },
       legacyLoadAllVisitRows: { ...legacy.stats, meta: legacy.result },
       sqlCteJoinCustomers: { ...sql.stats, meta: sql.result },
+      sqlCompletedRevenueByCustomer: { ...revenue.stats, rows: revenue.result.length },
     },
     outbox: { insert: outboxInsert.stats },
     plans,

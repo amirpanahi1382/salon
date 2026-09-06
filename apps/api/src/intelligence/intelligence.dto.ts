@@ -68,6 +68,38 @@ export class OpportunityDto {
   recommendedAction!: string;
 }
 
+export class CustomerRevenueDto {
+  @ApiProperty({ example: 'IRR' })
+  currency!: 'IRR';
+
+  @ApiProperty({ example: '1500000.00' })
+  totalRevenue!: string;
+
+  @ApiProperty()
+  transactionCount!: number;
+
+  @ApiProperty({ nullable: true, type: String })
+  averageRevenuePerTransaction!: string | null;
+
+  @ApiProperty({ nullable: true, type: String })
+  averageSpendPerVisit!: string | null;
+
+  @ApiProperty({ nullable: true, type: String })
+  lastRevenueAt!: string | null;
+
+  @ApiProperty()
+  revenueThisUtcMonth!: string;
+
+  @ApiProperty()
+  revenuePreviousUtcMonth!: string;
+
+  @ApiProperty({ nullable: true, enum: ['INCREASING', 'DECREASING', 'STABLE'] })
+  revenueTrend!: 'INCREASING' | 'DECREASING' | 'STABLE' | null;
+
+  @ApiProperty({ description: 'Reporting periods use UTC calendar boundaries, not salon-local time' })
+  reportingTime!: 'UTC';
+}
+
 export class CustomerIntelligenceResponseDto {
   @ApiProperty()
   customerId!: string;
@@ -87,11 +119,14 @@ export class CustomerIntelligenceResponseDto {
   @ApiProperty({ type: BehaviorMetricsDto })
   behavior!: BehaviorMetricsDto;
 
-  @ApiProperty({ isArray: true, enum: ['NEW_CUSTOMER', 'OVERDUE', 'FREQUENT'] })
+  @ApiProperty({ isArray: true, enum: ['NEW_CUSTOMER', 'OVERDUE', 'FREQUENT', 'REVENUE_DECLINING'] })
   signals!: IntelligenceSignal[];
 
   @ApiProperty({ type: [OpportunityDto] })
   opportunities!: OpportunityDto[];
+
+  @ApiProperty({ type: CustomerRevenueDto })
+  revenue!: CustomerRevenueDto;
 }
 
 export class IntelligenceSummaryResponseDto {
@@ -126,6 +161,30 @@ export class IntelligenceSummaryResponseDto {
     description: 'True when the salon has more customers than the intelligence scan cap',
   })
   hasMore!: boolean;
+
+  @ApiProperty({ example: 'IRR' })
+  currency!: 'IRR';
+
+  @ApiProperty()
+  totalRevenue!: string;
+
+  @ApiProperty()
+  completedTransactionCount!: number;
+
+  @ApiProperty()
+  revenueThisUtcMonth!: string;
+
+  @ApiProperty()
+  revenuePreviousUtcMonth!: string;
+
+  @ApiProperty({ nullable: true, enum: ['INCREASING', 'DECREASING', 'STABLE'] })
+  revenueTrend!: 'INCREASING' | 'DECREASING' | 'STABLE' | null;
+
+  @ApiProperty()
+  revenueDeclineOpportunities!: number;
+
+  @ApiProperty()
+  reportingTime!: 'UTC';
 }
 
 export class CustomerSegmentItemDto {

@@ -44,6 +44,14 @@ final salonRepositoryProvider = Provider<SalonRepository>((ref) {
   return SalonRepository(ref.watch(apiClientProvider));
 });
 
+final serviceRepositoryProvider = Provider<ServiceRepository>((ref) {
+  return ServiceRepository(ref.watch(apiClientProvider));
+});
+
+final transactionRepositoryProvider = Provider<TransactionRepository>((ref) {
+  return TransactionRepository(ref.watch(apiClientProvider));
+});
+
 enum AuthStatus { unknown, signedOut, signedIn }
 
 class AuthState {

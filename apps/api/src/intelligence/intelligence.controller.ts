@@ -27,7 +27,7 @@ export class IntelligenceController {
 
   @Get('summary')
   @ApiOperation({
-    summary: 'Counts of derived customer statuses and visit-based opportunities',
+    summary: 'Visit-based status counts plus completed-transaction revenue (UTC calendar)',
   })
   summary(@CurrentUser() user: AuthenticatedPrincipal) {
     return this.getSummary.execute(user);
@@ -55,7 +55,7 @@ export class IntelligenceController {
 
   @Get('customers/:customerId')
   @ApiOperation({
-    summary: 'Visit-based behavior, status, signals, and opportunities for one customer',
+    summary: 'Visit-based behavior plus completed-transaction revenue metrics for one customer',
   })
   customer(
     @CurrentUser() user: AuthenticatedPrincipal,
