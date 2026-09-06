@@ -64,11 +64,15 @@ class ApiClient {
     return _send(() => _dio.get<dynamic>(path, queryParameters: query));
   }
 
-  Future<List<int>> getBytes(String path) async {
+  Future<List<int>> getBytes(String path, {Map<String, dynamic>? query}) async {
     try {
       final response = await _dio.get<List<int>>(
         path,
-        options: Options(responseType: ResponseType.bytes),
+        queryParameters: query,
+        options: Options(
+          responseType: ResponseType.bytes,
+          receiveTimeout: const Duration(seconds: 90),
+        ),
       );
       return response.data ?? const <int>[];
     } on DioException catch (error) {

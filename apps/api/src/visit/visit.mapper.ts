@@ -1,4 +1,5 @@
 import type { VisitListItemDto, VisitResponseDto } from './visit.dto';
+import { saleFacts, type VisitSaleRow } from './visit-sale';
 
 export const VISIT_SELECT = {
   id: true,
@@ -27,10 +28,14 @@ export function toVisitListItem(visit: {
   visitedAt: Date;
   createdAt: Date;
   customer: { firstName: string; lastName: string };
+  transactions: VisitSaleRow[];
 }): VisitListItemDto {
+  const sale = saleFacts(visit.transactions);
   return {
     ...toVisitResponse(visit),
     firstName: visit.customer.firstName,
     lastName: visit.customer.lastName,
+    serviceName: sale.serviceName,
+    amountReceived: sale.amountReceived,
   };
 }

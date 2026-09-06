@@ -105,6 +105,38 @@ export class VisitListItemDto extends VisitResponseDto {
 
   @ApiProperty()
   lastName!: string;
+
+  @ApiPropertyOptional({ nullable: true, type: String, description: 'Service.name from the visit sale, if any' })
+  serviceName!: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    type: String,
+    description: 'COMPLETED transaction amount as a decimal string. Null when there is no sale or the sale is VOIDED.',
+  })
+  amountReceived!: string | null;
+}
+
+export class ExportVisitsQueryDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID('all')
+  customerId?: string;
+
+  @ApiPropertyOptional({ description: 'Calendar date YYYY-MM-DD interpreted as that UTC day' })
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  date?: string;
+
+  @ApiPropertyOptional({ description: 'Inclusive start of a visitedAt window (ISO-8601)' })
+  @IsOptional()
+  @IsISO8601()
+  from?: string;
+
+  @ApiPropertyOptional({ description: 'Exclusive end of a visitedAt window (ISO-8601)' })
+  @IsOptional()
+  @IsISO8601()
+  to?: string;
 }
 
 export class VisitListPageDto {

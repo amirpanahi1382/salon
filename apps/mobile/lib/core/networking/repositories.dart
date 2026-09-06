@@ -225,6 +225,14 @@ class VisitRepository {
     return _api.delete('/visits/$id');
   }
 
+  Future<List<int>> exportExcel({String? customerId, DateTime? day}) {
+    final query = <String, dynamic>{
+      'customerId': ?customerId,
+      if (day != null) ..._localDayWindow(day),
+    };
+    return _api.getBytes('/visits/export', query: query.isEmpty ? null : query);
+  }
+
   Map<String, String> _localDayWindow(DateTime day) {
     final start = DateTime(day.year, day.month, day.day);
     final end = start.add(const Duration(days: 1));

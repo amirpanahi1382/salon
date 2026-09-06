@@ -3,11 +3,13 @@ import {
   Controller,
   Delete,
   Get,
+  Header,
   Headers,
   HttpCode,
   Param,
   Post,
   Query,
+  StreamableFile,
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
@@ -21,9 +23,11 @@ import { requireIdempotencyKey } from '../infrastructure/http/idempotency';
 import { CompleteVisitWithSaleUseCase } from './complete-visit-with-sale.use-case';
 import { CreateVisitUseCase } from './create-visit.use-case';
 import { DeleteVisitUseCase } from './delete-visit.use-case';
+import { ExportVisitsUseCase } from './export-visits.use-case';
 import {
   CompleteVisitWithSaleDto,
   CreateVisitDto,
+  ExportVisitsQueryDto,
   ListCustomerVisitsQueryDto,
   ListVisitsQueryDto,
 } from './visit.dto';
@@ -31,6 +35,7 @@ import { GetVisitUseCase } from './get-visit.use-case';
 import { normalizeIdempotencyKey } from './idempotency';
 import { ListCustomerVisitsUseCase } from './list-customer-visits.use-case';
 import { ListVisitsUseCase } from './list-visits.use-case';
+import { VISIT_EXPORT_FILENAME, XLSX_CONTENT_TYPE } from './visit-export.constants';
 
 @ApiTags('visits')
 @ApiBearerAuth()
@@ -43,6 +48,7 @@ export class VisitController {
     private readonly getVisit: GetVisitUseCase,
     private readonly listVisits: ListVisitsUseCase,
     private readonly listCustomerVisits: ListCustomerVisitsUseCase,
+    private readonly exportVisits: ExportVisitsUseCase,
     private readonly deleteVisit: DeleteVisitUseCase,
   ) {}
 
@@ -93,6 +99,22 @@ export class VisitController {
   })
   list(@CurrentUser() user: AuthenticatedPrincipal, @Query() query: ListVisitsQueryDto) {
     return this.listVisits.execute(user, query);
+  }
+
+  @Get('visits/export')
+  @Roles('OWNER', 'MANAGER', 'STAFF')
+  @Header('Content-Type', XLSX_CONTENT_TYPE)
+  @Header('Content-Disposition', `attachment; filename="${VISIT_EXPORT_FILENAME}"`)
+  @ApiOperation({
+    summary:
+      'Export matching completed visit events as a Persian RTL Excel file. Uses the same tenant scope and filters as GET /visits. Maximum 5000 rows.',
+  })
+  async export(@CurrentUser() user: AuthenticatedPrincipal, @Query() query: ExportVisitsQueryDto) {
+    const buffer = await this.exportVisits.execute(user, query);
+    return new StreamableFile(buffer, {
+      type: XLSX_CONTENT_TYPE,
+      disposition: `attachment; filename="${VISIT_EXPORT_FILENAME}"`,
+    });
   }
 
   @Get('visits/:id')

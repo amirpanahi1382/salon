@@ -5,6 +5,7 @@ import { CompleteVisitWithSaleUseCase } from './complete-visit-with-sale.use-cas
 import { CreateVisitUseCase } from './create-visit.use-case';
 import { DeleteVisitUseCase } from './delete-visit.use-case';
 import { GetVisitUseCase } from './get-visit.use-case';
+import { ExportVisitsUseCase } from './export-visits.use-case';
 import { ListCustomerVisitsUseCase } from './list-customer-visits.use-case';
 import { ListVisitsUseCase } from './list-visits.use-case';
 import { VisitController } from './visit.controller';
@@ -20,6 +21,7 @@ import { VisitRepository } from './visit.repository';
     GetVisitUseCase,
     ListVisitsUseCase,
     ListCustomerVisitsUseCase,
+    ExportVisitsUseCase,
     DeleteVisitUseCase,
   ],
   exports: [VisitRepository],

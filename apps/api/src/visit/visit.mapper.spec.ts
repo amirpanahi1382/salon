@@ -22,8 +22,11 @@ describe('toVisitListItem', () => {
       visitedAt: new Date('2026-09-01T10:00:00.000Z'),
       createdAt: new Date('2026-09-01T10:01:00.000Z'),
       customer: { firstName: 'Sara', lastName: 'Ahmadi' },
+      transactions: [],
     });
     expect(response.firstName).toBe('Sara');
+    expect(response.serviceName).toBeNull();
+    expect(response.amountReceived).toBeNull();
     expect(response).not.toHaveProperty('salonId');
   });
 });

@@ -85,6 +85,8 @@ class Visit {
     required this.createdAt,
     this.firstName,
     this.lastName,
+    this.serviceName,
+    this.amountReceived,
   });
 
   final String id;
@@ -93,10 +95,25 @@ class Visit {
   final DateTime createdAt;
   final String? firstName;
   final String? lastName;
+  final String? serviceName;
+  final String? amountReceived;
 
   String get customerName {
     final name = '${firstName ?? ''} ${lastName ?? ''}'.trim();
     return name.isEmpty ? 'Customer' : name;
+  }
+
+  String get serviceLabel {
+    final name = serviceName?.trim() ?? '';
+    return name.isEmpty ? '—' : name;
+  }
+
+  String get amountLabel {
+    final amount = amountReceived?.trim() ?? '';
+    if (amount.isEmpty) {
+      return '—';
+    }
+    return '$amount IRR';
   }
 
   factory Visit.fromJson(Map<String, dynamic> json) {
@@ -107,6 +124,8 @@ class Visit {
       createdAt: DateTime.parse(json['createdAt'] as String),
       firstName: json['firstName'] as String?,
       lastName: json['lastName'] as String?,
+      serviceName: json['serviceName'] as String?,
+      amountReceived: json['amountReceived'] as String?,
     );
   }
 }

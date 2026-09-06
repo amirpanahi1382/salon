@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -20,6 +22,7 @@ class _VisitsScreenState extends ConsumerState<VisitsScreen> {
   List<Visit> _items = const [];
   Object? _error;
   bool _loading = true;
+  bool _exporting = false;
 
   bool get _canDelete =>
       ref.watch(authControllerProvider).user?.role != 'STAFF';
@@ -96,6 +99,42 @@ class _VisitsScreenState extends ConsumerState<VisitsScreen> {
     await _load();
   }
 
+  Future<void> _export() async {
+    if (_exporting) {
+      return;
+    }
+    setState(() => _exporting = true);
+    try {
+      final bytes = await ref
+          .read(visitRepositoryProvider)
+          .exportExcel(customerId: _customer?.id, day: _day);
+      if (!mounted) {
+        return;
+      }
+      final saved = await ref.read(visitExcelSaverProvider)(
+        bytes: Uint8List.fromList(bytes),
+        fileName: 'visits.xlsx',
+      );
+      if (!mounted || saved == null) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text(AppStrings.exportExcelSaved)),
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(friendlyError(error))));
+    } finally {
+      if (mounted) {
+        setState(() => _exporting = false);
+      }
+    }
+  }
+
   Future<void> _delete(Visit visit) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -152,7 +191,21 @@ class _VisitsScreenState extends ConsumerState<VisitsScreen> {
   Widget build(BuildContext context) {
     final dateFormat = DateFormat.yMMMd().add_jm();
     return Scaffold(
-      appBar: AppBar(title: const Text(AppStrings.visits)),
+      appBar: AppBar(
+        title: const Text(AppStrings.visits),
+        actions: [
+          TextButton(
+            onPressed: _exporting ? null : _export,
+            child: _exporting
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text(AppStrings.exportExcel),
+          ),
+        ],
+      ),
       body: Column(
         children: [
           Padding(
@@ -217,8 +270,9 @@ class _VisitsScreenState extends ConsumerState<VisitsScreen> {
                               final visit = _items[index];
                               return ListTile(
                                 title: Text(visit.customerName),
+                                isThreeLine: true,
                                 subtitle: Text(
-                                  dateFormat.format(visit.visitedAt.toLocal()),
+                                  '${visit.serviceLabel}\n${visit.amountLabel}\n${dateFormat.format(visit.visitedAt.toLocal())}',
                                 ),
                                 trailing: _canDelete
                                     ? IconButton(

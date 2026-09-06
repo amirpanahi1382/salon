@@ -258,6 +258,28 @@ class FakeVisitListRepository extends VisitRepository {
     items = items.where((item) => item.id != id).toList();
   }
 
+  int exportCalls = 0;
+  String? lastExportCustomerId;
+  DateTime? lastExportDay;
+  Completer<void>? exportGate;
+  Object? exportError;
+  List<int> exportBytes = const [1, 2, 3];
+
+  @override
+  Future<List<int>> exportExcel({String? customerId, DateTime? day}) async {
+    exportCalls += 1;
+    lastExportCustomerId = customerId;
+    lastExportDay = day;
+    final pending = exportGate;
+    if (pending != null) {
+      await pending.future;
+    }
+    if (exportError != null) {
+      throw exportError!;
+    }
+    return exportBytes;
+  }
+
   String? lastServiceId;
   String? lastAmount;
   int saveCalls = 0;
@@ -783,6 +805,175 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.byTooltip('Delete visit'), findsNothing);
+  });
+
+  testWidgets('visit rows show service and amount received', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          visitRepositoryProvider.overrideWithValue(
+            FakeVisitListRepository(
+              items: [
+                Visit(
+                  id: 'v-sale',
+                  customerId: 'c1',
+                  firstName: 'Sara',
+                  lastName: 'Ahmadi',
+                  visitedAt: DateTime.now(),
+                  createdAt: DateTime.utc(2026, 1, 1),
+                  serviceName: 'Hair Service',
+                  amountReceived: '8000000.00',
+                ),
+                Visit(
+                  id: 'v-only',
+                  customerId: 'c2',
+                  firstName: 'Maryam',
+                  lastName: 'Karimi',
+                  visitedAt: DateTime.now(),
+                  createdAt: DateTime.utc(2026, 1, 1),
+                ),
+              ],
+            ),
+          ),
+          customerRepositoryProvider.overrideWithValue(
+            FakeCustomerRepository(items: [_customer()]),
+          ),
+          authControllerProvider.overrideWith(_SignedInAuth.new),
+        ],
+        child: const MaterialApp(home: VisitsScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Hair Service'), findsOneWidget);
+    expect(find.textContaining('8000000.00 IRR'), findsOneWidget);
+    expect(find.textContaining('—'), findsWidgets);
+    expect(find.text('خروجی اکسل'), findsOneWidget);
+  });
+
+  testWidgets('export uses current filters and blocks duplicate taps', (
+    tester,
+  ) async {
+    final gate = Completer<void>();
+    final visits = FakeVisitListRepository(
+      items: [
+        Visit(
+          id: 'v1',
+          customerId: 'c1',
+          firstName: 'Sara',
+          lastName: 'Ahmadi',
+          visitedAt: DateTime.now(),
+          createdAt: DateTime.utc(2026, 1, 1),
+        ),
+      ],
+    )..exportGate = gate;
+    String? savedName;
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          visitRepositoryProvider.overrideWithValue(visits),
+          customerRepositoryProvider.overrideWithValue(
+            FakeCustomerRepository(items: [_customer()]),
+          ),
+          visitExcelSaverProvider.overrideWithValue(({
+            required bytes,
+            required fileName,
+          }) async {
+            savedName = fileName;
+            return Uri.parse('file:///visits.xlsx');
+          }),
+          authControllerProvider.overrideWith(_SignedInAuth.new),
+        ],
+        child: const MaterialApp(home: VisitsScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('خروجی اکسل'));
+    await tester.pump();
+    expect(visits.exportCalls, 1);
+    expect(visits.lastExportCustomerId, isNull);
+    expect(visits.lastExportDay, isNotNull);
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    await tester.tap(find.byType(CircularProgressIndicator));
+    await tester.pump();
+    expect(visits.exportCalls, 1);
+    gate.complete();
+    await tester.pumpAndSettle();
+    expect(savedName, 'visits.xlsx');
+    expect(find.text('Excel file saved.'), findsOneWidget);
+  });
+
+  testWidgets('export passes the selected customer filter to the backend', (
+    tester,
+  ) async {
+    final visits = FakeVisitListRepository(
+      items: [
+        Visit(
+          id: 'v1',
+          customerId: 'c1',
+          firstName: 'Sara',
+          lastName: 'Ahmadi',
+          visitedAt: DateTime.now(),
+          createdAt: DateTime.utc(2026, 1, 1),
+        ),
+      ],
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          visitRepositoryProvider.overrideWithValue(visits),
+          customerRepositoryProvider.overrideWithValue(
+            FakeCustomerRepository(items: [_customer()]),
+          ),
+          visitExcelSaverProvider.overrideWithValue(({
+            required bytes,
+            required fileName,
+          }) async {
+            return Uri.parse('file:///visits.xlsx');
+          }),
+          authControllerProvider.overrideWith(_SignedInAuth.new),
+        ],
+        child: const MaterialApp(home: VisitsScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Clear filters'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('All customers'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Sara Ahmadi').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('خروجی اکسل'));
+    await tester.pumpAndSettle();
+    expect(visits.lastExportCustomerId, 'c1');
+    expect(visits.lastExportDay, isNull);
+  });
+
+  testWidgets('export error is shown without a second in-flight request', (
+    tester,
+  ) async {
+    final visits = FakeVisitListRepository()
+      ..exportError = const ApiException(
+        statusCode: 500,
+        code: 'HTTP_ERROR',
+        message: 'Export failed',
+      );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          visitRepositoryProvider.overrideWithValue(visits),
+          customerRepositoryProvider.overrideWithValue(
+            FakeCustomerRepository(items: [_customer()]),
+          ),
+          authControllerProvider.overrideWith(_SignedInAuth.new),
+        ],
+        child: const MaterialApp(home: VisitsScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('خروجی اکسل'));
+    await tester.pumpAndSettle();
+    expect(visits.exportCalls, 1);
+    expect(find.text('Export failed'), findsOneWidget);
   });
 
   testWidgets('staff does not see customer or visit delete on detail', (

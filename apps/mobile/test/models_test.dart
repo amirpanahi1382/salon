@@ -112,6 +112,35 @@ void main() {
     expect(page.hasMore, isFalse);
   });
 
+  test('parses enriched visit list facts', () {
+    final visit = Visit.fromJson({
+      'id': 'v1',
+      'customerId': 'c1',
+      'visitedAt': '2026-08-31T10:00:00.000Z',
+      'createdAt': '2026-08-31T10:01:00.000Z',
+      'firstName': 'Maryam',
+      'lastName': 'Ahmadi',
+      'serviceName': 'Hair Service',
+      'amountReceived': '8000000.00',
+    });
+    expect(visit.customerName, 'Maryam Ahmadi');
+    expect(visit.serviceLabel, 'Hair Service');
+    expect(visit.amountLabel, '8000000.00 IRR');
+
+    final visitOnly = Visit.fromJson({
+      'id': 'v2',
+      'customerId': 'c1',
+      'visitedAt': '2026-08-01T10:00:00.000Z',
+      'createdAt': '2026-08-01T10:01:00.000Z',
+      'firstName': 'Maryam',
+      'lastName': 'Ahmadi',
+      'serviceName': null,
+      'amountReceived': null,
+    });
+    expect(visitOnly.serviceLabel, '—');
+    expect(visitOnly.amountLabel, '—');
+  });
+
   test('auth me uses userId from GET /auth/me', () {
     final user = AuthUser.fromMeJson({
       'userId': 'u1',

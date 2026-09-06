@@ -5,6 +5,7 @@ import '../networking/api_client.dart';
 import '../networking/repositories.dart';
 import '../storage/session_store.dart';
 import '../../shared/models/models.dart';
+import '../../shared/platform/excel_file_saver.dart';
 
 final apiConfigProvider = Provider<ApiConfig>(
   (ref) => ApiConfig.fromEnvironment(),
@@ -35,6 +36,10 @@ final customerRepositoryProvider = Provider<CustomerRepository>((ref) {
 final visitRepositoryProvider = Provider<VisitRepository>((ref) {
   return VisitRepository(ref.watch(apiClientProvider));
 });
+
+final visitExcelSaverProvider = Provider<ExcelFileSaver>(
+  (ref) => saveExcelFile,
+);
 
 final intelligenceRepositoryProvider = Provider<IntelligenceRepository>((ref) {
   return IntelligenceRepository(ref.watch(apiClientProvider));

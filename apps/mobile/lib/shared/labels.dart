@@ -38,6 +38,8 @@ class AppStrings {
   static const allDates = 'All dates';
   static const clearFilters = 'Clear filters';
   static const visitCountLabel = 'visits';
+  static const exportExcel = 'خروجی اکسل';
+  static const exportExcelSaved = 'Excel file saved.';
   static const recommended = 'Recommended';
   static const recommendationNote =
       'This is a recommendation. Messaging is not available yet.';
