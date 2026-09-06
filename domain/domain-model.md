@@ -187,6 +187,8 @@ Customer
 
 The MVP should treat the phone number as an important customer identifier.
 
+Customer phone numbers must be exactly 11 digits and start with `09` (example: `09121111111`). Manual create and Excel import use this same rule. Alternative representations are rejected.
+
 However:
 
 > Phone number uniqueness is scoped to a salon unless a future business decision explicitly introduces a global customer identity.
@@ -205,6 +207,8 @@ phoneNumber
 ```
 
 This prevents different salons from accidentally sharing the same customer record.
+
+OWNER and MANAGER may hard-delete a customer in their salon. That also deletes the customer's completed visits. It does not delete audit logs. STAFF cannot delete customers.
 
 ---
 

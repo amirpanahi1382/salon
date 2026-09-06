@@ -1,4 +1,4 @@
-import type { VisitResponseDto } from './visit.dto';
+import type { VisitListItemDto, VisitResponseDto } from './visit.dto';
 
 export const VISIT_SELECT = {
   id: true,
@@ -18,5 +18,19 @@ export function toVisitResponse(visit: {
     customerId: visit.customerId,
     visitedAt: visit.visitedAt.toISOString(),
     createdAt: visit.createdAt.toISOString(),
+  };
+}
+
+export function toVisitListItem(visit: {
+  id: string;
+  customerId: string;
+  visitedAt: Date;
+  createdAt: Date;
+  customer: { firstName: string; lastName: string };
+}): VisitListItemDto {
+  return {
+    ...toVisitResponse(visit),
+    firstName: visit.customer.firstName,
+    lastName: visit.customer.lastName,
   };
 }

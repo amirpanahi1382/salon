@@ -5,6 +5,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../infrastructure/auth/current-user.decorator';
 import { Roles } from '../infrastructure/auth/roles.decorator';
 import { RolesGuard } from '../infrastructure/auth/roles.guard';
+import { UuidParam } from '../infrastructure/http/uuid-param';
 import { GetCustomerIntelligenceUseCase } from './get-customer-intelligence.use-case';
 import { GetIntelligenceSummaryUseCase } from './get-intelligence-summary.use-case';
 import { IntelligenceQueryDto } from './intelligence.dto';
@@ -58,7 +59,7 @@ export class IntelligenceController {
   })
   customer(
     @CurrentUser() user: AuthenticatedPrincipal,
-    @Param('customerId') customerId: string,
+    @Param('customerId', UuidParam) customerId: string,
   ) {
     return this.getCustomerIntelligence.execute(user, customerId);
   }

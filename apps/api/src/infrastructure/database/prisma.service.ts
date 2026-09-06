@@ -7,7 +7,10 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
   readonly client: PrismaClient;
 
   constructor(config: AppConfigService) {
-    this.client = createPrismaClient(config.values.DATABASE_URL);
+    this.client = createPrismaClient(config.values.DATABASE_URL, {
+      connectionLimit: config.values.DATABASE_CONNECTION_LIMIT,
+      poolTimeoutSeconds: config.values.DATABASE_POOL_TIMEOUT_SECONDS,
+    });
   }
 
   async onModuleInit(): Promise<void> {

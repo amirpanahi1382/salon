@@ -5,6 +5,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../infrastructure/auth/current-user.decorator';
 import { Roles } from '../infrastructure/auth/roles.decorator';
 import { RolesGuard } from '../infrastructure/auth/roles.guard';
+import { UuidParam } from '../infrastructure/http/uuid-param';
 import { ChangeUserRoleUseCase } from './change-user-role.use-case';
 import { ChangeUserStatusUseCase } from './change-user-status.use-case';
 import { CreateSalonUserUseCase } from './create-salon-user.use-case';
@@ -44,7 +45,7 @@ export class UserController {
   @ApiOperation({ summary: 'Get a user in the authenticated salon' })
   getById(
     @CurrentUser() user: AuthenticatedPrincipal,
-    @Param('id') id: string,
+    @Param('id', UuidParam) id: string,
   ) {
     return this.getSalonUser.execute(user, id);
   }
@@ -54,7 +55,7 @@ export class UserController {
   @ApiOperation({ summary: 'Change a salon user role' })
   updateRole(
     @CurrentUser() user: AuthenticatedPrincipal,
-    @Param('id') id: string,
+    @Param('id', UuidParam) id: string,
     @Body() body: ChangeUserRoleDto,
   ) {
     return this.changeUserRole.execute(user, id, body);
@@ -65,7 +66,7 @@ export class UserController {
   @ApiOperation({ summary: 'Activate or deactivate a salon user' })
   updateStatus(
     @CurrentUser() user: AuthenticatedPrincipal,
-    @Param('id') id: string,
+    @Param('id', UuidParam) id: string,
     @Body() body: ChangeUserStatusDto,
   ) {
     return this.changeUserStatus.execute(user, id, body);

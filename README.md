@@ -52,12 +52,15 @@ Worker (no HTTP port):
 pnpm dev:worker
 ```
 
-OpenAPI UI: `http://localhost:3000/docs`
+OpenAPI UI: `http://localhost:3000/docs` (disabled in production unless `SWAGGER_ENABLED=true`)
 
 Health:
 
-- `GET /health` — process liveness
-- `GET /health/ready` — PostgreSQL, Redis, MinIO
+- `GET /health` — process liveness (no dependency checks)
+- `GET /health/ready` — PostgreSQL only; HTTP 503 if down or shutting down
+- `GET /metrics` — Prometheus text (low-cardinality HTTP + outbox gauges)
+
+Operational detail: `architecture/operations.md`.
 
 ## Authentication
 
@@ -81,9 +84,12 @@ POST /customers
 GET /customers
 GET /customers/:id
 PATCH /customers/:id
+DELETE /customers/:id
 
-POST /visits
+GET /visits
 GET /visits/:id
+POST /visits
+DELETE /visits/:id
 GET /customers/:customerId/visits
 
 GET /intelligence/summary
@@ -95,5 +101,7 @@ GET /intelligence/customers/:customerId
 A **Visit** is a completed historical salon interaction. It is not a booking, appointment, or calendar event.
 
 **Intelligence** is derived from customer + completed visit history. It is not stored as a competing source of truth. Statuses: `NEW`, `ACTIVE`, `RETURNING`, `AT_RISK`, `INACTIVE`. Opportunities in this phase are `REACTIVATION` (repeat visitors who are overdue) and `CUSTOMER_RETURN` (single-visit overdue). Spend-based and cross-sell signals wait for transactions and services.
+
+`DELETE /customers/:id` (OWNER/MANAGER) hard-deletes the customer and that customer's completed visits in one transaction. Audit logs are kept. `DELETE /visits/:id` (OWNER/MANAGER) removes one completed visit. `GET /visits` lists salon visits newest first (limit 200) and accepts `customerId`, `date=YYYY-MM-DD` (UTC day), or `from`/`to` ISO instants. STAFF can create and read visits but cannot delete customers or visits.
 
 Tenant identity is always taken from the authenticated user. `salonId` in a request body is ignored and rejected when unexpected.

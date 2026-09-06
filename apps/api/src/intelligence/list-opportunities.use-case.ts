@@ -8,7 +8,7 @@ export class ListOpportunitiesUseCase {
   constructor(private readonly intelligence: IntelligenceQueryService) {}
 
   async execute(principal: AuthenticatedPrincipal, type?: OpportunityType) {
-    const snapshots = await this.intelligence.loadSalon(principal.tenantId);
+    const { snapshots, truncated } = await this.intelligence.loadSalon(principal.tenantId);
     const opportunities: Array<{
       daysSinceLastVisit: number;
       dto: ReturnType<typeof toOpportunityDto>;
@@ -31,8 +31,11 @@ export class ListOpportunitiesUseCase {
       }
     }
 
-    return opportunities
-      .sort((a, b) => b.daysSinceLastVisit - a.daysSinceLastVisit)
-      .map((item) => item.dto);
+    return {
+      items: opportunities
+        .sort((a, b) => b.daysSinceLastVisit - a.daysSinceLastVisit)
+        .map((item) => item.dto),
+      hasMore: truncated,
+    };
   }
 }

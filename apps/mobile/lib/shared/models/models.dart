@@ -83,12 +83,21 @@ class Visit {
     required this.customerId,
     required this.visitedAt,
     required this.createdAt,
+    this.firstName,
+    this.lastName,
   });
 
   final String id;
   final String customerId;
   final DateTime visitedAt;
   final DateTime createdAt;
+  final String? firstName;
+  final String? lastName;
+
+  String get customerName {
+    final name = '${firstName ?? ''} ${lastName ?? ''}'.trim();
+    return name.isEmpty ? 'Customer' : name;
+  }
 
   factory Visit.fromJson(Map<String, dynamic> json) {
     return Visit(
@@ -96,6 +105,8 @@ class Visit {
       customerId: json['customerId'] as String,
       visitedAt: DateTime.parse(json['visitedAt'] as String),
       createdAt: DateTime.parse(json['createdAt'] as String),
+      firstName: json['firstName'] as String?,
+      lastName: json['lastName'] as String?,
     );
   }
 }
@@ -274,4 +285,77 @@ DateTime? _parseDate(Object? value) {
     return null;
   }
   return DateTime.tryParse(value);
+}
+
+List<T> parseItemList<T>(
+  dynamic data,
+  T Function(Map<String, dynamic> json) map,
+) {
+  final raw = data is Map<String, dynamic> ? data['items'] : data;
+  if (raw is! List) {
+    return const [];
+  }
+  return raw.whereType<Map<String, dynamic>>().map(map).toList();
+}
+
+class CustomerImportRowResult {
+  const CustomerImportRowResult({
+    required this.row,
+    required this.status,
+    this.errors = const [],
+  });
+
+  final int row;
+  final String status;
+  final List<String> errors;
+
+  factory CustomerImportRowResult.fromJson(Map<String, dynamic> json) {
+    return CustomerImportRowResult(
+      row: json['row'] as int,
+      status: json['status'] as String,
+      errors: (json['errors'] as List<dynamic>? ?? [])
+          .map((item) => item.toString())
+          .toList(),
+    );
+  }
+
+  bool get isImported => status == 'IMPORTED';
+  bool get isSkipped =>
+      status == 'ALREADY_EXISTS' || status == 'DUPLICATE_IN_FILE';
+  bool get isFailed => status == 'INVALID';
+}
+
+class CustomerImportResult {
+  const CustomerImportResult({
+    required this.totalRows,
+    required this.imported,
+    required this.skipped,
+    required this.failed,
+    required this.results,
+  });
+
+  final int totalRows;
+  final int imported;
+  final int skipped;
+  final int failed;
+  final List<CustomerImportRowResult> results;
+
+  factory CustomerImportResult.fromJson(Map<String, dynamic> json) {
+    return CustomerImportResult(
+      totalRows: json['totalRows'] as int,
+      imported: json['imported'] as int,
+      skipped: json['skipped'] as int,
+      failed: json['failed'] as int,
+      results: (json['results'] as List<dynamic>? ?? [])
+          .whereType<Map<String, dynamic>>()
+          .map(CustomerImportRowResult.fromJson)
+          .toList(),
+    );
+  }
+
+  List<CustomerImportRowResult> get skippedRows =>
+      results.where((row) => row.isSkipped).toList();
+
+  List<CustomerImportRowResult> get failedRows =>
+      results.where((row) => row.isFailed).toList();
 }

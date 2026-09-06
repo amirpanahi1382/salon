@@ -3,6 +3,7 @@ import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { HttpExceptionFilter } from '../src/infrastructure/http/http-exception.filter';
+import { listItems } from './list-page';
 
 const describeIfDb = process.env.DATABASE_URL ? describe : describe.skip;
 const password = 'correct-horse-battery';
@@ -160,13 +161,16 @@ describeIfDb('Intelligence (e2e)', () => {
       inactive: 1,
       reactivationOpportunities: 2,
       customerReturnOpportunities: 0,
+      hasMore: false,
     });
 
     const opportunities = await request(app.getHttpServer())
       .get('/intelligence/opportunities')
       .set('Authorization', `Bearer ${salonA.token}`)
       .expect(200);
-    const opportunityIds = opportunities.body.map((item: { customerId: string }) => item.customerId);
+    const opportunityIds = listItems<{ customerId: string }>(opportunities.body).map(
+      (item) => item.customerId,
+    );
     expect(opportunityIds).toEqual(expect.arrayContaining([atRiskCustomer, inactiveCustomer]));
     expect(opportunityIds).not.toContain(otherCustomer);
     expect(JSON.stringify(opportunities.body)).not.toMatch(/phone/i);
@@ -175,21 +179,21 @@ describeIfDb('Intelligence (e2e)', () => {
       .get('/intelligence/opportunities?type=REACTIVATION')
       .set('Authorization', `Bearer ${salonA.token}`)
       .expect(200);
-    expect(reactivationOnly.body).toHaveLength(2);
+    expect(listItems(reactivationOnly.body)).toHaveLength(2);
 
     const atRiskSegment = await request(app.getHttpServer())
       .get('/intelligence/segments?status=AT_RISK')
       .set('Authorization', `Bearer ${salonA.token}`)
       .expect(200);
-    expect(atRiskSegment.body).toHaveLength(1);
-    expect(atRiskSegment.body[0].customerId).toBe(atRiskCustomer);
+    expect(listItems(atRiskSegment.body)).toHaveLength(1);
+    expect(listItems<{ customerId: string }>(atRiskSegment.body)[0].customerId).toBe(atRiskCustomer);
 
     const salonBOpportunities = await request(app.getHttpServer())
       .get('/intelligence/opportunities')
       .set('Authorization', `Bearer ${salonB.token}`)
       .expect(200);
-    expect(salonBOpportunities.body).toHaveLength(1);
-    expect(salonBOpportunities.body[0].customerId).toBe(otherCustomer);
+    expect(listItems(salonBOpportunities.body)).toHaveLength(1);
+    expect(listItems<{ customerId: string }>(salonBOpportunities.body)[0].customerId).toBe(otherCustomer);
 
     const staffEmail = `staff-${Date.now()}@example.test`;
     await request(app.getHttpServer())

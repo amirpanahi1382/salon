@@ -4,6 +4,8 @@ Mobile client for the Beauty Salon Revenue Intelligence platform.
 
 It consumes the existing Phase 5 API. It is not a booking app.
 
+Customers can be added one by one or imported from Excel (Name and Phone columns). Phone numbers must be exactly 11 digits and start with 09, for example 09121111111.
+
 ```bash
 cd apps/mobile
 flutter pub get

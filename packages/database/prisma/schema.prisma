@@ -127,3 +127,21 @@ model AuditLog {
   @@index([tenantId, createdAt])
   @@map("audit_logs")
 }
+
+/// Client retry keys for selected writes. Scoped per tenant + actor + operation.
+/// Does not store request bodies, phones, or secrets.
+model IdempotencyRecord {
+  id           String   @id @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  actorId      String   @map("actor_id") @db.Uuid
+  operation    String
+  key          String
+  requestHash  String   @map("request_hash")
+  resourceType String   @map("resource_type")
+  resourceId   String   @map("resource_id") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@unique([tenantId, actorId, operation, key])
+  @@index([createdAt])
+  @@map("idempotency_records")
+}

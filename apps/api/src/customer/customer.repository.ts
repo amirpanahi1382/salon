@@ -3,8 +3,8 @@ import type { Prisma } from '@salon/database';
 import { PrismaService } from '../infrastructure/database/prisma.service';
 import { CUSTOMER_SELECT } from './customer.mapper';
 
-const LIST_LIMIT = 200;
-const INTELLIGENCE_CUSTOMER_CAP = 5000;
+export const CUSTOMER_LIST_LIMIT = 200;
+export const INTELLIGENCE_CUSTOMER_CAP = 5000;
 
 type CustomerDb = Prisma.TransactionClient | PrismaService['client'];
 
@@ -26,12 +26,22 @@ export class CustomerRepository {
     });
   }
 
+  findPhones(tenantId: string, phoneNumbers: string[], db: CustomerDb = this.prisma.client) {
+    if (phoneNumbers.length === 0) {
+      return Promise.resolve([]);
+    }
+    return db.customer.findMany({
+      where: { salonId: tenantId, phoneNumber: { in: phoneNumbers } },
+      select: { phoneNumber: true },
+    });
+  }
+
   listIdentity(tenantId: string) {
     return this.prisma.client.customer.findMany({
       where: { salonId: tenantId },
       select: { id: true, firstName: true, lastName: true },
       orderBy: { createdAt: 'desc' },
-      take: INTELLIGENCE_CUSTOMER_CAP,
+      take: INTELLIGENCE_CUSTOMER_CAP + 1,
     });
   }
 
@@ -52,7 +62,13 @@ export class CustomerRepository {
       },
       select: CUSTOMER_SELECT,
       orderBy: { createdAt: 'desc' as const },
-      take: LIST_LIMIT,
+      take: CUSTOMER_LIST_LIMIT + 1,
+    });
+  }
+
+  deleteById(tenantId: string, customerId: string, db: CustomerDb = this.prisma.client) {
+    return db.customer.deleteMany({
+      where: { id: customerId, salonId: tenantId },
     });
   }
 }

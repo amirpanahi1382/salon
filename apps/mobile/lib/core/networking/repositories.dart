@@ -1,3 +1,6 @@
+import 'package:dio/dio.dart';
+
+import '../../core/errors/api_exception.dart';
 import '../../core/networking/api_client.dart';
 import '../../core/storage/session_store.dart';
 import '../../shared/models/models.dart';
@@ -73,11 +76,8 @@ class CustomerRepository {
     final data = await _api.get(
       '/customers',
       query: query == null || query.trim().isEmpty ? null : {'q': query.trim()},
-    ) as List<dynamic>;
-    return data
-        .whereType<Map<String, dynamic>>()
-        .map(Customer.fromJson)
-        .toList();
+    );
+    return parseItemList(data, Customer.fromJson);
   }
 
   Future<Customer> getById(String id) async {
@@ -95,10 +95,29 @@ class CustomerRepository {
       data: {
         'firstName': firstName.trim(),
         'lastName': lastName.trim(),
-        'phoneNumber': phoneNumber.trim(),
+        'phoneNumber': phoneNumber,
       },
     ) as Map<String, dynamic>;
     return Customer.fromJson(data);
+  }
+
+  Future<CustomerImportResult> importFromExcel({
+    required List<int> bytes,
+    required String filename,
+  }) async {
+    final data =
+        await _api.postForm(
+              '/customers/import',
+              FormData.fromMap({
+                'file': MultipartFile.fromBytes(bytes, filename: filename),
+              }),
+            )
+            as Map<String, dynamic>;
+    return CustomerImportResult.fromJson(data);
+  }
+
+  Future<List<int>> downloadImportTemplate() {
+    return _api.getBytes('/customers/import/template');
   }
 
   Future<Customer> update({
@@ -112,10 +131,14 @@ class CustomerRepository {
       data: {
         if (firstName != null) 'firstName': firstName.trim(),
         if (lastName != null) 'lastName': lastName.trim(),
-        if (phoneNumber != null) 'phoneNumber': phoneNumber.trim(),
+        'phoneNumber': ?phoneNumber,
       },
     ) as Map<String, dynamic>;
     return Customer.fromJson(data);
+  }
+
+  Future<void> delete(String id) {
+    return _api.delete('/customers/$id');
   }
 }
 
@@ -125,23 +148,60 @@ class VisitRepository {
   final ApiClient _api;
 
   Future<List<Visit>> listForCustomer(String customerId) async {
-    final data =
-        await _api.get('/customers/$customerId/visits') as List<dynamic>;
-    return data.whereType<Map<String, dynamic>>().map(Visit.fromJson).toList();
+    final data = await _api.get('/customers/$customerId/visits');
+    return parseItemList(data, Visit.fromJson);
+  }
+
+  Future<List<Visit>> list({
+    String? customerId,
+    DateTime? day,
+  }) async {
+    final query = <String, dynamic>{
+      'customerId': ?customerId,
+      if (day != null) ..._localDayWindow(day),
+    };
+    final data = await _api.get(
+      '/visits',
+      query: query.isEmpty ? null : query,
+    );
+    return parseItemList(data, Visit.fromJson);
   }
 
   Future<Visit> record({
     required String customerId,
     required DateTime visitedAt,
+    required String idempotencyKey,
   }) async {
-    final data = await _api.post(
-      '/visits',
-      data: {
-        'customerId': customerId,
-        'visitedAt': visitedAt.toUtc().toIso8601String(),
-      },
-    ) as Map<String, dynamic>;
-    return Visit.fromJson(data);
+    Future<Visit> send() async {
+      final data = await _api.post(
+        '/visits',
+        data: {
+          'customerId': customerId,
+          'visitedAt': visitedAt.toUtc().toIso8601String(),
+        },
+        headers: {'Idempotency-Key': idempotencyKey},
+      ) as Map<String, dynamic>;
+      return Visit.fromJson(data);
+    }
+
+    try {
+      return await send();
+    } on NetworkException {
+      return send();
+    }
+  }
+
+  Future<void> delete(String id) {
+    return _api.delete('/visits/$id');
+  }
+
+  Map<String, String> _localDayWindow(DateTime day) {
+    final start = DateTime(day.year, day.month, day.day);
+    final end = start.add(const Duration(days: 1));
+    return {
+      'from': start.toUtc().toIso8601String(),
+      'to': end.toUtc().toIso8601String(),
+    };
   }
 }
 
@@ -160,11 +220,8 @@ class IntelligenceRepository {
     final data = await _api.get(
       '/intelligence/opportunities',
       query: type == null ? null : {'type': type},
-    ) as List<dynamic>;
-    return data
-        .whereType<Map<String, dynamic>>()
-        .map(Opportunity.fromJson)
-        .toList();
+    );
+    return parseItemList(data, Opportunity.fromJson);
   }
 
   Future<CustomerIntelligence> forCustomer(String customerId) async {

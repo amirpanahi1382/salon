@@ -330,4 +330,35 @@ describeIfDb('Salon and users (e2e)', () => {
       .send({ email: staffEmail, password })
       .expect(401);
   });
+
+  it('keeps at least one OWNER when two owners demote each other concurrently', async () => {
+    const ownerA = await registerOwner('owner-race');
+    const ownerBEmail = `owner-b-${Date.now()}@example.test`;
+    const created = await request(app.getHttpServer())
+      .post('/users')
+      .set('Authorization', `Bearer ${ownerA.token}`)
+      .send({ name: 'Second Owner', email: ownerBEmail, password, role: 'OWNER' })
+      .expect(201);
+    const ownerBToken = await login(ownerBEmail);
+
+    const [first, second] = await Promise.all([
+      request(app.getHttpServer())
+        .patch(`/users/${created.body.id}/role`)
+        .set('Authorization', `Bearer ${ownerA.token}`)
+        .send({ role: 'STAFF' }),
+      request(app.getHttpServer())
+        .patch(`/users/${ownerA.userId}/role`)
+        .set('Authorization', `Bearer ${ownerBToken}`)
+        .send({ role: 'STAFF' }),
+    ]);
+
+    expect([200, 403, 409].includes(first.status)).toBe(true);
+    expect([200, 403, 409].includes(second.status)).toBe(true);
+    expect(first.status === 200 || second.status === 200).toBe(true);
+
+    const owners = await prisma.client.user.count({
+      where: { salonId: ownerA.tenantId, role: 'OWNER', status: 'ACTIVE' },
+    });
+    expect(owners).toBeGreaterThanOrEqual(1);
+  });
 });

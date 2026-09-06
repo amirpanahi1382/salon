@@ -4,9 +4,11 @@ import {
   BusinessRuleError,
   ConflictError,
   createId,
+  CUSTOMER_PHONE_RULE_MESSAGE,
   isUsableCustomerPhone,
   normalizeCustomerPhone,
   NotFoundError,
+  sanitizeCustomerNamePart,
   ValidationError,
   type AuthenticatedPrincipal,
 } from '@salon/shared';
@@ -27,19 +29,29 @@ export class UpdateCustomerUseCase {
       throw new BusinessRuleError('No customer fields to update');
     }
 
-    const firstName = input.firstName !== undefined ? input.firstName.trim() : undefined;
-    const lastName = input.lastName !== undefined ? input.lastName.trim() : undefined;
+    let firstName: string | undefined;
+    if (input.firstName !== undefined) {
+      const sanitized = sanitizeCustomerNamePart(input.firstName);
+      if (!sanitized) {
+        throw new ValidationError('Customer first name is required');
+      }
+      firstName = sanitized;
+    }
+
+    let lastName: string | undefined;
+    if (input.lastName !== undefined) {
+      const sanitized = sanitizeCustomerNamePart(input.lastName);
+      if (sanitized === null) {
+        throw new ValidationError('Customer last name is invalid');
+      }
+      lastName = sanitized;
+    }
+
     const phoneNumber =
       input.phoneNumber !== undefined ? normalizeCustomerPhone(input.phoneNumber) : undefined;
 
-    if (firstName !== undefined && firstName.length === 0) {
-      throw new ValidationError('Customer first name is required');
-    }
-    if (lastName !== undefined && lastName.length === 0) {
-      throw new ValidationError('Customer last name is required');
-    }
     if (phoneNumber !== undefined && !isUsableCustomerPhone(phoneNumber)) {
-      throw new ValidationError('A valid phone number is required');
+      throw new ValidationError(CUSTOMER_PHONE_RULE_MESSAGE);
     }
 
     try {

@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { NotFoundError, type AuthenticatedPrincipal } from '@salon/shared';
 import { CustomerRepository } from '../customer/customer.repository';
-import { VisitRepository } from './visit.repository';
+import { toListPage } from '../infrastructure/http/list-page';
+import { VisitRepository, VISIT_LIST_LIMIT } from './visit.repository';
 import { toVisitResponse } from './visit.mapper';
 
 @Injectable()
@@ -18,6 +19,6 @@ export class ListCustomerVisitsUseCase {
     }
 
     const rows = await this.visits.listForCustomer(principal.tenantId, customer.id);
-    return rows.map(toVisitResponse);
+    return toListPage(rows.map(toVisitResponse), VISIT_LIST_LIMIT);
   }
 }

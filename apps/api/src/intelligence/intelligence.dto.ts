@@ -116,6 +116,11 @@ export class IntelligenceSummaryResponseDto {
 
   @ApiProperty()
   frequent!: number;
+
+  @ApiProperty({
+    description: 'True when the salon has more customers than the intelligence scan cap',
+  })
+  hasMore!: boolean;
 }
 
 export class CustomerSegmentItemDto {
@@ -139,4 +144,20 @@ export class CustomerSegmentItemDto {
 
   @ApiProperty()
   visitCount!: number;
+}
+
+export class OpportunityListPageDto {
+  @ApiProperty({ type: [OpportunityDto] })
+  items!: OpportunityDto[];
+
+  @ApiProperty()
+  hasMore!: boolean;
+}
+
+export class CustomerSegmentListPageDto {
+  @ApiProperty({ type: [CustomerSegmentItemDto] })
+  items!: CustomerSegmentItemDto[];
+
+  @ApiProperty()
+  hasMore!: boolean;
 }

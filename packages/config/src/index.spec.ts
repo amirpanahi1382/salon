@@ -1,4 +1,4 @@
-import { loadConfig } from './index';
+import { isSwaggerEnabled, loadConfig } from './index';
 
 describe('loadConfig', () => {
   const valid = {
@@ -30,5 +30,28 @@ describe('loadConfig', () => {
   it('fails fast when DATABASE_URL is missing', () => {
     const { DATABASE_URL: _, ...rest } = valid;
     expect(() => loadConfig(rest)).toThrow(/DATABASE_URL/);
+  });
+
+  it('enables Swagger by default outside production', () => {
+    expect(isSwaggerEnabled(loadConfig(valid))).toBe(true);
+    expect(
+      isSwaggerEnabled(loadConfig({ ...valid, NODE_ENV: 'production' })),
+    ).toBe(false);
+    expect(
+      isSwaggerEnabled(
+        loadConfig({ ...valid, NODE_ENV: 'production', SWAGGER_ENABLED: 'true' }),
+      ),
+    ).toBe(true);
+    expect(
+      isSwaggerEnabled(
+        loadConfig({ ...valid, NODE_ENV: 'development', SWAGGER_ENABLED: 'false' }),
+      ),
+    ).toBe(false);
+  });
+
+  it('accepts an explicit database pool size', () => {
+    const config = loadConfig({ ...valid, DATABASE_CONNECTION_LIMIT: '8' });
+    expect(config.DATABASE_CONNECTION_LIMIT).toBe(8);
+    expect(config.DATABASE_POOL_TIMEOUT_SECONDS).toBe(10);
   });
 });

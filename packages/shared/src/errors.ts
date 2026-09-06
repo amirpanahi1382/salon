@@ -6,6 +6,7 @@ export type AppErrorCode =
   | 'CONFLICT'
   | 'RATE_LIMITED'
   | 'BUSINESS_RULE'
+  | 'INFRASTRUCTURE_ERROR'
   | 'INTERNAL_ERROR';
 
 export class AppError extends Error {
@@ -66,5 +67,13 @@ export class BusinessRuleError extends AppError {
   constructor(message: string) {
     super('BUSINESS_RULE', message, 409);
     this.name = 'BusinessRuleError';
+  }
+}
+
+/** Dependency or outbound-call failure. Safe client message; details stay in logs. */
+export class InfrastructureError extends AppError {
+  constructor(message = 'A required service is temporarily unavailable') {
+    super('INFRASTRUCTURE_ERROR', message, 503);
+    this.name = 'InfrastructureError';
   }
 }

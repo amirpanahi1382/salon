@@ -12,6 +12,7 @@ class AppStrings {
   static const haveAccount = 'Already have an account? Sign in';
   static const dashboard = 'Today';
   static const customers = 'Customers';
+  static const visits = 'Visits';
   static const opportunities = 'Opportunities';
   static const profile = 'Profile';
   static const attentionQuestion = 'What should I pay attention to today?';
@@ -20,7 +21,23 @@ class AppStrings {
   static const noCustomers = 'No customers yet.';
   static const addFirstCustomer = 'Add a customer to start visit history.';
   static const noVisits = 'No completed visits yet.';
+  static const noVisitsToday = 'No visits recorded today.';
+  static const noMatchingVisits = 'No visits match these filters.';
   static const recordVisit = 'Record completed visit';
+  static const deleteCustomer = 'Delete customer';
+  static const deleteVisit = 'Delete visit';
+  static const cancel = 'Cancel';
+  static const delete = 'Delete';
+  static const deleteCustomerConfirm =
+      'This will permanently remove this customer and their recorded visit history.';
+  static const deleteVisitConfirm = 'Delete this completed visit?';
+  static const allCustomers = 'All customers';
+  static const today = 'Today';
+  static const yesterday = 'Yesterday';
+  static const chooseDate = 'Choose date';
+  static const allDates = 'All dates';
+  static const clearFilters = 'Clear filters';
+  static const visitCountLabel = 'visits';
   static const recommended = 'Recommended';
   static const recommendationNote =
       'This is a recommendation. Messaging is not available yet.';
@@ -30,9 +47,27 @@ class AppStrings {
   static const retry = 'Try again';
   static const searchCustomers = 'Search name or phone';
   static const addCustomer = 'Add customer';
+  static const customerCreated = 'Customer created successfully';
+  static const backToCustomers = 'Back to Customers';
+  static const importFromExcel = 'Import from Excel';
+  static const importCustomers = 'Import customers';
+  static const selectExcelFile = 'Select Excel file';
+  static const downloadTemplate = 'Download Excel template';
+  static const saveTemplate = 'Save Excel template';
+  static const importComplete = 'Import complete';
+  static const rowsProcessed = 'rows processed';
+  static const importedCount = 'imported';
+  static const skippedCount = 'skipped';
+  static const failedCount = 'failed';
+  static const skipped = 'Skipped';
+  static const failed = 'Failed';
+  static const row = 'Row';
+  static const done = 'Done';
   static const firstName = 'First name';
   static const lastName = 'Last name';
   static const phoneNumber = 'Phone number';
+  static const phoneHint =
+      'Exactly 11 digits starting with 09, for example 09121111111.';
   static const save = 'Save';
   static const editCustomer = 'Edit customer';
   static const visitDate = 'Completed visit date';
@@ -87,6 +122,21 @@ String signalLabel(String value) {
       return 'Inactive';
     default:
       return 'Signal';
+  }
+}
+
+String importStatusLabel(String value) {
+  switch (value) {
+    case 'IMPORTED':
+      return 'Imported';
+    case 'ALREADY_EXISTS':
+      return 'Already exists';
+    case 'DUPLICATE_IN_FILE':
+      return 'Duplicate in file';
+    case 'INVALID':
+      return 'Invalid row';
+    default:
+      return 'Skipped';
   }
 }
 

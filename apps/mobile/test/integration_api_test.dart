@@ -48,10 +48,12 @@ void main() {
       await visits.record(
         customerId: customer.id,
         visitedAt: DateTime.now().toUtc().subtract(const Duration(days: 87)),
+        idempotencyKey: 'flutter-int-visit-1-$stamp',
       );
       await visits.record(
         customerId: customer.id,
         visitedAt: DateTime.now().toUtc().subtract(const Duration(days: 52)),
+        idempotencyKey: 'flutter-int-visit-2-$stamp',
       );
       final intel = await intelligence.forCustomer(customer.id);
       expect(intel.status, 'AT_RISK');

@@ -127,9 +127,21 @@ createdAt
 updatedAt
 ```
 
+Customer phone numbers must be exactly 11 digits and start with `09`.
+
+Example:
+
+```text
+09121111111
+```
+
+The same rule applies to Excel import. Alternative formats such as `+98`, `0098`, spaces, hyphens, or numbers missing the leading zero are rejected and are not converted.
+
 Additional fields may be added only when there is a clear product reason.
 
 Do not create a large customer profile unnecessarily.
+
+OWNER and MANAGER may delete a customer. STAFF may not. Deletion is a hard delete of that customer and their completed visit records only, in one tenant-scoped transaction. Audit logs and outbox history are not deleted. There is no booking or appointment to cancel.
 
 ---
 
@@ -217,6 +229,8 @@ notes
 createdAt
 ```
 
+Completed visits can be listed for one customer (`GET /customers/:customerId/visits`) or for the salon (`GET /visits`, newest first, max 200). Filters: `customerId`, `date=YYYY-MM-DD` (UTC day), or `from`/`to` ISO instants. OWNER/MANAGER may delete a completed visit (`DELETE /visits/:id`). This is not cancelling a booking.
+
 ### Service
 
 ```text
@@ -259,37 +273,19 @@ or minor-unit integer representation where appropriate.
 
 Customer acquisition will often depend on existing salon data.
 
-Therefore the MVP should support a simple import mechanism.
+The current MVP supports **customer Excel import only** (not visits, services, or transactions).
 
-Initial import can be:
+- Endpoint: `POST /customers/import` (`multipart/form-data`, field `file`)
+- Template: `GET /customers/import/template`
+- Format: `.xlsx` with columns **Name** and **Phone** (case-insensitive headers)
+- Phone values must be the canonical 11-digit `09` format (example: `09121111111`). The import does not convert `+98`, `0098`, spaced, hyphenated, or numeric cells that lost a leading zero.
+- Limits: 2 MB, 5,000 data rows
+- Duplicate policy: unique `(salonId, phoneNumber)`. Existing customers are never overwritten. Duplicates in the file are skipped.
+- Authorization: same as customer create (`OWNER`, `MANAGER`, `STAFF`)
+- Tenant is taken from the JWT, never from the file
+- Result statuses: `IMPORTED`, `ALREADY_EXISTS`, `DUPLICATE_IN_FILE`, `INVALID`
 
-```text
-CSV / Excel
-```
-
-The import process should support at minimum:
-
-- Customer name
-- Phone number
-- Visit date
-- Service
-- Transaction amount
-
-The system should validate imported data before committing it.
-
-Import failures should be understandable to a non-technical salon user.
-
-Example:
-
-```text
-Import completed
-
-1,842 customers imported
-5,421 transactions imported
-37 rows require correction
-```
-
-The import system should be designed so additional formats can be added later.
+Visit and transaction import are out of scope for this MVP.
 
 ---
 

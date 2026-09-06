@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:salon_mobile/core/errors/api_exception.dart';
 import 'package:salon_mobile/core/networking/api_client.dart';
 import 'package:salon_mobile/core/networking/repositories.dart';
@@ -10,6 +11,8 @@ import 'package:salon_mobile/features/auth/auth_screens.dart';
 import 'package:salon_mobile/features/customers/customer_screens.dart';
 import 'package:salon_mobile/features/dashboard/dashboard_screen.dart';
 import 'package:salon_mobile/features/opportunities/opportunities_screen.dart';
+import 'package:salon_mobile/features/shell/app_shell.dart';
+import 'package:salon_mobile/features/visits/visits_screen.dart';
 import 'package:salon_mobile/shared/models/models.dart';
 
 ApiClient _client() {
@@ -120,6 +123,14 @@ class FakeCustomerRepository extends CustomerRepository {
   }
 
   @override
+  Future<void> delete(String id) async {
+    if (error != null) {
+      throw error!;
+    }
+    items = items.where((item) => item.id != id).toList();
+  }
+
+  @override
   Future<Customer> update({
     required String id,
     String? firstName,
@@ -138,13 +149,37 @@ class FakeCustomerRepository extends CustomerRepository {
     required String lastName,
     required String phoneNumber,
   }) async {
-    return Customer(
-      id: 'new',
+    if (error != null) {
+      throw error!;
+    }
+    final customer = Customer(
+      id: 'new-${items.length}',
       firstName: firstName,
       lastName: lastName,
       phoneNumber: phoneNumber,
       createdAt: DateTime.utc(2026, 1, 1),
       updatedAt: DateTime.utc(2026, 1, 1),
+    );
+    items = [...items, customer];
+    return customer;
+  }
+
+  @override
+  Future<CustomerImportResult> importFromExcel({
+    required List<int> bytes,
+    required String filename,
+  }) async {
+    if (error != null) {
+      throw error!;
+    }
+    return const CustomerImportResult(
+      totalRows: 1,
+      imported: 1,
+      skipped: 0,
+      failed: 0,
+      results: [
+        CustomerImportRowResult(row: 2, status: 'IMPORTED'),
+      ],
     );
   }
 }
@@ -153,9 +188,45 @@ class FakeVisitListRepository extends VisitRepository {
   FakeVisitListRepository({this.items = const []}) : super(_client());
 
   List<Visit> items;
+  Object? error;
 
   @override
-  Future<List<Visit>> listForCustomer(String customerId) async => items;
+  Future<List<Visit>> listForCustomer(String customerId) async {
+    if (error != null) {
+      throw error!;
+    }
+    return items.where((item) => item.customerId == customerId).toList();
+  }
+
+  @override
+  Future<List<Visit>> list({String? customerId, DateTime? day}) async {
+    if (error != null) {
+      throw error!;
+    }
+    var result = items;
+    if (customerId != null) {
+      result = result.where((item) => item.customerId == customerId).toList();
+    }
+    if (day != null) {
+      final start = DateTime(day.year, day.month, day.day);
+      final end = start.add(const Duration(days: 1));
+      result = result.where((item) {
+        final local = item.visitedAt.toLocal();
+        return !local.isBefore(start) && local.isBefore(end);
+      }).toList();
+    }
+    final sorted = [...result]
+      ..sort((a, b) => b.visitedAt.compareTo(a.visitedAt));
+    return sorted;
+  }
+
+  @override
+  Future<void> delete(String id) async {
+    if (error != null) {
+      throw error!;
+    }
+    items = items.where((item) => item.id != id).toList();
+  }
 }
 
 Customer _customer() {
@@ -296,6 +367,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('No customers yet.'), findsOneWidget);
+    expect(find.text('Import from Excel'), findsWidgets);
   });
 
   testWidgets('customer list renders names', (tester) async {
@@ -424,6 +496,336 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('You do not have permission to do that.'), findsOneWidget);
   });
+
+  testWidgets('customer create rejects invalid phone before submit', (
+    tester,
+  ) async {
+    final repo = FakeCustomerRepository();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [customerRepositoryProvider.overrideWithValue(repo)],
+        child: const MaterialApp(home: CustomerFormScreen()),
+      ),
+    );
+    await tester.enterText(find.byType(TextField).at(0), 'Sara');
+    await tester.enterText(find.byType(TextField).at(1), 'Ahmadi');
+    await tester.enterText(find.byType(TextField).at(2), '+989121111111');
+    await tester.tap(find.text('Save'));
+    await tester.pump();
+    expect(
+      find.text('Phone number must be exactly 11 digits and start with 09.'),
+      findsWidgets,
+    );
+    expect(repo.items, isEmpty);
+  });
+
+  testWidgets('customer create shows a way back and refreshes the list', (
+    tester,
+  ) async {
+    final repo = FakeCustomerRepository();
+    final router = GoRouter(
+      initialLocation: '/customers',
+      routes: [
+        GoRoute(
+          path: '/customers',
+          builder: (context, state) => const CustomersScreen(),
+        ),
+        GoRoute(
+          path: '/customers/new',
+          builder: (context, state) => const CustomerFormScreen(),
+        ),
+      ],
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [customerRepositoryProvider.overrideWithValue(repo)],
+        child: MaterialApp.router(routerConfig: router),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('No customers yet.'), findsOneWidget);
+
+    await tester.tap(find.text('Add customer').last);
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).at(0), 'سارا');
+    await tester.enterText(find.byType(TextField).at(1), 'احمدی');
+    await tester.enterText(find.byType(TextField).at(2), '09121111111');
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    expect(find.text('Customer created successfully'), findsOneWidget);
+    expect(find.text('Back to Customers'), findsOneWidget);
+
+    await tester.tap(find.text('Back to Customers'));
+    await tester.pumpAndSettle();
+    expect(find.text('سارا احمدی'), findsOneWidget);
+  });
+
+  testWidgets('bottom navigation includes Visits', (tester) async {
+    final router = GoRouter(
+      initialLocation: '/',
+      routes: [
+        ShellRoute(
+          builder: (context, state, child) => AppShell(child: child),
+          routes: [
+            GoRoute(
+              path: '/',
+              builder: (context, state) => const SizedBox.shrink(),
+            ),
+            GoRoute(
+              path: '/customers',
+              builder: (context, state) => const SizedBox.shrink(),
+            ),
+            GoRoute(
+              path: '/visits',
+              builder: (context, state) => const Text('Visits page'),
+            ),
+            GoRoute(
+              path: '/opportunities',
+              builder: (context, state) => const SizedBox.shrink(),
+            ),
+            GoRoute(
+              path: '/profile',
+              builder: (context, state) => const SizedBox.shrink(),
+            ),
+          ],
+        ),
+      ],
+    );
+    await tester.pumpWidget(MaterialApp.router(routerConfig: router));
+    expect(find.text('Visits'), findsOneWidget);
+    await tester.tap(find.text('Visits'));
+    await tester.pumpAndSettle();
+    expect(find.text('Visits page'), findsOneWidget);
+  });
+
+  testWidgets('visits screen shows today empty state and filters', (
+    tester,
+  ) async {
+    final now = DateTime.now();
+    final todayVisit = Visit(
+      id: 'v-today',
+      customerId: 'c1',
+      firstName: 'Sara',
+      lastName: 'Ahmadi',
+      visitedAt: DateTime(now.year, now.month, now.day, 14, 30),
+      createdAt: DateTime.utc(2026, 1, 1),
+    );
+    final yesterdayVisit = Visit(
+      id: 'v-yday',
+      customerId: 'c2',
+      firstName: 'Maryam',
+      lastName: 'Karimi',
+      visitedAt: DateTime(now.year, now.month, now.day, 11).subtract(
+        const Duration(days: 1),
+      ),
+      createdAt: DateTime.utc(2026, 1, 1),
+    );
+    final visits = FakeVisitListRepository(items: [todayVisit, yesterdayVisit]);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          visitRepositoryProvider.overrideWithValue(visits),
+          customerRepositoryProvider.overrideWithValue(
+            FakeCustomerRepository(items: [_customer()]),
+          ),
+          authControllerProvider.overrideWith(_SignedInAuth.new),
+        ],
+        child: const MaterialApp(home: VisitsScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Sara Ahmadi'), findsOneWidget);
+    expect(find.text('Maryam Karimi'), findsNothing);
+    expect(find.byTooltip('Delete visit'), findsOneWidget);
+
+    await tester.tap(find.text('Clear filters'));
+    await tester.pumpAndSettle();
+    expect(find.text('Sara Ahmadi'), findsOneWidget);
+    expect(find.text('Maryam Karimi'), findsOneWidget);
+
+    await tester.tap(find.text('All customers'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Sara Ahmadi').last);
+    await tester.pumpAndSettle();
+    expect(find.text('Sara Ahmadi'), findsWidgets);
+    expect(find.text('Maryam Karimi'), findsNothing);
+  });
+
+  testWidgets('staff does not see visit delete on the Visits screen', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          visitRepositoryProvider.overrideWithValue(
+            FakeVisitListRepository(
+              items: [
+                Visit(
+                  id: 'v1',
+                  customerId: 'c1',
+                  firstName: 'Sara',
+                  lastName: 'Ahmadi',
+                  visitedAt: DateTime.now(),
+                  createdAt: DateTime.utc(2026, 1, 1),
+                ),
+              ],
+            ),
+          ),
+          customerRepositoryProvider.overrideWithValue(
+            FakeCustomerRepository(items: [_customer()]),
+          ),
+          authControllerProvider.overrideWith(_StaffAuth.new),
+        ],
+        child: const MaterialApp(home: VisitsScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('Delete visit'), findsNothing);
+  });
+
+  testWidgets('staff does not see customer or visit delete on detail', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          customerRepositoryProvider.overrideWith(
+            (ref) => FakeCustomerRepository(items: [_customer()]),
+          ),
+          intelligenceRepositoryProvider.overrideWith(
+            (ref) => FakeIntelligenceRepository(
+              customerIntelligence: _intelligence(),
+            ),
+          ),
+          visitRepositoryProvider.overrideWith(
+            (ref) => FakeVisitListRepository(),
+          ),
+          authControllerProvider.overrideWith(_StaffAuth.new),
+        ],
+        child: const MaterialApp(
+          home: CustomerDetailScreen(customerId: 'c1'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('Delete customer'), findsNothing);
+    expect(find.byTooltip('Delete visit'), findsNothing);
+  });
+
+  testWidgets('owner can confirm customer deletion and leave the page', (
+    tester,
+  ) async {
+    final repo = FakeCustomerRepository(items: [_customer()]);
+    final router = GoRouter(
+      initialLocation: '/customers/c1',
+      routes: [
+        GoRoute(
+          path: '/customers',
+          builder: (context, state) => const CustomersScreen(),
+        ),
+        GoRoute(
+          path: '/customers/:id',
+          builder: (context, state) =>
+              CustomerDetailScreen(customerId: state.pathParameters['id']!),
+        ),
+      ],
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          customerRepositoryProvider.overrideWithValue(repo),
+          intelligenceRepositoryProvider.overrideWith(
+            (ref) => FakeIntelligenceRepository(
+              customerIntelligence: _intelligence(),
+            ),
+          ),
+          visitRepositoryProvider.overrideWith(
+            (ref) => FakeVisitListRepository(
+              items: [
+                Visit(
+                  id: 'v1',
+                  customerId: 'c1',
+                  visitedAt: DateTime.utc(2026, 7, 6),
+                  createdAt: DateTime.utc(2026, 7, 6),
+                ),
+              ],
+            ),
+          ),
+          authControllerProvider.overrideWith(_SignedInAuth.new),
+        ],
+        child: MaterialApp.router(routerConfig: router),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Delete customer'));
+    await tester.pumpAndSettle();
+    expect(
+      find.textContaining('permanently remove this customer'),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('Delete').last);
+    await tester.pumpAndSettle();
+    expect(repo.items, isEmpty);
+    expect(find.text('No customers yet.'), findsOneWidget);
+  });
+
+  testWidgets('visit deletion from customer history requires confirmation', (
+    tester,
+  ) async {
+    final visits = FakeVisitListRepository(
+      items: [
+        Visit(
+          id: 'v1',
+          customerId: 'c1',
+          visitedAt: DateTime.utc(2026, 7, 6),
+          createdAt: DateTime.utc(2026, 7, 6),
+        ),
+      ],
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          customerRepositoryProvider.overrideWith(
+            (ref) => FakeCustomerRepository(items: [_customer()]),
+          ),
+          intelligenceRepositoryProvider.overrideWith(
+            (ref) => FakeIntelligenceRepository(
+              customerIntelligence: _intelligence(),
+            ),
+          ),
+          visitRepositoryProvider.overrideWith((ref) => visits),
+          authControllerProvider.overrideWith(_SignedInAuth.new),
+        ],
+        child: const MaterialApp(
+          home: CustomerDetailScreen(customerId: 'c1'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byTooltip('Delete visit'));
+    await tester.tap(find.byTooltip('Delete visit'));
+    await tester.pumpAndSettle();
+    expect(find.text('Delete this completed visit?'), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(visits.items, hasLength(1));
+    await tester.ensureVisible(find.byTooltip('Delete visit'));
+    await tester.tap(find.byTooltip('Delete visit'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Delete').last);
+    await tester.pumpAndSettle();
+    expect(visits.items, isEmpty);
+  });
+}
+
+class _StaffAuth extends AuthController {
+  @override
+  AuthState build() {
+    return const AuthState(
+      status: AuthStatus.signedIn,
+      user: AuthUser(id: 'u2', tenantId: 't1', role: 'STAFF', name: 'Neda'),
+    );
+  }
 }
 
 class _SignedInAuth extends AuthController {

@@ -26,6 +26,7 @@ class FakeVisitRepository extends VisitRepository {
   Future<Visit> record({
     required String customerId,
     required DateTime visitedAt,
+    required String idempotencyKey,
   }) async {
     if (error != null) {
       throw error!;

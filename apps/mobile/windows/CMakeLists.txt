@@ -52,10 +52,73 @@ add_subdirectory(${FLUTTER_MANAGED_DIR})
 # Application build; see runner/CMakeLists.txt.
 add_subdirectory("runner")
 
+# flutter_secure_storage_windows includes <atlstr.h>. Flutter selects the
+# newest MSVC toolset (here 14.51 / v145), which may not include ATL even
+# when an older toolset on the same Build Tools install does (14.44).
+# Keep using flutter_secure_storage; expose ATL from any installed toolset.
+set(_salon_atl_include "")
+set(_salon_atls_lib "")
+if(MSVC)
+  set(_salon_atlstr "")
+  if(DEFINED ENV{VCToolsInstallDir})
+    set(_salon_atl_default "$ENV{VCToolsInstallDir}atlmfc/include/atlstr.h")
+    if(EXISTS "${_salon_atl_default}")
+      set(_salon_atlstr "${_salon_atl_default}")
+    endif()
+  endif()
+  if(_salon_atlstr STREQUAL "")
+    file(GLOB _salon_atl_hits
+      "C:/Program Files (x86)/Microsoft Visual Studio/*/*/VC/Tools/MSVC/*/atlmfc/include/atlstr.h"
+      "C:/Program Files/Microsoft Visual Studio/*/*/VC/Tools/MSVC/*/atlmfc/include/atlstr.h"
+    )
+    if(_salon_atl_hits)
+      list(SORT _salon_atl_hits ORDER DESCENDING)
+      list(GET _salon_atl_hits 0 _salon_atlstr)
+    endif()
+  endif()
+  if(NOT _salon_atlstr STREQUAL "")
+    get_filename_component(_salon_atl_include "${_salon_atlstr}" DIRECTORY)
+    get_filename_component(_salon_atl_mfc "${_salon_atl_include}" DIRECTORY)
+    if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+      set(_salon_atl_arch "x64")
+    else()
+      set(_salon_atl_arch "x86")
+    endif()
+    foreach(_salon_atls_candidate
+      "${_salon_atl_mfc}/lib/${_salon_atl_arch}/atls.lib"
+      "${_salon_atl_mfc}/lib/spectre/${_salon_atl_arch}/atls.lib")
+      if(EXISTS "${_salon_atls_candidate}")
+        set(_salon_atls_lib "${_salon_atls_candidate}")
+        break()
+      endif()
+    endforeach()
+    message(STATUS "ATL headers: ${_salon_atl_include}")
+    if(_salon_atls_lib)
+      message(STATUS "ATL library: ${_salon_atls_lib}")
+    endif()
+  else()
+    message(WARNING "atlstr.h not found. Install 'C++ ATL for latest build tools' in Visual Studio Build Tools.")
+  endif()
+endif()
 
 # Generated plugin build rules, which manage building the plugins and adding
 # them to the application.
 include(flutter/generated_plugins.cmake)
+
+if(TARGET flutter_secure_storage_windows_plugin)
+  if(_salon_atl_include)
+    target_include_directories(flutter_secure_storage_windows_plugin PRIVATE
+      "${_salon_atl_include}")
+  endif()
+  if(_salon_atls_lib)
+    target_link_libraries(flutter_secure_storage_windows_plugin PRIVATE
+      "${_salon_atls_lib}")
+    # MSB8041 uses unquoted Exists($(ATL_KeyFile)); paths under
+    # Program Files (x86) fail that check even when the file exists.
+    set_property(TARGET flutter_secure_storage_windows_plugin PROPERTY
+      VS_GLOBAL_CheckMSVCComponents "false")
+  endif()
+endif()
 
 
 # === Installation ===

@@ -1191,6 +1191,30 @@ Conceptually:
 
 ---
 
+# 47a. idempotency_records (Phase A)
+
+Stores client retry keys for selected writes. Currently used by `POST /visits`.
+
+```text
+idempotency_records
+-------------------
+id
+tenant_id
+actor_id
+operation
+key
+request_hash
+resource_type
+resource_id
+created_at
+```
+
+UNIQUE (tenant_id, actor_id, operation, key)
+
+Does not store request bodies, phones, or secrets. See `architecture/adr-001-visit-idempotency.md`.
+
+---
+
 # 48. MVP Database Does Not Need to Mirror the Entire Product Vision
 
 The long-term product may eventually contain:

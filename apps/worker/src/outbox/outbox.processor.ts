@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import {
   claimOutboxEvents,
   markOutboxDeadLetter,
@@ -6,43 +6,79 @@ import {
   markOutboxRetry,
   type OutboxEvent,
 } from '@salon/database';
-import { fullJitterDelayMs } from '@salon/shared';
+import {
+  fullJitterDelayMs,
+  isDomainEventType,
+  TimeoutError,
+  withTimeout,
+} from '@salon/shared';
+import type { Logger } from 'pino';
 import { AppConfigService } from '../infrastructure/config/app-config.service';
 import { PrismaService } from '../infrastructure/database/prisma.service';
+import { createWorkerLogger } from '../infrastructure/logging/worker-logger';
 
 /**
- * Foundation consumer: acknowledges known event types.
- * Domain handlers will be added by later phases. Must remain idempotent.
+ * At-least-once outbox consumer. Handlers must be idempotent.
+ * Unknown event types are dead-lettered immediately (retry cannot invent a handler).
  */
 @Injectable()
 export class OutboxProcessor implements OnModuleInit, OnModuleDestroy {
-  private readonly logger = new Logger(OutboxProcessor.name);
+  private readonly logger: Logger;
   private timer: NodeJS.Timeout | undefined;
   private running = false;
+  private stopping = false;
+  private inFlight: Promise<void> | undefined;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: AppConfigService,
-  ) {}
+    logger?: Logger,
+  ) {
+    this.logger = logger ?? createWorkerLogger(config.values);
+  }
 
   onModuleInit(): void {
     const interval = this.config.values.OUTBOX_POLL_INTERVAL_MS;
     this.timer = setInterval(() => {
       void this.tick();
     }, interval);
+    this.logger.info(
+      { operation: 'outbox.start', pollIntervalMs: interval },
+      'Outbox worker polling',
+    );
   }
 
-  onModuleDestroy(): void {
+  async onModuleDestroy(): Promise<void> {
+    this.stopping = true;
     if (this.timer) {
       clearInterval(this.timer);
+      this.timer = undefined;
     }
+    if (this.inFlight) {
+      await this.inFlight;
+    }
+    this.logger.info({ operation: 'outbox.shutdown', outcome: 'stopped' }, 'Outbox worker stopped');
   }
 
   async tick(): Promise<void> {
-    if (this.running) {
+    if (this.stopping || this.running) {
       return;
     }
     this.running = true;
+    const work = this.runBatch();
+    this.inFlight = work;
+    try {
+      await work;
+    } finally {
+      this.running = false;
+      this.inFlight = undefined;
+    }
+  }
+
+  private async runBatch(): Promise<void> {
+    if (this.stopping) {
+      return;
+    }
     try {
       const claimed = await claimOutboxEvents(
         this.prisma.client,
@@ -53,27 +89,77 @@ export class OutboxProcessor implements OnModuleInit, OnModuleDestroy {
         await this.processOne(event);
       }
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'outbox tick failed';
-      this.logger.error({ err: message }, 'Outbox poll failed');
-    } finally {
-      this.running = false;
+      this.logger.error(
+        {
+          operation: 'outbox.poll',
+          outcome: 'failed',
+          errorType: error instanceof Error ? error.name : 'unknown',
+          err: error instanceof Error ? error.message : 'outbox tick failed',
+          stack: error instanceof Error ? error.stack : undefined,
+        },
+        'Outbox poll failed',
+      );
     }
   }
 
-  private async processOne(event: OutboxEvent): Promise<void> {
+  async processOne(event: OutboxEvent): Promise<void> {
+    const started = Date.now();
     const maxAttempts = this.config.values.OUTBOX_MAX_ATTEMPTS;
+    const base = {
+      eventId: event.id,
+      eventType: event.eventType,
+      attempt: event.attemptCount,
+      tenantId: event.tenantId,
+      operation: 'outbox.consume',
+    };
+
+    if (!isDomainEventType(event.eventType)) {
+      await markOutboxDeadLetter(this.prisma.client, event.id, 'UNKNOWN_EVENT_TYPE');
+      this.logger.error(
+        {
+          ...base,
+          durationMs: Date.now() - started,
+          outcome: 'dead_letter',
+          errorCode: 'UNKNOWN_EVENT_TYPE',
+          errorType: 'UnknownEventType',
+        },
+        'Unknown outbox event type dead-lettered',
+      );
+      return;
+    }
+
     try {
-      await this.consume(event);
+      await withTimeout(
+        this.consume(event),
+        handlerTimeoutMs(this.config.values.OUTBOX_LEASE_MS),
+        'Outbox handler timed out',
+      );
       await markOutboxProcessed(this.prisma.client, event.id);
-      this.logger.log(
-        `Processed eventType=${event.eventType} eventId=${event.id} tenantId=${event.tenantId ?? 'none'} attempt=${event.attemptCount}`,
+      this.logger.info(
+        {
+          ...base,
+          durationMs: Date.now() - started,
+          outcome: 'processed',
+        },
+        'Outbox event processed',
       );
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'consumer failed';
+      const errorType = error instanceof Error ? error.name : 'unknown';
+      const errorCode = error instanceof TimeoutError ? 'HANDLER_TIMEOUT' : 'CONSUMER_FAILED';
       if (event.attemptCount >= maxAttempts) {
         await markOutboxDeadLetter(this.prisma.client, event.id, message);
         this.logger.error(
-          `Dead-letter eventType=${event.eventType} eventId=${event.id} tenantId=${event.tenantId ?? 'none'} attempt=${event.attemptCount}`,
+          {
+            ...base,
+            durationMs: Date.now() - started,
+            outcome: 'dead_letter',
+            errorCode,
+            errorType,
+            stack: error instanceof Error ? error.stack : undefined,
+            next: 'manual replay after fix',
+          },
+          'Outbox event dead-lettered',
         );
         return;
       }
@@ -85,7 +171,17 @@ export class OutboxProcessor implements OnModuleInit, OnModuleDestroy {
       );
       await markOutboxRetry(this.prisma.client, event.id, message, delayMs);
       this.logger.warn(
-        `Retry eventType=${event.eventType} eventId=${event.id} tenantId=${event.tenantId ?? 'none'} attempt=${event.attemptCount} delayMs=${delayMs}`,
+        {
+          ...base,
+          durationMs: Date.now() - started,
+          outcome: 'retry',
+          errorCode,
+          errorType,
+          delayMs,
+          next: `retry after ${delayMs}ms`,
+          stack: error instanceof Error ? error.stack : undefined,
+        },
+        'Outbox event scheduled for retry',
       );
     }
   }
@@ -96,4 +192,8 @@ export class OutboxProcessor implements OnModuleInit, OnModuleDestroy {
       throw new Error('Missing event type');
     }
   }
+}
+
+export function handlerTimeoutMs(leaseMs: number): number {
+  return Math.max(1_000, Math.floor(leaseMs * 0.8));
 }

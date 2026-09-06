@@ -4,6 +4,7 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/infrastructure/database/prisma.service';
 import { HttpExceptionFilter } from '../src/infrastructure/http/http-exception.filter';
+import { listItems, listPage } from './list-page';
 
 const describeIfDb = process.env.DATABASE_URL ? describe : describe.skip;
 const password = 'correct-horse-battery';
@@ -49,6 +50,7 @@ describeIfDb('Visits (e2e)', () => {
     return {
       token: response.body.accessToken as string,
       tenantId: response.body.user.tenantId as string,
+      userId: response.body.user.id as string,
     };
   }
 
@@ -76,7 +78,9 @@ describeIfDb('Visits (e2e)', () => {
 
   it('rejects unauthenticated visit access', async () => {
     await request(app.getHttpServer()).post('/visits').send({}).expect(401);
+    await request(app.getHttpServer()).get('/visits').expect(401);
     await request(app.getHttpServer()).get('/visits/not-a-real-id').expect(401);
+    await request(app.getHttpServer()).delete('/visits/not-a-real-id').expect(401);
   });
 
   it('records completed visits, history, outbox, and tenant isolation', async () => {
@@ -168,7 +172,7 @@ describeIfDb('Visits (e2e)', () => {
       .get(`/customers/${customerA}/visits`)
       .set('Authorization', `Bearer ${salonA.token}`)
       .expect(200);
-    expect(history.body.map((row: { id: string }) => row.id)).toContain(created.body.id);
+    expect(listItems<{ id: string }>(history.body).map((row) => row.id)).toContain(created.body.id);
 
     await request(app.getHttpServer())
       .get(`/customers/${customerA}/visits`)
@@ -179,7 +183,7 @@ describeIfDb('Visits (e2e)', () => {
       .get(`/customers/${customerB}/visits`)
       .set('Authorization', `Bearer ${salonB.token}`)
       .expect(200);
-    expect(otherHistory.body.map((row: { id: string }) => row.id)).not.toContain(created.body.id);
+    expect(listItems<{ id: string }>(otherHistory.body).map((row) => row.id)).not.toContain(created.body.id);
 
     const outbox = await prisma.client.outboxEvent.findMany({
       where: {
@@ -202,6 +206,151 @@ describeIfDb('Visits (e2e)', () => {
       },
     });
     expect(audit?.result).toBe('SUCCESS');
+
+    const customerKarimi = await createCustomer(salonA.token, 'Karimi');
+    const first = await request(app.getHttpServer())
+      .post('/visits')
+      .set('Authorization', `Bearer ${salonA.token}`)
+      .send({ customerId: customerA, visitedAt: '2026-08-05T10:00:00.000Z' })
+      .expect(201);
+    const second = await request(app.getHttpServer())
+      .post('/visits')
+      .set('Authorization', `Bearer ${salonA.token}`)
+      .send({ customerId: customerA, visitedAt: '2026-08-05T15:00:00.000Z' })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post('/visits')
+      .set('Authorization', `Bearer ${salonA.token}`)
+      .send({ customerId: customerKarimi, visitedAt: '2026-08-04T12:00:00.000Z' })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post('/visits')
+      .set('Authorization', `Bearer ${salonB.token}`)
+      .send({ customerId: customerB, visitedAt: '2026-08-05T11:00:00.000Z' })
+      .expect(201);
+
+    const listed = await request(app.getHttpServer())
+      .get('/visits')
+      .set('Authorization', `Bearer ${salonA.token}`)
+      .expect(200);
+    const listedItems = listItems<{ id: string }>(listed.body);
+    expect(listedItems).toHaveLength(4);
+    expect(listedItems[0].id).toBe(created.body.id);
+    expect(listedItems.map((row) => row.id)).toContain(second.body.id);
+
+    const otherList = await request(app.getHttpServer())
+      .get('/visits')
+      .set('Authorization', `Bearer ${salonB.token}`)
+      .expect(200);
+    expect(listItems<{ id: string }>(otherList.body)).toHaveLength(1);
+    expect(listItems<{ id: string }>(otherList.body).map((row) => row.id)).not.toContain(created.body.id);
+
+    const byDate = await request(app.getHttpServer())
+      .get('/visits')
+      .query({ date: '2026-08-05' })
+      .set('Authorization', `Bearer ${salonA.token}`)
+      .expect(200);
+    expect(listItems(byDate.body)).toHaveLength(2);
+
+    const byCustomer = await request(app.getHttpServer())
+      .get('/visits')
+      .query({ customerId: customerA })
+      .set('Authorization', `Bearer ${salonA.token}`)
+      .expect(200);
+    expect(listItems(byCustomer.body)).toHaveLength(3);
+
+    const combined = await request(app.getHttpServer())
+      .get('/visits')
+      .query({ date: '2026-08-05', customerId: customerA })
+      .set('Authorization', `Bearer ${salonA.token}`)
+      .expect(200);
+    expect(listItems(combined.body)).toHaveLength(2);
+
+    const limited = await request(app.getHttpServer())
+      .get('/visits')
+      .query({ limit: 1 })
+      .set('Authorization', `Bearer ${salonA.token}`)
+      .expect(200);
+    const limitedPage = listPage<{ id: string }>(limited.body);
+    expect(limitedPage.items).toHaveLength(1);
+    expect(limitedPage.hasMore).toBe(true);
+    expect(limitedPage.items[0].id).toBe(created.body.id);
+
+    await request(app.getHttpServer())
+      .get('/visits')
+      .query({ limit: 201 })
+      .set('Authorization', `Bearer ${salonA.token}`)
+      .expect(400);
+
+    await request(app.getHttpServer())
+      .get('/visits')
+      .query({ date: '05-09-2026' })
+      .set('Authorization', `Bearer ${salonA.token}`)
+      .expect(400);
+
+    await request(app.getHttpServer())
+      .get('/visits')
+      .query({ customerId: customerB })
+      .set('Authorization', `Bearer ${salonA.token}`)
+      .expect(404);
+
+    const before = await request(app.getHttpServer())
+      .get(`/intelligence/customers/${customerA}`)
+      .set('Authorization', `Bearer ${salonA.token}`)
+      .expect(200);
+    expect(before.body.behavior.visitCount).toBe(3);
+
+    await request(app.getHttpServer())
+      .delete(`/visits/${first.body.id}`)
+      .set('Authorization', `Bearer ${salonB.token}`)
+      .expect(404);
+
+    await request(app.getHttpServer())
+      .delete(`/visits/${first.body.id}`)
+      .set('Authorization', `Bearer ${salonA.token}`)
+      .expect(204);
+
+    await request(app.getHttpServer())
+      .get(`/visits/${first.body.id}`)
+      .set('Authorization', `Bearer ${salonA.token}`)
+      .expect(404);
+
+    const historyAfterDelete = await request(app.getHttpServer())
+      .get(`/customers/${customerA}/visits`)
+      .set('Authorization', `Bearer ${salonA.token}`)
+      .expect(200);
+    expect(listItems<{ id: string }>(historyAfterDelete.body).map((row) => row.id)).not.toContain(first.body.id);
+
+    const afterList = await request(app.getHttpServer())
+      .get('/visits')
+      .query({ customerId: customerA })
+      .set('Authorization', `Bearer ${salonA.token}`)
+      .expect(200);
+    expect(listItems(afterList.body)).toHaveLength(2);
+
+    const after = await request(app.getHttpServer())
+      .get(`/intelligence/customers/${customerA}`)
+      .set('Authorization', `Bearer ${salonA.token}`)
+      .expect(200);
+    expect(after.body.behavior.visitCount).toBe(2);
+
+    const deletedAudit = await prisma.client.auditLog.findFirst({
+      where: { tenantId: salonA.tenantId, action: 'VISIT_DELETED', resourceId: first.body.id },
+    });
+    expect(deletedAudit?.result).toBe('SUCCESS');
+    expect(JSON.stringify(deletedAudit ?? {})).not.toMatch(/0912/);
+
+    const deletedOutbox = await prisma.client.outboxEvent.findMany({
+      where: { tenantId: salonA.tenantId, eventType: 'VisitDeleted' },
+    });
+    expect(
+      deletedOutbox.some((event) => (event.payload as { visitId?: string }).visitId === first.body.id),
+    ).toBe(true);
+
+    await request(app.getHttpServer())
+      .delete(`/visits/${first.body.id}`)
+      .set('Authorization', `Bearer ${salonA.token}`)
+      .expect(404);
   });
 
   it('lets MANAGER and STAFF record completed visits', async () => {
@@ -245,7 +394,17 @@ describeIfDb('Visits (e2e)', () => {
       .get(`/customers/${customerId}/visits`)
       .set('Authorization', `Bearer ${managerToken}`)
       .expect(200);
-    expect(history.body).toHaveLength(2);
-    expect(history.body[0].id).toBe(staffVisit.body.id);
+    expect(listItems(history.body)).toHaveLength(2);
+    expect(listItems<{ id: string }>(history.body)[0].id).toBe(staffVisit.body.id);
+
+    await request(app.getHttpServer())
+      .delete(`/visits/${staffVisit.body.id}`)
+      .set('Authorization', `Bearer ${staffToken}`)
+      .expect(403);
+
+    await request(app.getHttpServer())
+      .delete(`/visits/${staffVisit.body.id}`)
+      .set('Authorization', `Bearer ${managerToken}`)
+      .expect(204);
   });
 });

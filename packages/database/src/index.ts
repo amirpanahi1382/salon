@@ -2,12 +2,14 @@ export { Prisma, PrismaClient } from '@prisma/client';
 export type {
   AuditLog,
   Customer,
+  IdempotencyRecord,
   OutboxEvent,
   Salon,
   User,
   Visit,
 } from '@prisma/client';
-export { createPrismaClient } from './client.js';
+export { applyDatabasePoolParams, createPrismaClient } from './client.js';
+export type { PrismaPoolOptions } from './client.js';
 export {
   claimOutboxEvents,
   markOutboxDeadLetter,

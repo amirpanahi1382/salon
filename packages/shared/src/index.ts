@@ -8,3 +8,6 @@ export * from './events.js';
 export * from './salon-user-policy.js';
 export * from './customer-identity.js';
 export * from './intelligence/index.js';
+export * from './request-id.js';
+export * from './timeout.js';
+export * from './logging.js';

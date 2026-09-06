@@ -8,7 +8,7 @@ export class GetIntelligenceSummaryUseCase {
   constructor(private readonly intelligence: IntelligenceQueryService) {}
 
   async execute(principal: AuthenticatedPrincipal): Promise<IntelligenceSummaryResponseDto> {
-    const snapshots = await this.intelligence.loadSalon(principal.tenantId);
+    const { snapshots, truncated } = await this.intelligence.loadSalon(principal.tenantId);
     const summary: IntelligenceSummaryResponseDto = {
       customers: snapshots.length,
       new: 0,
@@ -19,6 +19,7 @@ export class GetIntelligenceSummaryUseCase {
       reactivationOpportunities: 0,
       customerReturnOpportunities: 0,
       frequent: 0,
+      hasMore: truncated,
     };
 
     for (const snapshot of snapshots) {

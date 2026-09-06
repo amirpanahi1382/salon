@@ -6,6 +6,7 @@ import {
   createId,
   DOMAIN_EVENT_TYPES,
 } from '@salon/shared';
+import { Prisma } from '@salon/database';
 import { PrismaService } from '../infrastructure/database/prisma.service';
 import type { RegisterSalonOwnerDto } from './auth.dto';
 
@@ -33,7 +34,8 @@ export class RegisterSalonOwnerUseCase {
     const userId = createId();
     const now = new Date();
 
-    await this.prisma.client.$transaction(async (tx) => {
+    try {
+      await this.prisma.client.$transaction(async (tx) => {
       await tx.salon.create({
         data: {
           id: salonId,
@@ -85,7 +87,13 @@ export class RegisterSalonOwnerUseCase {
           metadata: { role: 'OWNER' },
         },
       });
-    });
+      });
+    } catch (error: unknown) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw new ConflictError('An account with this email already exists');
+      }
+      throw error;
+    }
 
     const accessToken = await this.jwt.signAsync({
       sub: userId,

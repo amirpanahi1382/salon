@@ -12,7 +12,7 @@ export class ListCustomerSegmentsUseCase {
   constructor(private readonly intelligence: IntelligenceQueryService) {}
 
   async execute(principal: AuthenticatedPrincipal, status?: CustomerStatus) {
-    const snapshots = await this.intelligence.loadSalon(principal.tenantId);
+    const { snapshots, truncated } = await this.intelligence.loadSalon(principal.tenantId);
     const items = [];
 
     for (const snapshot of snapshots) {
@@ -27,10 +27,13 @@ export class ListCustomerSegmentsUseCase {
       items.push(toSegmentItem(snapshot.customer, behavior, result));
     }
 
-    return items.sort((a, b) => {
-      const daysA = a.daysSinceLastVisit ?? -1;
-      const daysB = b.daysSinceLastVisit ?? -1;
-      return daysB - daysA;
-    });
+    return {
+      items: items.sort((a, b) => {
+        const daysA = a.daysSinceLastVisit ?? -1;
+        const daysB = b.daysSinceLastVisit ?? -1;
+        return daysB - daysA;
+      }),
+      hasMore: truncated,
+    };
   }
 }

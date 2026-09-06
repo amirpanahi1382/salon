@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -7,6 +9,7 @@ import '../../core/state/providers.dart';
 import '../../core/widgets/app_widgets.dart';
 import '../../shared/labels.dart';
 import '../../shared/models/models.dart';
+import 'customer_validation.dart';
 
 class CustomersScreen extends ConsumerStatefulWidget {
   const CustomersScreen({super.key});
@@ -63,7 +66,21 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text(AppStrings.customers)),
+      appBar: AppBar(
+        title: const Text(AppStrings.customers),
+        actions: [
+          TextButton.icon(
+            onPressed: () async {
+              final imported = await context.push<bool>('/customers/import');
+              if (imported == true) {
+                _load();
+              }
+            },
+            icon: const Icon(Icons.upload_file_outlined),
+            label: const Text(AppStrings.importFromExcel),
+          ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () async {
           final created = await context.push<bool>('/customers/new');
@@ -106,10 +123,34 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
                               EmptyStateView(
                                 title: AppStrings.noCustomers,
                                 body: AppStrings.addFirstCustomer,
-                                action: FilledButton(
-                                  onPressed: () =>
-                                      context.push('/customers/new'),
-                                  child: const Text(AppStrings.addCustomer),
+                                action: Wrap(
+                                  alignment: WrapAlignment.center,
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  children: [
+                                    FilledButton(
+                                      onPressed: () async {
+                                        final created = await context
+                                            .push<bool>('/customers/new');
+                                        if (created == true) {
+                                          _load();
+                                        }
+                                      },
+                                      child: const Text(AppStrings.addCustomer),
+                                    ),
+                                    OutlinedButton(
+                                      onPressed: () async {
+                                        final imported = await context
+                                            .push<bool>('/customers/import');
+                                        if (imported == true) {
+                                          _load();
+                                        }
+                                      },
+                                      child: const Text(
+                                        AppStrings.importFromExcel,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ],
@@ -123,8 +164,14 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
                               return CustomerListTile(
                                 name: customer.fullName,
                                 phone: customer.phoneNumber,
-                                onTap: () =>
-                                    context.push('/customers/${customer.id}'),
+                                onTap: () async {
+                                  final deleted = await context.push<bool>(
+                                    '/customers/${customer.id}',
+                                  );
+                                  if (deleted == true) {
+                                    _load();
+                                  }
+                                },
                               );
                             },
                           ),
@@ -151,6 +198,7 @@ class _CustomerFormScreenState extends ConsumerState<CustomerFormScreen> {
   late final TextEditingController _phone;
   String? _error;
   bool _loading = false;
+  bool _created = false;
 
   @override
   void initState() {
@@ -168,31 +216,54 @@ class _CustomerFormScreenState extends ConsumerState<CustomerFormScreen> {
     super.dispose();
   }
 
+  bool get _isCreate => widget.customer == null;
+
+  void _returnToCustomers() {
+    if (context.canPop()) {
+      context.pop(_created);
+      return;
+    }
+    context.go('/customers');
+  }
+
   Future<void> _save() async {
+    final firstNameError = CustomerFieldValidation.firstNameError(_first.text);
+    final lastNameError = CustomerFieldValidation.lastNameError(_last.text);
+    final phoneError = CustomerFieldValidation.phoneError(_phone.text);
+    if (firstNameError != null || lastNameError != null || phoneError != null) {
+      setState(() {
+        _error = firstNameError ?? lastNameError ?? phoneError;
+      });
+      return;
+    }
+
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      if (widget.customer == null) {
-        final created = await ref
+      if (_isCreate) {
+        await ref
             .read(customerRepositoryProvider)
             .create(
-              firstName: _first.text,
-              lastName: _last.text,
+              firstName: _first.text.trim(),
+              lastName: _last.text.trim(),
               phoneNumber: _phone.text,
             );
         if (!mounted) {
           return;
         }
-        context.go('/customers/${created.id}');
+        setState(() {
+          _created = true;
+          _loading = false;
+        });
       } else {
         await ref
             .read(customerRepositoryProvider)
             .update(
               id: widget.customer!.id,
-              firstName: _first.text,
-              lastName: _last.text,
+              firstName: _first.text.trim(),
+              lastName: _last.text.trim(),
               phoneNumber: _phone.text,
             );
         if (!mounted) {
@@ -203,7 +274,7 @@ class _CustomerFormScreenState extends ConsumerState<CustomerFormScreen> {
     } catch (error) {
       setState(() => _error = friendlyError(error));
     } finally {
-      if (mounted) {
+      if (mounted && !_created) {
         setState(() => _loading = false);
       }
     }
@@ -211,40 +282,70 @@ class _CustomerFormScreenState extends ConsumerState<CustomerFormScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          widget.customer == null
-              ? AppStrings.addCustomer
-              : AppStrings.editCustomer,
+    return PopScope(
+      canPop: !_isCreate,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop || !_isCreate) {
+          return;
+        }
+        _returnToCustomers();
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text(
+            _isCreate ? AppStrings.addCustomer : AppStrings.editCustomer,
+          ),
+          leading: _isCreate
+              ? IconButton(
+                  icon: const BackButtonIcon(),
+                  onPressed: _returnToCustomers,
+                )
+              : null,
         ),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(24),
-        children: [
-          AppTextField(label: AppStrings.firstName, controller: _first),
-          const SizedBox(height: 12),
-          AppTextField(label: AppStrings.lastName, controller: _last),
-          const SizedBox(height: 12),
-          AppTextField(
-            label: AppStrings.phoneNumber,
-            controller: _phone,
-            keyboardType: TextInputType.phone,
-          ),
-          if (_error != null) ...[
-            const SizedBox(height: 12),
-            Text(
-              _error!,
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
-            ),
-          ],
-          const SizedBox(height: 24),
-          AppButton(
-            label: AppStrings.save,
-            onPressed: _save,
-            loading: _loading,
-          ),
-        ],
+        body: _created
+            ? ListView(
+                padding: const EdgeInsets.all(24),
+                children: [
+                  Text(
+                    AppStrings.customerCreated,
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  const SizedBox(height: 24),
+                  FilledButton(
+                    onPressed: _returnToCustomers,
+                    child: const Text(AppStrings.backToCustomers),
+                  ),
+                ],
+              )
+            : ListView(
+                padding: const EdgeInsets.all(24),
+                children: [
+                  AppTextField(label: AppStrings.firstName, controller: _first),
+                  const SizedBox(height: 12),
+                  AppTextField(label: AppStrings.lastName, controller: _last),
+                  const SizedBox(height: 12),
+                  AppTextField(
+                    label: AppStrings.phoneNumber,
+                    controller: _phone,
+                    keyboardType: TextInputType.phone,
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(AppStrings.phoneHint),
+                  if (_error != null) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      _error!,
+                      style: TextStyle(color: Theme.of(context).colorScheme.error),
+                    ),
+                  ],
+                  const SizedBox(height: 24),
+                  AppButton(
+                    label: AppStrings.save,
+                    onPressed: _save,
+                    loading: _loading,
+                  ),
+                ],
+              ),
       ),
     );
   }
@@ -308,6 +409,84 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
     }
   }
 
+  Future<void> _deleteCustomer(Customer customer) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text(AppStrings.deleteCustomer),
+        content: const Text(AppStrings.deleteCustomerConfirm),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text(AppStrings.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text(AppStrings.delete),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) {
+      return;
+    }
+    try {
+      await ref.read(customerRepositoryProvider).delete(customer.id);
+      if (!mounted) {
+        return;
+      }
+      if (context.canPop()) {
+        context.pop(true);
+      } else {
+        context.go('/customers');
+      }
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(friendlyError(error))));
+    }
+  }
+
+  Future<void> _deleteVisit(Visit visit) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text(AppStrings.deleteVisit),
+        content: const Text(AppStrings.deleteVisitConfirm),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text(AppStrings.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text(AppStrings.delete),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) {
+      return;
+    }
+    try {
+      await ref.read(visitRepositoryProvider).delete(visit.id);
+      if (!mounted) {
+        return;
+      }
+      await _load();
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(friendlyError(error))));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading && _customer == null) {
@@ -322,12 +501,12 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
     final customer = _customer!;
     final intelligence = _intelligence;
     final dateFormat = DateFormat.yMMMd().add_jm();
-    final canEdit = ref.watch(authControllerProvider).user?.role != 'STAFF';
+    final canManage = ref.watch(authControllerProvider).user?.role != 'STAFF';
     return Scaffold(
       appBar: AppBar(
         title: Text(customer.fullName),
         actions: [
-          if (canEdit)
+          if (canManage)
             IconButton(
               tooltip: AppStrings.editCustomer,
               onPressed: () async {
@@ -340,6 +519,12 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                 }
               },
               icon: const Icon(Icons.edit_outlined),
+            ),
+          if (canManage)
+            IconButton(
+              tooltip: AppStrings.deleteCustomer,
+              onPressed: () => _deleteCustomer(customer),
+              icon: const Icon(Icons.delete_outline),
             ),
         ],
       ),
@@ -432,6 +617,13 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
               ..._visits.map(
                 (visit) => ListTile(
                   contentPadding: EdgeInsets.zero,
+                  leading: canManage
+                      ? IconButton(
+                          tooltip: AppStrings.deleteVisit,
+                          onPressed: () => _deleteVisit(visit),
+                          icon: const Icon(Icons.delete_outline),
+                        )
+                      : null,
                   title: Text(dateFormat.format(visit.visitedAt.toLocal())),
                   subtitle: const Text('Completed visit'),
                 ),
@@ -456,6 +648,16 @@ class _RecordVisitScreenState extends ConsumerState<RecordVisitScreen> {
   DateTime _visitedAt = DateTime.now();
   String? _error;
   bool _loading = false;
+  String? _idempotencyKey;
+
+  String _newIdempotencyKey() {
+    final rnd = Random.secure();
+    final bytes = List<int>.generate(16, (_) => rnd.nextInt(256));
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    final hex = bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+    return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}';
+  }
 
   Future<void> _pick() async {
     final date = await showDatePicker(
@@ -482,6 +684,7 @@ class _RecordVisitScreenState extends ConsumerState<RecordVisitScreen> {
         time.hour,
         time.minute,
       );
+      _idempotencyKey = null;
     });
   }
 
@@ -491,9 +694,14 @@ class _RecordVisitScreenState extends ConsumerState<RecordVisitScreen> {
       _error = null;
     });
     try {
+      _idempotencyKey ??= _newIdempotencyKey();
       await ref
           .read(visitRepositoryProvider)
-          .record(customerId: widget.customerId, visitedAt: _visitedAt);
+          .record(
+            customerId: widget.customerId,
+            visitedAt: _visitedAt,
+            idempotencyKey: _idempotencyKey!,
+          );
       if (!mounted) {
         return;
       }

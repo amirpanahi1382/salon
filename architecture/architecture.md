@@ -776,6 +776,16 @@ Every API should consider:
 
 Do not expose internal database models directly as API contracts.
 
+List endpoints that can exceed 200 rows return `{ items, hasMore }` rather than a bare array:
+
+- `GET /customers`
+- `GET /visits`
+- `GET /customers/:id/visits`
+- `GET /intelligence/opportunities`
+- `GET /intelligence/segments`
+
+`GET /users` remains a full salon-scoped array (not truncated). `POST /visits` accepts optional header `Idempotency-Key` (see `adr-001-visit-idempotency.md`).
+
 ---
 
 # 30. DTO Boundary
@@ -984,6 +994,8 @@ Only add caching after measuring an actual performance need.
 # 38. Observability
 
 The MVP should provide enough visibility to diagnose failures.
+
+Implemented logging, health, metrics, shutdown, and outbox operations are documented in `architecture/operations.md`.
 
 Minimum:
 

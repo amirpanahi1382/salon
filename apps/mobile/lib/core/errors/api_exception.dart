@@ -14,6 +14,7 @@ class ApiException implements Exception {
   bool get isNotFound => statusCode == 404;
   bool get isConflict => statusCode == 409;
   bool get isValidation => statusCode == 400;
+  bool get isTooLarge => statusCode == 413;
 
   String get userMessage {
     if (isUnauthenticated) {
@@ -24,6 +25,9 @@ class ApiException implements Exception {
     }
     if (isNotFound) {
       return 'We could not find that record.';
+    }
+    if (isTooLarge) {
+      return 'The Excel file is too large.';
     }
     if (message.trim().isNotEmpty) {
       return message;

@@ -1,14 +1,15 @@
 import { Injectable } from '@nestjs/common';
-import Redis from 'ioredis';
-import { Client as MinioClient } from 'minio';
+import { withTimeout } from '@salon/shared';
 import { AppConfigService } from '../infrastructure/config/app-config.service';
 import { PrismaService } from '../infrastructure/database/prisma.service';
+import { ShutdownState } from '../infrastructure/observability/shutdown-state';
 
 @Injectable()
 export class HealthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: AppConfigService,
+    private readonly shutdown: ShutdownState,
   ) {}
 
   live() {
@@ -16,54 +17,28 @@ export class HealthService {
   }
 
   async ready() {
-    const checks = {
-      postgres: await this.checkPostgres(),
-      redis: await this.checkRedis(),
-      objectStorage: await this.checkMinio(),
-    };
+    if (this.shutdown.isDraining()) {
+      return {
+        status: 'not_ready' as const,
+        reason: 'shutting_down',
+        checks: { postgres: 'skipped' as const },
+      };
+    }
 
-    const healthy = Object.values(checks).every((check) => check === 'up');
+    const postgres = await this.checkPostgres();
     return {
-      status: healthy ? ('ok' as const) : ('degraded' as const),
-      checks,
+      status: postgres === 'up' ? ('ok' as const) : ('not_ready' as const),
+      checks: { postgres },
     };
   }
 
   private async checkPostgres(): Promise<'up' | 'down'> {
     try {
-      await this.prisma.client.$queryRaw`SELECT 1`;
-      return 'up';
-    } catch {
-      return 'down';
-    }
-  }
-
-  private async checkRedis(): Promise<'up' | 'down'> {
-    const redis = new Redis(this.config.values.REDIS_URL, {
-      lazyConnect: true,
-      maxRetriesPerRequest: 1,
-    });
-    try {
-      await redis.connect();
-      const pong = await redis.ping();
-      return pong === 'PONG' ? 'up' : 'down';
-    } catch {
-      return 'down';
-    } finally {
-      redis.disconnect();
-    }
-  }
-
-  private async checkMinio(): Promise<'up' | 'down'> {
-    const client = new MinioClient({
-      endPoint: this.config.values.MINIO_ENDPOINT,
-      port: this.config.values.MINIO_PORT,
-      useSSL: this.config.values.MINIO_USE_SSL,
-      accessKey: this.config.values.MINIO_ACCESS_KEY,
-      secretKey: this.config.values.MINIO_SECRET_KEY,
-    });
-    try {
-      await client.bucketExists(this.config.values.MINIO_BUCKET);
+      await withTimeout(
+        this.prisma.client.$queryRaw`SELECT 1`,
+        this.config.values.HEALTH_CHECK_TIMEOUT_MS,
+        'postgres health check timed out',
+      );
       return 'up';
     } catch {
       return 'down';

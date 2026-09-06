@@ -4,11 +4,13 @@ import 'package:go_router/go_router.dart';
 
 import '../../features/auth/auth_screens.dart';
 import '../../features/customers/customer_edit_loader.dart';
+import '../../features/customers/customer_import_screen.dart';
 import '../../features/customers/customer_screens.dart';
 import '../../features/dashboard/dashboard_screen.dart';
 import '../../features/opportunities/opportunities_screen.dart';
 import '../../features/profile/profile_screen.dart';
 import '../../features/shell/app_shell.dart';
+import '../../features/visits/visits_screen.dart';
 import '../../shared/models/models.dart';
 import '../state/providers.dart';
 
@@ -67,6 +69,10 @@ final routerProvider = Provider<GoRouter>((ref) {
             builder: (context, state) => const CustomersScreen(),
           ),
           GoRoute(
+            path: '/visits',
+            builder: (context, state) => const VisitsScreen(),
+          ),
+          GoRoute(
             path: '/opportunities',
             builder: (context, state) => const OpportunitiesScreen(),
           ),
@@ -79,6 +85,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/customers/new',
         builder: (context, state) => const CustomerFormScreen(),
+      ),
+      GoRoute(
+        path: '/customers/import',
+        builder: (context, state) => const CustomerImportScreen(),
       ),
       GoRoute(
         path: '/customers/:id',

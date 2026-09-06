@@ -1,20 +1,23 @@
 import 'reflect-metadata';
-import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { loadConfig } from '@salon/config';
 import { WorkerModule } from './worker.module';
+import { createWorkerLogger } from './infrastructure/logging/worker-logger';
 
 async function bootstrap(): Promise<void> {
-  loadConfig();
+  const config = loadConfig();
+  const logger = createWorkerLogger(config);
   const app = await NestFactory.createApplicationContext(WorkerModule, {
-    logger: ['log', 'error', 'warn'],
+    bufferLogs: true,
   });
   app.enableShutdownHooks();
-  Logger.log('Worker started (no HTTP server)', 'Bootstrap');
+  logger.info({ operation: 'worker.bootstrap' }, 'Worker started (no HTTP server)');
 }
 
 bootstrap().catch((error: unknown) => {
   const message = error instanceof Error ? error.message : 'Unknown bootstrap error';
-  Logger.error(message, 'Bootstrap');
+  process.stderr.write(
+    `${JSON.stringify({ level: 'error', service: 'worker', msg: message })}\n`,
+  );
   process.exit(1);
 });

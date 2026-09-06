@@ -6,7 +6,7 @@ import {
   type OpportunityType,
   type RetentionAnalyzer,
 } from '@salon/shared';
-import { CustomerRepository } from '../customer/customer.repository';
+import { CustomerRepository, INTELLIGENCE_CUSTOMER_CAP } from '../customer/customer.repository';
 import { VisitRepository } from '../visit/visit.repository';
 import type { CustomerIdentity } from './intelligence.mapper';
 
@@ -47,10 +47,15 @@ export class IntelligenceQueryService {
   }
 
   async loadSalon(tenantId: string, asOf = utcNow()) {
-    const [customers, visitRows] = await Promise.all([
-      this.customers.listIdentity(tenantId),
-      this.visits.listVisitedAtForSalon(tenantId),
-    ]);
+    const identityRows = await this.customers.listIdentity(tenantId);
+    const truncated = identityRows.length > INTELLIGENCE_CUSTOMER_CAP;
+    const customers = truncated
+      ? identityRows.slice(0, INTELLIGENCE_CUSTOMER_CAP)
+      : identityRows;
+    const visitRows = await this.visits.listVisitedAtForSalon(
+      tenantId,
+      customers.map((row) => row.id),
+    );
 
     const datesByCustomer = new Map<string, Date[]>();
     for (const row of visitRows) {
@@ -59,11 +64,14 @@ export class IntelligenceQueryService {
       datesByCustomer.set(row.customerId, dates);
     }
 
-    return customers.map((customer) => ({
-      customer,
-      visitDates: datesByCustomer.get(customer.id) ?? [],
-      asOf,
-    })) satisfies CustomerIntelligenceSnapshot[];
+    return {
+      truncated,
+      snapshots: customers.map((customer) => ({
+        customer,
+        visitDates: datesByCustomer.get(customer.id) ?? [],
+        asOf,
+      })) satisfies CustomerIntelligenceSnapshot[],
+    };
   }
 
   filterByStatus(status: CustomerStatus | undefined, current: CustomerStatus): boolean {

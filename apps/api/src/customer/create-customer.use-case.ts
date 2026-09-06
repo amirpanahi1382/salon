@@ -3,9 +3,11 @@ import { Prisma } from '@salon/database';
 import {
   ConflictError,
   createId,
+  CUSTOMER_PHONE_RULE_MESSAGE,
   DOMAIN_EVENT_TYPES,
   isUsableCustomerPhone,
   normalizeCustomerPhone,
+  sanitizeCustomerNamePart,
   ValidationError,
   type AuthenticatedPrincipal,
 } from '@salon/shared';
@@ -22,15 +24,18 @@ export class CreateCustomerUseCase {
   ) {}
 
   async execute(principal: AuthenticatedPrincipal, input: CreateCustomerDto) {
-    const firstName = input.firstName.trim();
-    const lastName = input.lastName.trim();
+    const firstName = sanitizeCustomerNamePart(input.firstName);
+    const lastName = sanitizeCustomerNamePart(input.lastName ?? '');
     const phoneNumber = normalizeCustomerPhone(input.phoneNumber);
 
-    if (!firstName || !lastName) {
-      throw new ValidationError('Customer name is required');
+    if (!firstName) {
+      throw new ValidationError('Customer first name is required');
+    }
+    if (lastName === null) {
+      throw new ValidationError('Customer last name is invalid');
     }
     if (!isUsableCustomerPhone(phoneNumber)) {
-      throw new ValidationError('A valid phone number is required');
+      throw new ValidationError(CUSTOMER_PHONE_RULE_MESSAGE);
     }
 
     const duplicate = await this.customers.findByPhone(principal.tenantId, phoneNumber);
