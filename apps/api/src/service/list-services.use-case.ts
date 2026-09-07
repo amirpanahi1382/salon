@@ -8,15 +8,19 @@ import { SERVICE_LIST_LIMIT, ServiceRepository } from './service.repository';
 export class ListServicesUseCase {
   constructor(private readonly services: ServiceRepository) {}
 
-  async execute(principal: AuthenticatedPrincipal, cursor?: string) {
-    const parts = decodeCursor(cursor, 2);
+  async execute(principal: AuthenticatedPrincipal, query: { cursor?: string; includeInactive?: string }) {
+    const includeInactive = principal.role === 'OWNER' && query.includeInactive === 'true';
+    const parts = decodeCursor(query.cursor, 2);
     const cursorValue = parts
       ? { createdAt: new Date(parts[0]!), id: parts[1]! }
       : undefined;
     if (cursorValue && Number.isNaN(cursorValue.createdAt.getTime())) {
       throw new ValidationError('Invalid cursor');
     }
-    const rows = await this.services.list(principal.tenantId, cursorValue);
+    const rows = await this.services.list(principal.tenantId, {
+      cursor: cursorValue,
+      includeInactive,
+    });
     const page = toListPage(rows, SERVICE_LIST_LIMIT, (row) =>
       encodeCursor([row.createdAt.toISOString(), row.id]),
     );

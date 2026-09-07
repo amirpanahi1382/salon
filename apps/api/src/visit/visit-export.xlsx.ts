@@ -1,6 +1,7 @@
 import { createRequire } from 'node:module';
 import ExcelJS from 'exceljs';
 import { formatMoneyString, parseMoneyString } from '@salon/shared';
+import { formatJalaliDateTimeTehran } from './jalali-format';
 import {
   VISIT_EXPORT_HEADERS,
   VISIT_EXPORT_SHEET_NAME,
@@ -52,12 +53,11 @@ export async function buildVisitsWorkbook(rows: VisitExportRow[]): Promise<Buffe
       row.customerName,
       row.serviceName,
       amountCellValue(row.amountReceived),
-      row.visitedAt,
+      formatJalaliDateTimeTehran(row.visitedAt),
       row.daysSincePreviousVisit,
     ]);
     applyPersianCellStyle(excelRow, false);
     excelRow.getCell(3).numFmt = '#,##0.00';
-    excelRow.getCell(4).numFmt = 'yyyy-mm-dd hh:mm';
     excelRow.getCell(5).numFmt = '0';
   }
 
@@ -65,7 +65,7 @@ export async function buildVisitsWorkbook(rows: VisitExportRow[]): Promise<Buffe
     { width: 28 },
     { width: 28 },
     { width: 18 },
-    { width: 22 },
+    { width: 24 },
     { width: 32 },
   ];
   sheet.autoFilter = {

@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/state/providers.dart';
 import '../../core/widgets/app_widgets.dart';
+import '../../shared/jalali.dart';
 import '../../shared/labels.dart';
 import '../../shared/models/models.dart';
 
@@ -77,7 +78,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           children: [
             Text(_salon?.name ?? AppStrings.appName),
             if (user?.name != null)
-              Text(user!.name!, style: Theme.of(context).textTheme.bodySmall),
+              Text(
+                user!.name!,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
           ],
         ),
       ),
@@ -97,7 +101,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                 Widget metric(String label, int value) {
                   return SizedBox(
                     width: cardWidth,
-                    child: MetricCard(label: label, value: value),
+                    child: MetricCard(
+                      label: label,
+                      value: toPersianDigits(value.toString()),
+                    ),
                   );
                 }
 
@@ -105,24 +112,30 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                   spacing: 12,
                   runSpacing: 12,
                   children: [
-                    metric('Total customers', summary.customers),
-                    metric('Active', summary.active),
-                    metric('At risk', summary.atRisk),
-                    metric('Inactive', summary.inactive),
-                    metric('Reactivation', summary.reactivationOpportunities),
-                    metric('New', summary.newCustomers),
+                    metric(AppStrings.metricTotalCustomers, summary.customers),
+                    metric(AppStrings.metricActive, summary.active),
+                    metric(AppStrings.metricAtRisk, summary.atRisk),
+                    metric(AppStrings.metricInactive, summary.inactive),
+                    metric(
+                      AppStrings.metricReactivation,
+                      summary.reactivationOpportunities,
+                    ),
+                    metric(AppStrings.metricNew, summary.newCustomers),
                     SizedBox(
                       width: cardWidth,
                       child: MetricCard(
-                        label: 'Revenue (UTC month)',
-                        value: '${summary.revenueThisUtcMonth} IRR',
+                        label: AppStrings.metricRevenueThisMonth,
+                        value:
+                            '${summary.revenueThisUtcMonth} ${AppStrings.rial}',
+                        valueDirection: TextDirection.ltr,
                       ),
                     ),
                     SizedBox(
                       width: cardWidth,
                       child: MetricCard(
-                        label: 'Completed revenue',
-                        value: '${summary.totalRevenue} IRR',
+                        label: AppStrings.metricCompletedRevenue,
+                        value: '${summary.totalRevenue} ${AppStrings.rial}',
+                        valueDirection: TextDirection.ltr,
                       ),
                     ),
                   ],
@@ -131,7 +144,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             ),
             const SizedBox(height: 24),
             Text(
-              'Customers needing attention',
+              AppStrings.customersNeedingAttention,
               style: Theme.of(context).textTheme.titleMedium,
             ),
             const SizedBox(height: 12),

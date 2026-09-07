@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/state/providers.dart';
 import '../../core/widgets/app_widgets.dart';
@@ -72,13 +73,26 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                           style: Theme.of(context).textTheme.titleLarge,
                         ),
                         const SizedBox(height: 8),
-                        Text(user?.name ?? user?.email ?? 'Signed in'),
+                        if (user?.email != null && user?.name == null)
+                          LtrText(user!.email!)
+                        else
+                          Text(user?.name ?? AppStrings.signedIn),
                         const SizedBox(height: 4),
                         Text(roleLabel(user?.role ?? '')),
                       ],
                     ),
                   ),
                   const SizedBox(height: 24),
+                  if (user?.role == 'OWNER') ...[
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.spa_outlined),
+                      title: const Text(AppStrings.manageServices),
+                      trailing: const Icon(Icons.arrow_forward),
+                      onTap: () => context.push('/profile/services'),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
                   OutlinedButton(
                     onPressed: () =>
                         ref.read(authControllerProvider.notifier).logout(),

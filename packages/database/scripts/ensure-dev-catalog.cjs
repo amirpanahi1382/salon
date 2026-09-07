@@ -1,8 +1,7 @@
 /**
- * Opt-in development catalog. Does not run on API startup or migrate.
- *
- * Upserts tenant-scoped "Hair Service" and "Nail Service" for ACTIVE salons
- * whose OWNER email is not an automated @example.test account.
+ * Optional backfill for older development salons that never received a starter catalog.
+ * Production registration creates the same tenant-owned starter rows atomically.
+ * Does not run on API startup or migrate. Names must stay aligned with STARTER_SERVICE_CATALOG.
  *
  *   pnpm db:ensure-dev-catalog
  */

@@ -3,10 +3,11 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:intl/intl.dart';
 
 import '../../core/state/providers.dart';
 import '../../core/widgets/app_widgets.dart';
+import '../../shared/jalali.dart';
+import '../../shared/jalali_date_picker.dart';
 import '../../shared/labels.dart';
 import '../../shared/models/models.dart';
 import 'customer_validation.dart';
@@ -69,7 +70,8 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
       appBar: AppBar(
         title: const Text(AppStrings.customers),
         actions: [
-          TextButton.icon(
+          IconButton(
+            tooltip: AppStrings.importFromExcel,
             onPressed: () async {
               final imported = await context.push<bool>('/customers/import');
               if (imported == true) {
@@ -77,7 +79,6 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
               }
             },
             icon: const Icon(Icons.upload_file_outlined),
-            label: const Text(AppStrings.importFromExcel),
           ),
         ],
       ),
@@ -328,6 +329,7 @@ class _CustomerFormScreenState extends ConsumerState<CustomerFormScreen> {
                     label: AppStrings.phoneNumber,
                     controller: _phone,
                     keyboardType: TextInputType.phone,
+                    textDirection: TextDirection.ltr,
                   ),
                   const SizedBox(height: 8),
                   const Text(AppStrings.phoneHint),
@@ -500,7 +502,6 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
     }
     final customer = _customer!;
     final intelligence = _intelligence;
-    final dateFormat = DateFormat.yMMMd().add_jm();
     final canManage = ref.watch(authControllerProvider).user?.role != 'STAFF';
     return Scaffold(
       appBar: AppBar(
@@ -566,7 +567,7 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                     style: Theme.of(context).textTheme.titleLarge,
                   ),
                   const SizedBox(height: 8),
-                  Text(customer.phoneNumber),
+                  LtrText(customer.phoneNumber),
                 ],
               ),
             ),
@@ -583,7 +584,7 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                       style: Theme.of(context).textTheme.titleSmall,
                     ),
                     const SizedBox(height: 8),
-                    Text(intelligence.explanation),
+                    Text(localizeIntelligenceCopy(intelligence.explanation)),
                     if (intelligence.opportunities.isNotEmpty) ...[
                       const SizedBox(height: 16),
                       Text(
@@ -591,7 +592,11 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                         style: Theme.of(context).textTheme.titleSmall,
                       ),
                       const SizedBox(height: 8),
-                      Text(intelligence.opportunities.first.recommendedAction),
+                      Text(
+                        localizeIntelligenceCopy(
+                          intelligence.opportunities.first.recommendedAction,
+                        ),
+                      ),
                       const SizedBox(height: 8),
                       const Text(
                         AppStrings.recommendationNote,
@@ -621,27 +626,29 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Completed revenue (IRR, UTC)',
+                      AppStrings.completedRevenueTitle,
                       style: Theme.of(context).textTheme.titleSmall,
                     ),
                     const SizedBox(height: 8),
-                    Text(intelligence.revenue?.totalRevenue ?? '0.00'),
+                    LtrText(
+                      '${intelligence.revenue?.totalRevenue ?? '0.00'} ${AppStrings.rial}',
+                    ),
                     Text(
-                      '${intelligence.revenue?.transactionCount ?? 0} completed transactions · reporting UTC',
+                      '${toPersianDigits('${intelligence.revenue?.transactionCount ?? 0}')} تراکنش تکمیل‌شده · ${AppStrings.revenueUtcNote}',
                     ),
                     if (intelligence.revenue?.averageSpendPerVisit != null)
                       Text(
-                        'Avg spend per visit ${intelligence.revenue!.averageSpendPerVisit}',
+                        '${AppStrings.avgSpendPerVisit} ${intelligence.revenue!.averageSpendPerVisit} ${AppStrings.rial}',
                       ),
                     if (intelligence.revenue?.averageRevenuePerTransaction !=
                         null)
                       Text(
-                        'Avg revenue per transaction ${intelligence.revenue!.averageRevenuePerTransaction}',
+                        '${AppStrings.avgRevenuePerTransaction} ${intelligence.revenue!.averageRevenuePerTransaction} ${AppStrings.rial}',
                       ),
                     const SizedBox(height: 8),
                     const Text(
-                      'Revenue is completed transactions only. Record it with a completed visit.',
-                      style: TextStyle(fontSize: 12),
+                      AppStrings.revenueOnlyCompletedNote,
+                      style: TextStyle(fontSize: 12, height: 1.6),
                     ),
                   ],
                 ),
@@ -656,7 +663,7 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
             if (_visits.isEmpty)
               const EmptyStateView(
                 title: AppStrings.noVisits,
-                body: 'Record a completed visit when she has been in.',
+                body: AppStrings.emptyVisitHistoryBody,
               )
             else
               ..._visits.map(
@@ -669,8 +676,10 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                           icon: const Icon(Icons.delete_outline),
                         )
                       : null,
-                  title: Text(dateFormat.format(visit.visitedAt.toLocal())),
-                  subtitle: const Text('Completed visit'),
+                  title: Text(formatJalaliDateTime(visit.visitedAt)),
+                  subtitle: Text(
+                    '${visit.serviceLabel} · ${visit.amountLabel}',
+                  ),
                 ),
               ),
           ],
@@ -766,28 +775,35 @@ class _RecordVisitScreenState extends ConsumerState<RecordVisitScreen> {
     }
   }
 
-  Future<void> _pick() async {
-    final date = await showDatePicker(
+  Future<void> _pickDate() async {
+    final selected = await showJalaliDatePicker(
       context: context,
       initialDate: _visitedAt,
       firstDate: DateTime(2018),
       lastDate: DateTime.now(),
     );
-    if (date == null || !mounted) {
+    if (selected == null || !mounted) {
       return;
     }
+    setState(() {
+      _visitedAt = replaceLocalDateKeepingTime(_visitedAt, selected);
+      _idempotencyKey = null;
+    });
+  }
+
+  Future<void> _pickTime() async {
     final time = await showTimePicker(
       context: context,
       initialTime: TimeOfDay.fromDateTime(_visitedAt),
     );
-    if (time == null) {
+    if (time == null || !mounted) {
       return;
     }
     setState(() {
       _visitedAt = DateTime(
-        date.year,
-        date.month,
-        date.day,
+        _visitedAt.year,
+        _visitedAt.month,
+        _visitedAt.day,
         time.hour,
         time.minute,
       );
@@ -803,11 +819,11 @@ class _RecordVisitScreenState extends ConsumerState<RecordVisitScreen> {
     final amount = _normalizedAmount();
     final wantsSale = captureSale && amount.isNotEmpty && amount != '0' && amount != '0.0' && amount != '0.00';
     if (wantsSale && !_amountPattern.hasMatch(amount)) {
-      setState(() => _error = 'Amount must be a non-negative decimal in IRR.');
+      setState(() => _error = AppStrings.amountInvalid);
       return;
     }
     if (wantsSale && _serviceId == null) {
-      setState(() => _error = 'Select an active service for the amount received.');
+      setState(() => _error = AppStrings.selectActiveService);
       return;
     }
 
@@ -856,9 +872,22 @@ class _RecordVisitScreenState extends ConsumerState<RecordVisitScreen> {
       return ErrorView(message: _error!, onRetry: _loadServices);
     }
     if (_services.isEmpty) {
-      return const EmptyStateView(
-        title: AppStrings.noActiveServices,
-        body: AppStrings.noActiveServicesBody,
+      final isOwner = ref.read(authControllerProvider).user?.role == 'OWNER';
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const EmptyStateView(
+            title: AppStrings.noActiveServices,
+            body: AppStrings.noActiveServicesBody,
+          ),
+          if (isOwner) ...[
+            const SizedBox(height: 12),
+            OutlinedButton(
+              onPressed: () => context.push('/profile/services'),
+              child: const Text(AppStrings.manageServices),
+            ),
+          ],
+        ],
       );
     }
     return InputDecorator(
@@ -885,7 +914,6 @@ class _RecordVisitScreenState extends ConsumerState<RecordVisitScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final label = DateFormat.yMMMd().add_jm().format(_visitedAt);
     final captureSale = _canCaptureSale;
     return Scaffold(
       appBar: AppBar(title: const Text(AppStrings.recordVisit)),
@@ -893,14 +921,27 @@ class _RecordVisitScreenState extends ConsumerState<RecordVisitScreen> {
         padding: const EdgeInsets.all(24),
         children: [
           const Text(
-            'Record a completed historical visit. This is not a booking or appointment.',
+            AppStrings.recordVisitHint,
+            style: TextStyle(height: 1.65),
           ),
           const SizedBox(height: 24),
           ListTile(
+            key: const Key('visit-date-tile'),
             title: const Text(AppStrings.visitDate),
-            subtitle: Text(label),
+            subtitle: Text(formatJalaliPrettyDate(_visitedAt)),
             trailing: const Icon(Icons.event),
-            onTap: _pick,
+            onTap: _pickDate,
+          ),
+          ListTile(
+            key: const Key('visit-time-tile'),
+            title: const Text(AppStrings.visitTime),
+            subtitle: Text(
+              toPersianDigits(
+                '${_visitedAt.hour.toString().padLeft(2, '0')}:${_visitedAt.minute.toString().padLeft(2, '0')}',
+              ),
+            ),
+            trailing: const Icon(Icons.schedule),
+            onTap: _pickTime,
           ),
           if (captureSale) ...[
             const SizedBox(height: 8),
@@ -911,6 +952,7 @@ class _RecordVisitScreenState extends ConsumerState<RecordVisitScreen> {
                 controller: _amount,
                 enabled: !_loading,
                 keyboardType: TextInputType.number,
+                textDirection: TextDirection.ltr,
                 decoration: const InputDecoration(
                   labelText: AppStrings.amountReceived,
                 ),

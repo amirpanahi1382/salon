@@ -6,7 +6,8 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/infrastructure/database/prisma.service';
 import { HttpExceptionFilter } from '../src/infrastructure/http/http-exception.filter';
-import { listItems } from './list-page';
+import { listItems, listPage } from './list-page';
+import { formatJalaliDateTimeTehran } from '../src/visit/jalali-format';
 import { VISIT_EXPORT_HEADERS, VISIT_EXPORT_SHEET_NAME } from '../src/visit/visit-export.constants';
 
 const describeIfDb = process.env.DATABASE_URL ? describe : describe.skip;
@@ -260,21 +261,19 @@ describeIfDb('Visit list enrichment and Excel export (e2e)', () => {
       const name = String(row.getCell(1).value);
       names.push(name);
       expect(name).not.toBe('Other Salon');
-      const visited = row.getCell(4).value;
-      const visitedAt =
-        visited instanceof Date ? visited.toISOString() : new Date(String(visited)).toISOString();
-      daysByVisitedAt.set(visitedAt.slice(0, 10), (row.getCell(5).value as number | null) ?? null);
-      amounts.set(visitedAt.slice(0, 10), (row.getCell(3).value as number | null) ?? null);
-      services.set(visitedAt.slice(0, 10), (row.getCell(2).value as string | null) ?? null);
+      const visitedAt = String(row.getCell(4).value);
+      daysByVisitedAt.set(visitedAt, (row.getCell(5).value as number | null) ?? null);
+      amounts.set(visitedAt, (row.getCell(3).value as number | null) ?? null);
+      services.set(visitedAt, (row.getCell(2).value as string | null) ?? null);
     });
     expect(names.every((name) => name === 'Maryam Ahmadi')).toBe(true);
-    expect(daysByVisitedAt.get('2026-01-01')).toBeNull();
-    expect(daysByVisitedAt.get('2026-01-11')).toBe(10);
-    expect(daysByVisitedAt.get('2026-02-10')).toBe(30);
-    expect(amounts.get('2026-01-11')).toBe(8000000);
-    expect(amounts.get('2026-03-01')).toBeNull();
-    expect(services.get('2026-01-11')).toBe(hair.name);
-    expect(services.get('2026-02-10')).toBe(nail.name);
+    expect(daysByVisitedAt.get(formatJalaliDateTimeTehran(new Date('2026-01-01T10:00:00.000Z')))).toBeNull();
+    expect(daysByVisitedAt.get(formatJalaliDateTimeTehran(new Date('2026-01-11T10:00:00.000Z')))).toBe(10);
+    expect(daysByVisitedAt.get(formatJalaliDateTimeTehran(new Date('2026-02-10T10:00:00.000Z')))).toBe(30);
+    expect(amounts.get(formatJalaliDateTimeTehran(new Date('2026-01-11T10:00:00.000Z')))).toBe(8000000);
+    expect(amounts.get(formatJalaliDateTimeTehran(new Date('2026-03-01T10:00:00.000Z')))).toBeNull();
+    expect(services.get(formatJalaliDateTimeTehran(new Date('2026-01-11T10:00:00.000Z')))).toBe(hair.name);
+    expect(services.get(formatJalaliDateTimeTehran(new Date('2026-02-10T10:00:00.000Z')))).toBe(nail.name);
 
     const january = await request(app.getHttpServer())
       .get('/visits/export')
@@ -296,12 +295,11 @@ describeIfDb('Visit list enrichment and Excel export (e2e)', () => {
       if (rowNumber === 1) {
         return;
       }
-      const visited = row.getCell(4).value;
-      const key = (visited instanceof Date ? visited : new Date(String(visited))).toISOString().slice(0, 10);
+      const key = String(row.getCell(4).value);
       janDays.set(key, (row.getCell(5).value as number | null) ?? null);
     });
-    expect(janDays.get('2026-01-11')).toBe(10);
-    expect(janDays.has('2026-02-10')).toBe(false);
+    expect(janDays.get(formatJalaliDateTimeTehran(new Date('2026-01-11T10:00:00.000Z')))).toBe(10);
+    expect(janDays.has(formatJalaliDateTimeTehran(new Date('2026-02-10T10:00:00.000Z')))).toBe(false);
 
     const byDate = await request(app.getHttpServer())
       .get('/visits/export')
@@ -336,5 +334,116 @@ describeIfDb('Visit list enrichment and Excel export (e2e)', () => {
     });
     expect(audit?.result).toBe('SUCCESS');
     expect(JSON.stringify(audit ?? {})).not.toMatch(/Maryam|8000000|0912/);
+  });
+
+  it('GET /visits returns serviceName and amountReceived on the correct visit across pages', async () => {
+    const salonA = await registerOwner('vlist-a');
+    const salonB = await registerOwner('vlist-b');
+    const maryam = await createCustomer(salonA.token, 'Maryam', 'Ahmadi');
+    const sara = await createCustomer(salonA.token, 'Sara', 'Mohammadi');
+    const otherCustomer = await createCustomer(salonB.token, 'Other', 'Salon');
+    const hair = await createService(salonA.token, 'Hair Service');
+    const nail = await createService(salonA.token, 'Nail Service');
+    const otherService = await createService(salonB.token, 'Other Service');
+
+    const visitOnly = await request(app.getHttpServer())
+      .post('/visits')
+      .set('Authorization', `Bearer ${salonA.token}`)
+      .send({ customerId: maryam, visitedAt: '2026-06-01T10:00:00.000Z' })
+      .expect(201);
+
+    const hairSale = await completeSale(salonA.token, {
+      customerId: maryam,
+      visitedAt: '2026-06-10T10:00:00.000Z',
+      serviceId: hair.id,
+      amount: '8000000.00',
+    });
+    const nailSale = await completeSale(salonA.token, {
+      customerId: sara,
+      visitedAt: '2026-06-11T10:00:00.000Z',
+      serviceId: nail.id,
+      amount: '5000000.00',
+    });
+    await completeSale(salonB.token, {
+      customerId: otherCustomer,
+      visitedAt: '2026-06-10T10:00:00.000Z',
+      serviceId: otherService.id,
+      amount: '999.00',
+    });
+
+    type VisitRow = {
+      id: string;
+      firstName: string;
+      lastName: string;
+      visitedAt: string;
+      serviceName: string | null;
+      amountReceived: string | null;
+    };
+
+    const listed = await request(app.getHttpServer())
+      .get('/visits')
+      .set('Authorization', `Bearer ${salonA.token}`)
+      .expect(200);
+    const items = listItems<VisitRow>(listed.body);
+    expect(items).toHaveLength(3);
+    const byId = Object.fromEntries(items.map((row) => [row.id, row]));
+    expect(byId[hairSale.body.visit.id]).toMatchObject({
+      firstName: 'Maryam',
+      lastName: 'Ahmadi',
+      visitedAt: '2026-06-10T10:00:00.000Z',
+      serviceName: 'Hair Service',
+      amountReceived: '8000000.00',
+    });
+    expect(byId[nailSale.body.visit.id]).toMatchObject({
+      firstName: 'Sara',
+      lastName: 'Mohammadi',
+      visitedAt: '2026-06-11T10:00:00.000Z',
+      serviceName: 'Nail Service',
+      amountReceived: '5000000.00',
+    });
+    expect(byId[visitOnly.body.id]).toMatchObject({
+      serviceName: null,
+      amountReceived: null,
+    });
+    expect(items.every((row) => row.serviceName !== otherService.name)).toBe(true);
+
+    const page1 = await request(app.getHttpServer())
+      .get('/visits')
+      .query({ limit: 1 })
+      .set('Authorization', `Bearer ${salonA.token}`)
+      .expect(200);
+    const firstPage = listPage<VisitRow>(page1.body);
+    expect(firstPage.items).toHaveLength(1);
+    expect(firstPage.hasMore).toBe(true);
+    expect(firstPage.nextCursor).toBeTruthy();
+    expect(firstPage.items[0]).toMatchObject({
+      id: nailSale.body.visit.id,
+      serviceName: 'Nail Service',
+      amountReceived: '5000000.00',
+    });
+
+    const page2 = await request(app.getHttpServer())
+      .get('/visits')
+      .query({ limit: 1, cursor: firstPage.nextCursor })
+      .set('Authorization', `Bearer ${salonA.token}`)
+      .expect(200);
+    const secondPage = listPage<VisitRow>(page2.body);
+    expect(secondPage.items).toHaveLength(1);
+    expect(secondPage.items[0]).toMatchObject({
+      id: hairSale.body.visit.id,
+      serviceName: 'Hair Service',
+      amountReceived: '8000000.00',
+    });
+
+    const otherList = await request(app.getHttpServer())
+      .get('/visits')
+      .set('Authorization', `Bearer ${salonB.token}`)
+      .expect(200);
+    const otherItems = listItems<VisitRow>(otherList.body);
+    expect(otherItems.map((row) => row.id)).not.toContain(hairSale.body.visit.id);
+    expect(otherItems.map((row) => row.id)).not.toContain(nailSale.body.visit.id);
+    expect(otherItems.every((row) => row.serviceName === otherService.name || row.serviceName === null)).toBe(
+      true,
+    );
   });
 });

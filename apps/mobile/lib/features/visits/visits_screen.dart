@@ -2,10 +2,10 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:intl/intl.dart';
 
 import '../../core/state/providers.dart';
 import '../../core/widgets/app_widgets.dart';
+import '../../shared/jalali.dart';
 import '../../shared/labels.dart';
 import '../../shared/models/models.dart';
 
@@ -184,15 +184,14 @@ class _VisitsScreenState extends ConsumerState<VisitsScreen> {
     if (selected == yesterday) {
       return AppStrings.yesterday;
     }
-    return DateFormat.yMMMd().format(selected);
+    return formatJalaliPrettyDate(selected);
   }
 
   @override
   Widget build(BuildContext context) {
-    final dateFormat = DateFormat.yMMMd().add_jm();
     return Scaffold(
       appBar: AppBar(
-        title: const Text(AppStrings.visits),
+        title: const Text(AppStrings.visitsListTitle),
         actions: [
           TextButton(
             onPressed: _exporting ? null : _export,
@@ -235,8 +234,10 @@ class _VisitsScreenState extends ConsumerState<VisitsScreen> {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text('${_items.length} ${AppStrings.visitCountLabel}'),
+                alignment: AlignmentDirectional.centerStart,
+                child: Text(
+                  '${toPersianDigits(_items.length.toString())} ${AppStrings.visitCountLabel}',
+                ),
               ),
             ),
           Expanded(
@@ -268,24 +269,62 @@ class _VisitsScreenState extends ConsumerState<VisitsScreen> {
                                 const Divider(height: 1),
                             itemBuilder: (context, index) {
                               final visit = _items[index];
-                              return ListTile(
-                                title: Text(visit.customerName),
-                                isThreeLine: true,
-                                subtitle: Text(
-                                  '${visit.serviceLabel}\n${visit.amountLabel}\n${dateFormat.format(visit.visitedAt.toLocal())}',
-                                ),
-                                trailing: _canDelete
-                                    ? IconButton(
-                                        tooltip: AppStrings.deleteVisit,
-                                        onPressed: () => _delete(visit),
-                                        icon: const Icon(Icons.delete_outline),
-                                      )
+                              return _VisitEventRow(
+                                visit: visit,
+                                dateLabel: formatJalaliDateTime(visit.visitedAt),
+                                onDelete: _canDelete
+                                    ? () => _delete(visit)
                                     : null,
                               );
                             },
                           ),
                   ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _VisitEventRow extends StatelessWidget {
+  const _VisitEventRow({
+    required this.visit,
+    required this.dateLabel,
+    this.onDelete,
+  });
+
+  final Visit visit;
+  final String dateLabel;
+  final VoidCallback? onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(visit.customerName, style: theme.textTheme.titleMedium),
+                const SizedBox(height: 4),
+                Text(visit.serviceLabel),
+                const SizedBox(height: 2),
+                Text(visit.amountLabel, textDirection: TextDirection.ltr),
+                const SizedBox(height: 2),
+                Text(dateLabel, style: theme.textTheme.bodySmall),
+              ],
+            ),
+          ),
+          if (onDelete != null)
+            IconButton(
+              tooltip: AppStrings.deleteVisit,
+              onPressed: onDelete,
+              icon: const Icon(Icons.delete_outline),
+            ),
         ],
       ),
     );
@@ -367,7 +406,7 @@ class _CustomerPickerDialogState extends ConsumerState<_CustomerPickerDialog> {
                         ..._items.map(
                           (customer) => ListTile(
                             title: Text(customer.fullName),
-                            subtitle: Text(customer.phoneNumber),
+                            subtitle: LtrText(customer.phoneNumber),
                             onTap: () => Navigator.pop(context, customer),
                           ),
                         ),

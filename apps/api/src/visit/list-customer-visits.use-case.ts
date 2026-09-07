@@ -3,7 +3,7 @@ import { NotFoundError, type AuthenticatedPrincipal } from '@salon/shared';
 import { CustomerRepository } from '../customer/customer.repository';
 import { encodeCursor, toListPage } from '../infrastructure/http/list-page';
 import { VisitRepository, VISIT_LIST_LIMIT } from './visit.repository';
-import { toVisitResponse } from './visit.mapper';
+import { toVisitHistoryItem } from './visit.mapper';
 import { parseVisitCursor } from './list-visits.use-case';
 
 @Injectable()
@@ -24,7 +24,7 @@ export class ListCustomerVisitsUseCase {
       customer.id,
       parseVisitCursor(cursor),
     );
-    return toListPage(rows.map(toVisitResponse), VISIT_LIST_LIMIT, (item) =>
+    return toListPage(rows.map(toVisitHistoryItem), VISIT_LIST_LIMIT, (item) =>
       encodeCursor([item.visitedAt, item.createdAt, item.id]),
     );
   }

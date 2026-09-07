@@ -292,14 +292,32 @@ class ServiceRepository {
 
   final ApiClient _api;
 
-  Future<ItemPage<SalonService>> list() async {
-    final data = await _api.get('/services');
+  Future<ItemPage<SalonService>> list({bool includeInactive = false}) async {
+    final data = await _api.get(
+      '/services',
+      query: includeInactive ? {'includeInactive': 'true'} : null,
+    );
     return parseItemPage(data, SalonService.fromJson);
   }
 
   Future<SalonService> create(String name) async {
     final data = await _api.post('/services', data: {'name': name.trim()})
         as Map<String, dynamic>;
+    return SalonService.fromJson(data);
+  }
+
+  Future<SalonService> update({
+    required String id,
+    String? name,
+    String? status,
+  }) async {
+    final data = await _api.patch(
+      '/services/$id',
+      data: {
+        'name': ?name?.trim(),
+        'status': ?status,
+      },
+    ) as Map<String, dynamic>;
     return SalonService.fromJson(data);
   }
 }

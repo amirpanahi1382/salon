@@ -125,7 +125,7 @@ void main() {
     });
     expect(visit.customerName, 'Maryam Ahmadi');
     expect(visit.serviceLabel, 'Hair Service');
-    expect(visit.amountLabel, '8000000.00 IRR');
+    expect(visit.amountLabel, '8000000.00 ریال');
 
     final visitOnly = Visit.fromJson({
       'id': 'v2',
@@ -139,6 +139,41 @@ void main() {
     });
     expect(visitOnly.serviceLabel, '—');
     expect(visitOnly.amountLabel, '—');
+  });
+
+  test('paginated visit pages keep serviceName and amountReceived', () {
+    final page = parseItemPage({
+      'items': [
+        {
+          'id': 'v-hair',
+          'customerId': 'c1',
+          'visitedAt': '2026-06-10T10:00:00.000Z',
+          'createdAt': '2026-06-10T10:01:00.000Z',
+          'firstName': 'Maryam',
+          'lastName': 'Ahmadi',
+          'serviceName': 'Hair Service',
+          'amountReceived': '8000000.00',
+        },
+        {
+          'id': 'v-nail',
+          'customerId': 'c2',
+          'visitedAt': '2026-06-11T10:00:00.000Z',
+          'createdAt': '2026-06-11T10:01:00.000Z',
+          'firstName': 'Sara',
+          'lastName': 'Mohammadi',
+          'serviceName': 'Nail Service',
+          'amountReceived': '5000000.00',
+        },
+      ],
+      'hasMore': true,
+      'nextCursor': 'cursor-2',
+    }, Visit.fromJson);
+    expect(page.hasMore, isTrue);
+    expect(page.nextCursor, 'cursor-2');
+    expect(page.items[0].serviceName, 'Hair Service');
+    expect(page.items[0].amountReceived, '8000000.00');
+    expect(page.items[1].serviceName, 'Nail Service');
+    expect(page.items[1].amountReceived, '5000000.00');
   });
 
   test('auth me uses userId from GET /auth/me', () {
@@ -157,7 +192,7 @@ void main() {
         code: 'UNAUTHENTICATED',
         message: 'x',
       ).userMessage,
-      contains('sign in'),
+      contains('وارد شوید'),
     );
     expect(
       const ApiException(
@@ -165,7 +200,7 @@ void main() {
         code: 'FORBIDDEN',
         message: 'x',
       ).userMessage,
-      contains('permission'),
+      contains('دسترسی'),
     );
     expect(
       const ApiException(
@@ -173,7 +208,7 @@ void main() {
         code: 'NOT_FOUND',
         message: 'nope',
       ).userMessage,
-      'We could not find that record.',
+      'این مورد پیدا نشد.',
     );
   });
 }

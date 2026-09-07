@@ -8,18 +8,8 @@ import { RolesGuard } from '../infrastructure/auth/roles.guard';
 import { UuidParam } from '../infrastructure/http/uuid-param';
 import { CreateServiceUseCase } from './create-service.use-case';
 import { ListServicesUseCase } from './list-services.use-case';
-import { CreateServiceDto, UpdateServiceDto } from './service.dto';
+import { CreateServiceDto, ListServicesQueryDto, UpdateServiceDto } from './service.dto';
 import { UpdateServiceUseCase } from './update-service.use-case';
-import { IsOptional, IsString, MaxLength } from 'class-validator';
-import { ApiPropertyOptional } from '@nestjs/swagger';
-
-class ListServicesQueryDto {
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  @MaxLength(512)
-  cursor?: string;
-}
 
 @ApiTags('services')
 @ApiBearerAuth()
@@ -34,20 +24,20 @@ export class ServiceController {
 
   @Get()
   @Roles('OWNER', 'MANAGER', 'STAFF')
-  @ApiOperation({ summary: 'List salon services' })
+  @ApiOperation({ summary: 'List salon services. Default: ACTIVE only. OWNER may pass includeInactive=true.' })
   list(@CurrentUser() user: AuthenticatedPrincipal, @Query() query: ListServicesQueryDto) {
-    return this.listServices.execute(user, query.cursor);
+    return this.listServices.execute(user, query);
   }
 
   @Post()
-  @Roles('OWNER', 'MANAGER')
+  @Roles('OWNER')
   @ApiOperation({ summary: 'Create a salon service' })
   create(@CurrentUser() user: AuthenticatedPrincipal, @Body() body: CreateServiceDto) {
     return this.createService.execute(user, body);
   }
 
   @Patch(':id')
-  @Roles('OWNER', 'MANAGER')
+  @Roles('OWNER')
   @ApiOperation({ summary: 'Update a salon service name or status' })
   update(
     @CurrentUser() user: AuthenticatedPrincipal,

@@ -14,6 +14,12 @@ class AppColors {
 }
 
 class AppTheme {
+  static const fontFamily = 'Vazirmatn';
+
+  static const locale = Locale('fa', 'IR');
+
+  static const supportedLocales = <Locale>[locale];
+
   static ThemeData light() {
     const scheme = ColorScheme.light(
       primary: AppColors.accent,
@@ -25,15 +31,72 @@ class AppTheme {
       error: AppColors.danger,
     );
 
-    return ThemeData(
+    final base = ThemeData(
       useMaterial3: true,
       colorScheme: scheme,
+      fontFamily: fontFamily,
       scaffoldBackgroundColor: AppColors.background,
+    );
+
+    return base.copyWith(
+      textTheme: base.textTheme.apply(
+        fontFamily: fontFamily,
+        bodyColor: AppColors.ink,
+        displayColor: AppColors.ink,
+      ).copyWith(
+        bodyMedium: const TextStyle(
+          fontFamily: fontFamily,
+          fontSize: 15,
+          height: 1.65,
+          color: AppColors.ink,
+        ),
+        bodySmall: const TextStyle(
+          fontFamily: fontFamily,
+          fontSize: 13,
+          height: 1.6,
+          color: AppColors.muted,
+        ),
+        titleMedium: const TextStyle(
+          fontFamily: fontFamily,
+          fontSize: 16,
+          height: 1.55,
+          fontWeight: FontWeight.w600,
+          color: AppColors.ink,
+        ),
+        titleLarge: const TextStyle(
+          fontFamily: fontFamily,
+          fontSize: 20,
+          height: 1.5,
+          fontWeight: FontWeight.w600,
+          color: AppColors.ink,
+        ),
+        headlineSmall: const TextStyle(
+          fontFamily: fontFamily,
+          fontSize: 22,
+          height: 1.4,
+          fontWeight: FontWeight.w600,
+          color: AppColors.ink,
+        ),
+        headlineMedium: const TextStyle(
+          fontFamily: fontFamily,
+          fontSize: 28,
+          height: 1.4,
+          fontWeight: FontWeight.w600,
+          color: AppColors.ink,
+        ),
+      ),
       appBarTheme: const AppBarTheme(
         backgroundColor: AppColors.background,
         foregroundColor: AppColors.ink,
         elevation: 0,
         centerTitle: false,
+        titleTextStyle: TextStyle(
+          fontFamily: fontFamily,
+          fontSize: 18,
+          height: 1.45,
+          fontWeight: FontWeight.w600,
+          color: AppColors.ink,
+        ),
       ),
       cardTheme: CardThemeData(
         color: AppColors.surface,
@@ -46,6 +109,7 @@ class AppTheme {
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: AppColors.surface,
+        alignLabelWithHint: true,
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
@@ -55,14 +119,45 @@ class AppTheme {
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
           minimumSize: const Size.fromHeight(48),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
+          textStyle: const TextStyle(
+            fontFamily: fontFamily,
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+            height: 1.3,
+          ),
         ),
       ),
-      navigationBarTheme: const NavigationBarThemeData(
+      navigationBarTheme: NavigationBarThemeData(
         backgroundColor: AppColors.surface,
         indicatorColor: AppColors.accentSoft,
+        height: 84,
+        labelTextStyle: WidgetStateProperty.resolveWith((states) {
+          return const TextStyle(
+            fontFamily: fontFamily,
+            fontSize: 11,
+            height: 1.2,
+            fontWeight: FontWeight.w600,
+          );
+        }),
+      ),
+      dialogTheme: const DialogThemeData(
+        titleTextStyle: TextStyle(
+          fontFamily: fontFamily,
+          fontSize: 18,
+          height: 1.5,
+          fontWeight: FontWeight.w600,
+          color: AppColors.ink,
+        ),
+        contentTextStyle: TextStyle(
+          fontFamily: fontFamily,
+          fontSize: 15,
+          height: 1.65,
+          color: AppColors.ink,
+        ),
       ),
     );
   }

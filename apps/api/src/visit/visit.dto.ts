@@ -99,14 +99,8 @@ export class ListVisitsQueryDto {
   cursor?: string;
 }
 
-export class VisitListItemDto extends VisitResponseDto {
-  @ApiProperty()
-  firstName!: string;
-
-  @ApiProperty()
-  lastName!: string;
-
-  @ApiPropertyOptional({ nullable: true, type: String, description: 'Service.name from the visit sale, if any' })
+export class VisitHistoryItemDto extends VisitResponseDto {
+  @ApiPropertyOptional({ nullable: true, type: String, description: 'Service.name from the visit sale, including INACTIVE services' })
   serviceName!: string | null;
 
   @ApiPropertyOptional({
@@ -115,6 +109,14 @@ export class VisitListItemDto extends VisitResponseDto {
     description: 'COMPLETED transaction amount as a decimal string. Null when there is no sale or the sale is VOIDED.',
   })
   amountReceived!: string | null;
+}
+
+export class VisitListItemDto extends VisitHistoryItemDto {
+  @ApiProperty()
+  firstName!: string;
+
+  @ApiProperty()
+  lastName!: string;
 }
 
 export class ExportVisitsQueryDto {
@@ -151,8 +153,8 @@ export class VisitListPageDto {
 }
 
 export class CustomerVisitListPageDto {
-  @ApiProperty({ type: [VisitResponseDto] })
-  items!: VisitResponseDto[];
+  @ApiProperty({ type: [VisitHistoryItemDto] })
+  items!: VisitHistoryItemDto[];
 
   @ApiProperty({ description: 'True when more visits exist beyond this page (max 200)' })
   hasMore!: boolean;

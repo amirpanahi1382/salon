@@ -1,169 +1,345 @@
+import 'jalali.dart';
+
 class AppStrings {
-  static const appName = 'Salon Attention';
-  static const loginTitle = 'Sign in';
-  static const registerTitle = 'Create salon account';
-  static const email = 'Email';
-  static const password = 'Password';
-  static const salonName = 'Salon name';
-  static const ownerName = 'Your name';
-  static const signIn = 'Sign in';
-  static const createAccount = 'Create account';
-  static const needAccount = 'Create a salon account';
-  static const haveAccount = 'Already have an account? Sign in';
-  static const dashboard = 'Today';
-  static const customers = 'Customers';
-  static const visits = 'Visits';
-  static const opportunities = 'Opportunities';
-  static const profile = 'Profile';
-  static const attentionQuestion = 'What should I pay attention to today?';
-  static const caughtUpTitle = "You're all caught up.";
-  static const caughtUpBody = 'No customers currently need attention.';
-  static const noCustomers = 'No customers yet.';
-  static const addFirstCustomer = 'Add a customer to start visit history.';
-  static const noVisits = 'No completed visits yet.';
-  static const noVisitsToday = 'No visits recorded today.';
-  static const noMatchingVisits = 'No visits match these filters.';
-  static const recordVisit = 'Record completed visit';
-  static const deleteCustomer = 'Delete customer';
-  static const deleteVisit = 'Delete visit';
-  static const cancel = 'Cancel';
-  static const delete = 'Delete';
+  static const appName = 'توجه سالن';
+  static const loginTitle = 'ورود';
+  static const registerTitle = 'ساخت حساب سالن';
+  static const email = 'ایمیل';
+  static const password = 'رمز عبور';
+  static const salonName = 'نام سالن';
+  static const ownerName = 'نام شما';
+  static const signIn = 'ورود';
+  static const createAccount = 'ساخت حساب';
+  static const needAccount = 'حساب سالن ندارید؟ همین حالا بسازید';
+  static const haveAccount = 'حساب دارید؟ وارد شوید';
+  static const dashboard = 'امروز';
+  static const customers = 'مشتریان';
+  static const visits = 'نوبت انجام شده';
+  static const visitsListTitle = 'نوبت‌های انجام‌شده';
+  static const opportunities = 'فرصت‌ها';
+  static const profile = 'حساب من';
+  static const manageServices = 'مدیریت خدمات';
+  static const addService = 'افزودن خدمت';
+  static const editService = 'ویرایش خدمت';
+  static const serviceName = 'نام خدمت';
+  static const currentServiceName = 'نام فعلی';
+  static const newServiceName = 'نام جدید';
+  static const serviceActive = 'فعال';
+  static const serviceInactive = 'غیرفعال';
+  static const activate = 'فعال کردن';
+  static const deactivate = 'غیرفعال کردن';
+  static const deactivateServiceTitle = 'این خدمت غیرفعال شود؟';
+  static const deactivateServiceBody =
+      'در مراجعه‌های جدید قابل انتخاب نخواهد بود، اما سوابق قبلی حفظ می‌شوند.';
+  static const noServices = 'هنوز خدمتی ثبت نشده.';
+  static const attentionQuestion = 'توجه سالن باید کدام سمت بره؟';
+  static const caughtUpTitle = 'الان مورد فوری ندارید.';
+  static const caughtUpBody = 'الان مشتری‌ای نیست که لازم باشد دنبالش بروید.';
+  static const noCustomers = 'هنوز مشتری‌ای ثبت نشده.';
+  static const addFirstCustomer = 'اولین مشتری را اضافه کنید تا سابقه مراجعه‌ها شکل بگیرد.';
+  static const noVisits = 'هنوز نوبت انجام‌شده‌ای ثبت نشده.';
+  static const noVisitsToday = 'امروز نوبت انجام‌شده‌ای ثبت نشده.';
+  static const noMatchingVisits = 'با این فیلترها نوبت انجام‌شده‌ای پیدا نشد.';
+  static const recordVisit = 'ثبت مراجعه انجام‌شده';
+  static const recordVisitHint =
+      'یک مراجعهٔ انجام‌شده را ثبت کنید. این بخش برای رزرو یا نوبت آینده نیست.';
+  static const deleteCustomer = 'حذف مشتری';
+  static const deleteVisit = 'حذف نوبت انجام شده';
+  static const cancel = 'لغو';
+  static const confirm = 'تأیید';
+  static const delete = 'حذف';
   static const deleteCustomerConfirm =
-      'This removes the customer and visit history only when they have no financial records.';
-  static const deleteVisitConfirm = 'Delete this completed visit?';
-  static const allCustomers = 'All customers';
-  static const today = 'Today';
-  static const yesterday = 'Yesterday';
-  static const chooseDate = 'Choose date';
-  static const allDates = 'All dates';
-  static const clearFilters = 'Clear filters';
-  static const visitCountLabel = 'visits';
+      'اگر این مشتری سابقه مالی نداشته باشد، خودش و تاریخچه مراجعه‌هایش حذف می‌شود.';
+  static const deleteVisitConfirm = 'این نوبت انجام شده حذف شود؟';
+  static const allCustomers = 'همه مشتریان';
+  static const today = 'امروز';
+  static const yesterday = 'دیروز';
+  static const chooseDate = 'انتخاب تاریخ';
+  static const allDates = 'همه تاریخ‌ها';
+  static const clearFilters = 'پاک کردن فیلترها';
+  static const visitCountLabel = 'نوبت انجام شده';
   static const exportExcel = 'خروجی اکسل';
-  static const exportExcelSaved = 'Excel file saved.';
-  static const recommended = 'Recommended';
+  static const exportExcelSaved = 'فایل اکسل ذخیره شد.';
+  static const recommended = 'پیشنهاد';
   static const recommendationNote =
-      'This is a recommendation. Messaging is not available yet.';
-  static const why = 'Why';
-  static const visitHistory = 'Visit history';
-  static const logout = 'Sign out';
-  static const retry = 'Try again';
-  static const searchCustomers = 'Search name or phone';
-  static const addCustomer = 'Add customer';
-  static const customerCreated = 'Customer created successfully';
-  static const backToCustomers = 'Back to Customers';
-  static const importFromExcel = 'Import from Excel';
-  static const importCustomers = 'Import customers';
-  static const selectExcelFile = 'Select Excel file';
-  static const downloadTemplate = 'Download Excel template';
-  static const saveTemplate = 'Save Excel template';
-  static const importComplete = 'Import complete';
-  static const rowsProcessed = 'rows processed';
-  static const importedCount = 'imported';
-  static const skippedCount = 'skipped';
-  static const failedCount = 'failed';
-  static const skipped = 'Skipped';
-  static const failed = 'Failed';
-  static const row = 'Row';
-  static const done = 'Done';
-  static const firstName = 'First name';
-  static const lastName = 'Last name';
-  static const phoneNumber = 'Phone number';
+      'این فقط یک پیشنهاد است. ارسال پیام هنوز در برنامه نیست.';
+  static const why = 'چرا';
+  static const visitHistory = 'سابقه مراجعه';
+  static const logout = 'خروج';
+  static const retry = 'تلاش مجدد';
+  static const searchCustomers = 'جستجو با نام یا موبایل';
+  static const addCustomer = 'افزودن مشتری';
+  static const customerCreated = 'مشتری با موفقیت اضافه شد';
+  static const backToCustomers = 'بازگشت به مشتریان';
+  static const importFromExcel = 'ورود اطلاعات از اکسل';
+  static const importCustomers = 'ورود مشتریان از اکسل';
+  static const importCustomersBody =
+      'لیست مشتریان سالن را از اکسل وارد کنید. مشتری‌های قبلی تغییر نمی‌کنند.';
+  static const importCustomersRules =
+      'ستون‌های لازم: Name و Phone. موبایل باید دقیقاً ۱۱ رقم و با ۰۹ شروع شود؛ مثلاً ۰۹۱۲۱۱۱۱۱۱۱. حداکثر ۵۰۰۰ ردیف و ۲ مگابایت.';
+  static const selectExcelFile = 'انتخاب فایل اکسل';
+  static const downloadTemplate = 'دانلود قالب اکسل';
+  static const saveTemplate = 'ذخیره قالب اکسل';
+  static const importComplete = 'ورود اطلاعات تمام شد';
+  static const rowsProcessed = 'ردیف بررسی شد';
+  static const importedCount = 'وارد شد';
+  static const skippedCount = 'رد شد';
+  static const failedCount = 'ناموفق';
+  static const skipped = 'ردشده';
+  static const failed = 'ناموفق';
+  static const row = 'ردیف';
+  static const done = 'تمام';
+  static const firstName = 'نام';
+  static const lastName = 'نام خانوادگی';
+  static const phoneNumber = 'شماره موبایل';
   static const phoneHint =
-      'Exactly 11 digits starting with 09, for example 09121111111.';
-  static const save = 'Save';
-  static const editCustomer = 'Edit customer';
-  static const visitDate = 'Completed visit date';
-  static const amountReceived = 'Amount received (IRR)';
-  static const saveCompletedVisit = 'Save completed visit';
+      'دقیقاً ۱۱ رقم و با ۰۹ شروع شود؛ مثلاً ۰۹۱۲۱۱۱۱۱۱۱.';
+  static const save = 'ذخیره';
+  static const editCustomer = 'ویرایش مشتری';
+  static const visitDate = 'تاریخ مراجعه';
+  static const visitTime = 'ساعت';
+  static const amountReceived = 'مبلغ دریافتی (ریال)';
+  static const saveCompletedVisit = 'ثبت این مراجعه';
   static const complimentaryHint =
-      'Leave amount empty for a complimentary visit with no revenue.';
-  static const noActiveServices = 'No active services available.';
+      'اگر مبلغ را خالی بگذارید، مراجعه بدون درآمد ثبت می‌شود.';
+  static const noActiveServices = 'هیچ خدمت فعالی وجود ندارد.';
   static const noActiveServicesBody =
-      'A sale needs an active service from the salon catalog. You can still record a complimentary visit with no amount.';
-  static const serviceLabel = 'Service';
-  static const all = 'All';
-  static const reactivation = 'Reactivation';
-  static const customerReturn = 'Customer return';
-  static const revenueDecline = 'Revenue declining';
+      'برای ثبت مبلغ باید یک خدمت فعال از فهرست سالن انتخاب شود. مراجعه بدون مبلغ را همچنان می‌توانید ثبت کنید.';
+  static const serviceLabel = 'خدمت';
+  static const all = 'همه';
+  static const reactivation = 'برگشت مشتری قدیمی';
+  static const customerReturn = 'دعوت دوباره';
+  static const revenueDecline = 'افت درآمد';
+  static const customersNeedingAttention = 'مشتریانی که الان باید بهشان توجه کنید';
+  static const metricTotalCustomers = 'همه مشتریان';
+  static const metricActive = 'فعال';
+  static const metricAtRisk = 'در آستانه از دست رفتن';
+  static const metricInactive = 'مدتی نیامده';
+  static const metricReactivation = 'برگشت مشتری قدیمی';
+  static const metricNew = 'جدید';
+  static const metricRevenueThisMonth = 'درآمد این ماه';
+  static const metricCompletedRevenue = 'درآمد ثبت‌شده';
+  static const completedRevenueTitle = 'درآمد ثبت‌شده (ریال)';
+  static const revenueUtcNote = 'گزارش بر اساس ماه تقویمی UTC است.';
+  static const avgSpendPerVisit = 'میانگین هزینه هر مراجعه';
+  static const avgRevenuePerTransaction = 'میانگین هر تراکنش';
+  static const revenueOnlyCompletedNote =
+      'فقط مبلغ مراجعه‌های انجام‌شده اینجاست. همراه همان مراجعه ثبت می‌شود.';
+  static const emptyVisitHistoryBody =
+      'وقتی مشتری آمده و کارش تمام شده، مراجعه را همین‌جا ثبت کنید.';
+  static const signedIn = 'وارد شده‌اید';
+  static const enterEmailPassword = 'ایمیل و رمز عبور را وارد کنید.';
+  static const registerValidation =
+      'همه فیلدها را پر کنید. رمز عبور حداقل ۸ حرف باشد.';
+  static const amountInvalid = 'مبلغ باید یک عدد ریال معتبر و صفر یا بیشتر باشد.';
+  static const selectActiveService = 'برای مبلغ دریافتی یک خدمت فعال انتخاب کنید.';
+  static const selectExcelFirst = 'اول یک فایل اکسل با پسوند xlsx انتخاب کنید.';
+  static const sessionExpired = 'لطفاً دوباره وارد شوید.';
+  static const permissionDenied = 'برای این کار دسترسی ندارید.';
+  static const recordNotFound = 'این مورد پیدا نشد.';
+  static const excelTooLarge = 'فایل اکسل خیلی بزرگ است.';
+  static const genericError = 'مشکلی پیش آمد. لطفاً دوباره تلاش کنید.';
+  static const networkError = 'ارتباط با سامانه سالن برقرار نشد.';
+  static const unknownStatus = 'وضعیت نامشخص';
+  static const opportunityFallback = 'فرصت';
+  static const signalFallback = 'نشانه';
+  static const customerFallback = 'مشتری';
+  static const rial = 'ریال';
+  static const bytesLabel = 'بایت';
+  static const previousMonth = 'ماه قبل';
+  static const nextMonth = 'ماه بعد';
 }
 
 String statusLabel(String value) {
   switch (value) {
     case 'NEW':
-      return 'New customer';
+      return 'مشتری جدید';
     case 'ACTIVE':
-      return 'Active';
+      return 'فعال';
     case 'RETURNING':
-      return 'Returning';
+      return 'برگشتی';
     case 'AT_RISK':
-      return 'At risk';
+      return 'در آستانه از دست رفتن';
     case 'INACTIVE':
-      return 'Inactive';
+      return 'مدتی نیامده';
     default:
-      return 'Unknown status';
+      return AppStrings.unknownStatus;
   }
 }
 
 String opportunityLabel(String value) {
   switch (value) {
     case 'REACTIVATION':
-      return 'Reactivation';
+      return AppStrings.reactivation;
     case 'CUSTOMER_RETURN':
-      return 'Customer return';
+      return AppStrings.customerReturn;
     case 'REVENUE_DECLINE':
-      return 'Revenue declining';
+      return AppStrings.revenueDecline;
     default:
-      return 'Opportunity';
+      return AppStrings.opportunityFallback;
   }
 }
 
 String signalLabel(String value) {
   switch (value) {
     case 'NEW_CUSTOMER':
-      return 'New customer';
+      return 'مشتری جدید';
     case 'OVERDUE':
-      return 'Overdue';
+      return 'دیرکرد مراجعه';
     case 'FREQUENT':
-      return 'Frequent visitor';
+      return 'مراجعه منظم';
     case 'REVENUE_DECLINING':
-      return 'Revenue declining';
+      return 'افت درآمد';
     case 'RECENTLY_ACTIVE':
-      return 'Recently active';
+      return 'اخیراً آمده';
     case 'RETURNING_CUSTOMER':
-      return 'Returning customer';
+      return 'مشتری برگشتی';
     case 'AT_RISK':
-      return 'At risk';
+      return 'در آستانه از دست رفتن';
     case 'INACTIVE':
-      return 'Inactive';
+      return 'مدتی نیامده';
     default:
-      return 'Signal';
+      return AppStrings.signalFallback;
   }
 }
 
 String importStatusLabel(String value) {
   switch (value) {
     case 'IMPORTED':
-      return 'Imported';
+      return 'وارد شد';
     case 'ALREADY_EXISTS':
-      return 'Already exists';
+      return 'از قبل وجود داشت';
     case 'DUPLICATE_IN_FILE':
-      return 'Duplicate in file';
+      return 'تکراری در فایل';
     case 'INVALID':
-      return 'Invalid row';
+      return 'ردیف نامعتبر';
     default:
-      return 'Skipped';
+      return 'رد شد';
   }
 }
 
 String roleLabel(String value) {
   switch (value) {
     case 'OWNER':
-      return 'Owner';
+      return 'مالک';
     case 'MANAGER':
-      return 'Manager';
+      return 'مدیر';
     case 'STAFF':
-      return 'Staff';
+      return 'کارمند';
     default:
-      return 'Team member';
+      return 'عضو تیم';
   }
+}
+
+String formatMoneyLabel(String amount) => '$amount ${AppStrings.rial}';
+
+String localizeUserFacingMessage(String message) {
+  final trimmed = message.trim();
+  if (trimmed.isEmpty) {
+    return AppStrings.genericError;
+  }
+
+  const exact = <String, String>{
+    'Please sign in again.': AppStrings.sessionExpired,
+    'You do not have permission to do that.': AppStrings.permissionDenied,
+    'We could not find that record.': AppStrings.recordNotFound,
+    'The Excel file is too large.': AppStrings.excelTooLarge,
+    'Something went wrong. Please try again.': AppStrings.genericError,
+    'Unable to reach the salon platform.': AppStrings.networkError,
+    'Invalid email or password': 'ایمیل یا رمز عبور درست نیست.',
+    'visitedAt must be a completed visit time, not a future booking':
+        'تاریخ باید برای مراجعه انجام‌شده باشد، نه نوبت آینده.',
+    'visitedAt must be a valid timestamp': 'تاریخ مراجعه معتبر نیست.',
+    'A service with this name already exists': 'خدمتی با این نام از قبل وجود دارد.',
+    'An account with this email already exists':
+        'با این ایمیل قبلاً حساب ساخته شده.',
+    'A customer with this phone number already exists in this salon':
+        'مشتری با این شماره موبایل در این سالن ثبت شده.',
+    'A conflicting record already exists': 'این مورد از قبل وجود دارد.',
+    'Export failed': 'خروجی اکسل گرفته نشد.',
+    'Service not found': 'این خدمت پیدا نشد.',
+    'Name is missing': 'نام وارد نشده.',
+    'Phone is missing': 'شماره موبایل وارد نشده.',
+    'Name is invalid': 'نام معتبر نیست.',
+    'Phone is invalid': 'شماره موبایل معتبر نیست.',
+    'Phone number must be exactly 11 digits and start with 09.':
+        'شماره موبایل باید دقیقاً ۱۱ رقم باشد و با ۰۹ شروع شود.',
+  };
+  final mapped = exact[trimmed];
+  if (mapped != null) {
+    return mapped;
+  }
+
+  return localizeIntelligenceCopy(trimmed);
+}
+
+String localizeIntelligenceCopy(String text) {
+  const exact = <String, String>{
+    'No completed visits recorded yet.': 'هنوز نوبت انجام‌شده‌ای ثبت نشده.',
+    'Send a reactivation message.': 'یک پیام یادآوری بفرستید تا دوباره سر بزند.',
+    'Invite the customer back for a follow-up visit.':
+        'دعوتش کنید برای مراجعه بعدی بیاید.',
+    'Review this customer’s recent decline.': 'افت درآمد این مشتری را بررسی کنید.',
+    "Review this customer's recent decline.": 'افت درآمد این مشتری را بررسی کنید.',
+  };
+  final mapped = exact[text];
+  if (mapped != null) {
+    return mapped;
+  }
+
+  final usually = RegExp(
+    r'^Usually returns every (\d+) days\. Last visit was (\d+) days ago(.*)$',
+  );
+  final usuallyMatch = usually.firstMatch(text);
+  if (usuallyMatch != null) {
+    final expected = toPersianDigits(usuallyMatch[1]!);
+    final days = toPersianDigits(usuallyMatch[2]!);
+    final tail = usuallyMatch[3] ?? '';
+    if (tail.contains('within the expected window')) {
+      return 'معمولاً هر $expected روز یک‌بار می‌آید. آخرین مراجعه $days روز پیش بوده و هنوز در بازه طبیعی است.';
+    }
+    if (tail.contains('more than')) {
+      return 'معمولاً هر $expected روز یک‌بار می‌آید. آخرین مراجعه $days روز پیش بوده و خیلی بیشتر از فاصله همیشگی‌اش گذشته.';
+    }
+    if (tail.contains('past the expected') || tail.trim() == '.' || tail.trim().isEmpty) {
+      return 'معمولاً هر $expected روز یک‌بار می‌آید. آخرین مراجعه $days روز پیش بوده و از بازه طبیعی گذشته.';
+    }
+    return 'معمولاً هر $expected روز یک‌بار می‌آید. آخرین مراجعه $days روز پیش بوده.';
+  }
+
+  final oneVisit = RegExp(
+    r'^One completed visit (\d+) days ago, still within the expected (\d+)-day return window\.$',
+  );
+  final first = oneVisit.firstMatch(text);
+  if (first != null) {
+    return 'یک مراجعه ${toPersianDigits(first[1]!)} روز پیش داشته و هنوز داخل بازه ${toPersianDigits(first[2]!)} روزه طبیعی است.';
+  }
+
+  final revenue = RegExp(
+    r'^Completed revenue this UTC month is (.+) IRR versus (.+) IRR in the previous UTC month\.$',
+  );
+  final drop = revenue.firstMatch(text);
+  if (drop != null) {
+    return 'درآمد این ماه ${drop[1]} ریال بوده؛ ماه قبل ${drop[2]} ریال.';
+  }
+
+  if (_looksLikeTechnicalEnglish(text)) {
+    return AppStrings.genericError;
+  }
+  return text;
+}
+
+bool _looksLikeTechnicalEnglish(String text) {
+  if (RegExp(r'[\u0600-\u06FF]').hasMatch(text)) {
+    return false;
+  }
+  if (RegExp(r'prisma|stack|exception|sql|constraint|uuid', caseSensitive: false)
+      .hasMatch(text)) {
+    return true;
+  }
+  return RegExp(r'[A-Za-z]{4,}').hasMatch(text) &&
+      RegExp(
+        r'must |Error|failed|invalid|undefined|null',
+        caseSensitive: false,
+      ).hasMatch(text);
 }

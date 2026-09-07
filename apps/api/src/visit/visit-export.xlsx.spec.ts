@@ -57,11 +57,13 @@ describe('buildVisitsWorkbook', () => {
     expect(sale.getCell(2).value).toBe('Hair Service');
     expect(sale.getCell(3).value).toBe(8000000);
     expect(sale.getCell(3).numFmt).toBe('#,##0.00');
+    expect(sale.getCell(4).value).toBe('۱۴۰۵/۰۶/۰۹ ۱۳:۳۰');
     expect(sale.getCell(5).value).toBe(30);
 
     const firstVisit = sheet!.getRow(3);
     expect(firstVisit.getCell(2).value).toBeNull();
     expect(firstVisit.getCell(3).value).toBeNull();
+    expect(firstVisit.getCell(4).value).toBe('۱۴۰۵/۰۵/۱۰ ۱۳:۳۰');
     expect(firstVisit.getCell(5).value).toBeNull();
   });
 });

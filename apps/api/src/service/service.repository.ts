@@ -18,15 +18,22 @@ export class ServiceRepository {
     });
   }
 
-  list(tenantId: string, cursor?: { createdAt: Date; id: string }) {
+  list(
+    tenantId: string,
+    options: {
+      includeInactive?: boolean;
+      cursor?: { createdAt: Date; id: string };
+    } = {},
+  ) {
     return this.prisma.client.service.findMany({
       where: {
         salonId: tenantId,
-        ...(cursor
+        ...(options.includeInactive ? {} : { status: 'ACTIVE' }),
+        ...(options.cursor
           ? {
               OR: [
-                { createdAt: { lt: cursor.createdAt } },
-                { createdAt: cursor.createdAt, id: { lt: cursor.id } },
+                { createdAt: { lt: options.cursor.createdAt } },
+                { createdAt: options.cursor.createdAt, id: { lt: options.cursor.id } },
               ],
             }
           : {}),

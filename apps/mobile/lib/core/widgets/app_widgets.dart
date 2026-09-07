@@ -39,6 +39,7 @@ class AppTextField extends StatelessWidget {
     this.obscureText = false,
     this.keyboardType,
     this.textInputAction,
+    this.textDirection,
   });
 
   final String label;
@@ -46,6 +47,7 @@ class AppTextField extends StatelessWidget {
   final bool obscureText;
   final TextInputType? keyboardType;
   final TextInputAction? textInputAction;
+  final TextDirection? textDirection;
 
   @override
   Widget build(BuildContext context) {
@@ -54,7 +56,28 @@ class AppTextField extends StatelessWidget {
       obscureText: obscureText,
       keyboardType: keyboardType,
       textInputAction: textInputAction,
+      textDirection: textDirection,
       decoration: InputDecoration(labelText: label),
+    );
+  }
+}
+
+class LtrText extends StatelessWidget {
+  const LtrText(this.value, {super.key, this.style, this.maxLines});
+
+  final String value;
+  final TextStyle? style;
+  final int? maxLines;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      value,
+      style: style,
+      maxLines: maxLines,
+      overflow: maxLines == null ? null : TextOverflow.ellipsis,
+      textDirection: TextDirection.ltr,
+      textAlign: TextAlign.start,
     );
   }
 }
@@ -169,10 +192,16 @@ class StatusBadge extends StatelessWidget {
 }
 
 class MetricCard extends StatelessWidget {
-  const MetricCard({super.key, required this.label, required this.value});
+  const MetricCard({
+    super.key,
+    required this.label,
+    required this.value,
+    this.valueDirection,
+  });
 
   final String label;
   final Object value;
+  final TextDirection? valueDirection;
 
   @override
   Widget build(BuildContext context) {
@@ -182,10 +211,14 @@ class MetricCard extends StatelessWidget {
         children: [
           Text(
             label,
-            style: const TextStyle(color: AppColors.muted, fontSize: 13),
+            style: const TextStyle(color: AppColors.muted, fontSize: 13, height: 1.4),
           ),
           const SizedBox(height: 8),
-          Text('$value', style: Theme.of(context).textTheme.headlineSmall),
+          Text(
+            '$value',
+            style: Theme.of(context).textTheme.headlineSmall,
+            textDirection: valueDirection,
+          ),
         ],
       ),
     );
@@ -247,11 +280,11 @@ class OpportunityCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 12),
-          Text(reason),
+          Text(localizeIntelligenceCopy(reason)),
           const SizedBox(height: 12),
           Text(
-            '${AppStrings.recommended}: $action',
-            style: const TextStyle(color: AppColors.muted),
+            '${AppStrings.recommended}: ${localizeIntelligenceCopy(action)}',
+            style: const TextStyle(color: AppColors.muted, height: 1.6),
           ),
         ],
       ),
@@ -276,7 +309,7 @@ class CustomerListTile extends StatelessWidget {
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       title: Text(name),
-      subtitle: Text(phone),
+      subtitle: LtrText(phone),
       onTap: onTap,
     );
   }
@@ -289,5 +322,5 @@ String friendlyError(Object error) {
   if (error is NetworkException) {
     return error.message;
   }
-  return 'Something went wrong. Please try again.';
+  return AppStrings.genericError;
 }

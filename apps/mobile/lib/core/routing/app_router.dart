@@ -9,6 +9,7 @@ import '../../features/customers/customer_screens.dart';
 import '../../features/dashboard/dashboard_screen.dart';
 import '../../features/opportunities/opportunities_screen.dart';
 import '../../features/profile/profile_screen.dart';
+import '../../features/services/service_screens.dart';
 import '../../features/shell/app_shell.dart';
 import '../../features/visits/visits_screen.dart';
 import '../../shared/models/models.dart';
@@ -79,6 +80,24 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/profile',
             builder: (context, state) => const ProfileScreen(),
+          ),
+          GoRoute(
+            path: '/profile/services',
+            builder: (context, state) => const ServiceManagementScreen(),
+          ),
+          GoRoute(
+            path: '/profile/services/new',
+            builder: (context, state) => const ServiceFormScreen(),
+          ),
+          GoRoute(
+            path: '/profile/services/:id/edit',
+            builder: (context, state) {
+              final extra = state.extra;
+              if (extra is SalonService) {
+                return ServiceFormScreen(service: extra);
+              }
+              return const ServiceManagementScreen();
+            },
           ),
         ],
       ),

@@ -27,7 +27,14 @@ export class VisitRepository {
         customerId,
         ...(cursor ? visitCursorWhere(cursor) : {}),
       },
-      select: VISIT_SELECT,
+      select: {
+        ...VISIT_SELECT,
+        transactions: {
+          where: { salonId: tenantId },
+          select: VISIT_SALE_SELECT,
+          orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+        },
+      },
       orderBy: [{ visitedAt: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
       take: VISIT_LIST_LIMIT + 1,
     });

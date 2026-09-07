@@ -8,6 +8,7 @@ import 'package:salon_mobile/core/networking/repositories.dart';
 import 'package:salon_mobile/core/state/providers.dart';
 import 'package:salon_mobile/core/storage/session_store.dart';
 import 'package:salon_mobile/features/customers/customer_screens.dart';
+import 'package:salon_mobile/shared/jalali.dart';
 import 'package:salon_mobile/shared/models/models.dart';
 
 class FakeVisitRepository extends VisitRepository {
@@ -21,6 +22,7 @@ class FakeVisitRepository extends VisitRepository {
 
   Object? error;
   bool recorded = false;
+  DateTime? lastVisitedAt;
 
   @override
   Future<Visit> record({
@@ -32,6 +34,7 @@ class FakeVisitRepository extends VisitRepository {
       throw error!;
     }
     recorded = true;
+    lastVisitedAt = visitedAt;
     return Visit(
       id: 'v1',
       customerId: customerId,
@@ -69,6 +72,44 @@ void main() {
     await tester.ensureVisible(find.byType(FilledButton));
     await tester.tap(find.byType(FilledButton));
     await tester.pumpAndSettle();
-    expect(find.textContaining('completed visit time'), findsOneWidget);
+    expect(
+      find.textContaining('تاریخ باید برای مراجعه انجام‌شده باشد'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('record visit shows Jalali date and Persian month names', (tester) async {
+    final visits = FakeVisitRepository();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [visitRepositoryProvider.overrideWith((ref) => visits)],
+        child: MaterialApp.router(
+          routerConfig: GoRouter(
+            routes: [
+              GoRoute(
+                path: '/',
+                builder: (_, _) => const RecordVisitScreen(customerId: 'c1'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('تاریخ مراجعه'), findsOneWidget);
+    expect(find.text('ساعت'), findsOneWidget);
+    expect(find.text(formatJalaliPrettyDate(DateTime.now())), findsOneWidget);
+    await tester.tap(find.byKey(const Key('visit-date-tile')));
+    await tester.pumpAndSettle();
+    expect(find.text(jalaliMonthTitle(jalaliFromLocal(DateTime.now()))), findsWidgets);
+    expect(find.text('ش'), findsOneWidget);
+    await tester.tap(find.text('تأیید'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byType(FilledButton));
+    await tester.tap(find.byType(FilledButton));
+    await tester.pumpAndSettle();
+    expect(visits.recorded, isTrue);
+    expect(visits.lastVisitedAt, isNotNull);
+    expect(jalaliFromLocal(visits.lastVisitedAt!).year, jalaliFromLocal(DateTime.now()).year);
   });
 }

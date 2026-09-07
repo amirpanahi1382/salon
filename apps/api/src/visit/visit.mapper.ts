@@ -1,4 +1,4 @@
-import type { VisitListItemDto, VisitResponseDto } from './visit.dto';
+import type { VisitHistoryItemDto, VisitListItemDto, VisitResponseDto } from './visit.dto';
 import { saleFacts, type VisitSaleRow } from './visit-sale';
 
 export const VISIT_SELECT = {
@@ -22,6 +22,21 @@ export function toVisitResponse(visit: {
   };
 }
 
+export function toVisitHistoryItem(visit: {
+  id: string;
+  customerId: string;
+  visitedAt: Date;
+  createdAt: Date;
+  transactions: VisitSaleRow[];
+}): VisitHistoryItemDto {
+  const sale = saleFacts(visit.transactions);
+  return {
+    ...toVisitResponse(visit),
+    serviceName: sale.serviceName,
+    amountReceived: sale.amountReceived,
+  };
+}
+
 export function toVisitListItem(visit: {
   id: string;
   customerId: string;
@@ -30,12 +45,9 @@ export function toVisitListItem(visit: {
   customer: { firstName: string; lastName: string };
   transactions: VisitSaleRow[];
 }): VisitListItemDto {
-  const sale = saleFacts(visit.transactions);
   return {
-    ...toVisitResponse(visit),
+    ...toVisitHistoryItem(visit),
     firstName: visit.customer.firstName,
     lastName: visit.customer.lastName,
-    serviceName: sale.serviceName,
-    amountReceived: sale.amountReceived,
   };
 }

@@ -39,7 +39,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final email = _email.text.trim();
     final password = _password.text;
     if (email.isEmpty || password.isEmpty) {
-      setState(() => _error = 'Enter email and password.');
+      setState(() => _error = AppStrings.enterEmailPassword);
       return;
     }
     setState(() {
@@ -76,12 +76,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               label: AppStrings.email,
               controller: _email,
               keyboardType: TextInputType.emailAddress,
+              textDirection: TextDirection.ltr,
             ),
             const SizedBox(height: 12),
             AppTextField(
               label: AppStrings.password,
               controller: _password,
               obscureText: true,
+              textDirection: TextDirection.ltr,
             ),
             if (_error != null) ...[
               const SizedBox(height: 12),
@@ -138,7 +140,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
         _password.text.length < 8) {
       setState(
         () =>
-            _error = 'Fill all fields. Password must be at least 8 characters.',
+            _error = AppStrings.registerValidation,
       );
       return;
     }
@@ -179,12 +181,14 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
             label: AppStrings.email,
             controller: _email,
             keyboardType: TextInputType.emailAddress,
+            textDirection: TextDirection.ltr,
           ),
           const SizedBox(height: 12),
           AppTextField(
             label: AppStrings.password,
             controller: _password,
             obscureText: true,
+            textDirection: TextDirection.ltr,
           ),
           if (_error != null) ...[
             const SizedBox(height: 12),

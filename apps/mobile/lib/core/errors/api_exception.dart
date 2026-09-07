@@ -1,3 +1,5 @@
+import '../../shared/labels.dart';
+
 class ApiException implements Exception {
   const ApiException({
     required this.statusCode,
@@ -18,21 +20,21 @@ class ApiException implements Exception {
 
   String get userMessage {
     if (isUnauthenticated) {
-      return 'Please sign in again.';
+      return AppStrings.sessionExpired;
     }
     if (isForbidden) {
-      return 'You do not have permission to do that.';
+      return AppStrings.permissionDenied;
     }
     if (isNotFound) {
-      return 'We could not find that record.';
+      return AppStrings.recordNotFound;
     }
     if (isTooLarge) {
-      return 'The Excel file is too large.';
+      return AppStrings.excelTooLarge;
     }
     if (message.trim().isNotEmpty) {
-      return message;
+      return localizeUserFacingMessage(message);
     }
-    return 'Something went wrong. Please try again.';
+    return AppStrings.genericError;
   }
 
   @override
@@ -40,9 +42,7 @@ class ApiException implements Exception {
 }
 
 class NetworkException implements Exception {
-  const NetworkException([
-    this.message = 'Unable to reach the salon platform.',
-  ]);
+  const NetworkException([this.message = AppStrings.networkError]);
 
   final String message;
 

@@ -13,8 +13,11 @@ import 'package:salon_mobile/features/auth/auth_screens.dart';
 import 'package:salon_mobile/features/customers/customer_screens.dart';
 import 'package:salon_mobile/features/dashboard/dashboard_screen.dart';
 import 'package:salon_mobile/features/opportunities/opportunities_screen.dart';
+import 'package:salon_mobile/features/profile/profile_screen.dart';
+import 'package:salon_mobile/features/services/service_screens.dart';
 import 'package:salon_mobile/features/shell/app_shell.dart';
 import 'package:salon_mobile/features/visits/visits_screen.dart';
+import 'package:salon_mobile/shared/jalali.dart';
 import 'package:salon_mobile/shared/models/models.dart';
 
 ApiClient _client() {
@@ -196,7 +199,7 @@ class FakeServiceRepository extends ServiceRepository {
   Completer<void>? gate;
 
   @override
-  Future<ItemPage<SalonService>> list() async {
+  Future<ItemPage<SalonService>> list({bool includeInactive = false}) async {
     final pending = gate;
     if (pending != null) {
       await pending.future;
@@ -204,7 +207,58 @@ class FakeServiceRepository extends ServiceRepository {
     if (error != null) {
       throw error!;
     }
-    return ItemPage(items: items, hasMore: false);
+    final filtered = includeInactive
+        ? items
+        : items.where((item) => item.status == 'ACTIVE').toList();
+    return ItemPage(items: filtered, hasMore: false);
+  }
+
+  @override
+  Future<SalonService> create(String name) async {
+    if (error != null) {
+      throw error!;
+    }
+    if (items.any((item) => item.name == name.trim())) {
+      throw const ApiException(
+        statusCode: 409,
+        code: 'CONFLICT',
+        message: 'A service with this name already exists',
+      );
+    }
+    final created = SalonService(
+      id: 'svc-${items.length + 1}',
+      name: name.trim(),
+      status: 'ACTIVE',
+    );
+    items = [...items, created];
+    return created;
+  }
+
+  @override
+  Future<SalonService> update({
+    required String id,
+    String? name,
+    String? status,
+  }) async {
+    if (error != null) {
+      throw error!;
+    }
+    final index = items.indexWhere((item) => item.id == id);
+    if (index < 0) {
+      throw const ApiException(
+        statusCode: 404,
+        code: 'NOT_FOUND',
+        message: 'Service not found',
+      );
+    }
+    final current = items[index];
+    final updated = SalonService(
+      id: current.id,
+      name: name?.trim() ?? current.name,
+      status: status ?? current.status,
+    );
+    items = [...items]..[index] = updated;
+    return updated;
   }
 }
 
@@ -404,9 +458,9 @@ void main() {
     await tester.pumpWidget(
       const ProviderScope(child: MaterialApp(home: LoginScreen())),
     );
-    await tester.tap(find.text('Sign in'));
+    await tester.tap(find.text('ورود'));
     await tester.pump();
-    expect(find.text('Enter email and password.'), findsOneWidget);
+    expect(find.text('ایمیل و رمز عبور را وارد کنید.'), findsOneWidget);
   });
 
   testWidgets('login shows authentication error', (tester) async {
@@ -424,9 +478,9 @@ void main() {
     );
     await tester.enterText(find.byType(TextField).first, 'a@b.com');
     await tester.enterText(find.byType(TextField).last, 'password1');
-    await tester.tap(find.text('Sign in'));
+    await tester.tap(find.text('ورود'));
     await tester.pump();
-    expect(find.text('Please sign in again.'), findsOneWidget);
+    expect(find.text('لطفاً دوباره وارد شوید.'), findsOneWidget);
   });
 
   testWidgets('dashboard renders summary and opportunities', (tester) async {
@@ -451,8 +505,11 @@ void main() {
     await tester.drag(find.byType(ListView), const Offset(0, -800));
     await tester.pumpAndSettle();
     expect(find.text('Sara Ahmadi'), findsOneWidget);
-    expect(find.textContaining('52 days'), findsOneWidget);
-    expect(find.textContaining('Send a reactivation message'), findsOneWidget);
+    expect(find.textContaining('۵۲'), findsOneWidget);
+    expect(
+      find.textContaining('یک پیام یادآوری بفرستید'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('dashboard empty state', (tester) async {
@@ -470,7 +527,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.drag(find.byType(ListView), const Offset(0, -800));
     await tester.pumpAndSettle();
-    expect(find.text("You're all caught up."), findsOneWidget);
+    expect(find.text('الان مورد فوری ندارید.'), findsOneWidget);
   });
 
   testWidgets('customer list empty and list states', (tester) async {
@@ -485,8 +542,8 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('No customers yet.'), findsOneWidget);
-    expect(find.text('Import from Excel'), findsWidgets);
+    expect(find.text('هنوز مشتری‌ای ثبت نشده.'), findsOneWidget);
+    expect(find.text('ورود اطلاعات از اکسل'), findsWidgets);
   });
 
   testWidgets('customer list renders names', (tester) async {
@@ -516,8 +573,8 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Unable to reach the salon platform.'), findsOneWidget);
-    expect(find.text('Try again'), findsOneWidget);
+    expect(find.text('ارتباط با سامانه سالن برقرار نشد.'), findsOneWidget);
+    expect(find.text('تلاش مجدد'), findsOneWidget);
   });
 
   testWidgets('opportunities render reason and action', (tester) async {
@@ -533,7 +590,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('Sara Ahmadi'), findsOneWidget);
-    expect(find.textContaining('52 days'), findsOneWidget);
+    expect(find.textContaining('۵۲'), findsOneWidget);
   });
 
   testWidgets('customer detail renders status reason action and visits', (
@@ -558,6 +615,8 @@ void main() {
                   customerId: 'c1',
                   visitedAt: DateTime.utc(2026, 7, 6),
                   createdAt: DateTime.utc(2026, 7, 6),
+                  serviceName: 'Hair Service',
+                  amountReceived: '8000000.00',
                 ),
               ],
             ),
@@ -567,12 +626,12 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('At risk'), findsWidgets);
-    expect(find.textContaining('52 days'), findsWidgets);
-    expect(find.textContaining('Send a reactivation message'), findsOneWidget);
+    expect(find.text('در آستانه از دست رفتن'), findsWidgets);
+    expect(find.textContaining('۵۲'), findsWidgets);
+    expect(find.textContaining('یک پیام یادآوری بفرستید'), findsOneWidget);
     await tester.drag(find.byType(ListView), const Offset(0, -800));
     await tester.pumpAndSettle();
-    expect(find.text('Completed visit'), findsOneWidget);
+    expect(find.text('Hair Service · 8000000.00 ریال'), findsOneWidget);
   });
 
   testWidgets('customer detail 404', (tester) async {
@@ -594,7 +653,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('We could not find that record.'), findsOneWidget);
+    expect(find.text('این مورد پیدا نشد.'), findsOneWidget);
   });
 
   testWidgets('customer edit shows permission error on 403', (tester) async {
@@ -613,9 +672,9 @@ void main() {
         child: MaterialApp(home: CustomerFormScreen(customer: _customer())),
       ),
     );
-    await tester.tap(find.text('Save'));
+    await tester.tap(find.text('ذخیره'));
     await tester.pumpAndSettle();
-    expect(find.text('You do not have permission to do that.'), findsOneWidget);
+    expect(find.text('برای این کار دسترسی ندارید.'), findsOneWidget);
   });
 
   testWidgets('customer create rejects invalid phone before submit', (
@@ -631,10 +690,10 @@ void main() {
     await tester.enterText(find.byType(TextField).at(0), 'Sara');
     await tester.enterText(find.byType(TextField).at(1), 'Ahmadi');
     await tester.enterText(find.byType(TextField).at(2), '+989121111111');
-    await tester.tap(find.text('Save'));
+    await tester.tap(find.text('ذخیره'));
     await tester.pump();
     expect(
-      find.text('Phone number must be exactly 11 digits and start with 09.'),
+      find.text('شماره موبایل باید دقیقاً ۱۱ رقم باشد و با ۰۹ شروع شود.'),
       findsWidgets,
     );
     expect(repo.items, isEmpty);
@@ -664,19 +723,19 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('No customers yet.'), findsOneWidget);
+    expect(find.text('هنوز مشتری‌ای ثبت نشده.'), findsOneWidget);
 
-    await tester.tap(find.text('Add customer').last);
+    await tester.tap(find.text('افزودن مشتری').last);
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField).at(0), 'سارا');
     await tester.enterText(find.byType(TextField).at(1), 'احمدی');
     await tester.enterText(find.byType(TextField).at(2), '09121111111');
-    await tester.tap(find.text('Save'));
+    await tester.tap(find.text('ذخیره'));
     await tester.pumpAndSettle();
-    expect(find.text('Customer created successfully'), findsOneWidget);
-    expect(find.text('Back to Customers'), findsOneWidget);
+    expect(find.text('مشتری با موفقیت اضافه شد'), findsOneWidget);
+    expect(find.text('بازگشت به مشتریان'), findsOneWidget);
 
-    await tester.tap(find.text('Back to Customers'));
+    await tester.tap(find.text('بازگشت به مشتریان'));
     await tester.pumpAndSettle();
     expect(find.text('سارا احمدی'), findsOneWidget);
   });
@@ -713,8 +772,8 @@ void main() {
       ],
     );
     await tester.pumpWidget(MaterialApp.router(routerConfig: router));
-    expect(find.text('Visits'), findsOneWidget);
-    await tester.tap(find.text('Visits'));
+    expect(find.text('نوبت انجام شده'), findsOneWidget);
+    await tester.tap(find.text('نوبت انجام شده'));
     await tester.pumpAndSettle();
     expect(find.text('Visits page'), findsOneWidget);
   });
@@ -760,14 +819,14 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Sara Ahmadi'), findsOneWidget);
     expect(find.text('Maryam Karimi'), findsNothing);
-    expect(find.byTooltip('Delete visit'), findsOneWidget);
+    expect(find.byTooltip('حذف نوبت انجام شده'), findsOneWidget);
 
-    await tester.tap(find.text('Clear filters'));
+    await tester.tap(find.text('پاک کردن فیلترها'));
     await tester.pumpAndSettle();
     expect(find.text('Sara Ahmadi'), findsOneWidget);
     expect(find.text('Maryam Karimi'), findsOneWidget);
 
-    await tester.tap(find.text('All customers'));
+    await tester.tap(find.text('همه مشتریان'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Sara Ahmadi').last);
     await tester.pumpAndSettle();
@@ -804,10 +863,13 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.byTooltip('Delete visit'), findsNothing);
+    expect(find.byTooltip('حذف نوبت انجام شده'), findsNothing);
   });
 
   testWidgets('visit rows show service and amount received', (tester) async {
+    final hairAt = DateTime(2026, 6, 10, 14, 30);
+    final nailAt = DateTime(2026, 6, 11, 11, 0);
+    final visitOnlyAt = DateTime(2026, 6, 1, 9, 0);
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
@@ -815,22 +877,32 @@ void main() {
             FakeVisitListRepository(
               items: [
                 Visit(
-                  id: 'v-sale',
+                  id: 'v-hair',
                   customerId: 'c1',
-                  firstName: 'Sara',
+                  firstName: 'Maryam',
                   lastName: 'Ahmadi',
-                  visitedAt: DateTime.now(),
-                  createdAt: DateTime.utc(2026, 1, 1),
+                  visitedAt: hairAt,
+                  createdAt: DateTime.utc(2026, 6, 10),
                   serviceName: 'Hair Service',
                   amountReceived: '8000000.00',
                 ),
                 Visit(
-                  id: 'v-only',
+                  id: 'v-nail',
                   customerId: 'c2',
-                  firstName: 'Maryam',
+                  firstName: 'Sara',
+                  lastName: 'Mohammadi',
+                  visitedAt: nailAt,
+                  createdAt: DateTime.utc(2026, 6, 11),
+                  serviceName: 'Nail Service',
+                  amountReceived: '5000000.00',
+                ),
+                Visit(
+                  id: 'v-only',
+                  customerId: 'c3',
+                  firstName: 'Leila',
                   lastName: 'Karimi',
-                  visitedAt: DateTime.now(),
-                  createdAt: DateTime.utc(2026, 1, 1),
+                  visitedAt: visitOnlyAt,
+                  createdAt: DateTime.utc(2026, 6, 1),
                 ),
               ],
             ),
@@ -844,9 +916,24 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.textContaining('Hair Service'), findsOneWidget);
-    expect(find.textContaining('8000000.00 IRR'), findsOneWidget);
-    expect(find.textContaining('—'), findsWidgets);
+    await tester.tap(find.widgetWithText(TextButton, 'پاک کردن فیلترها'));
+    await tester.pumpAndSettle();
+    expect(find.text('Maryam Ahmadi'), findsOneWidget);
+    expect(find.text('Sara Mohammadi'), findsOneWidget);
+    expect(find.text('Leila Karimi'), findsOneWidget);
+    expect(find.text('Hair Service'), findsOneWidget);
+    expect(find.text('Nail Service'), findsOneWidget);
+    expect(find.text('8000000.00 ریال'), findsOneWidget);
+    expect(find.text('5000000.00 ریال'), findsOneWidget);
+    expect(find.text('—'), findsNWidgets(2));
+    expect(
+      find.text(formatJalaliDateTime(hairAt)),
+      findsOneWidget,
+    );
+    expect(
+      find.text(formatJalaliDateTime(nailAt)),
+      findsOneWidget,
+    );
     expect(find.text('خروجی اکسل'), findsOneWidget);
   });
 
@@ -899,7 +986,7 @@ void main() {
     gate.complete();
     await tester.pumpAndSettle();
     expect(savedName, 'visits.xlsx');
-    expect(find.text('Excel file saved.'), findsOneWidget);
+    expect(find.text('فایل اکسل ذخیره شد.'), findsOneWidget);
   });
 
   testWidgets('export passes the selected customer filter to the backend', (
@@ -936,9 +1023,9 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Clear filters'));
+    await tester.tap(find.text('پاک کردن فیلترها'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('All customers'));
+    await tester.tap(find.text('همه مشتریان'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Sara Ahmadi').last);
     await tester.pumpAndSettle();
@@ -973,7 +1060,7 @@ void main() {
     await tester.tap(find.text('خروجی اکسل'));
     await tester.pumpAndSettle();
     expect(visits.exportCalls, 1);
-    expect(find.text('Export failed'), findsOneWidget);
+    expect(find.text('خروجی اکسل گرفته نشد.'), findsOneWidget);
   });
 
   testWidgets('staff does not see customer or visit delete on detail', (
@@ -999,8 +1086,8 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.byTooltip('Delete customer'), findsNothing);
-    expect(find.byTooltip('Delete visit'), findsNothing);
+    expect(find.byTooltip('حذف مشتری'), findsNothing);
+    expect(find.byTooltip('حذف نوبت انجام شده'), findsNothing);
   });
 
   testWidgets('owner can confirm customer deletion and leave the page', (
@@ -1048,17 +1135,17 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('Delete customer'));
+    await tester.tap(find.byTooltip('حذف مشتری'));
     await tester.pumpAndSettle();
     expect(
-      find.textContaining('permanently remove this customer'),
-      findsNothing,
+      find.textContaining('سابقه مالی'),
+      findsOneWidget,
     );
-    expect(find.textContaining('no financial records'), findsOneWidget);
-    await tester.tap(find.text('Delete').last);
+    expect(find.textContaining('تاریخچه'), findsOneWidget);
+    await tester.tap(find.text('حذف').last);
     await tester.pumpAndSettle();
+    expect(find.text('هنوز مشتری‌ای ثبت نشده.'), findsOneWidget);
     expect(repo.items, isEmpty);
-    expect(find.text('No customers yet.'), findsOneWidget);
   });
 
   testWidgets('visit deletion from customer history requires confirmation', (
@@ -1094,17 +1181,17 @@ void main() {
     await tester.pumpAndSettle();
     await tester.drag(find.byType(ListView), const Offset(0, -800));
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('Delete visit'));
+    await tester.tap(find.byTooltip('حذف نوبت انجام شده'));
     await tester.pumpAndSettle();
-    expect(find.text('Delete this completed visit?'), findsOneWidget);
-    await tester.tap(find.text('Cancel'));
+    expect(find.text('این نوبت انجام شده حذف شود؟'), findsOneWidget);
+    await tester.tap(find.text('لغو'));
     await tester.pumpAndSettle();
     expect(visits.items, hasLength(1));
     await tester.drag(find.byType(ListView), const Offset(0, -800));
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('Delete visit'));
+    await tester.tap(find.byTooltip('حذف نوبت انجام شده'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Delete').last);
+    await tester.tap(find.text('حذف').last);
     await tester.pumpAndSettle();
     expect(visits.items, isEmpty);
   });
@@ -1132,9 +1219,9 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Record completed visit'), findsOneWidget);
+    expect(find.text('ثبت مراجعه انجام‌شده'), findsOneWidget);
     expect(find.text('Record sale'), findsNothing);
-    expect(find.textContaining('Completed revenue'), findsOneWidget);
+    expect(find.textContaining('درآمد ثبت‌شده'), findsOneWidget);
   });
 
   testWidgets('record completed visit lists backend services and submits the selected one', (
@@ -1202,7 +1289,7 @@ void main() {
     expect(find.text('Hair Service'), findsOneWidget);
 
     await tester.enterText(find.byType(TextField), '8000000');
-    await tester.tap(find.text('Save completed visit'));
+    await tester.tap(find.text('ثبت این مراجعه'));
     await tester.pumpAndSettle();
     expect(visits.lastServiceId, 'svc-hair');
     expect(visits.lastAmount, '8000000');
@@ -1222,7 +1309,8 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('No active services available.'), findsOneWidget);
+    expect(find.text('هیچ خدمت فعالی وجود ندارد.'), findsOneWidget);
+    expect(find.text('مدیریت خدمات'), findsOneWidget);
     expect(find.byType(DropdownButton<String>), findsNothing);
   });
 
@@ -1266,8 +1354,8 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Unable to reach the salon platform.'), findsOneWidget);
-    expect(find.text('Try again'), findsOneWidget);
+    expect(find.text('ارتباط با سامانه سالن برقرار نشد.'), findsOneWidget);
+    expect(find.text('تلاش مجدد'), findsOneWidget);
   });
 
   testWidgets('record completed visit does not double-submit while saving', (
@@ -1296,7 +1384,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), '8000000.00');
-    await tester.tap(find.text('Save completed visit'));
+    await tester.tap(find.text('ثبت این مراجعه'));
     await tester.pump();
     expect(visits.saveCalls, 1);
     await tester.tap(find.byType(FilledButton));
@@ -1333,11 +1421,11 @@ void main() {
     );
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), '8000000.00');
-    await tester.tap(find.text('Save completed visit'));
+    await tester.tap(find.text('ثبت این مراجعه'));
     await tester.pumpAndSettle();
-    expect(find.text('Unable to reach the salon platform.'), findsOneWidget);
+    expect(find.text('ارتباط با سامانه سالن برقرار نشد.'), findsOneWidget);
     visits.saveError = null;
-    await tester.tap(find.text('Save completed visit'));
+    await tester.tap(find.text('ثبت این مراجعه'));
     await tester.pumpAndSettle();
     expect(visits.saveCalls, 2);
   });
@@ -1366,7 +1454,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('Hair Service'), findsNothing);
-    expect(find.text('Amount received (IRR)'), findsNothing);
+    expect(find.text('مبلغ دریافتی (ریال)'), findsNothing);
   });
 
   testWidgets('customer detail Add customer opens the existing create screen', (
@@ -1409,11 +1497,191 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Add customer'));
+    await tester.tap(find.text('افزودن مشتری'));
     await tester.pumpAndSettle();
-    expect(find.text('First name'), findsOneWidget);
-    expect(find.text('Last name'), findsOneWidget);
-    expect(find.text('Phone number'), findsOneWidget);
+    expect(find.text('نام'), findsOneWidget);
+    expect(find.text('نام خانوادگی'), findsOneWidget);
+    expect(find.text('شماره موبایل'), findsOneWidget);
+  });
+
+  testWidgets('owner profile links to service management', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          authControllerProvider.overrideWith(_SignedInAuth.new),
+          salonRepositoryProvider.overrideWithValue(FakeSalonRepository()),
+        ],
+        child: const MaterialApp(home: ProfileScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('مدیریت خدمات'), findsOneWidget);
+  });
+
+  testWidgets('customer detail keeps an inactive historical service name', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          customerRepositoryProvider.overrideWith(
+            (ref) => FakeCustomerRepository(items: [_customer()]),
+          ),
+          intelligenceRepositoryProvider.overrideWith(
+            (ref) => FakeIntelligenceRepository(
+              customerIntelligence: _intelligence(),
+            ),
+          ),
+          visitRepositoryProvider.overrideWith(
+            (ref) => FakeVisitListRepository(
+              items: [
+                Visit(
+                  id: 'v-old',
+                  customerId: 'c1',
+                  visitedAt: DateTime.utc(2026, 1, 15),
+                  createdAt: DateTime.utc(2026, 1, 15),
+                  serviceName: 'Hair Botox Premium',
+                  amountReceived: '8000000.00',
+                ),
+              ],
+            ),
+          ),
+          authControllerProvider.overrideWith(_SignedInAuth.new),
+        ],
+        child: const MaterialApp(home: CustomerDetailScreen(customerId: 'c1')),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.drag(find.byType(ListView), const Offset(0, -800));
+    await tester.pumpAndSettle();
+    expect(find.text('Hair Botox Premium · 8000000.00 ریال'), findsOneWidget);
+  });
+
+  testWidgets('owner can list, create, edit, and deactivate services', (
+    tester,
+  ) async {
+    final repo = FakeServiceRepository(
+      items: const [
+        SalonService(id: 'svc-hair', name: 'Hair Service', status: 'ACTIVE'),
+        SalonService(id: 'svc-old', name: 'Coloring', status: 'INACTIVE'),
+      ],
+    );
+    final router = GoRouter(
+      initialLocation: '/profile/services',
+      routes: [
+        GoRoute(
+          path: '/profile/services',
+          builder: (context, state) => const ServiceManagementScreen(),
+        ),
+        GoRoute(
+          path: '/profile/services/new',
+          builder: (context, state) => const ServiceFormScreen(),
+        ),
+        GoRoute(
+          path: '/profile/services/:id/edit',
+          builder: (context, state) {
+            final extra = state.extra;
+            if (extra is SalonService) {
+              return ServiceFormScreen(service: extra);
+            }
+            return const ServiceFormScreen();
+          },
+        ),
+      ],
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          authControllerProvider.overrideWith(_SignedInAuth.new),
+          serviceRepositoryProvider.overrideWithValue(repo),
+        ],
+        child: MaterialApp.router(routerConfig: router),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Hair Service'), findsOneWidget);
+    expect(find.text('Coloring'), findsOneWidget);
+    expect(find.text('فعال'), findsOneWidget);
+    expect(find.text('غیرفعال'), findsOneWidget);
+
+    await tester.tap(find.text('افزودن خدمت'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'Hair Botox');
+    await tester.tap(find.text('ذخیره'));
+    await tester.pumpAndSettle();
+    expect(find.text('Hair Botox'), findsOneWidget);
+
+    await tester.tap(find.byType(PopupMenuButton<String>).first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('ویرایش خدمت'));
+    await tester.pumpAndSettle();
+    expect(find.text('Hair Service'), findsWidgets);
+    await tester.enterText(find.byType(TextField), 'Hair Botox Premium');
+    await tester.tap(find.text('ذخیره'));
+    await tester.pumpAndSettle();
+    expect(find.text('Hair Botox Premium'), findsOneWidget);
+
+    await tester.tap(find.byType(PopupMenuButton<String>).first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('غیرفعال کردن'));
+    await tester.pumpAndSettle();
+    expect(find.text('این خدمت غیرفعال شود؟'), findsOneWidget);
+    await tester.tap(find.text('غیرفعال کردن').last);
+    await tester.pumpAndSettle();
+    expect(repo.items.first.status, 'INACTIVE');
+  });
+
+  testWidgets('create service shows duplicate and empty errors', (tester) async {
+    final repo = FakeServiceRepository(
+      items: const [
+        SalonService(id: 'svc-hair', name: 'Hair Service', status: 'ACTIVE'),
+      ],
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          authControllerProvider.overrideWith(_SignedInAuth.new),
+          serviceRepositoryProvider.overrideWithValue(repo),
+        ],
+        child: const MaterialApp(home: ServiceFormScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('ذخیره'));
+    await tester.pump();
+    expect(find.text('نام خدمت را وارد کنید.'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), 'Hair Service');
+    await tester.tap(find.text('ذخیره'));
+    await tester.pumpAndSettle();
+    expect(find.text('خدمتی با این نام از قبل وجود دارد.'), findsOneWidget);
+  });
+
+  testWidgets('record completed visit hides inactive catalog services', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          authControllerProvider.overrideWith(_SignedInAuth.new),
+          serviceRepositoryProvider.overrideWithValue(
+            FakeServiceRepository(
+              items: const [
+                SalonService(
+                  id: 'svc-botox',
+                  name: 'Hair Botox Premium',
+                  status: 'INACTIVE',
+                ),
+              ],
+            ),
+          ),
+        ],
+        child: const MaterialApp(home: RecordVisitScreen(customerId: 'c1')),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Hair Botox Premium'), findsNothing);
+    expect(find.text('هیچ خدمت فعالی وجود ندارد.'), findsOneWidget);
   });
 }
 

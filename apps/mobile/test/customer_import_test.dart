@@ -29,8 +29,8 @@ void main() {
     expect(result.failed, 1);
     expect(result.skippedRows, hasLength(2));
     expect(result.failedRows.single.errors, ['Phone is invalid']);
-    expect(importStatusLabel('ALREADY_EXISTS'), 'Already exists');
-    expect(importStatusLabel('DUPLICATE_IN_FILE'), 'Duplicate in file');
+    expect(importStatusLabel('ALREADY_EXISTS'), 'از قبل وجود داشت');
+    expect(importStatusLabel('DUPLICATE_IN_FILE'), 'تکراری در فایل');
   });
 
   test('file too large uses a friendly message', () {
@@ -40,7 +40,7 @@ void main() {
         code: 'VALIDATION_ERROR',
         message: 'too big',
       ).userMessage,
-      'The Excel file is too large.',
+      'فایل اکسل خیلی بزرگ است.',
     );
   });
 }

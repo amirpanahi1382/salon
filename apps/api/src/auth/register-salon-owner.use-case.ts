@@ -6,8 +6,9 @@ import {
   createId,
   DOMAIN_EVENT_TYPES,
 } from '@salon/shared';
-import { Prisma } from '@salon/database';
+import { STARTER_SERVICE_CATALOG, isAutomatedTestOwnerEmail, Prisma } from '@salon/database';
 import { PrismaService } from '../infrastructure/database/prisma.service';
+import { insertSalonService } from '../service/insert-salon-service';
 import type { RegisterSalonOwnerDto } from './auth.dto';
 
 @Injectable()
@@ -74,6 +75,16 @@ export class RegisterSalonOwnerUseCase {
           },
         ],
       });
+
+      const catalog = isAutomatedTestOwnerEmail(email) ? [] : STARTER_SERVICE_CATALOG;
+      for (const name of catalog) {
+        await insertSalonService(tx, {
+          tenantId: salonId,
+          actorId: userId,
+          name,
+          now,
+        });
+      }
 
       await tx.auditLog.create({
         data: {

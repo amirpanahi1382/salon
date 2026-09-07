@@ -234,6 +234,42 @@ describeIfDb('Complete visit with sale (e2e)', () => {
       .expect(400);
     expect(await prisma.client.visit.count({ where: { salonId: salonA.tenantId } })).toBe(visitsBeforeInactive);
 
+    const hairName = (await prisma.client.service.findFirst({ where: { id: hair, salonId: salonA.tenantId } }))?.name;
+    const historyAfterInactive = await request(app.getHttpServer())
+      .get(`/customers/${customerA}/visits`)
+      .set('Authorization', `Bearer ${salonA.token}`)
+      .expect(200);
+    expect(historyAfterInactive.body.items.find((row: { id: string }) => row.id === created.body.visit.id)).toMatchObject({
+      serviceName: hairName,
+      amountReceived: '8000000.00',
+    });
+    const globalAfterInactive = await request(app.getHttpServer())
+      .get('/visits')
+      .query({ customerId: customerA })
+      .set('Authorization', `Bearer ${salonA.token}`)
+      .expect(200);
+    expect(globalAfterInactive.body.items.find((row: { id: string }) => row.id === created.body.visit.id)).toMatchObject({
+      serviceName: hairName,
+      amountReceived: '8000000.00',
+    });
+    expect(
+      await prisma.client.transactionItem.count({
+        where: { salonId: salonA.tenantId, serviceId: hair },
+      }),
+    ).toBeGreaterThan(0);
+
+    await request(app.getHttpServer())
+      .patch(`/services/${hair}`)
+      .set('Authorization', `Bearer ${salonA.token}`)
+      .send({ status: 'ACTIVE' })
+      .expect(200);
+    await request(app.getHttpServer())
+      .post('/visits/complete-with-sale')
+      .set('Authorization', `Bearer ${salonA.token}`)
+      .set('Idempotency-Key', 'visit-sale-reactivated')
+      .send({ ...payload, visitedAt: '2026-08-06T16:30:00.000Z' })
+      .expect(201);
+
     await request(app.getHttpServer())
       .post('/visits/complete-with-sale')
       .set('Authorization', `Bearer ${salonA.token}`)
@@ -255,14 +291,14 @@ describeIfDb('Complete visit with sale (e2e)', () => {
       .get(`/intelligence/customers/${customerA}`)
       .set('Authorization', `Bearer ${salonA.token}`)
       .expect(200);
-    expect(intel.body.revenue.totalRevenue).toBe('17500000.00');
-    expect(intel.body.revenue.transactionCount).toBe(3);
+    expect(intel.body.revenue.totalRevenue).toBe('25500000.00');
+    expect(intel.body.revenue.transactionCount).toBe(4);
 
     const dashboard = await request(app.getHttpServer())
       .get('/intelligence/summary')
       .set('Authorization', `Bearer ${salonA.token}`)
       .expect(200);
-    expect(dashboard.body.totalRevenue).toBe('17500000.00');
+    expect(dashboard.body.totalRevenue).toBe('25500000.00');
 
     await request(app.getHttpServer())
       .post(`/transactions/${created.body.transaction.id}/void`)
@@ -273,8 +309,8 @@ describeIfDb('Complete visit with sale (e2e)', () => {
       .get(`/intelligence/customers/${customerA}`)
       .set('Authorization', `Bearer ${salonA.token}`)
       .expect(200);
-    expect(afterVoid.body.revenue.totalRevenue).toBe('9500000.00');
-    expect(afterVoid.body.revenue.transactionCount).toBe(2);
+    expect(afterVoid.body.revenue.totalRevenue).toBe('17500000.00');
+    expect(afterVoid.body.revenue.transactionCount).toBe(3);
 
     const stored = await prisma.client.ledgerTransaction.findFirst({
       where: { id: managerSale.body.transaction.id },

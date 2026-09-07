@@ -4,9 +4,9 @@ const _nameMaxLength = 80;
 
 class CustomerFieldValidation {
   static const phoneRuleMessage =
-      'Phone number must be exactly 11 digits and start with 09.';
-  static const firstNameRequiredMessage = 'First name is required.';
-  static const nameInvalidMessage = 'Enter a valid name.';
+      'شماره موبایل باید دقیقاً ۱۱ رقم باشد و با ۰۹ شروع شود.';
+  static const firstNameRequiredMessage = 'نام را وارد کنید.';
+  static const nameInvalidMessage = 'نام معتبر وارد کنید.';
 
   static bool isValidPhone(String value) => _phonePattern.hasMatch(value);
 

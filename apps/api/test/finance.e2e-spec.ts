@@ -91,6 +91,28 @@ describeIfDb('Services and transactions (e2e)', () => {
       .send({ name: 'Forbidden' })
       .expect(403);
 
+    const managerEmail = `mgr-${Date.now()}@example.test`;
+    await request(app.getHttpServer())
+      .post('/users')
+      .set('Authorization', `Bearer ${salonA.token}`)
+      .send({ name: 'Manager', email: managerEmail, password, role: 'MANAGER' })
+      .expect(201);
+    const managerToken = (
+      await request(app.getHttpServer()).post('/auth/login').send({ email: managerEmail, password }).expect(201)
+    ).body.accessToken as string;
+
+    await request(app.getHttpServer())
+      .post('/services')
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({ name: 'Manager Cut' })
+      .expect(403);
+
+    await request(app.getHttpServer())
+      .patch(`/services/${serviceA}`)
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({ name: 'Hijacked' })
+      .expect(403);
+
     const payload = {
       customerId: customerA,
       occurredAt: '2026-08-01T10:00:00.000Z',
@@ -398,5 +420,103 @@ describeIfDb('Services and transactions (e2e)', () => {
       .set('Authorization', `Bearer ${salonB.token}`)
       .expect(200);
     expect(listItems(other.body).map((row) => row.name)).toEqual(['Hair Service']);
+
+    const retired = await createService(salonA.token, 'Retired Cut');
+    await request(app.getHttpServer())
+      .patch(`/services/${retired}`)
+      .set('Authorization', `Bearer ${salonA.token}`)
+      .send({ status: 'INACTIVE' })
+      .expect(200);
+    const afterInactive = await request(app.getHttpServer())
+      .get('/services')
+      .set('Authorization', `Bearer ${salonA.token}`)
+      .expect(200);
+    expect(listItems(afterInactive.body).map((row) => row.name as string).sort()).toEqual([
+      'Hair Service',
+      'Nail Service',
+    ]);
+
+    await request(app.getHttpServer())
+      .post('/services')
+      .set('Authorization', `Bearer ${salonA.token}`)
+      .send({ name: '   ' })
+      .expect(400);
+    await request(app.getHttpServer())
+      .post('/services')
+      .set('Authorization', `Bearer ${salonA.token}`)
+      .send({ name: 'Hair Botox', salonId: salonB.tenantId })
+      .expect(400);
+
+    const created = await request(app.getHttpServer())
+      .post('/services')
+      .set('Authorization', `Bearer ${salonA.token}`)
+      .send({ name: '  Hair Botox  ' })
+      .expect(201);
+    expect(created.body.name).toBe('Hair Botox');
+    await request(app.getHttpServer())
+      .post('/services')
+      .set('Authorization', `Bearer ${salonA.token}`)
+      .send({ name: 'Hair Botox' })
+      .expect(409);
+    const otherBotox = await request(app.getHttpServer())
+      .post('/services')
+      .set('Authorization', `Bearer ${salonB.token}`)
+      .send({ name: 'Hair Botox' })
+      .expect(201);
+    expect(otherBotox.body.id).not.toBe(created.body.id);
+    await request(app.getHttpServer())
+      .patch(`/services/${otherBotox.body.id}`)
+      .set('Authorization', `Bearer ${salonA.token}`)
+      .send({ name: 'Stolen' })
+      .expect(404);
+    const renamed = await request(app.getHttpServer())
+      .patch(`/services/${created.body.id}`)
+      .set('Authorization', `Bearer ${salonA.token}`)
+      .send({ name: 'Hair Botox Premium' })
+      .expect(200);
+    expect(renamed.body.id).toBe(created.body.id);
+    expect(renamed.body.name).toBe('Hair Botox Premium');
+    await request(app.getHttpServer())
+      .patch(`/services/${created.body.id}`)
+      .set('Authorization', `Bearer ${salonA.token}`)
+      .send({ status: 'INACTIVE' })
+      .expect(200);
+    const managed = await request(app.getHttpServer())
+      .get('/services')
+      .query({ includeInactive: 'true' })
+      .set('Authorization', `Bearer ${salonA.token}`)
+      .expect(200);
+    expect(listItems(managed.body).some((row) => row.id === created.body.id && row.status === 'INACTIVE')).toBe(
+      true,
+    );
+    const audits = await prisma.client.auditLog.findMany({
+      where: { tenantId: salonA.tenantId, resource: 'service', resourceId: created.body.id as string },
+    });
+    expect(audits.map((row) => row.action)).toEqual(
+      expect.arrayContaining(['SERVICE_CREATED', 'SERVICE_UPDATED', 'SERVICE_DEACTIVATED']),
+    );
+  });
+
+  it('provisions Hair Service and Nail Service for a real owner registration', async () => {
+    const email = `owner-${Date.now()}-${Math.random().toString(16).slice(2)}@gmail.com`;
+    const registered = await request(app.getHttpServer())
+      .post('/auth/register')
+      .send({
+        salonName: 'Windows Dev Salon',
+        ownerName: 'Owner',
+        email,
+        password,
+      })
+      .expect(201);
+
+    const listed = await request(app.getHttpServer())
+      .get('/services')
+      .set('Authorization', `Bearer ${registered.body.accessToken}`)
+      .expect(200);
+    expect(listItems(listed.body).map((row) => row.name as string).sort()).toEqual([
+      'Hair Service',
+      'Nail Service',
+    ]);
+    expect(listItems(listed.body).every((row) => row.status === 'ACTIVE')).toBe(true);
   });
 });

@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/state/providers.dart';
 import '../../core/widgets/app_widgets.dart';
+import '../../shared/jalali.dart';
 import '../../shared/labels.dart';
 import '../../shared/models/models.dart';
 
@@ -75,7 +76,7 @@ class _CustomerImportScreenState extends ConsumerState<CustomerImportScreen> {
     final bytes = _bytes;
     final filename = _filename;
     if (bytes == null || filename == null) {
-      setState(() => _error = 'Select an Excel .xlsx file first.');
+      setState(() => _error = AppStrings.selectExcelFirst);
       return;
     }
     setState(() {
@@ -114,12 +115,13 @@ class _CustomerImportScreenState extends ConsumerState<CustomerImportScreen> {
         padding: const EdgeInsets.all(24),
         children: [
           const Text(
-            'Import your salon customers from Excel. Existing customers are never overwritten.',
+            AppStrings.importCustomersBody,
+            style: TextStyle(height: 1.65),
           ),
           const SizedBox(height: 8),
           const Text(
-            'Required columns: Name, Phone. Phone must be exactly 11 digits and start with 09, for example 09121111111. Maximum 5,000 rows and 2 MB.',
-            style: TextStyle(color: Color(0xFF6F645C)),
+            AppStrings.importCustomersRules,
+            style: TextStyle(color: Color(0xFF6F645C), height: 1.65),
           ),
           const SizedBox(height: 24),
           OutlinedButton.icon(
@@ -145,12 +147,12 @@ class _CustomerImportScreenState extends ConsumerState<CustomerImportScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
+                  LtrText(
                     _filename!,
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                   const SizedBox(height: 4),
-                  Text('${_bytes?.length ?? 0} bytes'),
+                  LtrText('${_bytes?.length ?? 0} ${AppStrings.bytesLabel}'),
                 ],
               ),
             ),
@@ -175,11 +177,19 @@ class _CustomerImportScreenState extends ConsumerState<CustomerImportScreen> {
               style: Theme.of(context).textTheme.titleLarge,
             ),
             const SizedBox(height: 8),
-            Text('${result.totalRows} ${AppStrings.rowsProcessed}'),
+            Text(
+              '${toPersianDigits(result.totalRows.toString())} ${AppStrings.rowsProcessed}',
+            ),
             const SizedBox(height: 16),
-            Text('${result.imported} ${AppStrings.importedCount}'),
-            Text('${result.skipped} ${AppStrings.skippedCount}'),
-            Text('${result.failed} ${AppStrings.failedCount}'),
+            Text(
+              '${toPersianDigits(result.imported.toString())} ${AppStrings.importedCount}',
+            ),
+            Text(
+              '${toPersianDigits(result.skipped.toString())} ${AppStrings.skippedCount}',
+            ),
+            Text(
+              '${toPersianDigits(result.failed.toString())} ${AppStrings.failedCount}',
+            ),
             if (result.skippedRows.isNotEmpty) ...[
               const SizedBox(height: 24),
               Text(
@@ -190,7 +200,9 @@ class _CustomerImportScreenState extends ConsumerState<CustomerImportScreen> {
               ...result.skippedRows.map(
                 (row) => ListTile(
                   contentPadding: EdgeInsets.zero,
-                  title: Text('${AppStrings.row} ${row.row}'),
+                  title: Text(
+                    '${AppStrings.row} ${toPersianDigits(row.row.toString())}',
+                  ),
                   subtitle: Text(importStatusLabel(row.status)),
                 ),
               ),
@@ -205,11 +217,15 @@ class _CustomerImportScreenState extends ConsumerState<CustomerImportScreen> {
               ...result.failedRows.map(
                 (row) => ListTile(
                   contentPadding: EdgeInsets.zero,
-                  title: Text('${AppStrings.row} ${row.row}'),
+                  title: Text(
+                    '${AppStrings.row} ${toPersianDigits(row.row.toString())}',
+                  ),
                   subtitle: Text(
                     row.errors.isEmpty
                         ? importStatusLabel(row.status)
-                        : row.errors.join('\n'),
+                        : row.errors
+                            .map(localizeUserFacingMessage)
+                            .join('\n'),
                   ),
                 ),
               ),

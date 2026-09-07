@@ -2,6 +2,7 @@ import 'dart:math';
 
 import 'package:dio/dio.dart';
 
+import '../../shared/labels.dart';
 import '../errors/api_exception.dart';
 import '../storage/session_store.dart';
 
@@ -150,7 +151,7 @@ Exception mapDioException(DioException error) {
   return ApiException(
     statusCode: error.response?.statusCode ?? 500,
     code: 'HTTP_ERROR',
-    message: 'Something went wrong. Please try again.',
+    message: AppStrings.genericError,
   );
 }
 
@@ -166,5 +167,5 @@ String stringifyApiMessage(Object? message) {
       return parts.join('\n');
     }
   }
-  return 'Something went wrong. Please try again.';
+  return AppStrings.genericError;
 }

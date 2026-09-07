@@ -100,7 +100,7 @@ class Visit {
 
   String get customerName {
     final name = '${firstName ?? ''} ${lastName ?? ''}'.trim();
-    return name.isEmpty ? 'Customer' : name;
+    return name.isEmpty ? 'مشتری' : name;
   }
 
   String get serviceLabel {
@@ -113,7 +113,7 @@ class Visit {
     if (amount.isEmpty) {
       return '—';
     }
-    return '$amount IRR';
+    return '$amount ریال';
   }
 
   factory Visit.fromJson(Map<String, dynamic> json) {
