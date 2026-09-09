@@ -17,5 +17,6 @@ import { ListOpportunitiesUseCase } from './list-opportunities.use-case';
     ListCustomerSegmentsUseCase,
     GetIntelligenceSummaryUseCase,
   ],
+  exports: [IntelligenceQueryService],
 })
 export class IntelligenceModule {}

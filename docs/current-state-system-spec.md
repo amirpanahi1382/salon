@@ -79,7 +79,7 @@ Evidence: `pnpm-workspace.yaml`, `README.md`, `apps/api/src/app.module.ts`, `app
         |  [PostgreSQL + Prisma]
         |     tables: salons, users, customers, visits, services,
         |             transactions, transaction_items, outbox_events,
-        |             audit_logs, idempotency_records
+        |             audit_logs, idempotency_records, opportunity_actions
         |
         +-- writes AuditLog + OutboxEvent in same DB transaction as domain writes
 
@@ -102,7 +102,7 @@ Evidence: `pnpm-workspace.yaml`, `README.md`, `apps/api/src/app.module.ts`, `app
 | Logging | Pino structured logs, request/correlation IDs, redact paths |
 | Auditing | `audit_logs` written in domain transactions |
 | Outbox | `outbox_events` + worker claim/retry/dead-letter |
-| Idempotency | `idempotency_records` for visits and transactions |
+| Idempotency | `idempotency_records` for visits, transactions, and opportunity Action creation |
 | Health | `GET /health`, `GET /health/ready` |
 | Metrics | `GET /metrics` Prometheus text |
 | Swagger | `/docs` when enabled (default on outside production) |
@@ -120,7 +120,7 @@ Evidence: `pnpm-workspace.yaml`, `README.md`, `apps/api/src/app.module.ts`, `app
 **Primary users:** OWNER, MANAGER, STAFF (`UserRole` enum).  
 **Core problem addressed in code:** Keep a tenant-scoped record of customers, completed visits, and completed money, then **compute retention/revenue signals on read** so staff can act manually.  
 **Product thesis (docs + README, aligned with code):** Help salons earn more from customers they already have — **not** by booking future appointments.  
-**Current wedge / MVP boundary (code):** Register a salon → manage customers → record completed visits (optionally with a sale) → inspect intelligence and opportunities → export visits.
+**Current wedge / MVP boundary (code):** Register a salon → manage customers → record completed visits (optionally with a sale) → inspect intelligence and opportunities → record a manual Action outcome → export visits.
 
 Evidence: `README.md`, `apps/api` modules, `packages/database/prisma/schema.prisma`, Flutter shell tabs.
 
@@ -161,7 +161,7 @@ Flutter is the only first-party client. Backend also supports user-admin and sta
 | Customer detail | Profile + intelligence + history | — | — | `GET /customers/:id`, `GET /intelligence/customers/:id`, `GET /customers/:id/visits` | STAFF+ | none | none | none | Combined UI | 404 |
 | Record visit only | Record Visit (STAFF always; others if no amount) | visitedAt, notes | Future visit blocked | `POST /visits` | STAFF+ | Visit | `VISIT_CREATED` | `VisitCompleted` | History refresh | 400 future / 404 customer |
 | Record visit + sale | Same screen OWNER/MANAGER | service, amount, visitedAt | Amount > 0; active service | `POST /visits/complete-with-sale` + Idempotency-Key | OWNER, MANAGER | Visit + Transaction + Item | `VISIT_CREATED`, `TRANSACTION_CREATED` | `VisitCompleted`, `TransactionCreated` | History + intelligence | 403 STAFF; 400 amount; 409 idempotency mismatch |
-| Opportunities | List | optional type | — | `GET /intelligence/opportunities` | STAFF+ | none | none | none | Sorted list | empty copy |
+| Opportunities | List + complete/dismiss | optional type | — | `GET /intelligence/opportunities`, Action APIs | STAFF+ | OpportunityAction | `ACTION_*` | `ActionCreated` / `ActionCompleted` / `ActionDismissed` | History + status | empty copy |
 | Global visits | Visits tab | local calendar day | Flutter local day → `from`/`to` UTC | `GET /visits` | STAFF+ | none | none | none | Rows + previous-visit days | empty |
 | Export | Save dialog | same filters | — | `GET /visits/export` | STAFF+ | none | `VISITS_EXPORTED` | none | `.xlsx` saved | 400 if >5000 |
 | Profile | Name, role, logout | — | — | none for salon PATCH | — | — | — | — | Logout clears storage | — |
@@ -253,6 +253,7 @@ Roles: `OWNER`, `MANAGER`, `STAFF`. Evidence: `RolesGuard`, use cases (`Forbidde
 | Transactions | GET list/get/by customer | Y | Y | Y |
 | Transactions | POST create / void | Y | Y | N |
 | Intelligence | all GET | Y | Y | Y |
+| Opportunity Actions | create/list/complete/dismiss | Y | Y | Y |
 | Health/metrics | public | — | — | — |
 
 DTO `CreateSalonUserDto.role` accepts any `USER_ROLES` value, but **`canAssignRole` rejects MANAGER→OWNER and MANAGER→MANAGER** with 403. Evidence: `packages/shared/src/salon-user-policy.ts`, `create-salon-user.use-case.ts`, `salon-user-policy.spec.ts`. Last-OWNER invariant still applies on role/status changes (`wouldLeaveSalonWithoutOwner`).
@@ -468,7 +469,25 @@ Types: `REACTIVATION` (INACTIVE), `CUSTOMER_RETURN` (AT_RISK), `REVENUE_DECLINE`
 
 List: in-memory after scanning up to 5000 customers; sort by `daysSinceLastVisit` desc, then customerId, then type; cursor 200/page.
 
-Evidence: `list-opportunities.use-case.ts`, Flutter `opportunities_screen.dart`.
+### 17.1 Opportunity Actions (operational history)
+
+**IMPLEMENTED.** `opportunity_actions` is **not** a second intelligence source of truth. Opportunities remain derived on read. An Action records that the salon responded to a currently derived opportunity (`salonId` + `customerId` + `opportunityType`).
+
+Lifecycle: `OPEN` → `COMPLETED` or `DISMISSED`. Terminal states do not reopen. A later `OPEN` may be created after a terminal Action for the same customer and type (no cooldown). At most one `OPEN` row per salon+customer+type (partial unique index). Completing an Action does **not** create a Visit or Transaction and does **not** change intelligence thresholds.
+
+APIs (STAFF+; tenant from JWT):
+
+- `POST /intelligence/opportunities/:opportunityType/customers/:customerId/actions` — required `Idempotency-Key`; replay same key+payload; 409 different payload; existing OPEN is returned instead of a duplicate.
+- `GET /actions`, `GET /customers/:customerId/actions` — cursor `{ createdAt, id }`, page 200.
+- `POST /actions/:id/complete`, `POST /actions/:id/dismiss` — `SELECT … FOR UPDATE`; repeat of the same terminal state is idempotent; opposite terminal is 409.
+
+Audit: `ACTION_CREATED`, `ACTION_COMPLETED`, `ACTION_DISMISSED`. Outbox: `ActionCreated`, `ActionCompleted`, `ActionDismissed`. No messaging events.
+
+Customer delete (no financial records) deletes Actions then visits then the customer (`actionCount` in `CustomerDeleted` payload). No Action DELETE API.
+
+Flutter: Today and Opportunities cards expose «اقدام انجام شد» / «نادیده گرفتن». Copy `توجه سالن باید کدام سمت بره؟` is unchanged.
+
+Evidence: `apps/api/src/action/`, Flutter `opportunity_action_bar.dart`, `action.e2e-spec.ts`.
 
 ---
 
@@ -564,6 +583,11 @@ All others: Bearer JWT. Tenant = JWT.
 | GET | /intelligence/opportunities | List | any | type, cursor | 200 page | no | no | no |
 | GET | /intelligence/segments | Segment list | any | status, cursor | 200 page | no | no | no |
 | GET | /intelligence/customers/:id | Detail | any | — | 200 | no | no | no |
+| POST | /intelligence/opportunities/:type/customers/:customerId/actions | Create Action | any | Idempotency-Key | 201 | ACTION_CREATED | ActionCreated | required |
+| GET | /actions | List Actions | any | status, customerId, cursor | 200 page | no | no | no |
+| GET | /customers/:id/actions | Customer Actions | any | status, cursor | 200 page | no | no | no |
+| POST | /actions/:id/complete | Complete Action | any | — | 201 | ACTION_COMPLETED | ActionCompleted | no |
+| POST | /actions/:id/dismiss | Dismiss Action | any | — | 201 | ACTION_DISMISSED | ActionDismissed | no |
 | GET | /health | Live | public | — | 200 `{status:ok}` | no | no | no |
 | GET | /health/ready | Ready | public | — | 200 or 503 | no | no | no |
 | GET | /metrics | Prometheus | public | — | 200 text | no | no | no |
@@ -645,6 +669,7 @@ Dates are migration timestamps (2026-09-04 … 2026-09-06), not git author dates
 | VISIT_CREATE | Idempotency-Key | optional | customerId + visitedAt ISO |
 | VISIT_COMPLETE_WITH_SALE | required | SHA256 of sale fields | |
 | TRANSACTION_CREATE | required | customer, visit, occurredAt, amount, currency, items | |
+| OPPORTUNITY_ACTION_CREATE | required | customerId + opportunityType |
 
 Scope unique: tenant + actor + operation + key. Replay same hash returns original resource. Different hash → 409. Retention: worker deletes rows older than `IDEMPOTENCY_RETENTION_DAYS` (default 7). Cleanup batch `RETENTION_CLEANUP_BATCH_SIZE`.
 
@@ -666,15 +691,18 @@ Claim: `FOR UPDATE SKIP LOCKED`, lease `OUTBOX_LEASE_MS` (30s default), batch `O
 | UserRoleChanged | PATCH role | from, to |
 | UserStatusChanged | PATCH status | status |
 | CustomerCreated | create/import/register path | customerId |
-| CustomerDeleted | delete | customerId, visitCount |
+| CustomerDeleted | delete | customerId, visitCount, actionCount |
 | VisitCompleted | create visit / complete-with-sale | visitId, customerId |
 | VisitDeleted | delete visit | visitId, customerId |
 | ServiceCreated | insert service | serviceId |
 | ServiceUpdated | patch | serviceId, status/name |
 | TransactionCreated | sale / POST tx | transactionId |
 | TransactionVoided | void | transactionId |
+| ActionCreated | create Action | actionId, customerId, opportunityType |
+| ActionCompleted | complete Action | actionId, customerId, opportunityType |
+| ActionDismissed | dismiss Action | actionId, customerId, opportunityType |
 
-These are **facts**, not commands. **Event type count: 14.**
+These are **facts**, not commands. **Event type count: 17.**
 
 ---
 
@@ -697,6 +725,9 @@ These are **facts**, not commands. **Event type count: 14.**
 | SERVICE_CREATED / UPDATED / ACTIVATED / DEACTIVATED | catalog | normal |
 | TRANSACTION_CREATED | money in | **financial** |
 | TRANSACTION_VOIDED | void | **financial** |
+| ACTION_CREATED | create Action | normal |
+| ACTION_COMPLETED | complete Action | normal |
+| ACTION_DISMISSED | dismiss Action | normal |
 
 Actor = JWT user; tenant stored. Failures are generally **not** written as FAILED audit rows (success-path writes). **Audit action names: 18.**
 
@@ -788,7 +819,7 @@ Timezone: storage TIMESTAMPTZ; intelligence months **UTC**; Flutter visit day **
 
 ## 36. Deletion rules
 
-**Customer (OWNER+MANAGER):** If **any** `transactions` for that customer (COMPLETED **or** VOIDED) → 409 `Customer cannot be deleted while financial records exist`. Else delete visits then customer; outbox `CustomerDeleted` with visitCount; audit `CUSTOMER_DELETED`. Intelligence is computed — nothing to delete. Retry on visit race P2003.
+**Customer (OWNER+MANAGER):** If **any** `transactions` for that customer (COMPLETED **or** VOIDED) → 409 `Customer cannot be deleted while financial records exist`. Else delete opportunity Actions then visits then customer; outbox `CustomerDeleted` with visitCount and actionCount; audit `CUSTOMER_DELETED`. Intelligence is computed — nothing to delete. Retry on visit race P2003.
 
 **Visit (OWNER+MANAGER):** If any transaction has `visit_id` → 409. Else delete visit; `VisitDeleted`. Items/transactions never cascade-delete money.
 

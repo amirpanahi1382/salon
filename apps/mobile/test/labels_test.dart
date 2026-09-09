@@ -15,6 +15,12 @@ void main() {
     expect(signalLabel('NEW_SIGNAL'), 'نشانه');
   });
 
+  test('action status labels stay user-facing Persian', () {
+    expect(actionStatusLabel('COMPLETED'), 'اقدام انجام شد');
+    expect(actionStatusLabel('DISMISSED'), 'نادیده گرفتن');
+    expect(actionStatusLabel('OPEN'), 'در حال پیگیری');
+  });
+
   test('owner-required dashboard and navigation copy is exact', () {
     expect(AppStrings.attentionQuestion, 'توجه سالن باید کدام سمت بره؟');
     expect(AppStrings.customers, 'مشتریان');

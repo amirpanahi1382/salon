@@ -63,6 +63,12 @@ class AppStrings {
   static const recommended = 'پیشنهاد';
   static const recommendationNote =
       'این فقط یک پیشنهاد است. ارسال پیام هنوز در برنامه نیست.';
+  static const markActionDone = 'اقدام انجام شد';
+  static const dismissAction = 'نادیده گرفتن';
+  static const actionHistory = 'اقدام‌های اخیر';
+  static const noActions = 'هنوز اقدامی ثبت نشده.';
+  static const actionDoesNotCreateVisit =
+      'اقدام یعنی شما کاری کردید. مراجعه یا درآمد جدا ثبت می‌شود.';
   static const why = 'چرا';
   static const visitHistory = 'سابقه مراجعه';
   static const logout = 'خروج';
@@ -167,6 +173,19 @@ String statusLabel(String value) {
   }
 }
 
+String actionStatusLabel(String value) {
+  switch (value) {
+    case 'OPEN':
+      return 'در حال پیگیری';
+    case 'COMPLETED':
+      return AppStrings.markActionDone;
+    case 'DISMISSED':
+      return AppStrings.dismissAction;
+    default:
+      return AppStrings.unknownStatus;
+  }
+}
+
 String opportunityLabel(String value) {
   switch (value) {
     case 'REACTIVATION':
@@ -255,7 +274,8 @@ String localizeUserFacingMessage(String message) {
         'با این ایمیل قبلاً حساب ساخته شده.',
     'A customer with this phone number already exists in this salon':
         'مشتری با این شماره موبایل در این سالن ثبت شده.',
-    'A conflicting record already exists': 'این مورد از قبل وجود دارد.',
+    'Action was already dismissed': 'این فرصت قبلاً نادیده گرفته شده.',
+    'Action was already completed': 'اقدام این فرصت قبلاً ثبت شده.',
     'Export failed': 'خروجی اکسل گرفته نشد.',
     'Service not found': 'این خدمت پیدا نشد.',
     'Name is missing': 'نام وارد نشده.',

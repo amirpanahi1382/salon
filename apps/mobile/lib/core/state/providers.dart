@@ -45,6 +45,10 @@ final intelligenceRepositoryProvider = Provider<IntelligenceRepository>((ref) {
   return IntelligenceRepository(ref.watch(apiClientProvider));
 });
 
+final actionRepositoryProvider = Provider<ActionRepository>((ref) {
+  return ActionRepository(ref.watch(apiClientProvider));
+});
+
 final salonRepositoryProvider = Provider<SalonRepository>((ref) {
   return SalonRepository(ref.watch(apiClientProvider));
 });

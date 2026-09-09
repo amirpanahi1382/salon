@@ -101,6 +101,131 @@ class FakeSalonRepository extends SalonRepository {
   }
 }
 
+class FakeActionRepository extends ActionRepository {
+  FakeActionRepository({this.items = const []}) : super(_client());
+
+  List<OpportunityAction> items;
+  Object? error;
+  int createCalls = 0;
+  int completeCalls = 0;
+  int dismissCalls = 0;
+
+  @override
+  Future<ItemPage<OpportunityAction>> list({
+    String? status,
+    String? customerId,
+    String? cursor,
+  }) async {
+    if (error != null) {
+      throw error!;
+    }
+    var filtered = items;
+    if (status != null) {
+      filtered = filtered.where((item) => item.status == status).toList();
+    }
+    if (customerId != null) {
+      filtered =
+          filtered.where((item) => item.customerId == customerId).toList();
+    }
+    return ItemPage(items: filtered, hasMore: false);
+  }
+
+  @override
+  Future<ItemPage<OpportunityAction>> listForCustomer(
+    String customerId, {
+    String? status,
+    String? cursor,
+  }) {
+    return list(status: status, customerId: customerId, cursor: cursor);
+  }
+
+  @override
+  Future<OpportunityAction> create({
+    required String customerId,
+    required String opportunityType,
+    required String idempotencyKey,
+  }) async {
+    createCalls += 1;
+    if (error != null) {
+      throw error!;
+    }
+    for (final item in items) {
+      if (item.customerId == customerId &&
+          item.opportunityType == opportunityType &&
+          item.status == 'OPEN') {
+        return item;
+      }
+    }
+    final created = OpportunityAction(
+      id: 'a-${items.length + 1}',
+      customerId: customerId,
+      firstName: 'Sara',
+      lastName: 'Ahmadi',
+      opportunityType: opportunityType,
+      status: 'OPEN',
+      createdBy: 'u1',
+      createdAt: DateTime.utc(2026, 9, 9),
+      updatedAt: DateTime.utc(2026, 9, 9),
+    );
+    items = [...items, created];
+    return created;
+  }
+
+  @override
+  Future<OpportunityAction> complete(String id) async {
+    completeCalls += 1;
+    if (error != null) {
+      throw error!;
+    }
+    items = items
+        .map(
+          (item) => item.id == id
+              ? OpportunityAction(
+                  id: item.id,
+                  customerId: item.customerId,
+                  firstName: item.firstName,
+                  lastName: item.lastName,
+                  opportunityType: item.opportunityType,
+                  status: 'COMPLETED',
+                  createdBy: item.createdBy,
+                  createdAt: item.createdAt,
+                  updatedAt: DateTime.utc(2026, 9, 9),
+                  completedAt: DateTime.utc(2026, 9, 9),
+                )
+              : item,
+        )
+        .toList();
+    return items.firstWhere((item) => item.id == id);
+  }
+
+  @override
+  Future<OpportunityAction> dismiss(String id) async {
+    dismissCalls += 1;
+    if (error != null) {
+      throw error!;
+    }
+    items = items
+        .map(
+          (item) => item.id == id
+              ? OpportunityAction(
+                  id: item.id,
+                  customerId: item.customerId,
+                  firstName: item.firstName,
+                  lastName: item.lastName,
+                  opportunityType: item.opportunityType,
+                  status: 'DISMISSED',
+                  createdBy: item.createdBy,
+                  createdAt: item.createdAt,
+                  updatedAt: DateTime.utc(2026, 9, 9),
+                  dismissedAt: DateTime.utc(2026, 9, 9),
+                )
+              : item,
+        )
+        .toList();
+    return items.firstWhere((item) => item.id == id);
+  }
+}
+
 class FakeCustomerRepository extends CustomerRepository {
   FakeCustomerRepository({this.items = const []}) : super(_client());
 
@@ -495,6 +620,7 @@ void main() {
             ),
           ),
           salonRepositoryProvider.overrideWith((ref) => FakeSalonRepository()),
+          actionRepositoryProvider.overrideWithValue(FakeActionRepository()),
           authControllerProvider.overrideWith(_SignedInAuth.new),
         ],
         child: const MaterialApp(home: DashboardScreen()),
@@ -520,6 +646,7 @@ void main() {
             (ref) => FakeIntelligenceRepository(summaryData: _summary()),
           ),
           salonRepositoryProvider.overrideWith((ref) => FakeSalonRepository()),
+          actionRepositoryProvider.overrideWithValue(FakeActionRepository()),
         ],
         child: const MaterialApp(home: DashboardScreen()),
       ),
@@ -584,6 +711,7 @@ void main() {
           intelligenceRepositoryProvider.overrideWithValue(
             FakeIntelligenceRepository(opportunitiesData: [_opportunity()]),
           ),
+          actionRepositoryProvider.overrideWithValue(FakeActionRepository()),
         ],
         child: const MaterialApp(home: OpportunitiesScreen()),
       ),
@@ -591,6 +719,27 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Sara Ahmadi'), findsOneWidget);
     expect(find.textContaining('۵۲'), findsOneWidget);
+  });
+
+  testWidgets('opportunity action buttons complete and dismiss', (tester) async {
+    final actions = FakeActionRepository();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          intelligenceRepositoryProvider.overrideWithValue(
+            FakeIntelligenceRepository(opportunitiesData: [_opportunity()]),
+          ),
+          actionRepositoryProvider.overrideWithValue(actions),
+        ],
+        child: const MaterialApp(home: OpportunitiesScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('اقدام انجام شد'), findsWidgets);
+    await tester.tap(find.text('اقدام انجام شد').first);
+    await tester.pumpAndSettle();
+    expect(actions.createCalls, 1);
+    expect(actions.completeCalls, 1);
   });
 
   testWidgets('customer detail renders status reason action and visits', (
@@ -607,6 +756,7 @@ void main() {
               customerIntelligence: _intelligence(),
             ),
           ),
+          actionRepositoryProvider.overrideWithValue(FakeActionRepository()),
           visitRepositoryProvider.overrideWith(
             (ref) => FakeVisitListRepository(
               items: [
@@ -1077,6 +1227,7 @@ void main() {
               customerIntelligence: _intelligence(),
             ),
           ),
+          actionRepositoryProvider.overrideWithValue(FakeActionRepository()),
           visitRepositoryProvider.overrideWith(
             (ref) => FakeVisitListRepository(),
           ),
@@ -1117,6 +1268,7 @@ void main() {
               customerIntelligence: _intelligence(),
             ),
           ),
+          actionRepositoryProvider.overrideWithValue(FakeActionRepository()),
           visitRepositoryProvider.overrideWith(
             (ref) => FakeVisitListRepository(
               items: [
@@ -1172,6 +1324,7 @@ void main() {
               customerIntelligence: _intelligence(),
             ),
           ),
+          actionRepositoryProvider.overrideWithValue(FakeActionRepository()),
           visitRepositoryProvider.overrideWith((ref) => visits),
           authControllerProvider.overrideWith(_SignedInAuth.new),
         ],
@@ -1210,6 +1363,7 @@ void main() {
               customerIntelligence: _intelligence(),
             ),
           ),
+          actionRepositoryProvider.overrideWithValue(FakeActionRepository()),
           visitRepositoryProvider.overrideWith(
             (ref) => FakeVisitListRepository(),
           ),
@@ -1488,6 +1642,7 @@ void main() {
               customerIntelligence: _intelligence(),
             ),
           ),
+          actionRepositoryProvider.overrideWithValue(FakeActionRepository()),
           visitRepositoryProvider.overrideWith(
             (ref) => FakeVisitListRepository(),
           ),
@@ -1532,6 +1687,7 @@ void main() {
               customerIntelligence: _intelligence(),
             ),
           ),
+          actionRepositoryProvider.overrideWithValue(FakeActionRepository()),
           visitRepositoryProvider.overrideWith(
             (ref) => FakeVisitListRepository(
               items: [

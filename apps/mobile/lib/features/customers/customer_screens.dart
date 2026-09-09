@@ -10,6 +10,7 @@ import '../../shared/jalali.dart';
 import '../../shared/jalali_date_picker.dart';
 import '../../shared/labels.dart';
 import '../../shared/models/models.dart';
+import '../opportunities/opportunity_action_bar.dart';
 import 'customer_validation.dart';
 
 class CustomersScreen extends ConsumerStatefulWidget {
@@ -369,6 +370,7 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
   Customer? _customer;
   CustomerIntelligence? _intelligence;
   List<Visit> _visits = const [];
+  Map<String, OpportunityAction> _openActions = const {};
   Object? _error;
   bool _loading = true;
 
@@ -393,6 +395,9 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
       final visits = await ref
           .read(visitRepositoryProvider)
           .listForCustomer(widget.customerId);
+      final openActions = await ref
+          .read(actionRepositoryProvider)
+          .listForCustomer(widget.customerId, status: 'OPEN');
       if (!mounted) {
         return;
       }
@@ -400,6 +405,11 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
         _customer = customer;
         _intelligence = intelligence;
         _visits = visits.items;
+        _openActions = {
+          for (final action in openActions.items)
+            opportunityActionKey(action.customerId, action.opportunityType):
+                action,
+        };
         _loading = false;
       });
     } catch (error) {
@@ -503,7 +513,9 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
     final customer = _customer!;
     final intelligence = _intelligence;
     final canManage = ref.watch(authControllerProvider).user?.role != 'STAFF';
-    return Scaffold(
+    return OpportunityActionsScope(
+      onChanged: _load,
+      child: Scaffold(
       appBar: AppBar(
         title: Text(customer.fullName),
         actions: [
@@ -602,6 +614,20 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                         AppStrings.recommendationNote,
                         style: TextStyle(fontSize: 12),
                       ),
+                      const SizedBox(height: 12),
+                      ...intelligence.opportunities.map(
+                        (opportunity) => Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: OpportunityActionBar(
+                            customerId: opportunity.customerId,
+                            opportunityType: opportunity.type,
+                            openAction: _openActions[opportunityActionKey(
+                              opportunity.customerId,
+                              opportunity.type,
+                            )],
+                          ),
+                        ),
+                      ),
                     ],
                     if (intelligence.signals.isNotEmpty) ...[
                       const SizedBox(height: 16),
@@ -685,6 +711,7 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
           ],
         ),
       ),
+    ),
     );
   }
 }

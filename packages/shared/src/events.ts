@@ -12,6 +12,9 @@ export const DOMAIN_EVENT_TYPES = {
   ServiceUpdated: 'ServiceUpdated',
   TransactionCreated: 'TransactionCreated',
   TransactionVoided: 'TransactionVoided',
+  ActionCreated: 'ActionCreated',
+  ActionCompleted: 'ActionCompleted',
+  ActionDismissed: 'ActionDismissed',
 } as const;
 
 export type DomainEventType =

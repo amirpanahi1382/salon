@@ -276,6 +276,75 @@ class IntelligenceRepository {
   }
 }
 
+class ActionRepository {
+  ActionRepository(this._api);
+
+  final ApiClient _api;
+
+  Future<ItemPage<OpportunityAction>> list({
+    String? status,
+    String? customerId,
+    String? cursor,
+  }) async {
+    final data = await _api.get(
+      '/actions',
+      query: {
+        'status': ?status,
+        'customerId': ?customerId,
+        if (cursor != null && cursor.isNotEmpty) 'cursor': cursor,
+      },
+    );
+    return parseItemPage(data, OpportunityAction.fromJson);
+  }
+
+  Future<ItemPage<OpportunityAction>> listForCustomer(
+    String customerId, {
+    String? status,
+    String? cursor,
+  }) async {
+    final data = await _api.get(
+      '/customers/$customerId/actions',
+      query: {
+        'status': ?status,
+        if (cursor != null && cursor.isNotEmpty) 'cursor': cursor,
+      },
+    );
+    return parseItemPage(data, OpportunityAction.fromJson);
+  }
+
+  Future<OpportunityAction> create({
+    required String customerId,
+    required String opportunityType,
+    required String idempotencyKey,
+  }) async {
+    Future<OpportunityAction> send() async {
+      final data = await _api.post(
+        '/intelligence/opportunities/$opportunityType/customers/$customerId/actions',
+        headers: {'Idempotency-Key': idempotencyKey},
+      ) as Map<String, dynamic>;
+      return OpportunityAction.fromJson(data);
+    }
+
+    try {
+      return await send();
+    } on NetworkException {
+      return send();
+    }
+  }
+
+  Future<OpportunityAction> complete(String id) async {
+    final data =
+        await _api.post('/actions/$id/complete') as Map<String, dynamic>;
+    return OpportunityAction.fromJson(data);
+  }
+
+  Future<OpportunityAction> dismiss(String id) async {
+    final data =
+        await _api.post('/actions/$id/dismiss') as Map<String, dynamic>;
+    return OpportunityAction.fromJson(data);
+  }
+}
+
 class SalonRepository {
   SalonRepository(this._api);
 

@@ -219,6 +219,52 @@ class Opportunity {
   }
 }
 
+class OpportunityAction {
+  const OpportunityAction({
+    required this.id,
+    required this.customerId,
+    required this.firstName,
+    required this.lastName,
+    required this.opportunityType,
+    required this.status,
+    required this.createdBy,
+    required this.createdAt,
+    required this.updatedAt,
+    this.completedAt,
+    this.dismissedAt,
+  });
+
+  final String id;
+  final String customerId;
+  final String firstName;
+  final String lastName;
+  final String opportunityType;
+  final String status;
+  final String createdBy;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  final DateTime? completedAt;
+  final DateTime? dismissedAt;
+
+  String get fullName => '$firstName $lastName'.trim();
+
+  factory OpportunityAction.fromJson(Map<String, dynamic> json) {
+    return OpportunityAction(
+      id: json['id'] as String,
+      customerId: json['customerId'] as String,
+      firstName: json['firstName'] as String,
+      lastName: json['lastName'] as String,
+      opportunityType: json['opportunityType'] as String,
+      status: json['status'] as String,
+      createdBy: json['createdBy'] as String,
+      createdAt: DateTime.parse(json['createdAt'] as String),
+      updatedAt: DateTime.parse(json['updatedAt'] as String),
+      completedAt: _parseDate(json['completedAt']),
+      dismissedAt: _parseDate(json['dismissedAt']),
+    );
+  }
+}
+
 class CustomerRevenue {
   const CustomerRevenue({
     required this.totalRevenue,

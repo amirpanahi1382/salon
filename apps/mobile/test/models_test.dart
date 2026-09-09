@@ -66,6 +66,24 @@ void main() {
     },
   );
 
+  test('parses opportunity actions without salonId', () {
+    final action = OpportunityAction.fromJson({
+      'id': 'a1',
+      'customerId': 'c1',
+      'firstName': 'Sara',
+      'lastName': 'Ahmadi',
+      'opportunityType': 'REACTIVATION',
+      'status': 'COMPLETED',
+      'createdBy': 'u1',
+      'createdAt': '2026-09-09T00:00:00.000Z',
+      'updatedAt': '2026-09-09T00:00:00.000Z',
+      'completedAt': '2026-09-09T00:00:00.000Z',
+      'dismissedAt': null,
+    });
+    expect(action.status, 'COMPLETED');
+    expect(action.fullName, 'Sara Ahmadi');
+  });
+
   test('parses list pages with items and hasMore', () {
     final items = parseItemList({
       'items': [

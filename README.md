@@ -99,6 +99,12 @@ GET /intelligence/summary
 GET /intelligence/opportunities
 GET /intelligence/segments
 GET /intelligence/customers/:customerId
+
+POST /intelligence/opportunities/:opportunityType/customers/:customerId/actions
+GET /actions
+GET /customers/:customerId/actions
+POST /actions/:id/complete
+POST /actions/:id/dismiss
 ```
 
 A **Visit** is a completed historical salon interaction. It is not a booking, appointment, or calendar event.

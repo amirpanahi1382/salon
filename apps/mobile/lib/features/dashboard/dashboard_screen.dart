@@ -7,6 +7,7 @@ import '../../core/widgets/app_widgets.dart';
 import '../../shared/jalali.dart';
 import '../../shared/labels.dart';
 import '../../shared/models/models.dart';
+import '../opportunities/opportunity_action_bar.dart';
 
 class DashboardScreen extends ConsumerStatefulWidget {
   const DashboardScreen({super.key});
@@ -18,6 +19,7 @@ class DashboardScreen extends ConsumerStatefulWidget {
 class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   IntelligenceSummary? _summary;
   List<Opportunity> _opportunities = const [];
+  Map<String, OpportunityAction> _openActions = const {};
   SalonProfile? _salon;
   Object? _error;
   bool _loading = true;
@@ -38,6 +40,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       final opportunities = await ref
           .read(intelligenceRepositoryProvider)
           .opportunities();
+      final openActions = await ref
+          .read(actionRepositoryProvider)
+          .list(status: 'OPEN');
       final salon = await ref.read(salonRepositoryProvider).current();
       if (!mounted) {
         return;
@@ -45,6 +50,11 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       setState(() {
         _summary = summary;
         _opportunities = opportunities.items;
+        _openActions = {
+          for (final action in openActions.items)
+            opportunityActionKey(action.customerId, action.opportunityType):
+                action,
+        };
         _salon = salon;
         _loading = false;
       });
@@ -71,7 +81,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       );
     }
     final summary = _summary!;
-    return Scaffold(
+    return OpportunityActionsScope(
+      onChanged: _load,
+      child: Scaffold(
       appBar: AppBar(
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -165,6 +177,14 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                         type: item.type,
                         reason: item.reason,
                         action: item.recommendedAction,
+                        footer: OpportunityActionBar(
+                          customerId: item.customerId,
+                          opportunityType: item.type,
+                          openAction: _openActions[opportunityActionKey(
+                            item.customerId,
+                            item.type,
+                          )],
+                        ),
                         onTap: () =>
                             context.push('/customers/${item.customerId}'),
                       ),
@@ -173,6 +193,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           ],
         ),
       ),
+    ),
     );
   }
 }

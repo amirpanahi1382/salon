@@ -249,6 +249,7 @@ class OpportunityCard extends StatelessWidget {
     required this.type,
     required this.reason,
     required this.action,
+    this.footer,
     this.onTap,
   });
 
@@ -257,6 +258,7 @@ class OpportunityCard extends StatelessWidget {
   final String type;
   final String reason;
   final String action;
+  final Widget? footer;
   final VoidCallback? onTap;
 
   @override
@@ -286,6 +288,10 @@ class OpportunityCard extends StatelessWidget {
             '${AppStrings.recommended}: ${localizeIntelligenceCopy(action)}',
             style: const TextStyle(color: AppColors.muted, height: 1.6),
           ),
+          if (footer != null) ...[
+            const SizedBox(height: 12),
+            footer!,
+          ],
         ],
       ),
     );

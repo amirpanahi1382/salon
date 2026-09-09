@@ -1,9 +1,17 @@
-export { Prisma, PrismaClient, ServiceStatus, TransactionStatus } from '@prisma/client';
+export {
+  Prisma,
+  PrismaClient,
+  OpportunityActionStatus,
+  OpportunityActionType,
+  ServiceStatus,
+  TransactionStatus,
+} from '@prisma/client';
 export type {
   AuditLog,
   Customer,
   IdempotencyRecord,
   LedgerTransaction,
+  OpportunityAction,
   OutboxEvent,
   Salon,
   Service,

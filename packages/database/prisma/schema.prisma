@@ -40,6 +40,18 @@ enum TransactionStatus {
   VOIDED
 }
 
+enum OpportunityActionStatus {
+  OPEN
+  COMPLETED
+  DISMISSED
+}
+
+enum OpportunityActionType {
+  REACTIVATION
+  CUSTOMER_RETURN
+  REVENUE_DECLINE
+}
+
 model Salon {
   id        String      @id @db.Uuid
   name      String
@@ -50,9 +62,10 @@ model Salon {
   updatedAt DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
   users     User[]
   customers    Customer[]
-  visits       Visit[]
-  services     Service[]
-  transactions LedgerTransaction[]
+  visits              Visit[]
+  services            Service[]
+  transactions        LedgerTransaction[]
+  opportunityActions  OpportunityAction[]
 
   @@map("salons")
 }
@@ -66,8 +79,9 @@ model Customer {
   phoneNumber String   @map("phone_number")
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
-  visits       Visit[]
-  transactions LedgerTransaction[]
+  visits             Visit[]
+  transactions       LedgerTransaction[]
+  opportunityActions OpportunityAction[]
 
   @@unique([id, salonId])
   @@unique([salonId, phoneNumber])
@@ -161,9 +175,34 @@ model User {
   status       UserStatus @default(ACTIVE)
   createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt    DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+  createdOpportunityActions OpportunityAction[]
 
   @@index([salonId])
   @@map("users")
+}
+
+/// Operational record that the salon responded to a derived opportunity.
+/// Not a visit, transaction, campaign, or message send.
+model OpportunityAction {
+  id               String                   @id @db.Uuid
+  salonId          String                   @map("salon_id") @db.Uuid
+  salon            Salon                    @relation(fields: [salonId], references: [id], onDelete: Restrict)
+  customerId       String                   @map("customer_id") @db.Uuid
+  customer         Customer                 @relation(fields: [customerId, salonId], references: [id, salonId], onDelete: Restrict)
+  opportunityType  OpportunityActionType    @map("opportunity_type")
+  status           OpportunityActionStatus
+  createdBy        String                   @map("created_by") @db.Uuid
+  createdByUser    User                     @relation(fields: [createdBy], references: [id], onDelete: Restrict)
+  createdAt        DateTime                 @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(3)
+  completedAt      DateTime?                @map("completed_at") @db.Timestamptz(3)
+  dismissedAt      DateTime?                @map("dismissed_at") @db.Timestamptz(3)
+
+  @@unique([id, salonId])
+  @@index([salonId, status, createdAt, id])
+  @@index([salonId, customerId, createdAt, id])
+  @@index([salonId, createdAt, id])
+  @@map("opportunity_actions")
 }
 
 /// Reliable asynchronous business events. Payload must not include secrets or unnecessary PII.

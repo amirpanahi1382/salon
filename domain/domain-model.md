@@ -576,6 +576,8 @@ Send reactivation message.
 
 The system should favor explainability.
 
+Implemented operational follow-through is a separate `OpportunityAction` record (OPEN → COMPLETED or DISMISSED). It does not persist the Opportunity itself and is not a campaign, message, visit, or transaction.
+
 ---
 
 # 19. Opportunity Is Not an Action

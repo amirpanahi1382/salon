@@ -19,6 +19,7 @@ import { VisitModule } from './visit/visit.module';
 import { ServiceModule } from './service/service.module';
 import { TransactionModule } from './transaction/transaction.module';
 import { IntelligenceModule } from './intelligence/intelligence.module';
+import { ActionModule } from './action/action.module';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { AppRequest } from './infrastructure/http/request-context';
 
@@ -91,6 +92,7 @@ import type { AppRequest } from './infrastructure/http/request-context';
     ServiceModule,
     TransactionModule,
     IntelligenceModule,
+    ActionModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: HttpExceptionFilter },
