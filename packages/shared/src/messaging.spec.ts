@@ -1,0 +1,33 @@
+import {
+  maskCustomerPhone,
+  MESSAGE_BODY_MAX_LENGTH,
+  normalizeMessageBody,
+  toSafirPhoneNumber,
+} from './messaging';
+
+describe('Safir phone mapping', () => {
+  it('maps 09 national numbers to 98… without separators', () => {
+    expect(toSafirPhoneNumber('09123456789')).toBe('989123456789');
+  });
+
+  it('rejects stored phones that are not the salon canonical form', () => {
+    expect(toSafirPhoneNumber('989123456789')).toBeNull();
+    expect(toSafirPhoneNumber('+989123456789')).toBeNull();
+    expect(toSafirPhoneNumber('0912-345-6789')).toBeNull();
+  });
+});
+
+describe('message body', () => {
+  it('trims and rejects empty or oversized text', () => {
+    expect(normalizeMessageBody('  سلام  ')).toBe('سلام');
+    expect(normalizeMessageBody('   ')).toBeNull();
+    expect(normalizeMessageBody('a'.repeat(MESSAGE_BODY_MAX_LENGTH + 1))).toBeNull();
+    expect(normalizeMessageBody('ok\0no')).toBeNull();
+  });
+});
+
+describe('phone masking', () => {
+  it('keeps a recognizable prefix without exposing the full number', () => {
+    expect(maskCustomerPhone('09121111111')).toBe('0912****111');
+  });
+});

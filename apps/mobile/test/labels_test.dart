@@ -21,6 +21,13 @@ void main() {
     expect(actionStatusLabel('OPEN'), 'در حال پیگیری');
   });
 
+  test('Bale message copy stays human-controlled', () {
+    expect(AppStrings.sendBaleMessage, 'ارسال پیام در بله');
+    expect(messageStatusLabel('SENT'), 'ارسال شد');
+    expect(messageFailureLabel('NOT_CONFIGURED'), contains('بله'));
+    expect(maskCustomerPhone('09121111111'), '0912****111');
+  });
+
   test('owner-required dashboard and navigation copy is exact', () {
     expect(AppStrings.attentionQuestion, 'توجه سالن باید کدام سمت بره؟');
     expect(AppStrings.customers, 'مشتریان');

@@ -481,13 +481,24 @@ APIs (STAFF+; tenant from JWT):
 - `GET /actions`, `GET /customers/:customerId/actions` — cursor `{ createdAt, id }`, page 200.
 - `POST /actions/:id/complete`, `POST /actions/:id/dismiss` — `SELECT … FOR UPDATE`; repeat of the same terminal state is idempotent; opposite terminal is 409.
 
-Audit: `ACTION_CREATED`, `ACTION_COMPLETED`, `ACTION_DISMISSED`. Outbox: `ActionCreated`, `ActionCompleted`, `ActionDismissed`. No messaging events.
+Audit: `ACTION_CREATED`, `ACTION_COMPLETED`, `ACTION_DISMISSED`. Outbox: `ActionCreated`, `ActionCompleted`, `ActionDismissed`.
 
-Customer delete (no financial records) deletes Actions then visits then the customer (`actionCount` in `CustomerDeleted` payload). No Action DELETE API.
-
-Flutter: Today and Opportunities cards expose «اقدام انجام شد» / «نادیده گرفتن». Copy `توجه سالن باید کدام سمت بره؟` is unchanged.
+Manual Bale Safir text send is a separate `message_deliveries` record. Sending a message does **not** complete the Action.
 
 Evidence: `apps/api/src/action/`, Flutter `opportunity_action_bar.dart`, `action.e2e-spec.ts`.
+
+### 17.2 Opportunity messages (Bale Safir)
+
+**IMPLEMENTED.** Human-in-the-loop one-to-one text send for a currently derived opportunity (including `REVENUE_DECLINE`). Destination is the existing Customer phone mapped to Safir `98…` form. No bot `/start`, no `chat_id` table.
+
+- API: `POST /intelligence/opportunities/:opportunityType/customers/:customerId/messages` (STAFF+; required `Idempotency-Key`). Returns `PENDING`. Does not call Bale inside the HTTP request or the DB transaction.
+- `GET /messages/:id`, `GET /customers/:customerId/messages`.
+- Outbox fact `MessageSendRequested` `{ messageDeliveryId, salonId }`. Worker adapter `POST https://safir.bale.ai/api/v3/send_message`.
+- Credentials: **platform-level** env `BALE_SAFIR_API_ACCESS_KEY` + `BALE_SAFIR_BOT_ID` (Bale organization key). **Not per-salon isolation at the provider.** Our rows remain tenant-scoped.
+- Action stays `OPEN` unless the user separately completes/dismisses it.
+- Customer delete (no finance): delete message deliveries, then actions, then visits, then customer.
+
+Provider contract verification and failure matrix: `architecture/messaging-bale-safir.md`.
 
 ---
 
@@ -681,7 +692,7 @@ Scope unique: tenant + actor + operation + key. Replay same hash returns origina
 
 Claim: `FOR UPDATE SKIP LOCKED`, lease `OUTBOX_LEASE_MS` (30s default), batch `OUTBOX_BATCH_SIZE` (10). Retry: full jitter backoff, max attempts 8, then DEAD_LETTER. Unknown types: immediate dead-letter. PROCESSED retained `OUTBOX_PROCESSED_RETENTION_DAYS` (14) then deleted. DEAD_LETTER kept.
 
-**Consumer side effect today:** `OutboxProcessor.consume` **no-op success** for known types (log only). **No emails, no campaigns, no projections.**
+**Consumer side effect today:** known types other than `MessageSendRequested` remain idempotent no-ops. `MessageSendRequested` submits text through the Bale Safir adapter.
 
 | Event | Trigger | Payload gist |
 | --- | --- | --- |
@@ -691,7 +702,7 @@ Claim: `FOR UPDATE SKIP LOCKED`, lease `OUTBOX_LEASE_MS` (30s default), batch `O
 | UserRoleChanged | PATCH role | from, to |
 | UserStatusChanged | PATCH status | status |
 | CustomerCreated | create/import/register path | customerId |
-| CustomerDeleted | delete | customerId, visitCount, actionCount |
+| CustomerDeleted | delete | customerId, visitCount, actionCount, messageCount |
 | VisitCompleted | create visit / complete-with-sale | visitId, customerId |
 | VisitDeleted | delete visit | visitId, customerId |
 | ServiceCreated | insert service | serviceId |
@@ -701,8 +712,9 @@ Claim: `FOR UPDATE SKIP LOCKED`, lease `OUTBOX_LEASE_MS` (30s default), batch `O
 | ActionCreated | create Action | actionId, customerId, opportunityType |
 | ActionCompleted | complete Action | actionId, customerId, opportunityType |
 | ActionDismissed | dismiss Action | actionId, customerId, opportunityType |
+| MessageSendRequested | request Bale text send | messageDeliveryId, salonId |
 
-These are **facts**, not commands. **Event type count: 17.**
+These are **facts**, not commands. **Event type count: 18.**
 
 ---
 

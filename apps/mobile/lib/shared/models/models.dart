@@ -556,3 +556,59 @@ class CustomerImportResult {
   List<CustomerImportRowResult> get failedRows =>
       results.where((row) => row.isFailed).toList();
 }
+
+class MessageDelivery {
+  const MessageDelivery({
+    required this.id,
+    required this.customerId,
+    required this.actionId,
+    required this.opportunityType,
+    required this.provider,
+    required this.channel,
+    required this.status,
+    required this.body,
+    required this.destinationHint,
+    required this.createdBy,
+    required this.createdAt,
+    required this.updatedAt,
+    this.failureCode,
+    this.submittedAt,
+    this.failedAt,
+  });
+
+  final String id;
+  final String customerId;
+  final String actionId;
+  final String opportunityType;
+  final String provider;
+  final String channel;
+  final String status;
+  final String body;
+  final String destinationHint;
+  final String? failureCode;
+  final String createdBy;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  final DateTime? submittedAt;
+  final DateTime? failedAt;
+
+  factory MessageDelivery.fromJson(Map<String, dynamic> json) {
+    return MessageDelivery(
+      id: json['id'] as String,
+      customerId: json['customerId'] as String,
+      actionId: json['actionId'] as String,
+      opportunityType: json['opportunityType'] as String,
+      provider: json['provider'] as String,
+      channel: json['channel'] as String,
+      status: json['status'] as String,
+      body: json['body'] as String,
+      destinationHint: json['destinationHint'] as String,
+      failureCode: json['failureCode'] as String?,
+      createdBy: json['createdBy'] as String,
+      createdAt: DateTime.parse(json['createdAt'] as String),
+      updatedAt: DateTime.parse(json['updatedAt'] as String),
+      submittedAt: _parseDate(json['submittedAt']),
+      failedAt: _parseDate(json['failedAt']),
+    );
+  }
+}

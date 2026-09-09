@@ -21,6 +21,6 @@ import { CompleteActionUseCase, DismissActionUseCase } from './transition-action
     CompleteActionUseCase,
     DismissActionUseCase,
   ],
-  exports: [ActionRepository],
+  exports: [ActionRepository, CurrentOpportunityService],
 })
 export class ActionModule {}

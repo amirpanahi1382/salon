@@ -59,10 +59,16 @@ describe('OutboxProcessor', () => {
   } as AppConfigService;
 
   let processor: OutboxProcessor;
+  const sendCustomerMessage = { handle: jest.fn().mockResolvedValue(undefined) };
 
   beforeEach(() => {
     jest.clearAllMocks();
-    processor = new OutboxProcessor(prisma, config, logger);
+    processor = new OutboxProcessor(
+      prisma,
+      config,
+      sendCustomerMessage as never,
+      logger,
+    );
   });
 
   it('dead-letters unknown event types instead of marking them processed', async () => {
@@ -76,6 +82,15 @@ describe('OutboxProcessor', () => {
     await processor.processOne(event());
     expect(processed).toHaveBeenCalled();
     expect(deadLetter).not.toHaveBeenCalled();
+    expect(sendCustomerMessage.handle).not.toHaveBeenCalled();
+  });
+
+  it('routes MessageSendRequested to the messaging handler', async () => {
+    await processor.processOne(
+      event({ eventType: DOMAIN_EVENT_TYPES.MessageSendRequested, payload: { messageDeliveryId: 'm1' } }),
+    );
+    expect(sendCustomerMessage.handle).toHaveBeenCalled();
+    expect(processed).toHaveBeenCalled();
   });
 
   it('retries handler failures below max attempts', async () => {

@@ -8,6 +8,7 @@ import '../../core/widgets/app_widgets.dart';
 import '../../shared/jalali.dart';
 import '../../shared/labels.dart';
 import '../../shared/models/models.dart';
+import 'bale_message_composer.dart';
 
 String opportunityActionKey(String customerId, String opportunityType) {
   return '$customerId:$opportunityType';
@@ -18,11 +19,15 @@ class OpportunityActionBar extends ConsumerStatefulWidget {
     super.key,
     required this.customerId,
     required this.opportunityType,
+    required this.customerName,
+    this.destinationHint,
     this.openAction,
   });
 
   final String customerId;
   final String opportunityType;
+  final String customerName;
+  final String? destinationHint;
   final OpportunityAction? openAction;
 
   @override
@@ -116,6 +121,22 @@ class _OpportunityActionBarState extends ConsumerState<OpportunityActionBar> {
                             .dismiss(action.id);
                       }),
               child: const Text(AppStrings.dismissAction),
+            ),
+            OutlinedButton(
+              onPressed: _busy
+                  ? null
+                  : () async {
+                      await openBaleMessageComposer(
+                        context: context,
+                        ref: ref,
+                        customerId: widget.customerId,
+                        opportunityType: widget.opportunityType,
+                        customerName: widget.customerName,
+                        destinationHint: widget.destinationHint,
+                        onChanged: OpportunityActionsScope.maybeOf(context)?.onChanged,
+                      );
+                    },
+              child: const Text(AppStrings.sendBaleMessage),
             ),
           ],
         ),

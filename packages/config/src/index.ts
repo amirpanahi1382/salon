@@ -66,6 +66,24 @@ const envSchema = z.object({
   HEALTH_CHECK_TIMEOUT_MS: z.coerce.number().int().min(100).max(10_000).default(2_000),
   /** When unset: enabled outside production. */
   SWAGGER_ENABLED: optionalBooleanFromString,
+  /**
+   * Platform-level Safir API access key (organization key from Bale business panel).
+   * Not per-salon. Empty/unset disables outbound Bale sends.
+   */
+  BALE_SAFIR_API_ACCESS_KEY: z.preprocess((value) => {
+    if (value === undefined || value === '') {
+      return undefined;
+    }
+    return value;
+  }, z.string().min(1).max(512).optional()),
+  BALE_SAFIR_BOT_ID: z.preprocess((value) => {
+    if (value === undefined || value === '') {
+      return undefined;
+    }
+    return value;
+  }, z.coerce.number().int().positive().optional()),
+  BALE_SAFIR_BASE_URL: z.string().url().default('https://safir.bale.ai/api/v3'),
+  BALE_SAFIR_TIMEOUT_MS: z.coerce.number().int().min(1000).max(60_000).default(10_000),
 });
 
 export type AppConfig = z.infer<typeof envSchema>;
@@ -88,4 +106,24 @@ export function isSwaggerEnabled(config: AppConfig): boolean {
     return config.SWAGGER_ENABLED;
   }
   return config.NODE_ENV !== 'production';
+}
+
+export type BaleSafirSettings = {
+  accessKey: string;
+  botId: number;
+  baseUrl: string;
+  timeoutMs: number;
+};
+
+/** Platform-level Safir credentials. Missing either key or botId means messaging is disabled. */
+export function getBaleSafirSettings(config: AppConfig): BaleSafirSettings | null {
+  if (!config.BALE_SAFIR_API_ACCESS_KEY || config.BALE_SAFIR_BOT_ID === undefined) {
+    return null;
+  }
+  return {
+    accessKey: config.BALE_SAFIR_API_ACCESS_KEY,
+    botId: config.BALE_SAFIR_BOT_ID,
+    baseUrl: config.BALE_SAFIR_BASE_URL.replace(/\/$/, ''),
+    timeoutMs: config.BALE_SAFIR_TIMEOUT_MS,
+  };
 }

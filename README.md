@@ -20,6 +20,7 @@ Product, domain, and architecture specifications live in:
 - `architecture/security.md`
 - `architecture/operations.md`
 - `architecture/performance.md`
+- `architecture/messaging-bale-safir.md`
 
 ## Layout
 
@@ -101,6 +102,9 @@ GET /intelligence/segments
 GET /intelligence/customers/:customerId
 
 POST /intelligence/opportunities/:opportunityType/customers/:customerId/actions
+POST /intelligence/opportunities/:opportunityType/customers/:customerId/messages
+GET /messages/:id
+GET /customers/:customerId/messages
 GET /actions
 GET /customers/:customerId/actions
 POST /actions/:id/complete

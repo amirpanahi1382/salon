@@ -1,4 +1,4 @@
-import { isSwaggerEnabled, loadConfig } from './index';
+import { getBaleSafirSettings, isSwaggerEnabled, loadConfig } from './index';
 
 describe('loadConfig', () => {
   const valid = {
@@ -55,5 +55,17 @@ describe('loadConfig', () => {
     const config = loadConfig({ ...valid, DATABASE_CONNECTION_LIMIT: '8' });
     expect(config.DATABASE_CONNECTION_LIMIT).toBe(8);
     expect(config.DATABASE_POOL_TIMEOUT_SECONDS).toBe(10);
+  });
+
+  it('treats empty Safir credentials as disabled', () => {
+    const config = loadConfig({
+      ...valid,
+      BALE_SAFIR_API_ACCESS_KEY: '',
+      BALE_SAFIR_BOT_ID: '',
+    });
+    expect(config.BALE_SAFIR_API_ACCESS_KEY).toBeUndefined();
+    expect(config.BALE_SAFIR_BOT_ID).toBeUndefined();
+    expect(config.BALE_SAFIR_BASE_URL).toBe('https://safir.bale.ai/api/v3');
+    expect(getBaleSafirSettings(config)).toBeNull();
   });
 });

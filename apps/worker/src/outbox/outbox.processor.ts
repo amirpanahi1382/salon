@@ -7,6 +7,7 @@ import {
   type OutboxEvent,
 } from '@salon/database';
 import {
+  DOMAIN_EVENT_TYPES,
   fullJitterDelayMs,
   isDomainEventType,
   TimeoutError,
@@ -16,6 +17,8 @@ import type { Logger } from 'pino';
 import { AppConfigService } from '../infrastructure/config/app-config.service';
 import { PrismaService } from '../infrastructure/database/prisma.service';
 import { createWorkerLogger } from '../infrastructure/logging/worker-logger';
+import { RetryableMessageSendError } from '../messaging/message-sender';
+import { SendCustomerMessageHandler } from '../messaging/send-customer-message.handler';
 
 /**
  * At-least-once outbox consumer. Handlers must be idempotent.
@@ -32,6 +35,7 @@ export class OutboxProcessor implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: AppConfigService,
+    private readonly sendCustomerMessage: SendCustomerMessageHandler,
     logger?: Logger,
   ) {
     this.logger = logger ?? createWorkerLogger(config.values);
@@ -146,7 +150,12 @@ export class OutboxProcessor implements OnModuleInit, OnModuleDestroy {
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'consumer failed';
       const errorType = error instanceof Error ? error.name : 'unknown';
-      const errorCode = error instanceof TimeoutError ? 'HANDLER_TIMEOUT' : 'CONSUMER_FAILED';
+      const errorCode =
+        error instanceof TimeoutError
+          ? 'HANDLER_TIMEOUT'
+          : error instanceof RetryableMessageSendError
+            ? error.code
+            : 'CONSUMER_FAILED';
       if (event.attemptCount >= maxAttempts) {
         await markOutboxDeadLetter(this.prisma.client, event.id, message);
         this.logger.error(
@@ -164,11 +173,14 @@ export class OutboxProcessor implements OnModuleInit, OnModuleDestroy {
         return;
       }
 
-      const delayMs = fullJitterDelayMs(
-        Math.max(0, event.attemptCount - 1),
-        this.config.values.OUTBOX_BACKOFF_BASE_MS,
-        this.config.values.OUTBOX_BACKOFF_CAP_MS,
-      );
+      const delayMs =
+        error instanceof RetryableMessageSendError && error.retryAfterMs !== undefined
+          ? error.retryAfterMs
+          : fullJitterDelayMs(
+              Math.max(0, event.attemptCount - 1),
+              this.config.values.OUTBOX_BACKOFF_BASE_MS,
+              this.config.values.OUTBOX_BACKOFF_CAP_MS,
+            );
       await markOutboxRetry(this.prisma.client, event.id, message, delayMs);
       this.logger.warn(
         {
@@ -187,7 +199,10 @@ export class OutboxProcessor implements OnModuleInit, OnModuleDestroy {
   }
 
   private async consume(event: OutboxEvent): Promise<void> {
-    // Idempotent no-op until domain consumers exist. Duplicate deliveries are safe.
+    if (event.eventType === DOMAIN_EVENT_TYPES.MessageSendRequested) {
+      await this.sendCustomerMessage.handle(event, this.config.values.OUTBOX_MAX_ATTEMPTS);
+      return;
+    }
     if (!event.eventType) {
       throw new Error('Missing event type');
     }

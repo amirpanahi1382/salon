@@ -345,6 +345,50 @@ class ActionRepository {
   }
 }
 
+class MessageRepository {
+  MessageRepository(this._api);
+
+  final ApiClient _api;
+
+  Future<MessageDelivery> send({
+    required String customerId,
+    required String opportunityType,
+    required String text,
+    required String idempotencyKey,
+  }) async {
+    Future<MessageDelivery> request() async {
+      final data = await _api.post(
+        '/intelligence/opportunities/$opportunityType/customers/$customerId/messages',
+        data: {'text': text},
+        headers: {'Idempotency-Key': idempotencyKey},
+      ) as Map<String, dynamic>;
+      return MessageDelivery.fromJson(data);
+    }
+
+    try {
+      return await request();
+    } on NetworkException {
+      return request();
+    }
+  }
+
+  Future<MessageDelivery> getById(String id) async {
+    final data = await _api.get('/messages/$id') as Map<String, dynamic>;
+    return MessageDelivery.fromJson(data);
+  }
+
+  Future<ItemPage<MessageDelivery>> listForCustomer(
+    String customerId, {
+    String? cursor,
+  }) async {
+    final data = await _api.get(
+      '/customers/$customerId/messages',
+      query: cursor == null ? null : {'cursor': cursor},
+    );
+    return parseItemPage(data, MessageDelivery.fromJson);
+  }
+}
+
 class SalonRepository {
   SalonRepository(this._api);
 

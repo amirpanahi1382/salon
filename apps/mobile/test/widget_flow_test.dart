@@ -226,6 +226,66 @@ class FakeActionRepository extends ActionRepository {
   }
 }
 
+class FakeMessageRepository extends MessageRepository {
+  FakeMessageRepository({this.next}) : super(_client());
+
+  MessageDelivery? next;
+  Object? error;
+  int sendCalls = 0;
+
+  @override
+  Future<MessageDelivery> send({
+    required String customerId,
+    required String opportunityType,
+    required String text,
+    required String idempotencyKey,
+  }) async {
+    sendCalls += 1;
+    if (error != null) {
+      throw error!;
+    }
+    return next ??
+        MessageDelivery(
+          id: 'm1',
+          customerId: customerId,
+          actionId: 'a1',
+          opportunityType: opportunityType,
+          provider: 'BALE_SAFIR',
+          channel: 'TEXT',
+          status: 'SENT',
+          body: text,
+          destinationHint: '0912****111',
+          createdBy: 'u1',
+          createdAt: DateTime.utc(2026, 9, 9),
+          updatedAt: DateTime.utc(2026, 9, 9),
+          submittedAt: DateTime.utc(2026, 9, 9),
+        );
+  }
+
+  @override
+  Future<MessageDelivery> getById(String id) async {
+    if (error != null) {
+      throw error!;
+    }
+    return next ??
+        MessageDelivery(
+          id: id,
+          customerId: 'c1',
+          actionId: 'a1',
+          opportunityType: 'REVENUE_DECLINE',
+          provider: 'BALE_SAFIR',
+          channel: 'TEXT',
+          status: 'SENT',
+          body: 'سلام',
+          destinationHint: '0912****111',
+          createdBy: 'u1',
+          createdAt: DateTime.utc(2026, 9, 9),
+          updatedAt: DateTime.utc(2026, 9, 9),
+          submittedAt: DateTime.utc(2026, 9, 9),
+        );
+  }
+}
+
 class FakeCustomerRepository extends CustomerRepository {
   FakeCustomerRepository({this.items = const []}) : super(_client());
 
@@ -636,6 +696,41 @@ void main() {
       find.textContaining('یک پیام یادآوری بفرستید'),
       findsOneWidget,
     );
+    expect(find.text('ارسال پیام در بله'), findsOneWidget);
+  });
+
+  testWidgets('opportunity composer sends a Bale message after confirmation', (tester) async {
+    final messages = FakeMessageRepository();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          sessionStoreProvider.overrideWithValue(MemorySessionStore()),
+          intelligenceRepositoryProvider.overrideWith(
+            (ref) => FakeIntelligenceRepository(
+              summaryData: _summary(),
+              opportunitiesData: [_opportunity()],
+            ),
+          ),
+          salonRepositoryProvider.overrideWith((ref) => FakeSalonRepository()),
+          actionRepositoryProvider.overrideWithValue(FakeActionRepository()),
+          messageRepositoryProvider.overrideWithValue(messages),
+          authControllerProvider.overrideWith(_SignedInAuth.new),
+        ],
+        child: const MaterialApp(home: DashboardScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.drag(find.byType(ListView), const Offset(0, -800));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('ارسال پیام در بله'));
+    await tester.pumpAndSettle();
+    expect(find.text('ارسال پیام در بله'), findsWidgets);
+    await tester.tap(find.text('ارسال'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('ارسال').last);
+    await tester.pumpAndSettle();
+    expect(messages.sendCalls, 1);
+    expect(find.text('ارسال شد'), findsOneWidget);
   });
 
   testWidgets('dashboard empty state', (tester) async {
@@ -1375,6 +1470,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('ثبت مراجعه انجام‌شده'), findsOneWidget);
     expect(find.text('Record sale'), findsNothing);
+    await tester.scrollUntilVisible(find.textContaining('درآمد ثبت‌شده'), 400);
     expect(find.textContaining('درآمد ثبت‌شده'), findsOneWidget);
   });
 

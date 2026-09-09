@@ -66,6 +66,28 @@ void main() {
     },
   );
 
+  test('parses message deliveries without provider secrets', () {
+    final message = MessageDelivery.fromJson({
+      'id': 'm1',
+      'customerId': 'c1',
+      'actionId': 'a1',
+      'opportunityType': 'REVENUE_DECLINE',
+      'provider': 'BALE_SAFIR',
+      'channel': 'TEXT',
+      'status': 'PENDING',
+      'body': 'سلام',
+      'destinationHint': '0912****111',
+      'failureCode': null,
+      'createdBy': 'u1',
+      'createdAt': '2026-09-09T00:00:00.000Z',
+      'updatedAt': '2026-09-09T00:00:00.000Z',
+      'submittedAt': null,
+      'failedAt': null,
+    });
+    expect(message.provider, 'BALE_SAFIR');
+    expect(message.destinationHint, '0912****111');
+  });
+
   test('parses opportunity actions without salonId', () {
     final action = OpportunityAction.fromJson({
       'id': 'a1',

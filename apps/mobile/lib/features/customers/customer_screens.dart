@@ -621,6 +621,8 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                           child: OpportunityActionBar(
                             customerId: opportunity.customerId,
                             opportunityType: opportunity.type,
+                            customerName: customer.fullName,
+                            destinationHint: maskCustomerPhone(customer.phoneNumber),
                             openAction: _openActions[opportunityActionKey(
                               opportunity.customerId,
                               opportunity.type,

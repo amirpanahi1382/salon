@@ -62,7 +62,27 @@ class AppStrings {
   static const exportExcelSaved = 'فایل اکسل ذخیره شد.';
   static const recommended = 'پیشنهاد';
   static const recommendationNote =
-      'این فقط یک پیشنهاد است. ارسال پیام هنوز در برنامه نیست.';
+      'ارسال پیام فقط با تصمیم شما انجام می‌شود و به‌معنای اقدام انجام‌شده نیست.';
+  static const sendBaleMessage = 'ارسال پیام در بله';
+  static const baleProviderName = 'بله';
+  static const messageComposerTitle = 'ارسال پیام در بله';
+  static const messageTextLabel = 'متن پیام';
+  static const confirmSendMessage = 'ارسال شود؟';
+  static const confirmSendMessageBody =
+      'پیام برای مشتری از طریق بله ارسال می‌شود. این کار مراجعه یا درآمد نمی‌سازد.';
+  static const sendMessage = 'ارسال';
+  static const messageQueued = 'درخواست ارسال شد';
+  static const messageSent = 'ارسال شد';
+  static const messageFailed = 'ارسال ناموفق بود';
+  static const messageSending = 'در حال ارسال…';
+  static const baleNotConfigured =
+      'اتصال پیام‌رسان بله برای این سالن نیاز به بررسی دارد.';
+  static const baleTemporaryFailure =
+      'ارسال پیام انجام نشد. دوباره تلاش کنید.';
+  static const baleRateLimited =
+      'ارسال پیام موقتاً محدود شده است. کمی بعد دوباره تلاش کنید.';
+  static const baleInvalidDestination =
+      'ارسال پیام به این شماره امکان‌پذیر نیست.';
   static const markActionDone = 'اقدام انجام شد';
   static const dismissAction = 'نادیده گرفتن';
   static const actionHistory = 'اقدام‌های اخیر';
@@ -284,6 +304,12 @@ String localizeUserFacingMessage(String message) {
     'Phone is invalid': 'شماره موبایل معتبر نیست.',
     'Phone number must be exactly 11 digits and start with 09.':
         'شماره موبایل باید دقیقاً ۱۱ رقم باشد و با ۰۹ شروع شود.',
+    'Bale messaging is not configured': AppStrings.baleNotConfigured,
+    'Message text is invalid': 'متن پیام معتبر نیست.',
+    'Idempotency-Key is required': 'کلید تکرار درخواست لازم است.',
+    'Opportunity not found': 'این فرصت الان وجود ندارد.',
+    'Customer not found': 'این مشتری پیدا نشد.',
+    'Message not found': 'این پیام پیدا نشد.',
   };
   final mapped = exact[trimmed];
   if (mapped != null) {
@@ -362,4 +388,49 @@ bool _looksLikeTechnicalEnglish(String text) {
         r'must |Error|failed|invalid|undefined|null',
         caseSensitive: false,
       ).hasMatch(text);
+}
+
+String defaultBaleMessage(String firstName) {
+  final name = firstName.trim().isEmpty ? 'مشتری' : firstName.trim();
+  return 'سلام $name جان 🌷\nمدتیه افتخار دیدنتون رو نداشتیم.\nخوشحال می‌شیم دوباره در خدمتتون باشیم.';
+}
+
+String maskCustomerPhone(String phone) {
+  if (phone.length < 7) {
+    return phone;
+  }
+  return '${phone.substring(0, 4)}****${phone.substring(phone.length - 3)}';
+}
+
+String messageStatusLabel(String status) {
+  switch (status) {
+    case 'PENDING':
+    case 'PROCESSING':
+      return AppStrings.messageQueued;
+    case 'SENT':
+      return AppStrings.messageSent;
+    case 'FAILED':
+      return AppStrings.messageFailed;
+    default:
+      return 'وضعیت پیام';
+  }
+}
+
+String messageFailureLabel(String? code) {
+  switch (code) {
+    case 'NOT_CONFIGURED':
+    case 'PROVIDER_AUTH':
+      return AppStrings.baleNotConfigured;
+    case 'PROVIDER_RATE_LIMITED':
+      return AppStrings.baleRateLimited;
+    case 'PROVIDER_RECIPIENT_UNAVAILABLE':
+      return AppStrings.baleInvalidDestination;
+    case 'PROVIDER_TEMPORARY':
+    case 'PROVIDER_UNKNOWN':
+      return AppStrings.baleTemporaryFailure;
+    case 'PROVIDER_INVALID_REQUEST':
+      return AppStrings.baleTemporaryFailure;
+    default:
+      return AppStrings.baleTemporaryFailure;
+  }
 }

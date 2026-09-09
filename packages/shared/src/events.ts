@@ -15,6 +15,7 @@ export const DOMAIN_EVENT_TYPES = {
   ActionCreated: 'ActionCreated',
   ActionCompleted: 'ActionCompleted',
   ActionDismissed: 'ActionDismissed',
+  MessageSendRequested: 'MessageSendRequested',
 } as const;
 
 export type DomainEventType =

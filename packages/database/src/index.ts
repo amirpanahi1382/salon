@@ -3,6 +3,9 @@ export {
   PrismaClient,
   OpportunityActionStatus,
   OpportunityActionType,
+  MessageDeliveryStatus,
+  MessageProvider,
+  MessageChannel,
   ServiceStatus,
   TransactionStatus,
 } from '@prisma/client';
@@ -11,6 +14,7 @@ export type {
   Customer,
   IdempotencyRecord,
   LedgerTransaction,
+  MessageDelivery,
   OpportunityAction,
   OutboxEvent,
   Salon,

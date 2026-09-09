@@ -149,6 +149,7 @@ class _OpportunitiesScreenState extends ConsumerState<OpportunitiesScreen> {
                                     footer: OpportunityActionBar(
                                       customerId: item.customerId,
                                       opportunityType: item.type,
+                                      customerName: item.fullName,
                                       openAction: _openActions[
                                           opportunityActionKey(
                                         item.customerId,

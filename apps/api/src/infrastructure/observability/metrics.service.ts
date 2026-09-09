@@ -64,6 +64,13 @@ export class MetricsService {
       lines.push(`outbox_events{status="${status}"} ${count}`);
     }
 
+    const messages = await this.messageDeliveryCounts();
+    lines.push('# HELP message_deliveries Message deliveries by status (database, not this process)');
+    lines.push('# TYPE message_deliveries gauge');
+    for (const [status, count] of Object.entries(messages)) {
+      lines.push(`message_deliveries{status="${status}"} ${count}`);
+    }
+
     return `${lines.join('\n')}\n`;
   }
 
@@ -76,6 +83,27 @@ export class MetricsService {
     };
     try {
       const rows = await this.prisma.client.outboxEvent.groupBy({
+        by: ['status'],
+        _count: { _all: true },
+      });
+      for (const row of rows) {
+        counts[row.status] = row._count._all;
+      }
+    } catch {
+      // Metrics must not fail the scrape when the database is down.
+    }
+    return counts;
+  }
+
+  private async messageDeliveryCounts(): Promise<Record<string, number>> {
+    const counts = {
+      PENDING: 0,
+      PROCESSING: 0,
+      SENT: 0,
+      FAILED: 0,
+    };
+    try {
+      const rows = await this.prisma.client.messageDelivery.groupBy({
         by: ['status'],
         _count: { _all: true },
       });
