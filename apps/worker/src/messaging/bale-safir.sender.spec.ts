@@ -44,7 +44,14 @@ describe('BaleSafirMessageSender', () => {
 
   it('maps a timeout to a retryable temporary failure', async () => {
     jest.spyOn(globalThis, 'fetch').mockImplementation(
-      () => new Promise(() => undefined) as Promise<Response>,
+      (_url, init) =>
+        new Promise((_, reject) => {
+          init?.signal?.addEventListener('abort', () => {
+            const error = new Error('aborted');
+            error.name = 'AbortError';
+            reject(error);
+          });
+        }) as Promise<Response>,
     );
     const sender = new BaleSafirMessageSender({
       values: { ...config.values, BALE_SAFIR_TIMEOUT_MS: 20 },

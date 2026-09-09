@@ -330,3 +330,108 @@ String friendlyError(Object error) {
   }
   return AppStrings.genericError;
 }
+
+class PagedFooter extends StatelessWidget {
+  const PagedFooter({super.key, required this.loading});
+
+  final bool loading;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 16),
+      child: Center(
+        child: loading
+            ? const SizedBox(
+                height: 24,
+                width: 24,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const SizedBox.shrink(),
+      ),
+    );
+  }
+}
+
+/// Loads the next cursor page on scroll, and one extra page when the first
+/// page does not fill the viewport. Stops as soon as the list can scroll or
+/// [hasMore] is false — it does not prefetch the full dataset.
+class PagedNotificationListener extends StatefulWidget {
+  const PagedNotificationListener({
+    super.key,
+    required this.hasMore,
+    required this.loading,
+    required this.onLoadMore,
+    required this.child,
+  });
+
+  final bool hasMore;
+  final bool loading;
+  final VoidCallback onLoadMore;
+  final Widget child;
+
+  @override
+  State<PagedNotificationListener> createState() =>
+      _PagedNotificationListenerState();
+}
+
+class _PagedNotificationListenerState extends State<PagedNotificationListener> {
+  final ScrollController _controller = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    _scheduleFill();
+  }
+
+  @override
+  void didUpdateWidget(covariant PagedNotificationListener oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _scheduleFill();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _scheduleFill() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || widget.loading || !widget.hasMore) {
+        return;
+      }
+      if (!_controller.hasClients) {
+        return;
+      }
+      final metrics = _controller.position;
+      if (metrics.maxScrollExtent <= 0 ||
+          metrics.pixels >= metrics.maxScrollExtent - 240) {
+        widget.onLoadMore();
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return NotificationListener<ScrollNotification>(
+      onNotification: (notification) {
+        if (shouldLoadNextPage(notification)) {
+          widget.onLoadMore();
+        }
+        return false;
+      },
+      child: PrimaryScrollController(
+        controller: _controller,
+        child: widget.child,
+      ),
+    );
+  }
+}
+
+bool shouldLoadNextPage(ScrollNotification notification) {
+  if (notification.metrics.maxScrollExtent <= 0) {
+    return false;
+  }
+  return notification.metrics.pixels >= notification.metrics.maxScrollExtent - 240;
+}

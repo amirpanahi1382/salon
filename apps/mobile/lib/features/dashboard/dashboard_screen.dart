@@ -19,7 +19,12 @@ class DashboardScreen extends ConsumerStatefulWidget {
 class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   IntelligenceSummary? _summary;
   List<Opportunity> _opportunities = const [];
+  String? _opportunitiesCursor;
+  bool _opportunitiesHasMore = false;
+  bool _loadingMore = false;
   Map<String, OpportunityAction> _openActions = const {};
+  String? _openActionsCursor;
+  bool _openActionsHasMore = false;
   SalonProfile? _salon;
   Object? _error;
   bool _loading = true;
@@ -50,11 +55,15 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       setState(() {
         _summary = summary;
         _opportunities = opportunities.items;
+        _opportunitiesCursor = opportunities.nextCursor;
+        _opportunitiesHasMore = opportunities.hasMore;
         _openActions = {
           for (final action in openActions.items)
             opportunityActionKey(action.customerId, action.opportunityType):
                 action,
         };
+        _openActionsCursor = openActions.nextCursor;
+        _openActionsHasMore = openActions.hasMore;
         _salon = salon;
         _loading = false;
       });
@@ -66,6 +75,45 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         _error = error;
         _loading = false;
       });
+    }
+  }
+
+  Future<void> _loadMore() async {
+    if (_loading || _loadingMore || !_opportunitiesHasMore || _opportunitiesCursor == null) {
+      return;
+    }
+    setState(() => _loadingMore = true);
+    try {
+      final page = await ref
+          .read(intelligenceRepositoryProvider)
+          .opportunities(cursor: _opportunitiesCursor);
+      if (_openActionsHasMore && _openActionsCursor != null) {
+        final open = await ref
+            .read(actionRepositoryProvider)
+            .list(status: 'OPEN', cursor: _openActionsCursor);
+        _openActions = {
+          ..._openActions,
+          for (final action in open.items)
+            opportunityActionKey(action.customerId, action.opportunityType):
+                action,
+        };
+        _openActionsCursor = open.nextCursor;
+        _openActionsHasMore = open.hasMore;
+      }
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _opportunities = [..._opportunities, ...page.items];
+        _opportunitiesCursor = page.nextCursor;
+        _opportunitiesHasMore = page.hasMore;
+        _loadingMore = false;
+      });
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _loadingMore = false);
     }
   }
 
@@ -99,7 +147,12 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       ),
       body: RefreshIndicator(
         onRefresh: _load,
-        child: ListView(
+        child: PagedNotificationListener(
+          hasMore: _opportunitiesHasMore,
+          loading: _loading || _loadingMore,
+          onLoadMore: _loadMore,
+          child: ListView(
+          primary: true,
           padding: const EdgeInsets.all(16),
           children: [
             Text(
@@ -167,7 +220,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               )
             else
               ..._opportunities
-                  .take(8)
                   .map(
                     (item) => Padding(
                       padding: const EdgeInsets.only(bottom: 12),
@@ -191,7 +243,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                       ),
                     ),
                   ),
+            if (_opportunitiesHasMore) PagedFooter(loading: _loadingMore),
           ],
+        ),
         ),
       ),
     ),

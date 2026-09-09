@@ -10,6 +10,7 @@ import {
   DOMAIN_EVENT_TYPES,
   fullJitterDelayMs,
   isDomainEventType,
+  type MessageFailureCode,
   TimeoutError,
   withTimeout,
 } from '@salon/shared';
@@ -132,12 +133,18 @@ export class OutboxProcessor implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
+    const abort = new AbortController();
     try {
-      await withTimeout(
-        this.consume(event),
-        handlerTimeoutMs(this.config.values.OUTBOX_LEASE_MS),
-        'Outbox handler timed out',
-      );
+      try {
+        await withTimeout(
+          this.consume(event, abort.signal),
+          handlerTimeoutMs(this.config.values.OUTBOX_LEASE_MS),
+          'Outbox handler timed out',
+        );
+      } catch (error: unknown) {
+        abort.abort();
+        throw error;
+      }
       await markOutboxProcessed(this.prisma.client, event.id);
       this.logger.info(
         {
@@ -148,6 +155,7 @@ export class OutboxProcessor implements OnModuleInit, OnModuleDestroy {
         'Outbox event processed',
       );
     } catch (error: unknown) {
+      abort.abort();
       const message = error instanceof Error ? error.message : 'consumer failed';
       const errorType = error instanceof Error ? error.name : 'unknown';
       const errorCode =
@@ -157,7 +165,7 @@ export class OutboxProcessor implements OnModuleInit, OnModuleDestroy {
             ? error.code
             : 'CONSUMER_FAILED';
       if (event.attemptCount >= maxAttempts) {
-        await markOutboxDeadLetter(this.prisma.client, event.id, message);
+        await this.deadLetterEvent(event, message, error);
         this.logger.error(
           {
             ...base,
@@ -198,9 +206,29 @@ export class OutboxProcessor implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private async consume(event: OutboxEvent): Promise<void> {
+  private async deadLetterEvent(
+    event: OutboxEvent,
+    lastError: string,
+    cause: unknown,
+  ): Promise<void> {
+    if (event.eventType !== DOMAIN_EVENT_TYPES.MessageSendRequested) {
+      await markOutboxDeadLetter(this.prisma.client, event.id, lastError);
+      return;
+    }
+    const code = deadLetterFailureCode(cause);
+    await this.prisma.client.$transaction(async (tx) => {
+      await markOutboxDeadLetter(tx, event.id, lastError);
+      await this.sendCustomerMessage.abandonIfInFlight(event, code, tx);
+    });
+  }
+
+  private async consume(event: OutboxEvent, signal: AbortSignal): Promise<void> {
     if (event.eventType === DOMAIN_EVENT_TYPES.MessageSendRequested) {
-      await this.sendCustomerMessage.handle(event, this.config.values.OUTBOX_MAX_ATTEMPTS);
+      await this.sendCustomerMessage.handle(
+        event,
+        this.config.values.OUTBOX_MAX_ATTEMPTS,
+        signal,
+      );
       return;
     }
     if (!event.eventType) {
@@ -211,4 +239,11 @@ export class OutboxProcessor implements OnModuleInit, OnModuleDestroy {
 
 export function handlerTimeoutMs(leaseMs: number): number {
   return Math.max(1_000, Math.floor(leaseMs * 0.8));
+}
+
+function deadLetterFailureCode(error: unknown): MessageFailureCode {
+  if (error instanceof RetryableMessageSendError) {
+    return error.code;
+  }
+  return 'PROVIDER_UNKNOWN';
 }

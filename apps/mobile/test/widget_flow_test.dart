@@ -287,16 +287,23 @@ class FakeMessageRepository extends MessageRepository {
 }
 
 class FakeCustomerRepository extends CustomerRepository {
-  FakeCustomerRepository({this.items = const []}) : super(_client());
+  FakeCustomerRepository({this.items = const [], this.pageSize}) : super(_client());
 
   List<Customer> items;
   Object? error;
+  int? pageSize;
+  int listCalls = 0;
+  String? lastQuery;
+  String? lastCursor;
 
   @override
   Future<ItemPage<Customer>> list({String? query, String? cursor}) async {
     if (error != null) {
       throw error!;
     }
+    lastQuery = query;
+    lastCursor = cursor;
+    listCalls += 1;
     final filtered = query == null || query.isEmpty
         ? items
         : items
@@ -305,7 +312,18 @@ class FakeCustomerRepository extends CustomerRepository {
                     item.fullName.toLowerCase().contains(query.toLowerCase()),
               )
               .toList();
-    return ItemPage(items: filtered, hasMore: false);
+    if (pageSize == null) {
+      return ItemPage(items: filtered, hasMore: false);
+    }
+    final start = cursor == null ? 0 : int.tryParse(cursor) ?? 0;
+    final end = start + pageSize!;
+    final slice = filtered.skip(start).take(pageSize!).toList();
+    final hasMore = end < filtered.length;
+    return ItemPage(
+      items: slice,
+      hasMore: hasMore,
+      nextCursor: hasMore ? '$end' : null,
+    );
   }
 
   @override
@@ -384,7 +402,10 @@ class FakeServiceRepository extends ServiceRepository {
   Completer<void>? gate;
 
   @override
-  Future<ItemPage<SalonService>> list({bool includeInactive = false}) async {
+  Future<ItemPage<SalonService>> list({
+    bool includeInactive = false,
+    String? cursor,
+  }) async {
     final pending = gate;
     if (pending != null) {
       await pending.future;
@@ -468,7 +489,11 @@ class FakeVisitListRepository extends VisitRepository {
   }
 
   @override
-  Future<List<Visit>> list({String? customerId, DateTime? day}) async {
+  Future<ItemPage<Visit>> list({
+    String? customerId,
+    DateTime? day,
+    String? cursor,
+  }) async {
     if (error != null) {
       throw error!;
     }
@@ -486,7 +511,7 @@ class FakeVisitListRepository extends VisitRepository {
     }
     final sorted = [...result]
       ..sort((a, b) => b.visitedAt.compareTo(a.visitedAt));
-    return sorted;
+    return ItemPage(items: sorted, hasMore: false);
   }
 
   @override
@@ -766,6 +791,36 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('هنوز مشتری‌ای ثبت نشده.'), findsOneWidget);
     expect(find.text('ورود اطلاعات از اکسل'), findsWidgets);
+  });
+
+  testWidgets('customer list loads the next page with cursor', (tester) async {
+    final repo = FakeCustomerRepository(
+      items: [
+        _customer(),
+        Customer(
+          id: 'c2',
+          firstName: 'Maryam',
+          lastName: 'Karimi',
+          phoneNumber: '09121111111',
+          createdAt: DateTime.utc(2026, 1, 2),
+          updatedAt: DateTime.utc(2026, 1, 2),
+        ),
+      ],
+      pageSize: 1,
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          customerRepositoryProvider.overrideWithValue(repo),
+        ],
+        child: const MaterialApp(home: CustomersScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Sara Ahmadi'), findsOneWidget);
+    expect(find.text('Maryam Karimi'), findsOneWidget);
+    expect(repo.listCalls, greaterThanOrEqualTo(2));
+    expect(repo.lastCursor, isNotNull);
   });
 
   testWidgets('customer list renders names', (tester) async {

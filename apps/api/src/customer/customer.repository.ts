@@ -37,28 +37,8 @@ export class CustomerRepository {
   }
 
   list(tenantId: string, search?: string, cursor?: { createdAt: Date; id: string }) {
-    const q = search?.trim();
     return this.prisma.client.customer.findMany({
-      where: {
-        salonId: tenantId,
-        ...(q
-          ? {
-              OR: [
-                { firstName: { contains: q, mode: 'insensitive' } },
-                { lastName: { contains: q, mode: 'insensitive' } },
-                { phoneNumber: { contains: q } },
-              ],
-            }
-          : {}),
-        ...(cursor
-          ? {
-              OR: [
-                { createdAt: { lt: cursor.createdAt } },
-                { createdAt: cursor.createdAt, id: { lt: cursor.id } },
-              ],
-            }
-          : {}),
-      },
+      where: customerListWhere(tenantId, search, cursor),
       select: CUSTOMER_SELECT,
       orderBy: [{ createdAt: 'desc' as const }, { id: 'desc' as const }],
       take: CUSTOMER_LIST_LIMIT + 1,
@@ -70,4 +50,32 @@ export class CustomerRepository {
       where: { id: customerId, salonId: tenantId },
     });
   }
+}
+
+/** Tenant is always required. Search and cursor are AND-ed, never overlapping OR keys. */
+export function customerListWhere(
+  tenantId: string,
+  search?: string,
+  cursor?: { createdAt: Date; id: string },
+): Prisma.CustomerWhereInput {
+  const q = search?.trim();
+  const clauses: Prisma.CustomerWhereInput[] = [{ salonId: tenantId }];
+  if (q) {
+    clauses.push({
+      OR: [
+        { firstName: { contains: q, mode: 'insensitive' } },
+        { lastName: { contains: q, mode: 'insensitive' } },
+        { phoneNumber: { contains: q } },
+      ],
+    });
+  }
+  if (cursor) {
+    clauses.push({
+      OR: [
+        { createdAt: { lt: cursor.createdAt } },
+        { createdAt: cursor.createdAt, id: { lt: cursor.id } },
+      ],
+    });
+  }
+  return { AND: clauses };
 }

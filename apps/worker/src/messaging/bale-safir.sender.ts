@@ -23,6 +23,7 @@ export class BaleSafirMessageSender implements CustomerMessageSender {
       response = await fetchWithTimeout(`${settings.baseUrl}/send_message`, {
         method: 'POST',
         timeoutMs: settings.timeoutMs,
+        signal: command.signal,
         headers: {
           'Content-Type': 'application/json',
           'api-access-key': settings.accessKey,

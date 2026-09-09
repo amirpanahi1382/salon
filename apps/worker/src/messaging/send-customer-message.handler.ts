@@ -1,9 +1,11 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma, type OutboxEvent } from '@salon/database';
 import { createId, DOMAIN_EVENT_TYPES, type MessageFailureCode } from '@salon/shared';
-import type { OutboxEvent } from '@salon/database';
 import { PrismaService } from '../infrastructure/database/prisma.service';
 import { BaleSafirMessageSender } from './bale-safir.sender';
 import { RetryableMessageSendError } from './message-sender';
+
+type MessageDb = Prisma.TransactionClient | PrismaService['client'];
 
 @Injectable()
 export class SendCustomerMessageHandler {
@@ -12,7 +14,7 @@ export class SendCustomerMessageHandler {
     private readonly sender: BaleSafirMessageSender,
   ) {}
 
-  async handle(event: OutboxEvent, maxAttempts: number): Promise<void> {
+  async handle(event: OutboxEvent, maxAttempts: number, signal?: AbortSignal): Promise<void> {
     const deliveryId = payloadId(event.payload, 'messageDeliveryId');
     if (
       !deliveryId ||
@@ -22,7 +24,8 @@ export class SendCustomerMessageHandler {
       throw new Error('Invalid MessageSendRequested payload');
     }
 
-    const delivery = await this.prisma.client.messageDelivery.findFirst({
+    const db = this.prisma.client;
+    const delivery = await db.messageDelivery.findFirst({
       where: { id: deliveryId, salonId: event.tenantId },
       include: { customer: { select: { phoneNumber: true } } },
     });
@@ -33,7 +36,7 @@ export class SendCustomerMessageHandler {
       return;
     }
 
-    await this.prisma.client.messageDelivery.updateMany({
+    const claimed = await db.messageDelivery.updateMany({
       where: {
         id: delivery.id,
         salonId: delivery.salonId,
@@ -41,16 +44,24 @@ export class SendCustomerMessageHandler {
       },
       data: { status: 'PROCESSING', updatedAt: new Date() },
     });
+    if (claimed.count === 0) {
+      return;
+    }
 
     const result = await this.sender.sendText({
       requestId: delivery.providerRequestId,
       phoneNumber: delivery.customer.phoneNumber,
       text: delivery.body,
+      signal,
     });
 
     if (result.outcome === 'sent') {
       await this.markSent(delivery.id, delivery.salonId, result.providerMessageId, delivery.createdBy);
       return;
+    }
+
+    if (signal?.aborted) {
+      throw new RetryableMessageSendError('PROVIDER_UNKNOWN');
     }
 
     if (result.outcome === 'failed') {
@@ -63,6 +74,37 @@ export class SendCustomerMessageHandler {
       throw new RetryableMessageSendError(result.code, result.retryAfterMs);
     }
     throw new RetryableMessageSendError(result.code, result.retryAfterMs);
+  }
+
+  /**
+   * Closes a delivery that is still in-flight after the outbox event is dead-lettered.
+   * SENT/FAILED (terminal) rows are left unchanged. Tenant scope is event.tenantId.
+   */
+  async abandonIfInFlight(
+    event: OutboxEvent,
+    code: MessageFailureCode,
+    db: MessageDb = this.prisma.client,
+  ): Promise<void> {
+    const deliveryId = payloadId(event.payload, 'messageDeliveryId');
+    if (!deliveryId || !event.tenantId) {
+      return;
+    }
+
+    const now = new Date();
+    await db.messageDelivery.updateMany({
+      where: {
+        id: deliveryId,
+        salonId: event.tenantId,
+        status: { in: ['PENDING', 'PROCESSING'] },
+      },
+      data: {
+        status: 'FAILED',
+        failureCode: code,
+        failedAt: now,
+        submittedAt: null,
+        updatedAt: now,
+      },
+    });
   }
 
   private async markSent(

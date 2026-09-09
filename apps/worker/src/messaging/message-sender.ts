@@ -4,6 +4,7 @@ export type SendTextCommand = {
   requestId: string;
   phoneNumber: string;
   text: string;
+  signal?: AbortSignal;
 };
 
 export type SendTextResult =

@@ -159,13 +159,14 @@ class VisitRepository {
     return parseItemPage(data, Visit.fromJson);
   }
 
-  Future<List<Visit>> list({String? customerId, DateTime? day}) async {
+  Future<ItemPage<Visit>> list({String? customerId, DateTime? day, String? cursor}) async {
     final query = <String, dynamic>{
       'customerId': ?customerId,
       if (day != null) ..._localDayWindow(day),
+      if (cursor != null && cursor.isNotEmpty) 'cursor': cursor,
     };
     final data = await _api.get('/visits', query: query.isEmpty ? null : query);
-    return parseItemList(data, Visit.fromJson);
+    return parseItemPage(data, Visit.fromJson);
   }
 
   Future<Visit> record({
@@ -405,10 +406,16 @@ class ServiceRepository {
 
   final ApiClient _api;
 
-  Future<ItemPage<SalonService>> list({bool includeInactive = false}) async {
+  Future<ItemPage<SalonService>> list({
+    bool includeInactive = false,
+    String? cursor,
+  }) async {
     final data = await _api.get(
       '/services',
-      query: includeInactive ? {'includeInactive': 'true'} : null,
+      query: {
+        if (includeInactive) 'includeInactive': 'true',
+        if (cursor != null && cursor.isNotEmpty) 'cursor': cursor,
+      },
     );
     return parseItemPage(data, SalonService.fromJson);
   }

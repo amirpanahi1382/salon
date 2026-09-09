@@ -19,8 +19,11 @@ class ServiceManagementScreen extends ConsumerStatefulWidget {
 class _ServiceManagementScreenState
     extends ConsumerState<ServiceManagementScreen> {
   List<SalonService> _items = const [];
+  String? _nextCursor;
+  bool _hasMore = false;
   Object? _error;
   bool _loading = true;
+  bool _loadingMore = false;
 
   @override
   void initState() {
@@ -42,6 +45,8 @@ class _ServiceManagementScreenState
       }
       setState(() {
         _items = page.items;
+        _nextCursor = page.nextCursor;
+        _hasMore = page.hasMore;
         _loading = false;
       });
     } catch (error) {
@@ -52,6 +57,32 @@ class _ServiceManagementScreenState
         _error = error;
         _loading = false;
       });
+    }
+  }
+
+  Future<void> _loadMore() async {
+    if (_loading || _loadingMore || !_hasMore || _nextCursor == null) {
+      return;
+    }
+    setState(() => _loadingMore = true);
+    try {
+      final page = await ref
+          .read(serviceRepositoryProvider)
+          .list(includeInactive: true, cursor: _nextCursor);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _items = [..._items, ...page.items];
+        _nextCursor = page.nextCursor;
+        _hasMore = page.hasMore;
+        _loadingMore = false;
+      });
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _loadingMore = false);
     }
   }
 
@@ -122,8 +153,13 @@ class _ServiceManagementScreenState
           ? ErrorView(message: friendlyError(_error!), onRetry: _load)
           : RefreshIndicator(
               onRefresh: _load,
-              child: _items.isEmpty
+              child: PagedNotificationListener(
+                hasMore: _hasMore,
+                loading: _loading || _loadingMore,
+                onLoadMore: _loadMore,
+                child: _items.isEmpty
                   ? ListView(
+                      primary: true,
                       children: const [
                         SizedBox(height: 48),
                         EmptyStateView(
@@ -133,10 +169,14 @@ class _ServiceManagementScreenState
                       ],
                     )
                   : ListView.separated(
+                      primary: true,
                       padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
-                      itemCount: _items.length,
+                      itemCount: _items.length + (_hasMore ? 1 : 0),
                       separatorBuilder: (_, _) => const Divider(height: 1),
                       itemBuilder: (context, index) {
+                        if (index >= _items.length) {
+                          return PagedFooter(loading: _loadingMore);
+                        }
                         final service = _items[index];
                         final active = service.status == 'ACTIVE';
                         return ListTile(
@@ -179,6 +219,7 @@ class _ServiceManagementScreenState
                         );
                       },
                     ),
+              ),
             ),
     );
   }

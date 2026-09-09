@@ -19,8 +19,15 @@ class OpportunitiesScreen extends ConsumerStatefulWidget {
 class _OpportunitiesScreenState extends ConsumerState<OpportunitiesScreen> {
   String? _type;
   List<Opportunity> _items = const [];
+  String? _nextCursor;
+  bool _hasMore = false;
+  bool _loadingMore = false;
   List<OpportunityAction> _history = const [];
+  String? _historyCursor;
+  bool _historyHasMore = false;
   Map<String, OpportunityAction> _openActions = const {};
+  String? _openActionsCursor;
+  bool _openActionsHasMore = false;
   Object? _error;
   bool _loading = true;
 
@@ -34,6 +41,12 @@ class _OpportunitiesScreenState extends ConsumerState<OpportunitiesScreen> {
     setState(() {
       _loading = true;
       _error = null;
+      _nextCursor = null;
+      _hasMore = false;
+      _historyCursor = null;
+      _historyHasMore = false;
+      _openActionsCursor = null;
+      _openActionsHasMore = false;
     });
     try {
       final page = await ref
@@ -48,12 +61,18 @@ class _OpportunitiesScreenState extends ConsumerState<OpportunitiesScreen> {
       }
       setState(() {
         _items = page.items;
+        _nextCursor = page.nextCursor;
+        _hasMore = page.hasMore;
         _history = history.items;
+        _historyCursor = history.nextCursor;
+        _historyHasMore = history.hasMore;
         _openActions = {
           for (final action in openActions.items)
             opportunityActionKey(action.customerId, action.opportunityType):
                 action,
         };
+        _openActionsCursor = openActions.nextCursor;
+        _openActionsHasMore = openActions.hasMore;
         _loading = false;
       });
     } catch (error) {
@@ -64,6 +83,70 @@ class _OpportunitiesScreenState extends ConsumerState<OpportunitiesScreen> {
         _error = error;
         _loading = false;
       });
+    }
+  }
+
+  Future<void> _loadMore() async {
+    if (_loading || _loadingMore) {
+      return;
+    }
+    if (_hasMore && _nextCursor != null) {
+      setState(() => _loadingMore = true);
+      try {
+        final page = await ref
+            .read(intelligenceRepositoryProvider)
+            .opportunities(type: _type, cursor: _nextCursor);
+        if (_openActionsHasMore && _openActionsCursor != null) {
+          final open = await ref
+              .read(actionRepositoryProvider)
+              .list(status: 'OPEN', cursor: _openActionsCursor);
+          _openActions = {
+            ..._openActions,
+            for (final action in open.items)
+              opportunityActionKey(action.customerId, action.opportunityType):
+                  action,
+          };
+          _openActionsCursor = open.nextCursor;
+          _openActionsHasMore = open.hasMore;
+        }
+        if (!mounted) {
+          return;
+        }
+        setState(() {
+          _items = [..._items, ...page.items];
+          _nextCursor = page.nextCursor;
+          _hasMore = page.hasMore;
+          _loadingMore = false;
+        });
+      } catch (_) {
+        if (!mounted) {
+          return;
+        }
+        setState(() => _loadingMore = false);
+      }
+      return;
+    }
+    if (_historyHasMore && _historyCursor != null) {
+      setState(() => _loadingMore = true);
+      try {
+        final history = await ref
+            .read(actionRepositoryProvider)
+            .list(cursor: _historyCursor);
+        if (!mounted) {
+          return;
+        }
+        setState(() {
+          _history = [..._history, ...history.items];
+          _historyCursor = history.nextCursor;
+          _historyHasMore = history.hasMore;
+          _loadingMore = false;
+        });
+      } catch (_) {
+        if (!mounted) {
+          return;
+        }
+        setState(() => _loadingMore = false);
+      }
     }
   }
 
@@ -122,10 +205,16 @@ class _OpportunitiesScreenState extends ConsumerState<OpportunitiesScreen> {
                 ? ErrorView(message: friendlyError(_error!), onRetry: _load)
                 : RefreshIndicator(
                     onRefresh: _load,
-                    child: ListView.builder(
+                    child: PagedNotificationListener(
+                      hasMore: _hasMore || _historyHasMore,
+                      loading: _loading || _loadingMore,
+                      onLoadMore: _loadMore,
+                      child: ListView.builder(
+                            primary: true,
                             padding: const EdgeInsets.all(16),
                             itemCount: (_items.isEmpty ? 1 : _items.length) +
-                                (_history.isEmpty ? 0 : _history.length + 1),
+                                (_history.isEmpty ? 0 : _history.length + 1) +
+                                ((_hasMore || _historyHasMore) ? 1 : 0),
                             itemBuilder: (context, index) {
                               if (_items.isEmpty && index == 0) {
                                 return const Padding(
@@ -163,7 +252,7 @@ class _OpportunitiesScreenState extends ConsumerState<OpportunitiesScreen> {
                                 );
                               }
                               final historyStart = _items.isEmpty ? 1 : _items.length;
-                              if (index == historyStart) {
+                              if (index == historyStart && _history.isNotEmpty) {
                                 return Padding(
                                   padding: const EdgeInsets.only(
                                     top: 8,
@@ -177,14 +266,20 @@ class _OpportunitiesScreenState extends ConsumerState<OpportunitiesScreen> {
                                   ),
                                 );
                               }
-                              final action =
-                                  _history[index - historyStart - 1];
-                              return Padding(
-                                padding: const EdgeInsets.only(bottom: 12),
-                                child: ActionHistoryTile(action: action),
-                              );
+                              if (_history.isNotEmpty &&
+                                  index > historyStart &&
+                                  index <= historyStart + _history.length) {
+                                final action =
+                                    _history[index - historyStart - 1];
+                                return Padding(
+                                  padding: const EdgeInsets.only(bottom: 12),
+                                  child: ActionHistoryTile(action: action),
+                                );
+                              }
+                              return PagedFooter(loading: _loadingMore);
                             },
                           ),
+                    ),
                   ),
           ),
         ],

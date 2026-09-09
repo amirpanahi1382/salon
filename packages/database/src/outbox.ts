@@ -1,5 +1,7 @@
 import { Prisma, type OutboxEvent, type PrismaClient } from '@prisma/client';
 
+type OutboxDb = PrismaClient | Prisma.TransactionClient;
+
 /**
  * Claims a batch of outbox rows using PostgreSQL `FOR UPDATE SKIP LOCKED`.
  * Concurrent workers receive disjoint rows. Expired PROCESSING leases are reclaimable.
@@ -50,7 +52,7 @@ export async function claimOutboxEvents(
 }
 
 export async function markOutboxProcessed(
-  prisma: PrismaClient,
+  prisma: OutboxDb,
   id: string,
 ): Promise<void> {
   await prisma.outboxEvent.update({
@@ -66,7 +68,7 @@ export async function markOutboxProcessed(
 }
 
 export async function markOutboxRetry(
-  prisma: PrismaClient,
+  prisma: OutboxDb,
   id: string,
   lastError: string,
   delayMs: number,
@@ -84,7 +86,7 @@ export async function markOutboxRetry(
 }
 
 export async function markOutboxDeadLetter(
-  prisma: PrismaClient,
+  prisma: OutboxDb,
   id: string,
   lastError: string,
 ): Promise<void> {

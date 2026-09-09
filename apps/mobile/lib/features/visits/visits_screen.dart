@@ -20,8 +20,11 @@ class _VisitsScreenState extends ConsumerState<VisitsScreen> {
   DateTime? _day = DateTime.now();
   Customer? _customer;
   List<Visit> _items = const [];
+  String? _nextCursor;
+  bool _hasMore = false;
   Object? _error;
   bool _loading = true;
+  bool _loadingMore = false;
   bool _exporting = false;
 
   bool get _canDelete =>
@@ -40,16 +43,20 @@ class _VisitsScreenState extends ConsumerState<VisitsScreen> {
     setState(() {
       _loading = true;
       _error = null;
+      _nextCursor = null;
+      _hasMore = false;
     });
     try {
-      final items = await ref
+      final page = await ref
           .read(visitRepositoryProvider)
           .list(customerId: _customer?.id, day: _day);
       if (!mounted) {
         return;
       }
       setState(() {
-        _items = items;
+        _items = page.items;
+        _nextCursor = page.nextCursor;
+        _hasMore = page.hasMore;
         _loading = false;
       });
     } catch (error) {
@@ -60,6 +67,34 @@ class _VisitsScreenState extends ConsumerState<VisitsScreen> {
         _error = error;
         _loading = false;
       });
+    }
+  }
+
+  Future<void> _loadMore() async {
+    if (_loading || _loadingMore || !_hasMore || _nextCursor == null) {
+      return;
+    }
+    setState(() => _loadingMore = true);
+    try {
+      final page = await ref.read(visitRepositoryProvider).list(
+        customerId: _customer?.id,
+        day: _day,
+        cursor: _nextCursor,
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _items = [..._items, ...page.items];
+        _nextCursor = page.nextCursor;
+        _hasMore = page.hasMore;
+        _loadingMore = false;
+      });
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _loadingMore = false);
     }
   }
 
@@ -247,8 +282,13 @@ class _VisitsScreenState extends ConsumerState<VisitsScreen> {
                 ? ErrorView(message: friendlyError(_error!), onRetry: _load)
                 : RefreshIndicator(
                     onRefresh: _load,
-                    child: _items.isEmpty
+                    child: PagedNotificationListener(
+                      hasMore: _hasMore,
+                      loading: _loading || _loadingMore,
+                      onLoadMore: _loadMore,
+                      child: _items.isEmpty
                         ? ListView(
+                            primary: true,
                             children: [
                               const SizedBox(height: 48),
                               EmptyStateView(
@@ -264,10 +304,14 @@ class _VisitsScreenState extends ConsumerState<VisitsScreen> {
                             ],
                           )
                         : ListView.separated(
-                            itemCount: _items.length,
+                            primary: true,
+                            itemCount: _items.length + (_hasMore ? 1 : 0),
                             separatorBuilder: (_, _) =>
                                 const Divider(height: 1),
                             itemBuilder: (context, index) {
+                              if (index >= _items.length) {
+                                return PagedFooter(loading: _loadingMore);
+                              }
                               final visit = _items[index];
                               return _VisitEventRow(
                                 visit: visit,
@@ -278,6 +322,7 @@ class _VisitsScreenState extends ConsumerState<VisitsScreen> {
                               );
                             },
                           ),
+                    ),
                   ),
           ),
         ],
@@ -342,7 +387,10 @@ class _CustomerPickerDialog extends ConsumerStatefulWidget {
 class _CustomerPickerDialogState extends ConsumerState<_CustomerPickerDialog> {
   final _search = TextEditingController();
   List<Customer> _items = const [];
+  String? _nextCursor;
+  bool _hasMore = false;
   bool _loading = true;
+  bool _loadingMore = false;
 
   @override
   void initState() {
@@ -357,7 +405,11 @@ class _CustomerPickerDialogState extends ConsumerState<_CustomerPickerDialog> {
   }
 
   Future<void> _load() async {
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _nextCursor = null;
+      _hasMore = false;
+    });
     try {
       final page = await ref
           .read(customerRepositoryProvider)
@@ -367,6 +419,8 @@ class _CustomerPickerDialogState extends ConsumerState<_CustomerPickerDialog> {
       }
       setState(() {
         _items = page.items;
+        _nextCursor = page.nextCursor;
+        _hasMore = page.hasMore;
         _loading = false;
       });
     } catch (_) {
@@ -374,6 +428,32 @@ class _CustomerPickerDialogState extends ConsumerState<_CustomerPickerDialog> {
         return;
       }
       setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _loadMore() async {
+    if (_loading || _loadingMore || !_hasMore || _nextCursor == null) {
+      return;
+    }
+    setState(() => _loadingMore = true);
+    try {
+      final page = await ref
+          .read(customerRepositoryProvider)
+          .list(query: _search.text, cursor: _nextCursor);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _items = [..._items, ...page.items];
+        _nextCursor = page.nextCursor;
+        _hasMore = page.hasMore;
+        _loadingMore = false;
+      });
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _loadingMore = false);
     }
   }
 
@@ -397,7 +477,12 @@ class _CustomerPickerDialogState extends ConsumerState<_CustomerPickerDialog> {
             Expanded(
               child: _loading
                   ? const LoadingView()
-                  : ListView(
+                  : PagedNotificationListener(
+                      hasMore: _hasMore,
+                      loading: _loading || _loadingMore,
+                      onLoadMore: _loadMore,
+                      child: ListView(
+                      primary: true,
                       children: [
                         ListTile(
                           title: const Text(AppStrings.allCustomers),
@@ -410,7 +495,9 @@ class _CustomerPickerDialogState extends ConsumerState<_CustomerPickerDialog> {
                             onTap: () => Navigator.pop(context, customer),
                           ),
                         ),
+                        if (_hasMore) PagedFooter(loading: _loadingMore),
                       ],
+                    ),
                     ),
             ),
           ],

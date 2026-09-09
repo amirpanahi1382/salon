@@ -23,8 +23,11 @@ class CustomersScreen extends ConsumerStatefulWidget {
 class _CustomersScreenState extends ConsumerState<CustomersScreen> {
   final _search = TextEditingController();
   List<Customer> _items = const [];
+  String? _nextCursor;
+  bool _hasMore = false;
   Object? _error;
   bool _loading = true;
+  bool _loadingMore = false;
 
   @override
   void initState() {
@@ -42,6 +45,8 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
     setState(() {
       _loading = true;
       _error = null;
+      _nextCursor = null;
+      _hasMore = false;
     });
     try {
       final page = await ref
@@ -52,6 +57,8 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
       }
       setState(() {
         _items = page.items;
+        _nextCursor = page.nextCursor;
+        _hasMore = page.hasMore;
         _loading = false;
       });
     } catch (error) {
@@ -62,6 +69,32 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
         _error = error;
         _loading = false;
       });
+    }
+  }
+
+  Future<void> _loadMore() async {
+    if (_loading || _loadingMore || !_hasMore || _nextCursor == null) {
+      return;
+    }
+    setState(() => _loadingMore = true);
+    try {
+      final page = await ref
+          .read(customerRepositoryProvider)
+          .list(query: _search.text, cursor: _nextCursor);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _items = [..._items, ...page.items];
+        _nextCursor = page.nextCursor;
+        _hasMore = page.hasMore;
+        _loadingMore = false;
+      });
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _loadingMore = false);
     }
   }
 
@@ -118,8 +151,13 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
                 ? ErrorView(message: friendlyError(_error!), onRetry: _load)
                 : RefreshIndicator(
                     onRefresh: _load,
-                    child: _items.isEmpty
+                    child: PagedNotificationListener(
+                      hasMore: _hasMore,
+                      loading: _loading || _loadingMore,
+                      onLoadMore: _loadMore,
+                      child: _items.isEmpty
                         ? ListView(
+                            primary: true,
                             children: [
                               const SizedBox(height: 48),
                               EmptyStateView(
@@ -158,10 +196,14 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
                             ],
                           )
                         : ListView.separated(
-                            itemCount: _items.length,
+                            primary: true,
+                            itemCount: _items.length + (_hasMore ? 1 : 0),
                             separatorBuilder: (_, _) =>
                                 const Divider(height: 1),
                             itemBuilder: (context, index) {
+                              if (index >= _items.length) {
+                                return PagedFooter(loading: _loadingMore);
+                              }
                               final customer = _items[index];
                               return CustomerListTile(
                                 name: customer.fullName,
@@ -177,6 +219,7 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
                               );
                             },
                           ),
+                    ),
                   ),
           ),
         ],
@@ -370,6 +413,9 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
   Customer? _customer;
   CustomerIntelligence? _intelligence;
   List<Visit> _visits = const [];
+  String? _visitsCursor;
+  bool _visitsHasMore = false;
+  bool _loadingMoreVisits = false;
   Map<String, OpportunityAction> _openActions = const {};
   Object? _error;
   bool _loading = true;
@@ -405,6 +451,8 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
         _customer = customer;
         _intelligence = intelligence;
         _visits = visits.items;
+        _visitsCursor = visits.nextCursor;
+        _visitsHasMore = visits.hasMore;
         _openActions = {
           for (final action in openActions.items)
             opportunityActionKey(action.customerId, action.opportunityType):
@@ -420,6 +468,32 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
         _error = error;
         _loading = false;
       });
+    }
+  }
+
+  Future<void> _loadMoreVisits() async {
+    if (_loading || _loadingMoreVisits || !_visitsHasMore || _visitsCursor == null) {
+      return;
+    }
+    setState(() => _loadingMoreVisits = true);
+    try {
+      final page = await ref
+          .read(visitRepositoryProvider)
+          .listForCustomer(widget.customerId, cursor: _visitsCursor);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _visits = [..._visits, ...page.items];
+        _visitsCursor = page.nextCursor;
+        _visitsHasMore = page.hasMore;
+        _loadingMoreVisits = false;
+      });
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _loadingMoreVisits = false);
     }
   }
 
@@ -567,7 +641,12 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
       ),
       body: RefreshIndicator(
         onRefresh: _load,
-        child: ListView(
+        child: PagedNotificationListener(
+          hasMore: _visitsHasMore,
+          loading: _loading || _loadingMoreVisits,
+          onLoadMore: _loadMoreVisits,
+          child: ListView(
+          primary: true,
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
           children: [
             AppCard(
@@ -710,7 +789,9 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                   ),
                 ),
               ),
+            if (_visitsHasMore) PagedFooter(loading: _loadingMoreVisits),
           ],
+        ),
         ),
       ),
     ),

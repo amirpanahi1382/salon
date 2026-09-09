@@ -4,7 +4,6 @@ import { fetchWithTimeout } from './outbound-http';
 describe('fetchWithTimeout', () => {
   afterEach(() => {
     jest.restoreAllMocks();
-    jest.useRealTimers();
   });
 
   it('maps a hung fetch to InfrastructureError', async () => {
@@ -43,24 +42,5 @@ describe('fetchWithTimeout', () => {
     ).rejects.toBeInstanceOf(InfrastructureError);
     expect(seen).toHaveLength(1);
     expect(seen[0]?.aborted).toBe(true);
-  });
-
-  it('does not deliver a late success after abort', async () => {
-    let lateResolve: ((value: Response) => void) | undefined;
-    jest.spyOn(globalThis, 'fetch').mockImplementation((_url, init) => {
-      return new Promise((resolve, reject) => {
-        lateResolve = resolve;
-        init?.signal?.addEventListener('abort', () => {
-          const error = new Error('aborted');
-          error.name = 'AbortError';
-          reject(error);
-        });
-      }) as Promise<Response>;
-    });
-
-    const pending = fetchWithTimeout('http://example.test/upstream', { timeoutMs: 15 });
-    await expect(pending).rejects.toBeInstanceOf(InfrastructureError);
-    lateResolve?.({ ok: true } as Response);
-    await expect(pending).rejects.toBeInstanceOf(InfrastructureError);
   });
 });

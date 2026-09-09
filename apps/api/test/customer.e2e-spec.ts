@@ -4,7 +4,8 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/infrastructure/database/prisma.service';
 import { HttpExceptionFilter } from '../src/infrastructure/http/http-exception.filter';
-import { listItems } from './list-page';
+import { encodeCursor } from '../src/infrastructure/http/list-page';
+import { listItems, listPage } from './list-page';
 
 const describeIfDb = process.env.DATABASE_URL ? describe : describe.skip;
 const password = 'correct-horse-battery';
@@ -125,6 +126,60 @@ describeIfDb('Customers (e2e)', () => {
 
     expect(listItems(listed.body)).toHaveLength(1);
     expect(listItems<{ id: string }>(listed.body)[0].id).toBe(customer.body.id);
+
+    const secondSearch = await request(app.getHttpServer())
+      .post('/customers')
+      .set('Authorization', `Bearer ${salonA.token}`)
+      .send({
+        firstName: 'Ali',
+        lastName: 'Ahmadi',
+        phoneNumber: `0935${Date.now().toString().slice(-7)}`,
+      })
+      .expect(201);
+    const qPage = listPage<{ id: string; lastName: string; createdAt: string }>(
+      (
+        await request(app.getHttpServer())
+          .get('/customers')
+          .query({ q: 'Ahmadi' })
+          .set('Authorization', `Bearer ${salonA.token}`)
+          .expect(200)
+      ).body,
+    );
+    expect(qPage.items).toHaveLength(2);
+    const newest = qPage.items[0]!;
+    const cursor = encodeCursor([newest.createdAt, newest.id]);
+    const cursorOnly = listPage<{ id: string }>(
+      (
+        await request(app.getHttpServer())
+          .get('/customers')
+          .query({ cursor })
+          .set('Authorization', `Bearer ${salonA.token}`)
+          .expect(200)
+      ).body,
+    );
+    expect(cursorOnly.items.map((row) => row.id)).not.toContain(newest.id);
+    const qAndCursor = listPage<{ id: string; lastName: string }>(
+      (
+        await request(app.getHttpServer())
+          .get('/customers')
+          .query({ q: 'Ahmadi', cursor })
+          .set('Authorization', `Bearer ${salonA.token}`)
+          .expect(200)
+      ).body,
+    );
+    expect(qAndCursor.items.every((row) => row.lastName === 'Ahmadi')).toBe(true);
+    expect(qAndCursor.items.map((row) => row.id)).not.toContain(newest.id);
+    const otherTenant = listPage<{ id: string }>(
+      (
+        await request(app.getHttpServer())
+          .get('/customers')
+          .query({ q: 'Ahmadi', cursor })
+          .set('Authorization', `Bearer ${salonB.token}`)
+          .expect(200)
+      ).body,
+    );
+    expect(otherTenant.items.map((row) => row.id)).not.toContain(customer.body.id);
+    expect(otherTenant.items.map((row) => row.id)).not.toContain(secondSearch.body.id);
 
     const otherList = await request(app.getHttpServer())
       .get('/customers')

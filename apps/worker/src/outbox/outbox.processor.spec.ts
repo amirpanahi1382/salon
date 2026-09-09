@@ -10,6 +10,8 @@ import type { AppConfig } from '@salon/config';
 import pino from 'pino';
 import { AppConfigService } from '../infrastructure/config/app-config.service';
 import { PrismaService } from '../infrastructure/database/prisma.service';
+import { RetryableMessageSendError } from '../messaging/message-sender';
+import { SendCustomerMessageHandler } from '../messaging/send-customer-message.handler';
 import { handlerTimeoutMs, OutboxProcessor } from './outbox.processor';
 
 jest.mock('@salon/database', () => ({
@@ -59,7 +61,10 @@ describe('OutboxProcessor', () => {
   } as AppConfigService;
 
   let processor: OutboxProcessor;
-  const sendCustomerMessage = { handle: jest.fn().mockResolvedValue(undefined) };
+  const sendCustomerMessage = {
+    handle: jest.fn().mockResolvedValue(undefined),
+    abandonIfInFlight: jest.fn().mockResolvedValue(undefined),
+  };
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -116,5 +121,285 @@ describe('OutboxProcessor', () => {
   it('uses a handler timeout below the lease duration', () => {
     expect(handlerTimeoutMs(30_000)).toBe(24_000);
     expect(handlerTimeoutMs(30_000)).toBeLessThan(30_000);
+  });
+});
+
+type DeliveryRow = {
+  id: string;
+  salonId: string;
+  status: 'PENDING' | 'PROCESSING' | 'SENT' | 'FAILED';
+  failedAt: Date | null;
+  failureCode: string | null;
+  submittedAt: Date | null;
+  updatedAt: Date;
+  body: string;
+  providerRequestId: string;
+  createdBy: string;
+  customer: { phoneNumber: string };
+};
+
+function deliveryRow(overrides: Partial<DeliveryRow> = {}): DeliveryRow {
+  return {
+    id: 'm1',
+    salonId: '22222222-2222-4222-8222-222222222222',
+    status: 'PENDING',
+    failedAt: null,
+    failureCode: null,
+    submittedAt: null,
+    updatedAt: new Date(0),
+    body: 'hello',
+    providerRequestId: 'req-1',
+    createdBy: '33333333-3333-4333-8333-333333333333',
+    customer: { phoneNumber: '09123456789' },
+    ...overrides,
+  };
+}
+
+function fakePrisma(rows: DeliveryRow[]) {
+  const client = {
+    messageDelivery: {
+      findFirst: async ({ where }: { where: { id: string; salonId: string } }) =>
+        rows.find((row) => row.id === where.id && row.salonId === where.salonId) ?? null,
+      updateMany: async ({
+        where,
+        data,
+      }: {
+        where: { id: string; salonId: string; status?: { in: string[] } };
+        data: Partial<DeliveryRow>;
+      }) => {
+        let count = 0;
+        for (const row of rows) {
+          if (row.id !== where.id || row.salonId !== where.salonId) {
+            continue;
+          }
+          if (where.status?.in && !where.status.in.includes(row.status)) {
+            continue;
+          }
+          Object.assign(row, data);
+          count += 1;
+        }
+        return { count };
+      },
+    },
+    $transaction: async (fn: (tx: typeof client) => Promise<unknown>) => {
+      const snapshot = rows.map((row) => ({ ...row }));
+      try {
+        return await fn(client);
+      } catch (error) {
+        for (let index = 0; index < rows.length; index += 1) {
+          Object.assign(rows[index]!, snapshot[index]);
+        }
+        throw error;
+      }
+    },
+  };
+  return { client };
+}
+
+describe('OutboxProcessor MessageSendRequested dead-letter', () => {
+  const logger = pino({ level: 'silent' });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  const baseConfig = {
+    values: {
+      NODE_ENV: 'test',
+      LOG_LEVEL: 'silent',
+      OUTBOX_BATCH_SIZE: 10,
+      OUTBOX_LEASE_MS: 1_000,
+      OUTBOX_MAX_ATTEMPTS: 2,
+      OUTBOX_BACKOFF_BASE_MS: 10,
+      OUTBOX_BACKOFF_CAP_MS: 20,
+      OUTBOX_POLL_INTERVAL_MS: 60_000,
+    } as AppConfig,
+  } as AppConfigService;
+
+  function messageEvent(overrides: Partial<OutboxEvent> = {}): OutboxEvent {
+    return event({
+      eventType: DOMAIN_EVENT_TYPES.MessageSendRequested,
+      payload: { messageDeliveryId: 'm1' },
+      attemptCount: 2,
+      ...overrides,
+    });
+  }
+
+  it('fails PROCESSING delivery when the last-attempt handler times out', async () => {
+    jest.useFakeTimers();
+    const row = deliveryRow({ status: 'PENDING' });
+    const prisma = fakePrisma([row]);
+    const sender = { sendText: jest.fn(() => new Promise(() => undefined)) };
+    const handler = new SendCustomerMessageHandler(prisma as never, sender as never);
+    const processor = new OutboxProcessor(prisma as never, baseConfig, handler, logger);
+
+    try {
+      const done = processor.processOne(messageEvent());
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(row.status).toBe('PROCESSING');
+      await jest.advanceTimersByTimeAsync(handlerTimeoutMs(baseConfig.values.OUTBOX_LEASE_MS));
+      await done;
+    } finally {
+      jest.useRealTimers();
+    }
+
+    expect(deadLetter).toHaveBeenCalled();
+    expect(retry).not.toHaveBeenCalled();
+    expect(row.status).toBe('FAILED');
+    expect(row.failureCode).toBe('PROVIDER_UNKNOWN');
+    expect(row.failedAt).toBeInstanceOf(Date);
+  });
+
+  it('fails PROCESSING delivery when the last attempt throws a generic consume error', async () => {
+    const row = deliveryRow({ status: 'PENDING' });
+    const prisma = fakePrisma([row]);
+    const sender = { sendText: jest.fn().mockRejectedValue(new Error('boom')) };
+    const handler = new SendCustomerMessageHandler(prisma as never, sender as never);
+    const processor = new OutboxProcessor(prisma as never, baseConfig, handler, logger);
+
+    await processor.processOne(messageEvent());
+
+    expect(deadLetter).toHaveBeenCalled();
+    expect(row.status).toBe('FAILED');
+    expect(row.failureCode).toBe('PROVIDER_UNKNOWN');
+    expect(row.failedAt).toBeInstanceOf(Date);
+  });
+
+  it('transitions PENDING to FAILED when dead-lettering without a processing update', async () => {
+    const row = deliveryRow({ status: 'PENDING' });
+    const prisma = fakePrisma([row]);
+    const handler = new SendCustomerMessageHandler(prisma as never, { sendText: jest.fn() } as never);
+    jest.spyOn(handler, 'handle').mockRejectedValue(new Error('boom'));
+    const processor = new OutboxProcessor(prisma as never, baseConfig, handler, logger);
+
+    await processor.processOne(messageEvent());
+
+    expect(deadLetter).toHaveBeenCalled();
+    expect(row.status).toBe('FAILED');
+    expect(row.failedAt).toBeInstanceOf(Date);
+  });
+
+  it('does not change SENT when dead-lettering', async () => {
+    const submittedAt = new Date('2026-01-01T00:00:00.000Z');
+    const row = deliveryRow({ status: 'SENT', submittedAt });
+    const prisma = fakePrisma([row]);
+    const handler = new SendCustomerMessageHandler(prisma as never, { sendText: jest.fn() } as never);
+    jest.spyOn(handler, 'handle').mockRejectedValue(new Error('boom'));
+    const processor = new OutboxProcessor(prisma as never, baseConfig, handler, logger);
+
+    await processor.processOne(messageEvent());
+
+    expect(deadLetter).toHaveBeenCalled();
+    expect(row.status).toBe('SENT');
+    expect(row.failedAt).toBeNull();
+    expect(row.submittedAt).toBe(submittedAt);
+  });
+
+  it('does not rewrite an already FAILED delivery on dead-letter', async () => {
+    const failedAt = new Date('2026-01-02T00:00:00.000Z');
+    const row = deliveryRow({
+      status: 'FAILED',
+      failedAt,
+      failureCode: 'PROVIDER_AUTH',
+    });
+    const prisma = fakePrisma([row]);
+    const handler = new SendCustomerMessageHandler(prisma as never, { sendText: jest.fn() } as never);
+    jest.spyOn(handler, 'handle').mockRejectedValue(new Error('boom'));
+    const processor = new OutboxProcessor(prisma as never, baseConfig, handler, logger);
+
+    await processor.processOne(messageEvent());
+
+    expect(deadLetter).toHaveBeenCalled();
+    expect(row.status).toBe('FAILED');
+    expect(row.failureCode).toBe('PROVIDER_AUTH');
+    expect(row.failedAt).toBe(failedAt);
+  });
+
+  it('does not fail another tenant MessageDelivery', async () => {
+    const otherTenant = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    const row = deliveryRow({ salonId: otherTenant, status: 'PROCESSING' });
+    const prisma = fakePrisma([row]);
+    const handler = new SendCustomerMessageHandler(prisma as never, { sendText: jest.fn() } as never);
+    jest.spyOn(handler, 'handle').mockRejectedValue(new Error('boom'));
+    const processor = new OutboxProcessor(prisma as never, baseConfig, handler, logger);
+
+    await processor.processOne(messageEvent());
+
+    expect(deadLetter).toHaveBeenCalled();
+    expect(row.status).toBe('PROCESSING');
+    expect(row.failedAt).toBeNull();
+  });
+
+  it('retries below max attempts without failing the delivery', async () => {
+    const row = deliveryRow({ status: 'PENDING' });
+    const prisma = fakePrisma([row]);
+    const sender = {
+      sendText: jest.fn().mockResolvedValue({
+        outcome: 'retryable',
+        code: 'PROVIDER_TEMPORARY',
+      }),
+    };
+    const handler = new SendCustomerMessageHandler(prisma as never, sender as never);
+    const processor = new OutboxProcessor(prisma as never, baseConfig, handler, logger);
+
+    await processor.processOne(messageEvent({ attemptCount: 1 }));
+
+    expect(retry).toHaveBeenCalled();
+    expect(deadLetter).not.toHaveBeenCalled();
+    expect(row.status).toBe('PROCESSING');
+    expect(row.failedAt).toBeNull();
+  });
+
+  it('uses PROVIDER_TEMPORARY when the dead-letter reason is a retryable temporary provider error', async () => {
+    const row = deliveryRow({ status: 'PROCESSING' });
+    const prisma = fakePrisma([row]);
+    const handler = new SendCustomerMessageHandler(prisma as never, { sendText: jest.fn() } as never);
+    jest
+      .spyOn(handler, 'handle')
+      .mockRejectedValue(new RetryableMessageSendError('PROVIDER_TEMPORARY'));
+    const processor = new OutboxProcessor(prisma as never, baseConfig, handler, logger);
+
+    await processor.processOne(messageEvent());
+
+    expect(deadLetter).toHaveBeenCalled();
+    expect(row.status).toBe('FAILED');
+    expect(row.failureCode).toBe('PROVIDER_TEMPORARY');
+  });
+
+  it('rolls back dead-letter when MessageDelivery fail cannot be applied', async () => {
+    const row = deliveryRow({ status: 'PROCESSING' });
+    const prisma = fakePrisma([row]);
+    let outboxStatus: 'PROCESSING' | 'DEAD_LETTER' = 'PROCESSING';
+    deadLetter.mockImplementation(async () => {
+      outboxStatus = 'DEAD_LETTER';
+    });
+    const originalTx = prisma.client.$transaction;
+    prisma.client.$transaction = (async (fn: (tx: unknown) => Promise<unknown>) => {
+      const snapshot = { outboxStatus, delivery: { ...row } };
+      try {
+        return await fn({
+          messageDelivery: {
+            updateMany: async () => {
+              throw new Error('crash between dead-letter and abandon');
+            },
+          },
+        });
+      } catch (error) {
+        outboxStatus = snapshot.outboxStatus;
+        Object.assign(row, snapshot.delivery);
+        throw error;
+      }
+    }) as typeof originalTx;
+    const handler = new SendCustomerMessageHandler(prisma as never, { sendText: jest.fn() } as never);
+    jest.spyOn(handler, 'handle').mockRejectedValue(new Error('boom'));
+    const processor = new OutboxProcessor(prisma as never, baseConfig, handler, logger);
+
+    await expect(processor.processOne(messageEvent())).rejects.toThrow(
+      'crash between dead-letter and abandon',
+    );
+    expect(outboxStatus).toBe('PROCESSING');
+    expect(row.status).toBe('PROCESSING');
+    expect(row.failedAt).toBeNull();
   });
 });
