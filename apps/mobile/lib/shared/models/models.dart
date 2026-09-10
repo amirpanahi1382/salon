@@ -13,6 +13,8 @@ class AuthUser {
   final String? name;
   final String? email;
 
+  bool get isPlatformAdmin => role == 'PLATFORM_ADMIN';
+
   factory AuthUser.fromLoginJson(Map<String, dynamic> json) {
     return AuthUser(
       id: json['id'] as String,
@@ -20,6 +22,24 @@ class AuthUser {
       role: json['role'] as String,
       name: json['name'] as String?,
       email: json['email'] as String?,
+    );
+  }
+
+  factory AuthUser.fromAdminLoginJson(Map<String, dynamic> json) {
+    return AuthUser(
+      id: json['id'] as String,
+      tenantId: '',
+      role: 'PLATFORM_ADMIN',
+      name: json['name'] as String?,
+      email: json['email'] as String?,
+    );
+  }
+
+  factory AuthUser.fromAdminMeJson(Map<String, dynamic> json) {
+    return AuthUser(
+      id: json['adminId'] as String,
+      tenantId: '',
+      role: 'PLATFORM_ADMIN',
     );
   }
 
@@ -37,6 +57,13 @@ class AuthSession {
 
   final String accessToken;
   final AuthUser user;
+
+  factory AuthSession.fromAdminAuthJson(Map<String, dynamic> json) {
+    return AuthSession(
+      accessToken: json['accessToken'] as String,
+      user: AuthUser.fromAdminLoginJson(json['admin'] as Map<String, dynamic>),
+    );
+  }
 
   factory AuthSession.fromAuthJson(Map<String, dynamic> json) {
     return AuthSession(
@@ -563,7 +590,6 @@ class MessageDelivery {
     required this.customerId,
     required this.actionId,
     required this.opportunityType,
-    required this.provider,
     required this.channel,
     required this.status,
     required this.body,
@@ -571,6 +597,8 @@ class MessageDelivery {
     required this.createdBy,
     required this.createdAt,
     required this.updatedAt,
+    this.provider,
+    this.mode,
     this.failureCode,
     this.submittedAt,
     this.failedAt,
@@ -580,7 +608,8 @@ class MessageDelivery {
   final String customerId;
   final String actionId;
   final String opportunityType;
-  final String provider;
+  final String? provider;
+  final String? mode;
   final String channel;
   final String status;
   final String body;
@@ -598,7 +627,8 @@ class MessageDelivery {
       customerId: json['customerId'] as String,
       actionId: json['actionId'] as String,
       opportunityType: json['opportunityType'] as String,
-      provider: json['provider'] as String,
+      provider: json['provider'] as String?,
+      mode: json['mode'] as String?,
       channel: json['channel'] as String,
       status: json['status'] as String,
       body: json['body'] as String,
@@ -609,6 +639,71 @@ class MessageDelivery {
       updatedAt: DateTime.parse(json['updatedAt'] as String),
       submittedAt: _parseDate(json['submittedAt']),
       failedAt: _parseDate(json['failedAt']),
+    );
+  }
+}
+
+class AdminQueueItem {
+  const AdminQueueItem({
+    required this.id,
+    required this.salonId,
+    required this.salonName,
+    required this.customerId,
+    required this.customerName,
+    required this.customerPhone,
+    required this.messageText,
+    required this.opportunityType,
+    required this.requestedAt,
+    this.messageBusinessDate,
+    required this.status,
+    required this.attempts,
+    required this.providerReady,
+    this.mode,
+    this.deliveryStatus,
+    this.failureCode,
+    this.submittedAt,
+    this.failedAt,
+  });
+
+  final String id;
+  final String salonId;
+  final String salonName;
+  final String customerId;
+  final String customerName;
+  final String customerPhone;
+  final String messageText;
+  final String opportunityType;
+  final DateTime requestedAt;
+  final String? messageBusinessDate;
+  final String status;
+  final String? mode;
+  final String? deliveryStatus;
+  final String? failureCode;
+  final int attempts;
+  final DateTime? submittedAt;
+  final DateTime? failedAt;
+  final bool providerReady;
+
+  factory AdminQueueItem.fromJson(Map<String, dynamic> json) {
+    return AdminQueueItem(
+      id: json['id'] as String,
+      salonId: json['salonId'] as String,
+      salonName: json['salonName'] as String,
+      customerId: json['customerId'] as String,
+      customerName: json['customerName'] as String,
+      customerPhone: json['customerPhone'] as String,
+      messageText: json['messageText'] as String,
+      opportunityType: json['opportunityType'] as String,
+      requestedAt: DateTime.parse(json['requestedAt'] as String),
+      messageBusinessDate: json['messageBusinessDate'] as String?,
+      status: json['status'] as String,
+      mode: json['mode'] as String?,
+      deliveryStatus: json['deliveryStatus'] as String?,
+      failureCode: json['failureCode'] as String?,
+      attempts: json['attempts'] as int? ?? 0,
+      submittedAt: _parseDate(json['submittedAt']),
+      failedAt: _parseDate(json['failedAt']),
+      providerReady: json['providerReady'] as bool? ?? false,
     );
   }
 }

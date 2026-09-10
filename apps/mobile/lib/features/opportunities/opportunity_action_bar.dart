@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/networking/api_client.dart';
 import '../../core/state/providers.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/theme/app_tokens.dart';
 import '../../core/widgets/app_widgets.dart';
 import '../../shared/jalali.dart';
 import '../../shared/labels.dart';
@@ -14,6 +15,8 @@ String opportunityActionKey(String customerId, String opportunityType) {
   return '$customerId:$opportunityType';
 }
 
+enum OpportunityActionLayout { wrap, stacked }
+
 class OpportunityActionBar extends ConsumerStatefulWidget {
   const OpportunityActionBar({
     super.key,
@@ -22,6 +25,7 @@ class OpportunityActionBar extends ConsumerStatefulWidget {
     required this.customerName,
     this.destinationHint,
     this.openAction,
+    this.layout = OpportunityActionLayout.wrap,
   });
 
   final String customerId;
@@ -29,6 +33,7 @@ class OpportunityActionBar extends ConsumerStatefulWidget {
   final String customerName;
   final String? destinationHint;
   final OpportunityAction? openAction;
+  final OpportunityActionLayout layout;
 
   @override
   ConsumerState<OpportunityActionBar> createState() =>
@@ -74,82 +79,83 @@ class _OpportunityActionBarState extends ConsumerState<OpportunityActionBar> {
   @override
   Widget build(BuildContext context) {
     final open = widget.openAction;
+    final done = FilledButton(
+      onPressed: _busy
+          ? null
+          : () => _run(() async {
+                final action = await _ensureOpen();
+                if (action.status == 'COMPLETED') {
+                  return action;
+                }
+                if (action.status != 'OPEN') {
+                  throw StateError(action.status);
+                }
+                return ref.read(actionRepositoryProvider).complete(action.id);
+              }),
+      child: const Text(AppStrings.markActionDone),
+    );
+    final dismiss = OutlinedButton(
+      onPressed: _busy
+          ? null
+          : () => _run(() async {
+                final action = await _ensureOpen();
+                if (action.status == 'DISMISSED') {
+                  return action;
+                }
+                if (action.status != 'OPEN') {
+                  throw StateError(action.status);
+                }
+                return ref.read(actionRepositoryProvider).dismiss(action.id);
+              }),
+      child: const Text(AppStrings.dismissAction),
+    );
+    final bale = OutlinedButton(
+      onPressed: _busy
+          ? null
+          : () async {
+              await openBaleMessageComposer(
+                context: context,
+                ref: ref,
+                customerId: widget.customerId,
+                opportunityType: widget.opportunityType,
+                customerName: widget.customerName,
+                destinationHint: widget.destinationHint,
+                onChanged:
+                    OpportunityActionsScope.maybeOf(context)?.onChanged,
+              );
+            },
+      child: const Text(AppStrings.sendBaleMessage),
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (open != null) ...[
-          Text(
-            actionStatusLabel(open.status),
-            style: const TextStyle(fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 8),
+          ActionStatusMark(status: open.status),
+          const SizedBox(height: AppTokens.space8),
         ],
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            FilledButton(
-              onPressed: _busy
-                  ? null
-                  : () => _run(() async {
-                        final action = await _ensureOpen();
-                        if (action.status == 'COMPLETED') {
-                          return action;
-                        }
-                        if (action.status != 'OPEN') {
-                          throw StateError(action.status);
-                        }
-                        return ref
-                            .read(actionRepositoryProvider)
-                            .complete(action.id);
-                      }),
-              child: const Text(AppStrings.markActionDone),
-            ),
-            OutlinedButton(
-              onPressed: _busy
-                  ? null
-                  : () => _run(() async {
-                        final action = await _ensureOpen();
-                        if (action.status == 'DISMISSED') {
-                          return action;
-                        }
-                        if (action.status != 'OPEN') {
-                          throw StateError(action.status);
-                        }
-                        return ref
-                            .read(actionRepositoryProvider)
-                            .dismiss(action.id);
-                      }),
-              child: const Text(AppStrings.dismissAction),
-            ),
-            OutlinedButton(
-              onPressed: _busy
-                  ? null
-                  : () async {
-                      await openBaleMessageComposer(
-                        context: context,
-                        ref: ref,
-                        customerId: widget.customerId,
-                        opportunityType: widget.opportunityType,
-                        customerName: widget.customerName,
-                        destinationHint: widget.destinationHint,
-                        onChanged: OpportunityActionsScope.maybeOf(context)?.onChanged,
-                      );
-                    },
-              child: const Text(AppStrings.sendBaleMessage),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
+        if (widget.layout == OpportunityActionLayout.stacked) ...[
+          SizedBox(width: double.infinity, child: done),
+          const SizedBox(height: AppTokens.space8),
+          Row(
+            children: [
+              Expanded(child: dismiss),
+              const SizedBox(width: AppTokens.space8),
+              Expanded(child: bale),
+            ],
+          ),
+        ] else
+          Wrap(
+            spacing: AppTokens.space8,
+            runSpacing: AppTokens.space8,
+            children: [done, dismiss, bale],
+          ),
+        const SizedBox(height: AppTokens.space8),
         Text(
           AppStrings.actionDoesNotCreateVisit,
-          style: TextStyle(
-            fontSize: 12,
-            color: Theme.of(context).textTheme.bodySmall?.color,
-          ),
+          style: Theme.of(context).textTheme.bodySmall,
         ),
         if (_error != null) ...[
-          const SizedBox(height: 8),
+          const SizedBox(height: AppTokens.space8),
           Text(
             friendlyError(_error!),
             style: const TextStyle(color: AppColors.danger),
@@ -185,20 +191,27 @@ class ActionHistoryTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AppCard(
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppTokens.space12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          OpportunityTypeMark(type: action.opportunityType),
+          const SizedBox(height: AppTokens.space8),
           Text(
-            opportunityLabel(action.opportunityType),
-            style: Theme.of(context).textTheme.titleSmall,
+            action.fullName,
+            style: theme.textTheme.titleMedium,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
           ),
-          const SizedBox(height: 4),
-          Text(action.fullName),
-          const SizedBox(height: 8),
-          Text(actionStatusLabel(action.status)),
-          const SizedBox(height: 4),
-          Text(formatJalaliPrettyDate(action.createdAt)),
+          const SizedBox(height: AppTokens.space8),
+          ActionStatusMark(status: action.status),
+          const SizedBox(height: AppTokens.space4),
+          Text(
+            formatJalaliPrettyDate(action.createdAt),
+            style: theme.textTheme.bodySmall,
+          ),
         ],
       ),
     );

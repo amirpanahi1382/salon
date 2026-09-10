@@ -487,18 +487,19 @@ Manual Bale Safir text send is a separate `message_deliveries` record. Sending a
 
 Evidence: `apps/api/src/action/`, Flutter `opportunity_action_bar.dart`, `action.e2e-spec.ts`.
 
-### 17.2 Opportunity messages (Bale Safir)
+### 17.2 Opportunity messages (durable queue)
 
-**IMPLEMENTED.** Human-in-the-loop one-to-one text send for a currently derived opportunity (including `REVENUE_DECLINE`). Destination is the existing Customer phone mapped to Safir `98…` form. No bot `/start`, no `chat_id` table.
+**IMPLEMENTED.** Salon users request a durable `MessageRequest`. Bale Safir is a delivery provider, not a requirement for queueing. Platform admins (`platform_admins`, JWT `scp=platform`) choose `BALE` or `MANUAL`.
 
-- API: `POST /intelligence/opportunities/:opportunityType/customers/:customerId/messages` (STAFF+; required `Idempotency-Key`). Returns `PENDING`. Does not call Bale inside the HTTP request or the DB transaction.
-- `GET /messages/:id`, `GET /customers/:customerId/messages`.
-- Outbox fact `MessageSendRequested` `{ messageDeliveryId, salonId }`. Worker adapter `POST https://safir.bale.ai/api/v3/send_message`.
-- Credentials: **platform-level** env `BALE_SAFIR_API_ACCESS_KEY` + `BALE_SAFIR_BOT_ID` (Bale organization key). **Not per-salon isolation at the provider.** Our rows remain tenant-scoped.
-- Action stays `OPEN` unless the user separately completes/dismisses it.
-- Customer delete (no finance): delete message deliveries, then actions, then visits, then customer.
+- API: `POST /intelligence/opportunities/:opportunityType/customers/:customerId/messages` (STAFF+; required `Idempotency-Key`). Returns salon status `QUEUED`. Missing Bale credentials do **not** block this.
+- One **new** salon request per salon+customer per **Asia/Tehran** calendar day (`MESSAGE_DAILY_LIMIT_REACHED`), enforced by partial unique index `message_requests_salon_customer_day_key` on rows with `counts_toward_daily_limit`. Pre-queue deliveries are backfilled 1:1 with that flag false. Idempotency is a separate key+hash replay.
+- `GET /messages/:id`, `GET /customers/:customerId/messages` (tenant-scoped).
+- Admin: `GET /admin/message-queue`, `POST .../select-bale|select-manual|mark-manual-sent|retry`.
+- Outbox: `MessageRequested` on queue; `MessageDeliveryActivated` when Bale is selected **and** credentials exist. Worker still accepts legacy `MessageSendRequested`.
+- Credentials remain platform env. Customer delete is blocked while message history exists.
+- Retention: message requests/deliveries are operational PII history; they are **not** auto-deleted. Outbox/idempotency retention is unchanged.
 
-Provider contract verification and failure matrix: `architecture/messaging-bale-safir.md`.
+Provider contract and Bale failure matrix: `architecture/messaging-bale-safir.md`. Domain: `docs/messaging-domain.md`.
 
 ---
 
@@ -692,7 +693,7 @@ Scope unique: tenant + actor + operation + key. Replay same hash returns origina
 
 Claim: `FOR UPDATE SKIP LOCKED`, lease `OUTBOX_LEASE_MS` (30s default), batch `OUTBOX_BATCH_SIZE` (10). Retry: full jitter backoff, max attempts 8, then DEAD_LETTER. Unknown types: immediate dead-letter. PROCESSED retained `OUTBOX_PROCESSED_RETENTION_DAYS` (14) then deleted. DEAD_LETTER kept.
 
-**Consumer side effect today:** known types other than `MessageSendRequested` remain idempotent no-ops. `MessageSendRequested` submits text through the Bale Safir adapter.
+**Consumer side effect today:** `MessageSendRequested` and `MessageDeliveryActivated` submit BALE text through the Safir adapter. Other known types are idempotent no-ops.
 
 | Event | Trigger | Payload gist |
 | --- | --- | --- |
@@ -702,7 +703,7 @@ Claim: `FOR UPDATE SKIP LOCKED`, lease `OUTBOX_LEASE_MS` (30s default), batch `O
 | UserRoleChanged | PATCH role | from, to |
 | UserStatusChanged | PATCH status | status |
 | CustomerCreated | create/import/register path | customerId |
-| CustomerDeleted | delete | customerId, visitCount, actionCount, messageCount |
+| CustomerDeleted | delete | customerId, visitCount, actionCount |
 | VisitCompleted | create visit / complete-with-sale | visitId, customerId |
 | VisitDeleted | delete visit | visitId, customerId |
 | ServiceCreated | insert service | serviceId |
@@ -712,9 +713,13 @@ Claim: `FOR UPDATE SKIP LOCKED`, lease `OUTBOX_LEASE_MS` (30s default), batch `O
 | ActionCreated | create Action | actionId, customerId, opportunityType |
 | ActionCompleted | complete Action | actionId, customerId, opportunityType |
 | ActionDismissed | dismiss Action | actionId, customerId, opportunityType |
-| MessageSendRequested | request Bale text send | messageDeliveryId, salonId |
+| MessageRequested | salon queues a message | messageRequestId, salonId |
+| MessageDeliveryActivated | admin selects BALE with credentials | messageDeliveryId, messageRequestId, salonId |
+| MessageSent | Bale or manual sent | messageDeliveryId, messageRequestId, mode |
+| MessageFailed | Bale terminal failure | messageDeliveryId, failureCode |
+| MessageSendRequested | legacy Bale activation (still consumed) | messageDeliveryId, salonId |
 
-These are **facts**, not commands. **Event type count: 18.**
+These are **facts**, not commands.
 
 ---
 
@@ -831,7 +836,7 @@ Timezone: storage TIMESTAMPTZ; intelligence months **UTC**; Flutter visit day **
 
 ## 36. Deletion rules
 
-**Customer (OWNER+MANAGER):** If **any** `transactions` for that customer (COMPLETED **or** VOIDED) → 409 `Customer cannot be deleted while financial records exist`. Else delete opportunity Actions then visits then customer; outbox `CustomerDeleted` with visitCount and actionCount; audit `CUSTOMER_DELETED`. Intelligence is computed — nothing to delete. Retry on visit race P2003.
+**Customer (OWNER+MANAGER):** If **any** `transactions` for that customer (COMPLETED **or** VOIDED) → 409 `Customer cannot be deleted while financial records exist`. If any `message_requests` exist → 409 `Customer cannot be deleted while message history exists`. Else delete opportunity Actions then visits then customer; outbox `CustomerDeleted` with visitCount and actionCount; audit `CUSTOMER_DELETED`.
 
 **Visit (OWNER+MANAGER):** If any transaction has `visit_id` → 409. Else delete visit; `VisitDeleted`. Items/transactions never cascade-delete money.
 

@@ -31,6 +31,9 @@ class ApiException implements Exception {
     if (isTooLarge) {
       return AppStrings.excelTooLarge;
     }
+    if (code == 'MESSAGE_DAILY_LIMIT_REACHED') {
+      return AppStrings.messageDailyLimit;
+    }
     if (message.trim().isNotEmpty) {
       return localizeUserFacingMessage(message);
     }

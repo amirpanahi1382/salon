@@ -8,7 +8,10 @@ import { AuthController } from './auth.controller';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { JwtStrategy } from './jwt.strategy';
 import { LoginUseCase } from './login.use-case';
+import { PlatformAdminAuthController } from './platform-admin-auth.controller';
+import { PlatformAdminLoginUseCase } from './platform-admin-login.use-case';
 import { RegisterSalonOwnerUseCase } from './register-salon-owner.use-case';
+import { PlatformAdminGuard } from '../infrastructure/auth/platform-admin.guard';
 
 @Module({
   imports: [
@@ -23,14 +26,16 @@ import { RegisterSalonOwnerUseCase } from './register-salon-owner.use-case';
       }),
     }),
   ],
-  controllers: [AuthController],
+  controllers: [AuthController, PlatformAdminAuthController],
   providers: [
     JwtStrategy,
     JwtAuthGuard,
     RolesGuard,
+    PlatformAdminGuard,
     RegisterSalonOwnerUseCase,
     LoginUseCase,
+    PlatformAdminLoginUseCase,
   ],
-  exports: [JwtAuthGuard, RolesGuard],
+  exports: [JwtAuthGuard, RolesGuard, PlatformAdminGuard],
 })
 export class AuthModule {}

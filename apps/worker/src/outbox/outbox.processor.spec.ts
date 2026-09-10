@@ -98,6 +98,17 @@ describe('OutboxProcessor', () => {
     expect(processed).toHaveBeenCalled();
   });
 
+  it('routes MessageDeliveryActivated to the messaging handler', async () => {
+    await processor.processOne(
+      event({
+        eventType: DOMAIN_EVENT_TYPES.MessageDeliveryActivated,
+        payload: { messageDeliveryId: 'm1' },
+      }),
+    );
+    expect(sendCustomerMessage.handle).toHaveBeenCalled();
+    expect(processed).toHaveBeenCalled();
+  });
+
   it('retries handler failures below max attempts', async () => {
     jest.spyOn(processor as never, 'consume').mockRejectedValue(new Error('boom') as never);
     await processor.processOne(event({ attemptCount: 1 }));
@@ -127,36 +138,54 @@ describe('OutboxProcessor', () => {
 type DeliveryRow = {
   id: string;
   salonId: string;
+  mode: 'BALE' | 'MANUAL';
+  messageRequestId: string;
   status: 'PENDING' | 'PROCESSING' | 'SENT' | 'FAILED';
   failedAt: Date | null;
   failureCode: string | null;
   submittedAt: Date | null;
   updatedAt: Date;
-  body: string;
   providerRequestId: string;
   createdBy: string;
   customer: { phoneNumber: string };
+  messageRequest: { id: string; messageText: string };
 };
 
 function deliveryRow(overrides: Partial<DeliveryRow> = {}): DeliveryRow {
   return {
     id: 'm1',
     salonId: '22222222-2222-4222-8222-222222222222',
+    mode: 'BALE',
+    messageRequestId: 'r1',
     status: 'PENDING',
     failedAt: null,
     failureCode: null,
     submittedAt: null,
     updatedAt: new Date(0),
-    body: 'hello',
     providerRequestId: 'req-1',
     createdBy: '33333333-3333-4333-8333-333333333333',
     customer: { phoneNumber: '09123456789' },
+    messageRequest: { id: 'r1', messageText: 'hello' },
     ...overrides,
   };
 }
 
+type FakePrismaClient = {
+  messageDelivery: {
+    findFirst: (args: { where: { id: string; salonId: string } }) => Promise<DeliveryRow | null>;
+    updateMany: (args: {
+      where: { id: string; salonId: string; status?: { in: string[] }; mode?: string };
+      data: Record<string, unknown>;
+    }) => Promise<{ count: number }>;
+  };
+  messageRequest: {
+    updateMany: () => Promise<{ count: number }>;
+  };
+  $transaction: (fn: (tx: FakePrismaClient) => Promise<unknown>) => Promise<unknown>;
+};
+
 function fakePrisma(rows: DeliveryRow[]) {
-  const client = {
+  const client: FakePrismaClient = {
     messageDelivery: {
       findFirst: async ({ where }: { where: { id: string; salonId: string } }) =>
         rows.find((row) => row.id === where.id && row.salonId === where.salonId) ?? null,
@@ -164,12 +193,15 @@ function fakePrisma(rows: DeliveryRow[]) {
         where,
         data,
       }: {
-        where: { id: string; salonId: string; status?: { in: string[] } };
-        data: Partial<DeliveryRow>;
+        where: { id: string; salonId: string; status?: { in: string[] }; mode?: string };
+        data: Record<string, unknown>;
       }) => {
         let count = 0;
         for (const row of rows) {
           if (row.id !== where.id || row.salonId !== where.salonId) {
+            continue;
+          }
+          if (where.mode && row.mode !== where.mode) {
             continue;
           }
           if (where.status?.in && !where.status.in.includes(row.status)) {
@@ -181,7 +213,10 @@ function fakePrisma(rows: DeliveryRow[]) {
         return { count };
       },
     },
-    $transaction: async (fn: (tx: typeof client) => Promise<unknown>) => {
+    messageRequest: {
+      updateMany: async () => ({ count: 1 }),
+    },
+    $transaction: async (fn: (tx: FakePrismaClient) => Promise<unknown>) => {
       const snapshot = rows.map((row) => ({ ...row }));
       try {
         return await fn(client);
@@ -380,9 +415,13 @@ describe('OutboxProcessor MessageSendRequested dead-letter', () => {
       try {
         return await fn({
           messageDelivery: {
+            findFirst: async () => row,
             updateMany: async () => {
               throw new Error('crash between dead-letter and abandon');
             },
+          },
+          messageRequest: {
+            updateMany: async () => ({ count: 1 }),
           },
         });
       } catch (error) {

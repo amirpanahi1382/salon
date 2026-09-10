@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import {
   firstHeaderValue,
+  isPlatformAdminPrincipal,
   isSafeRequestId,
-  type AuthenticatedPrincipal,
+  type RequestPrincipal,
 } from '@salon/shared';
 import type { NextFunction, Request, Response } from 'express';
 
@@ -14,7 +15,7 @@ export type RequestContext = {
 export type AppRequest = Request & {
   correlationId?: string;
   operation?: string;
-  user?: AuthenticatedPrincipal;
+  user?: RequestPrincipal;
 };
 
 /**
@@ -33,11 +34,13 @@ export function resolveRequestContext(req: Request): RequestContext {
 }
 
 export function requestLogFields(req: AppRequest): Record<string, unknown> {
+  const user = req.user;
   return {
     requestId: req.id,
     correlationId: req.correlationId,
-    tenantId: req.user?.tenantId,
-    userId: req.user?.userId,
+    tenantId: user && !isPlatformAdminPrincipal(user) ? user.tenantId : undefined,
+    userId: user && !isPlatformAdminPrincipal(user) ? user.userId : undefined,
+    adminId: isPlatformAdminPrincipal(user) ? user.adminId : undefined,
     operation: req.operation,
     method: req.method,
     route: req.route?.path ? String(req.route.path) : req.path,

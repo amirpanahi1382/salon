@@ -5,9 +5,9 @@ import '../../core/errors/api_exception.dart';
 import '../../core/networking/api_client.dart';
 import '../../core/state/providers.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/theme/app_tokens.dart';
 import '../../core/widgets/app_widgets.dart';
 import '../../shared/labels.dart';
-import '../../shared/models/models.dart';
 
 Future<void> openBaleMessageComposer({
   required BuildContext context,
@@ -21,6 +21,12 @@ Future<void> openBaleMessageComposer({
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
+    backgroundColor: AppTokens.surface,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(
+        top: Radius.circular(AppTokens.radiusLg),
+      ),
+    ),
     builder: (sheetContext) {
       return Padding(
         padding: EdgeInsets.only(
@@ -117,16 +123,6 @@ class _BaleMessageComposerState extends ConsumerState<BaleMessageComposer> {
             text: _text.text,
             idempotencyKey: _idempotencyKey,
           );
-      for (var i = 0; i < 8; i += 1) {
-        if (delivery.status == 'SENT' || delivery.status == 'FAILED') {
-          break;
-        }
-        await Future<void>.delayed(const Duration(milliseconds: 800));
-        if (!mounted) {
-          return;
-        }
-        delivery = await ref.read(messageRepositoryProvider).getById(delivery.id);
-      }
       if (!mounted) {
         return;
       }
@@ -138,7 +134,10 @@ class _BaleMessageComposerState extends ConsumerState<BaleMessageComposer> {
           _status = messageStatusLabel(delivery.status);
         }
       });
-      if (delivery.status == 'SENT' || delivery.status == 'PENDING' || delivery.status == 'PROCESSING') {
+      if (delivery.status == 'SENT' ||
+          delivery.status == 'QUEUED' ||
+          delivery.status == 'PENDING' ||
+          delivery.status == 'PROCESSING') {
         await widget.onChanged?.call();
       }
     } catch (error) {
@@ -155,45 +154,87 @@ class _BaleMessageComposerState extends ConsumerState<BaleMessageComposer> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(
+          AppTokens.space16,
+          AppTokens.space8,
+          AppTokens.space16,
+          AppTokens.space16,
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            Center(
+              child: Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppTokens.line,
+                  borderRadius: BorderRadius.circular(AppTokens.radiusSm),
+                ),
+              ),
+            ),
+            const SizedBox(height: AppTokens.space16),
             Text(
               AppStrings.messageComposerTitle,
-              style: Theme.of(context).textTheme.titleMedium,
+              style: theme.textTheme.titleMedium,
             ),
-            const SizedBox(height: 8),
-            Text(widget.customerName),
-            Text('${AppStrings.baleProviderName} · ${widget.destinationHint ?? 'شماره مشتری سالن'}'),
-            const SizedBox(height: 12),
+            const SizedBox(height: AppTokens.space8),
+            Text(
+              opportunityLabel(widget.opportunityType),
+              style: theme.textTheme.titleSmall?.copyWith(
+                color: AppTokens.accent,
+              ),
+            ),
+            const SizedBox(height: AppTokens.space4),
+            Text(
+              widget.customerName,
+              style: theme.textTheme.titleMedium,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            Text(
+              '${AppStrings.baleProviderName} · ${widget.destinationHint ?? 'شماره مشتری سالن'}',
+              style: theme.textTheme.bodySmall,
+            ),
+            const SizedBox(height: AppTokens.space8),
+            Text(
+              AppStrings.recommendationNote,
+              style: theme.textTheme.bodySmall,
+            ),
+            const SizedBox(height: AppTokens.space12),
             TextField(
               controller: _text,
               maxLength: 4096,
               maxLines: 5,
               enabled: !_busy,
-              decoration: const InputDecoration(labelText: AppStrings.messageTextLabel),
+              decoration: const InputDecoration(
+                labelText: AppStrings.messageTextLabel,
+              ),
             ),
-            const SizedBox(height: 8),
-            FilledButton(
-              onPressed: _busy ? null : _confirmAndSend,
-              child: _busy
-                  ? const SizedBox(
-                      height: 18,
-                      width: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text(AppStrings.sendMessage),
+            const SizedBox(height: AppTokens.space8),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: _busy ? null : _confirmAndSend,
+                child: _busy
+                    ? const SizedBox(
+                        height: 18,
+                        width: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text(AppStrings.sendMessage),
+              ),
             ),
             if (_status != null) ...[
-              const SizedBox(height: 8),
+              const SizedBox(height: AppTokens.space8),
               Text(_status!),
             ],
             if (_error != null) ...[
-              const SizedBox(height: 8),
+              const SizedBox(height: AppTokens.space8),
               Text(
                 _composerError(_error!),
                 style: const TextStyle(color: AppColors.danger),

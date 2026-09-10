@@ -41,8 +41,9 @@ Official phone examples include both `989196111003` and `+98919611003` (the latt
 ```text
 Flutter (Persian composer)
   -> POST /intelligence/opportunities/:type/customers/:id/messages
-  -> DB transaction: MessageDelivery PENDING + Outbox MessageSendRequested + audit
-  -> Worker claims outbox -> BaleSafirMessageSender -> SENT | FAILED
+  -> DB transaction: MessageRequest QUEUED + Outbox MessageRequested + audit
+  -> Platform admin selects BALE or MANUAL
+  -> BALE: Outbox MessageDeliveryActivated -> Worker -> BaleSafirMessageSender -> SENT | FAILED
 ```
 
 Domain modules do not import Safir DTOs. `OpportunityService` / `ActionService` do not call Bale.
@@ -63,13 +64,15 @@ Environment:
 - `BALE_SAFIR_BOT_ID`
 - optional `BALE_SAFIR_BASE_URL`, `BALE_SAFIR_TIMEOUT_MS`
 
-If either required value is missing, the API returns `503` `Bale messaging is not configured` and no delivery row is created.
+If either required value is missing, the salon API **still queues** a `MessageRequest`. Bale execution happens only after a platform admin selects BALE **and** credentials exist.
 
 ## Customer deletion
 
 If any transaction exists (including VOIDED): still 409.
 
-If none: message deliveries are deleted with other non-financial operational children (before actions, because of Restrict FKs), then visits, then the customer.
+If message requests exist: 409 `Customer cannot be deleted while message history exists`.
+
+If none: actions, then visits, then the customer. Message history is not erased.
 
 ## Failure matrix (internal)
 

@@ -34,4 +34,18 @@ describe('request context', () => {
     expect(fields.userId).toBe('user-from-jwt');
     expect(JSON.stringify(fields)).not.toContain('forged');
   });
+
+  it('logs adminId for platform principals without a tenant', () => {
+    const fields = requestLogFields({
+      id: 'req-1',
+      correlationId: 'corr-1',
+      user: { kind: 'platform', adminId: 'admin-1' },
+      method: 'GET',
+      path: '/admin/message-queue',
+      operation: 'AdminMessageQueueController.list',
+    } as unknown as AppRequest);
+    expect(fields.adminId).toBe('admin-1');
+    expect(fields.tenantId).toBeUndefined();
+    expect(fields.userId).toBeUndefined();
+  });
 });

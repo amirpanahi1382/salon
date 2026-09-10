@@ -1,14 +1,19 @@
 import { Injectable } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
-import { UnauthenticatedError, isUserRole, type AuthenticatedPrincipal } from '@salon/shared';
+import {
+  UnauthenticatedError,
+  isUserRole,
+  type RequestPrincipal,
+} from '@salon/shared';
 import { AppConfigService } from '../infrastructure/config/app-config.service';
 import { PrismaService } from '../infrastructure/database/prisma.service';
 
 interface JwtPayload {
-  sub: string;
-  tid: string;
-  role: string;
+  sub?: string;
+  tid?: string;
+  role?: string;
+  scp?: string;
 }
 
 @Injectable()
@@ -24,8 +29,23 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
   }
 
-  async validate(payload: JwtPayload): Promise<AuthenticatedPrincipal> {
-    if (!payload.sub || !payload.tid || !isUserRole(payload.role)) {
+  async validate(payload: JwtPayload): Promise<RequestPrincipal> {
+    if (!payload.sub) {
+      throw new UnauthenticatedError('Invalid authentication token');
+    }
+
+    if (payload.scp === 'platform') {
+      const admin = await this.prisma.client.platformAdmin.findFirst({
+        where: { id: payload.sub, status: 'ACTIVE' },
+        select: { id: true },
+      });
+      if (!admin) {
+        throw new UnauthenticatedError('Invalid authentication token');
+      }
+      return { kind: 'platform', adminId: admin.id };
+    }
+
+    if (!payload.tid || !isUserRole(payload.role ?? '')) {
       throw new UnauthenticatedError('Invalid authentication token');
     }
 

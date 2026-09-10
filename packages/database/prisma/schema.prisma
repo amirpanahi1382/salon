@@ -59,6 +59,18 @@ enum MessageDeliveryStatus {
   FAILED
 }
 
+enum MessageRequestStatus {
+  QUEUED
+  DISPATCHED
+  SENT
+  FAILED
+}
+
+enum MessageDeliveryMode {
+  BALE
+  MANUAL
+}
+
 enum MessageProvider {
   BALE_SAFIR
 }
@@ -81,6 +93,7 @@ model Salon {
   services            Service[]
   transactions        LedgerTransaction[]
   opportunityActions  OpportunityAction[]
+  messageRequests     MessageRequest[]
   messageDeliveries   MessageDelivery[]
 
   @@map("salons")
@@ -98,6 +111,7 @@ model Customer {
   visits             Visit[]
   transactions       LedgerTransaction[]
   opportunityActions OpportunityAction[]
+  messageRequests    MessageRequest[]
   messageDeliveries  MessageDelivery[]
 
   @@unique([id, salonId])
@@ -193,6 +207,7 @@ model User {
   createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt    DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
   createdOpportunityActions OpportunityAction[]
+  createdMessageRequests    MessageRequest[]
   createdMessageDeliveries  MessageDelivery[]
 
   @@index([salonId])
@@ -215,6 +230,7 @@ model OpportunityAction {
   updatedAt        DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(3)
   completedAt      DateTime?                @map("completed_at") @db.Timestamptz(3)
   dismissedAt      DateTime?                @map("dismissed_at") @db.Timestamptz(3)
+  messageRequests   MessageRequest[]
   messageDeliveries MessageDelivery[]
 
   @@unique([id, salonId])
@@ -224,35 +240,94 @@ model OpportunityAction {
   @@map("opportunity_actions")
 }
 
-/// External communication request. Not a Visit, Transaction, Opportunity, or Action.
-model MessageDelivery {
-  id                String                 @id @db.Uuid
-  salonId           String                 @map("salon_id") @db.Uuid
-  salon             Salon                  @relation(fields: [salonId], references: [id], onDelete: Restrict)
-  customerId        String                 @map("customer_id") @db.Uuid
-  customer          Customer               @relation(fields: [customerId, salonId], references: [id, salonId], onDelete: Restrict)
-  actionId          String                 @map("action_id") @db.Uuid
-  action            OpportunityAction      @relation(fields: [actionId, salonId], references: [id, salonId], onDelete: Restrict)
-  provider          MessageProvider
-  channel           MessageChannel
-  status            MessageDeliveryStatus
-  /// Customer-facing text required for asynchronous provider submission. PII; not written to audit metadata or logs.
-  body              String
-  providerRequestId String                 @map("provider_request_id")
-  providerMessageId String?                @map("provider_message_id")
-  failureCode       String?                @map("failure_code")
-  createdBy         String                 @map("created_by") @db.Uuid
-  createdByUser     User                   @relation(fields: [createdBy], references: [id], onDelete: Restrict)
-  createdAt         DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt         DateTime               @updatedAt @map("updated_at") @db.Timestamptz(3)
-  submittedAt       DateTime?              @map("submitted_at") @db.Timestamptz(3)
-  failedAt          DateTime?              @map("failed_at") @db.Timestamptz(3)
+/// Platform operator. Not a salon User. Tokens have no tenant id.
+model PlatformAdmin {
+  id           String     @id @db.Uuid
+  email        String     @unique
+  passwordHash String     @map("password_hash")
+  name         String
+  status       UserStatus @default(ACTIVE)
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+  dispatchedDeliveries MessageDelivery[] @relation("MessageDeliveryDispatchedBy")
+  fulfilledDeliveries  MessageDelivery[] @relation("MessageDeliveryFulfilledBy")
+
+  @@map("platform_admins")
+}
+
+/// Durable salon intent to message a customer. Independent of Bale or any provider.
+model MessageRequest {
+  id                  String                 @id @db.Uuid
+  salonId             String                 @map("salon_id") @db.Uuid
+  salon               Salon                  @relation(fields: [salonId], references: [id], onDelete: Restrict)
+  customerId          String                 @map("customer_id") @db.Uuid
+  customer            Customer               @relation(fields: [customerId, salonId], references: [id, salonId], onDelete: Restrict)
+  actionId            String                 @map("action_id") @db.Uuid
+  action              OpportunityAction      @relation(fields: [actionId, salonId], references: [id, salonId], onDelete: Restrict)
+  createdByUserId     String                 @map("created_by_user_id") @db.Uuid
+  createdByUser       User                   @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+  opportunityType     OpportunityActionType  @map("opportunity_type")
+  /// Immutable customer-facing text. PII; not written to audit metadata or logs.
+  messageText         String                 @map("message_text")
+  requestedAt         DateTime               @default(now()) @map("requested_at") @db.Timestamptz(3)
+  /// Asia/Tehran calendar date of requestedAt. Stored instants remain timestamptz UTC.
+  messageBusinessDate DateTime               @map("message_business_date") @db.Date
+  /// True for salon-originated requests (the enforceable daily limit). False for 1:1 historical delivery backfill.
+  countsTowardDailyLimit Boolean             @default(true) @map("counts_toward_daily_limit")
+  status              MessageRequestStatus
+  createdAt           DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt           DateTime               @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deliveries          MessageDelivery[]
 
   @@unique([id, salonId])
+  /// Partial unique index `message_requests_salon_customer_day_key` is created in SQL:
+  /// UNIQUE (salon_id, customer_id, message_business_date) WHERE counts_toward_daily_limit.
+  @@index([salonId, customerId, messageBusinessDate])
+  @@index([status, requestedAt, id])
+  @@index([salonId, requestedAt, id])
+  @@index([salonId, customerId, requestedAt, id])
+  @@index([customerId, requestedAt])
+  @@map("message_requests")
+}
+
+/// How a MessageRequest is fulfilled. Bale is one mode. Not the salon intent record.
+model MessageDelivery {
+  id                  String                 @id @db.Uuid
+  salonId             String                 @map("salon_id") @db.Uuid
+  salon               Salon                  @relation(fields: [salonId], references: [id], onDelete: Restrict)
+  messageRequestId    String                 @map("message_request_id") @db.Uuid
+  messageRequest      MessageRequest         @relation(fields: [messageRequestId, salonId], references: [id, salonId], onDelete: Restrict)
+  customerId          String                 @map("customer_id") @db.Uuid
+  customer            Customer               @relation(fields: [customerId, salonId], references: [id, salonId], onDelete: Restrict)
+  actionId            String                 @map("action_id") @db.Uuid
+  action              OpportunityAction      @relation(fields: [actionId, salonId], references: [id, salonId], onDelete: Restrict)
+  mode                MessageDeliveryMode
+  provider            MessageProvider?
+  channel             MessageChannel
+  status              MessageDeliveryStatus
+  providerRequestId   String                 @map("provider_request_id")
+  providerMessageId   String?                @map("provider_message_id")
+  failureCode         String?                @map("failure_code")
+  attempts            Int                    @default(0)
+  createdBy           String                 @map("created_by") @db.Uuid
+  createdByUser       User                   @relation(fields: [createdBy], references: [id], onDelete: Restrict)
+  dispatchedByAdminId String?                @map("dispatched_by_admin_id") @db.Uuid
+  dispatchedByAdmin   PlatformAdmin?         @relation("MessageDeliveryDispatchedBy", fields: [dispatchedByAdminId], references: [id], onDelete: Restrict)
+  fulfilledByAdminId  String?                @map("fulfilled_by_admin_id") @db.Uuid
+  fulfilledByAdmin    PlatformAdmin?         @relation("MessageDeliveryFulfilledBy", fields: [fulfilledByAdminId], references: [id], onDelete: Restrict)
+  createdAt           DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt           DateTime               @updatedAt @map("updated_at") @db.Timestamptz(3)
+  submittedAt         DateTime?              @map("submitted_at") @db.Timestamptz(3)
+  failedAt            DateTime?              @map("failed_at") @db.Timestamptz(3)
+
+  @@unique([id, salonId])
+  @@unique([messageRequestId])
   @@unique([salonId, providerRequestId])
   @@index([salonId, customerId, createdAt, id])
   @@index([salonId, status, createdAt])
   @@index([salonId, actionId])
+  @@index([mode, status, createdAt])
+  @@index([status, createdAt, id])
   @@map("message_deliveries")
 }
 

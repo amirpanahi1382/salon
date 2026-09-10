@@ -5,16 +5,18 @@ import { SendCustomerMessageHandler } from './send-customer-message.handler';
 type DeliveryRow = {
   id: string;
   salonId: string;
+  mode: 'BALE' | 'MANUAL';
+  messageRequestId: string;
   status: 'PENDING' | 'PROCESSING' | 'SENT' | 'FAILED';
   failedAt: Date | null;
   failureCode: string | null;
   submittedAt: Date | null;
   providerMessageId?: string | null;
   updatedAt: Date;
-  body: string;
   providerRequestId: string;
   createdBy: string;
   customer: { phoneNumber: string };
+  messageRequest: { id: string; messageText: string };
 };
 
 function fakePrisma(rows: DeliveryRow[]) {
@@ -25,12 +27,15 @@ function fakePrisma(rows: DeliveryRow[]) {
       where,
       data,
     }: {
-      where: { id: string; salonId: string; status?: { in: string[] } };
-      data: Partial<DeliveryRow>;
+      where: { id: string; salonId: string; status?: { in: string[] }; mode?: string };
+      data: Record<string, unknown>;
     }) => {
       let count = 0;
       for (const row of rows) {
         if (row.id !== where.id || row.salonId !== where.salonId) {
+          continue;
+        }
+        if (where.mode && row.mode !== where.mode) {
           continue;
         }
         if (where.status?.in && !where.status.in.includes(row.status)) {
@@ -42,13 +47,25 @@ function fakePrisma(rows: DeliveryRow[]) {
       return { count };
     },
   };
+  const messageRequest = {
+    updateMany: async () => ({ count: 1 }),
+  };
+  const extras = {
+    outboxEvent: { create: async () => ({}) },
+    auditLog: { create: async () => ({}) },
+  };
   const client = {
     messageDelivery,
-    $transaction: async (fn: (tx: { messageDelivery: typeof messageDelivery; auditLog: { create: () => Promise<unknown> } }) => Promise<unknown>) =>
-      fn({
-        messageDelivery,
-        auditLog: { create: async () => ({}) },
-      }),
+    messageRequest,
+    ...extras,
+    $transaction: async (
+      fn: (tx: {
+        messageDelivery: typeof messageDelivery;
+        messageRequest: typeof messageRequest;
+        outboxEvent: { create: () => Promise<unknown> };
+        auditLog: { create: () => Promise<unknown> };
+      }) => Promise<unknown>,
+    ) => fn({ messageDelivery, messageRequest, ...extras }),
   };
   return { client };
 }
@@ -81,10 +98,12 @@ function row(overrides: Partial<DeliveryRow> = {}): DeliveryRow {
     submittedAt: null,
     providerMessageId: null,
     updatedAt: new Date(0),
-    body: 'hello',
     providerRequestId: 'm1',
     createdBy: '33333333-3333-4333-8333-333333333333',
     customer: { phoneNumber: '09123456789' },
+    mode: 'BALE',
+    messageRequestId: 'r1',
+    messageRequest: { id: 'r1', messageText: 'hello' },
     ...overrides,
   };
 }
@@ -289,5 +308,14 @@ describe('SendCustomerMessageHandler.handle races', () => {
     await handler.handle(event(), 8);
     expect(sender.sendText).not.toHaveBeenCalled();
     expect(delivery.status).toBe('SENT');
+  });
+
+  it('does not call Bale for MANUAL deliveries', async () => {
+    const delivery = row({ mode: 'MANUAL' });
+    const sender = { sendText: jest.fn() };
+    const handler = new SendCustomerMessageHandler(fakePrisma([delivery]) as never, sender as never);
+    await handler.handle(event(), 8);
+    expect(sender.sendText).not.toHaveBeenCalled();
+    expect(delivery.status).toBe('PENDING');
   });
 });

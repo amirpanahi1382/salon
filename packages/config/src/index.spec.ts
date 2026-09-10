@@ -68,4 +68,13 @@ describe('loadConfig', () => {
     expect(config.BALE_SAFIR_BASE_URL).toBe('https://safir.bale.ai/api/v3');
     expect(getBaleSafirSettings(config)).toBeNull();
   });
+
+  it('requires platform admin email and password together', () => {
+    expect(() =>
+      loadConfig({
+        ...valid,
+        PLATFORM_ADMIN_EMAIL: 'ops@example.test',
+      }),
+    ).toThrow(/PLATFORM_ADMIN_EMAIL/);
+  });
 });

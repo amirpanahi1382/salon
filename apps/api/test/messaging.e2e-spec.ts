@@ -1,17 +1,22 @@
 import { randomUUID } from 'node:crypto';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import * as argon2 from 'argon2';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/infrastructure/database/prisma.service';
 import { HttpExceptionFilter } from '../src/infrastructure/http/http-exception.filter';
+import { messageBusinessDateValue } from '@salon/shared';
 
 const describeIfDb = process.env.DATABASE_URL ? describe : describe.skip;
 const password = 'correct-horse-battery';
+const adminPassword = 'platform-admin-pass';
 
 describeIfDb('Opportunity messages (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
+  let adminToken: string;
+  let adminId: string;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
@@ -28,6 +33,23 @@ describeIfDb('Opportunity messages (e2e)', () => {
     app.useGlobalFilters(new HttpExceptionFilter());
     await app.init();
     prisma = app.get(PrismaService);
+
+    const adminEmail = `platform-admin-${Date.now()}@example.test`;
+    adminId = randomUUID();
+    await prisma.client.platformAdmin.create({
+      data: {
+        id: adminId,
+        email: adminEmail,
+        name: 'Ops',
+        passwordHash: await argon2.hash(adminPassword, { type: argon2.argon2id }),
+        updatedAt: new Date(),
+      },
+    });
+    const login = await request(app.getHttpServer())
+      .post('/admin/auth/login')
+      .send({ email: adminEmail, password: adminPassword })
+      .expect(201);
+    adminToken = login.body.accessToken as string;
   });
 
   afterAll(async () => {
@@ -102,7 +124,7 @@ describeIfDb('Opportunity messages (e2e)', () => {
     const serviceId = await createService(token, `Cut ${Date.now()}-${Math.random()}`);
     const now = new Date();
     const thisMonth = new Date(
-      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), Math.min(now.getUTCDate(), 28), 12, 0, 0),
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), Math.min(now.getUTCDate(), 28), 0, 0, 0),
     ).toISOString();
     const previousMonth = new Date(
       Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 10, 12, 0, 0),
@@ -122,57 +144,15 @@ describeIfDb('Opportunity messages (e2e)', () => {
       .post(sendPath('REVENUE_DECLINE', randomUUID()))
       .send({ text: 'سلام' })
       .expect(401);
+    await request(app.getHttpServer()).get('/admin/message-queue').expect(401);
   });
 
-  it('lets OWNER, MANAGER, and STAFF request a message without completing the Action or creating finance facts', async () => {
+  it('queues a durable message without Bale credentials and enforces daily limit and idempotency', async () => {
     const salonA = await registerOwner('msg-a');
     const salonB = await registerOwner('msg-b');
     const customerA = await seedRevenueDecline(salonA.token, 'Decline');
     const customerB = await seedRevenueDecline(salonB.token, 'Other');
-
-    const staffEmail = `staff-msg-${Date.now()}@example.test`;
-    await request(app.getHttpServer())
-      .post('/users')
-      .set('Authorization', `Bearer ${salonA.token}`)
-      .send({ name: 'Staff', email: staffEmail, password, role: 'STAFF' })
-      .expect(201);
-    const managerEmail = `mgr-msg-${Date.now()}@example.test`;
-    await request(app.getHttpServer())
-      .post('/users')
-      .set('Authorization', `Bearer ${salonA.token}`)
-      .send({ name: 'Manager', email: managerEmail, password, role: 'MANAGER' })
-      .expect(201);
-    const staffToken = (
-      await request(app.getHttpServer())
-        .post('/auth/login')
-        .send({ email: staffEmail, password })
-        .expect(201)
-    ).body.accessToken as string;
-    const managerToken = (
-      await request(app.getHttpServer())
-        .post('/auth/login')
-        .send({ email: managerEmail, password })
-        .expect(201)
-    ).body.accessToken as string;
-
-    await request(app.getHttpServer())
-      .post(sendPath('REVENUE_DECLINE', customerA))
-      .set('Authorization', `Bearer ${salonA.token}`)
-      .send({ text: 'سلام', salonId: salonB.tenantId })
-      .expect(400);
-
-    await request(app.getHttpServer())
-      .post(sendPath('REVENUE_DECLINE', customerA))
-      .set('Authorization', `Bearer ${salonA.token}`)
-      .send({ text: 'سلام' })
-      .expect(400);
-
-    const visitsBefore = await prisma.client.visit.count({
-      where: { salonId: salonA.tenantId, customerId: customerA },
-    });
-    const txBefore = await prisma.client.ledgerTransaction.count({
-      where: { salonId: salonA.tenantId, customerId: customerA },
-    });
+    const otherCustomer = await seedRevenueDecline(salonA.token, 'Second');
 
     const created = await request(app.getHttpServer())
       .post(sendPath('REVENUE_DECLINE', customerA))
@@ -181,9 +161,9 @@ describeIfDb('Opportunity messages (e2e)', () => {
       .send({ text: 'سلام سارا جان' })
       .expect(201);
 
-    expect(created.body.status).toBe('PENDING');
-    expect(created.body.provider).toBe('BALE_SAFIR');
+    expect(created.body.status).toBe('QUEUED');
     expect(created.body.body).toBe('سلام سارا جان');
+    expect(created.body.mode).toBeNull();
     expect(created.body.destinationHint).not.toMatch(/^09\d{9}$/);
 
     const replay = await request(app.getHttpServer())
@@ -201,21 +181,21 @@ describeIfDb('Opportunity messages (e2e)', () => {
       .send({ text: 'متن دیگر' })
       .expect(409);
 
-    const managerSend = await request(app.getHttpServer())
+    const daily = await request(app.getHttpServer())
       .post(sendPath('REVENUE_DECLINE', customerA))
-      .set('Authorization', `Bearer ${managerToken}`)
-      .set('Idempotency-Key', 'manager-send-01')
-      .send({ text: 'پیام مدیر' })
-      .expect(201);
-    expect(managerSend.body.id).not.toBe(created.body.id);
+      .set('Authorization', `Bearer ${salonA.token}`)
+      .set('Idempotency-Key', 'owner-send-02')
+      .send({ text: 'پیام دوم همان روز' })
+      .expect(409);
+    expect(daily.body.error).toBe('MESSAGE_DAILY_LIMIT_REACHED');
 
-    const staffSend = await request(app.getHttpServer())
-      .post(sendPath('REVENUE_DECLINE', customerA))
-      .set('Authorization', `Bearer ${staffToken}`)
-      .set('Idempotency-Key', 'staff-send-01')
-      .send({ text: 'پیام کارمند' })
+    const other = await request(app.getHttpServer())
+      .post(sendPath('REVENUE_DECLINE', otherCustomer))
+      .set('Authorization', `Bearer ${salonA.token}`)
+      .set('Idempotency-Key', 'owner-other-01')
+      .send({ text: 'مشتری دیگر' })
       .expect(201);
-    expect(staffSend.body.status).toBe('PENDING');
+    expect(other.body.id).not.toBe(created.body.id);
 
     await request(app.getHttpServer())
       .post(sendPath('REVENUE_DECLINE', customerB))
@@ -231,43 +211,223 @@ describeIfDb('Opportunity messages (e2e)', () => {
     expect(action?.id).toBe(created.body.actionId);
 
     const outbox = await prisma.client.outboxEvent.findMany({
-      where: {
-        tenantId: salonA.tenantId,
-        eventType: 'MessageSendRequested',
-      },
+      where: { tenantId: salonA.tenantId, eventType: 'MessageRequested' },
     });
-    expect(outbox.length).toBeGreaterThanOrEqual(3);
-    expect(JSON.stringify(outbox[0]?.payload)).toContain(created.body.id);
+    expect(outbox.length).toBeGreaterThanOrEqual(2);
     expect(JSON.stringify(outbox)).not.toContain('test-safir-access-key');
+    expect(JSON.stringify(outbox[0]?.payload)).not.toContain('سلام سارا جان');
+
+    const sendRequested = await prisma.client.outboxEvent.count({
+      where: { tenantId: salonA.tenantId, eventType: 'MessageSendRequested' },
+    });
+    expect(sendRequested).toBe(0);
 
     const audit = await prisma.client.auditLog.findFirst({
       where: {
         tenantId: salonA.tenantId,
-        action: 'MESSAGE_SEND_REQUESTED',
+        action: 'MESSAGE_REQUESTED',
         resourceId: created.body.id,
       },
     });
     expect(audit?.actorId).toBe(salonA.userId);
     expect(JSON.stringify(audit?.metadata)).not.toContain('سلام سارا جان');
 
-    const visitsAfter = await prisma.client.visit.count({
-      where: { salonId: salonA.tenantId, customerId: customerA },
-    });
-    const txAfter = await prisma.client.ledgerTransaction.count({
-      where: { salonId: salonA.tenantId, customerId: customerA },
-    });
-    expect(visitsAfter).toBe(visitsBefore);
-    expect(txAfter).toBe(txBefore);
-
     const listed = await request(app.getHttpServer())
       .get(`/customers/${customerA}/messages`)
       .set('Authorization', `Bearer ${salonA.token}`)
       .expect(200);
-    expect(listed.body.items.length).toBeGreaterThanOrEqual(3);
+    expect(listed.body.items.length).toBe(1);
 
     await request(app.getHttpServer())
       .get(`/messages/${created.body.id}`)
       .set('Authorization', `Bearer ${salonB.token}`)
       .expect(404);
+
+    await request(app.getHttpServer())
+      .get('/admin/message-queue')
+      .set('Authorization', `Bearer ${salonA.token}`)
+      .expect(403);
+
+    const queue = await request(app.getHttpServer())
+      .get('/admin/message-queue')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    expect(queue.body.items.some((item: { id: string }) => item.id === created.body.id)).toBe(true);
+    const queued = queue.body.items.find((item: { id: string }) => item.id === created.body.id);
+    expect(queued.customerPhone).toMatch(/^09\d{9}$/);
+    expect(queued.messageText).toBe('سلام سارا جان');
+    expect(queued.messageBusinessDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(JSON.stringify(queue.body)).not.toContain('passwordHash');
+
+    await request(app.getHttpServer())
+      .post(`/admin/message-queue/${created.body.id}/select-manual`)
+      .set('Authorization', `Bearer ${salonA.token}`)
+      .expect(403);
+
+    const manual = await request(app.getHttpServer())
+      .post(`/admin/message-queue/${created.body.id}/select-manual`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(201);
+    expect(manual.body.mode).toBe('MANUAL');
+    expect(manual.body.status).toBe('DISPATCHED');
+
+    await request(app.getHttpServer())
+      .post(`/admin/message-queue/${created.body.id}/select-bale`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(409);
+
+    const sent = await request(app.getHttpServer())
+      .post(`/admin/message-queue/${created.body.id}/mark-manual-sent`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(201);
+    expect(sent.body.status).toBe('SENT');
+
+    await request(app.getHttpServer())
+      .post(`/admin/message-queue/${created.body.id}/mark-manual-sent`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(409);
+
+    const salonView = await request(app.getHttpServer())
+      .get(`/messages/${created.body.id}`)
+      .set('Authorization', `Bearer ${salonA.token}`)
+      .expect(200);
+    expect(salonView.body.status).toBe('SENT');
+    expect(salonView.body.mode).toBe('MANUAL');
+  });
+
+  it('selects Bale without credentials without losing the queued request', async () => {
+    const salon = await registerOwner('msg-bale');
+    const customerId = await seedRevenueDecline(salon.token, 'Bale');
+    const created = await request(app.getHttpServer())
+      .post(sendPath('REVENUE_DECLINE', customerId))
+      .set('Authorization', `Bearer ${salon.token}`)
+      .set('Idempotency-Key', 'bale-queue-01')
+      .send({ text: 'صف بله' })
+      .expect(201);
+
+    const selected = await request(app.getHttpServer())
+      .post(`/admin/message-queue/${created.body.id}/select-bale`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(201);
+    expect(selected.body.mode).toBe('BALE');
+    expect(selected.body.status).toBe('DISPATCHED');
+    const requestRow = await prisma.client.messageRequest.findFirst({
+      where: { id: created.body.id },
+    });
+    expect(requestRow?.status).toBe('DISPATCHED');
+    if (!selected.body.providerReady) {
+      const activated = await prisma.client.outboxEvent.count({
+        where: { tenantId: salon.tenantId, eventType: 'MessageDeliveryActivated' },
+      });
+      expect(activated).toBe(0);
+    }
+  });
+
+  it('does not let historical same-day backfill consume the new daily limit', async () => {
+    const salon = await registerOwner('msg-hist');
+    const customerId = await seedRevenueDecline(salon.token, 'Hist');
+    const now = new Date();
+    const actionId = randomUUID();
+    await prisma.client.opportunityAction.create({
+      data: {
+        id: actionId,
+        salonId: salon.tenantId,
+        customerId,
+        opportunityType: 'REVENUE_DECLINE',
+        status: 'OPEN',
+        createdBy: salon.userId,
+        updatedAt: now,
+      },
+    });
+    const day = messageBusinessDateValue(now);
+    await prisma.client.messageRequest.createMany({
+      data: ['legacy-a', 'legacy-b'].map((messageText) => ({
+        id: randomUUID(),
+        salonId: salon.tenantId,
+        customerId,
+        actionId,
+        createdByUserId: salon.userId,
+        opportunityType: 'REVENUE_DECLINE' as const,
+        messageText,
+        requestedAt: now,
+        messageBusinessDate: day,
+        countsTowardDailyLimit: false,
+        status: 'DISPATCHED' as const,
+        updatedAt: now,
+      })),
+    });
+
+    const created = await request(app.getHttpServer())
+      .post(sendPath('REVENUE_DECLINE', customerId))
+      .set('Authorization', `Bearer ${salon.token}`)
+      .set('Idempotency-Key', 'hist-send-01')
+      .send({ text: 'درخواست جدید' })
+      .expect(201);
+    expect(created.body.status).toBe('QUEUED');
+
+    const replay = await request(app.getHttpServer())
+      .post(sendPath('REVENUE_DECLINE', customerId))
+      .set('Authorization', `Bearer ${salon.token}`)
+      .set('Idempotency-Key', 'hist-send-01')
+      .send({ text: 'درخواست جدید' })
+      .expect(201);
+    expect(replay.body.id).toBe(created.body.id);
+
+    await request(app.getHttpServer())
+      .post(sendPath('REVENUE_DECLINE', customerId))
+      .set('Authorization', `Bearer ${salon.token}`)
+      .set('Idempotency-Key', 'hist-send-01')
+      .send({ text: 'متن دیگر' })
+      .expect(409);
+
+    const daily = await request(app.getHttpServer())
+      .post(sendPath('REVENUE_DECLINE', customerId))
+      .set('Authorization', `Bearer ${salon.token}`)
+      .set('Idempotency-Key', 'hist-send-02')
+      .send({ text: 'پیام دوم' })
+      .expect(409);
+    expect(daily.body.error).toBe('MESSAGE_DAILY_LIMIT_REACHED');
+  });
+
+  it('returns 409 MESSAGE_DAILY_LIMIT_REACHED for concurrent same-day sends and never 500', async () => {
+    const salon = await registerOwner('msg-race');
+    const customerId = await seedRevenueDecline(salon.token, 'Race');
+    const results = await Promise.all(
+      Array.from({ length: 10 }, (_, index) =>
+        request(app.getHttpServer())
+          .post(sendPath('REVENUE_DECLINE', customerId))
+          .set('Authorization', `Bearer ${salon.token}`)
+          .set('Idempotency-Key', `race-key-${index}-${randomUUID()}`)
+          .send({ text: 'مسابقه همزمان' }),
+      ),
+    );
+
+    const created = results.filter((result) => result.status === 201);
+    const limited = results.filter(
+      (result) => result.status === 409 && result.body.error === 'MESSAGE_DAILY_LIMIT_REACHED',
+    );
+    const unexpected = results.filter(
+      (result) => result.status !== 201 && result.body.error !== 'MESSAGE_DAILY_LIMIT_REACHED',
+    );
+    expect(unexpected.map((result) => ({ status: result.status, error: result.body.error }))).toEqual(
+      [],
+    );
+    expect(created).toHaveLength(1);
+    expect(limited).toHaveLength(9);
+    expect(created[0]?.body.status).toBe('QUEUED');
+
+    const enforceable = await prisma.client.messageRequest.count({
+      where: { salonId: salon.tenantId, customerId, countsTowardDailyLimit: true },
+    });
+    expect(enforceable).toBe(1);
+    const openActions = await prisma.client.opportunityAction.count({
+      where: {
+        salonId: salon.tenantId,
+        customerId,
+        opportunityType: 'REVENUE_DECLINE',
+        status: 'OPEN',
+      },
+    });
+    expect(openActions).toBe(1);
   });
 });

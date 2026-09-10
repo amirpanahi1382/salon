@@ -4,6 +4,7 @@ export type AppErrorCode =
   | 'FORBIDDEN'
   | 'NOT_FOUND'
   | 'CONFLICT'
+  | 'MESSAGE_DAILY_LIMIT_REACHED'
   | 'RATE_LIMITED'
   | 'BUSINESS_RULE'
   | 'INFRASTRUCTURE_ERROR'
@@ -60,6 +61,13 @@ export class ConflictError extends AppError {
   constructor(message: string) {
     super('CONFLICT', message, 409);
     this.name = 'ConflictError';
+  }
+}
+
+export class MessageDailyLimitError extends AppError {
+  constructor(message = 'A message was already requested for this customer today') {
+    super('MESSAGE_DAILY_LIMIT_REACHED', message, 409);
+    this.name = 'MessageDailyLimitError';
   }
 }
 

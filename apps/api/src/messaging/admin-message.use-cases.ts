@@ -1,0 +1,365 @@
+import { Injectable } from '@nestjs/common';
+import { getBaleSafirSettings } from '@salon/config';
+import { Prisma } from '@salon/database';
+import {
+  ConflictError,
+  NotFoundError,
+  ValidationError,
+  createId,
+  DOMAIN_EVENT_TYPES,
+  type PlatformAdminPrincipal,
+} from '@salon/shared';
+import { AppConfigService } from '../infrastructure/config/app-config.service';
+import { encodeCursor, toListPage } from '../infrastructure/http/list-page';
+import { mapPrismaError } from '../infrastructure/http/prisma-error';
+import { AdminMessageQueueQueryDto } from './admin-message.dto';
+import { toAdminMessageItem, type AdminMessageRow } from './admin-message.mapper';
+import {
+  ADMIN_MESSAGE_LIST_LIMIT,
+  AdminMessageRepository,
+  parseAdminCursor,
+} from './admin-message.repository';
+import { PrismaService } from '../infrastructure/database/prisma.service';
+
+@Injectable()
+export class ListAdminMessageQueueUseCase {
+  constructor(
+    private readonly messages: AdminMessageRepository,
+    private readonly config: AppConfigService,
+  ) {}
+
+  async execute(query: AdminMessageQueueQueryDto) {
+    if (query.salonId && !isUuid(query.salonId)) {
+      throw new ValidationError('Invalid salon id');
+    }
+    if (query.customerId && !isUuid(query.customerId)) {
+      throw new ValidationError('Invalid customer id');
+    }
+    const rows = (await this.messages.list({
+      status: query.status,
+      mode: query.mode,
+      salonId: query.salonId,
+      customerId: query.customerId,
+      cursor: parseAdminCursor(query.cursor),
+    })) as AdminMessageRow[];
+    const page = toListPage(rows, ADMIN_MESSAGE_LIST_LIMIT, (row) =>
+      encodeCursor([row.requestedAt.toISOString(), row.id]),
+    );
+    return {
+      items: page.items.map((row) => toAdminMessageItem(row, this.config.values)),
+      hasMore: page.hasMore,
+      nextCursor: page.nextCursor,
+    };
+  }
+}
+
+@Injectable()
+export class GetAdminMessageUseCase {
+  constructor(
+    private readonly messages: AdminMessageRepository,
+    private readonly config: AppConfigService,
+  ) {}
+
+  async execute(id: string) {
+    const row = await this.messages.findById(id);
+    if (!row) {
+      throw new NotFoundError('Message not found');
+    }
+    return toAdminMessageItem(row as AdminMessageRow, this.config.values);
+  }
+}
+
+@Injectable()
+export class SelectMessageDeliveryModeUseCase {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly messages: AdminMessageRepository,
+    private readonly config: AppConfigService,
+  ) {}
+
+  async execute(admin: PlatformAdminPrincipal, id: string, mode: 'BALE' | 'MANUAL') {
+    const now = new Date();
+    const deliveryId = createId();
+    const providerReady = getBaleSafirSettings(this.config.values) !== null;
+
+    try {
+      await this.prisma.client.$transaction(async (tx) => {
+        const claimed = await tx.messageRequest.updateMany({
+          where: { id, status: 'QUEUED' },
+          data: { status: 'DISPATCHED', updatedAt: now },
+        });
+        if (claimed.count === 0) {
+          const existing = await tx.messageRequest.findFirst({ where: { id } });
+          if (!existing) {
+            throw new NotFoundError('Message not found');
+          }
+          throw new ConflictError('Message is not in a state that allows this action');
+        }
+
+        const request = await tx.messageRequest.findFirstOrThrow({
+          where: { id },
+        });
+
+        await tx.messageDelivery.create({
+          data: {
+            id: deliveryId,
+            salonId: request.salonId,
+            messageRequestId: request.id,
+            customerId: request.customerId,
+            actionId: request.actionId,
+            mode,
+            provider: mode === 'BALE' ? 'BALE_SAFIR' : null,
+            channel: 'TEXT',
+            status: 'PENDING',
+            providerRequestId: deliveryId,
+            createdBy: request.createdByUserId,
+            dispatchedByAdminId: admin.adminId,
+            updatedAt: now,
+          },
+        });
+
+        if (mode === 'BALE' && providerReady) {
+          await tx.outboxEvent.create({
+            data: {
+              id: createId(),
+              tenantId: request.salonId,
+              eventType: DOMAIN_EVENT_TYPES.MessageDeliveryActivated,
+              payload: {
+                messageDeliveryId: deliveryId,
+                messageRequestId: request.id,
+                salonId: request.salonId,
+              },
+            },
+          });
+        }
+
+        await tx.auditLog.create({
+          data: {
+            id: createId(),
+            tenantId: request.salonId,
+            actorId: admin.adminId,
+            action: 'MESSAGE_DELIVERY_MODE_SELECTED',
+            resource: 'message_request',
+            resourceId: request.id,
+            result: 'SUCCESS',
+            metadata: {
+              mode,
+              deliveryId,
+              providerReady: mode === 'BALE' ? providerReady : undefined,
+            },
+          },
+        });
+      });
+    } catch (error: unknown) {
+      if (error instanceof NotFoundError || error instanceof ConflictError) {
+        throw error;
+      }
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw new ConflictError('Message is not in a state that allows this action');
+      }
+      const mapped = mapPrismaError(error);
+      if (mapped) {
+        throw mapped;
+      }
+      throw error;
+    }
+
+    const row = await this.messages.findById(id);
+    if (!row) {
+      throw new NotFoundError('Message not found');
+    }
+    return toAdminMessageItem(row as AdminMessageRow, this.config.values);
+  }
+}
+
+@Injectable()
+export class MarkManualMessageSentUseCase {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly messages: AdminMessageRepository,
+    private readonly config: AppConfigService,
+  ) {}
+
+  async execute(admin: PlatformAdminPrincipal, id: string) {
+    const now = new Date();
+    try {
+      await this.prisma.client.$transaction(async (tx) => {
+        const request = await tx.messageRequest.findFirst({ where: { id } });
+        if (!request) {
+          throw new NotFoundError('Message not found');
+        }
+        const delivery = await tx.messageDelivery.findFirst({
+          where: { messageRequestId: id, salonId: request.salonId },
+        });
+        if (!delivery || delivery.mode !== 'MANUAL') {
+          throw new ConflictError('Message is not in a state that allows this action');
+        }
+        const moved = await tx.messageDelivery.updateMany({
+          where: {
+            id: delivery.id,
+            salonId: delivery.salonId,
+            mode: 'MANUAL',
+            status: 'PENDING',
+          },
+          data: {
+            status: 'SENT',
+            submittedAt: now,
+            failedAt: null,
+            failureCode: null,
+            fulfilledByAdminId: admin.adminId,
+            updatedAt: now,
+          },
+        });
+        if (moved.count === 0) {
+          throw new ConflictError('Message is not in a state that allows this action');
+        }
+        await tx.messageRequest.updateMany({
+          where: { id, salonId: request.salonId, status: { in: ['QUEUED', 'DISPATCHED'] } },
+          data: { status: 'SENT', updatedAt: now },
+        });
+        await tx.outboxEvent.create({
+          data: {
+            id: createId(),
+            tenantId: request.salonId,
+            eventType: DOMAIN_EVENT_TYPES.MessageSent,
+            payload: {
+              messageRequestId: id,
+              messageDeliveryId: delivery.id,
+              salonId: request.salonId,
+              mode: 'MANUAL',
+            },
+          },
+        });
+        await tx.auditLog.create({
+          data: {
+            id: createId(),
+            tenantId: request.salonId,
+            actorId: admin.adminId,
+            action: 'MESSAGE_MANUALLY_SENT',
+            resource: 'message_delivery',
+            resourceId: delivery.id,
+            result: 'SUCCESS',
+            metadata: { messageRequestId: id, mode: 'MANUAL', status: 'SENT' },
+          },
+        });
+      });
+    } catch (error: unknown) {
+      if (error instanceof NotFoundError || error instanceof ConflictError) {
+        throw error;
+      }
+      const mapped = mapPrismaError(error);
+      if (mapped) {
+        throw mapped;
+      }
+      throw error;
+    }
+
+    const row = await this.messages.findById(id);
+    if (!row) {
+      throw new NotFoundError('Message not found');
+    }
+    return toAdminMessageItem(row as AdminMessageRow, this.config.values);
+  }
+}
+
+@Injectable()
+export class RetryBaleMessageUseCase {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly messages: AdminMessageRepository,
+    private readonly config: AppConfigService,
+  ) {}
+
+  async execute(admin: PlatformAdminPrincipal, id: string) {
+    if (!getBaleSafirSettings(this.config.values)) {
+      const row = await this.messages.findById(id);
+      if (!row) {
+        throw new NotFoundError('Message not found');
+      }
+      return toAdminMessageItem(row as AdminMessageRow, this.config.values);
+    }
+
+    const now = new Date();
+    try {
+      await this.prisma.client.$transaction(async (tx) => {
+        const request = await tx.messageRequest.findFirst({ where: { id } });
+        if (!request) {
+          throw new NotFoundError('Message not found');
+        }
+        const delivery = await tx.messageDelivery.findFirst({
+          where: { messageRequestId: id, salonId: request.salonId },
+        });
+        if (!delivery || delivery.mode !== 'BALE') {
+          throw new ConflictError('Message is not in a state that allows this action');
+        }
+        if (delivery.status === 'SENT' || delivery.status === 'PROCESSING') {
+          throw new ConflictError('Message is not in a state that allows this action');
+        }
+
+        await tx.messageDelivery.updateMany({
+          where: {
+            id: delivery.id,
+            salonId: delivery.salonId,
+            status: { in: ['PENDING', 'FAILED'] },
+          },
+          data: {
+            status: 'PENDING',
+            failureCode: null,
+            failedAt: null,
+            submittedAt: null,
+            updatedAt: now,
+          },
+        });
+        await tx.messageRequest.updateMany({
+          where: { id, salonId: request.salonId, status: { in: ['DISPATCHED', 'FAILED'] } },
+          data: { status: 'DISPATCHED', updatedAt: now },
+        });
+        await tx.outboxEvent.create({
+          data: {
+            id: createId(),
+            tenantId: request.salonId,
+            eventType: DOMAIN_EVENT_TYPES.MessageDeliveryActivated,
+            payload: {
+              messageDeliveryId: delivery.id,
+              messageRequestId: request.id,
+              salonId: request.salonId,
+            },
+          },
+        });
+        await tx.auditLog.create({
+          data: {
+            id: createId(),
+            tenantId: request.salonId,
+            actorId: admin.adminId,
+            action: 'MESSAGE_DELIVERY_RETRY_REQUESTED',
+            resource: 'message_delivery',
+            resourceId: delivery.id,
+            result: 'SUCCESS',
+            metadata: { messageRequestId: id, mode: 'BALE' },
+          },
+        });
+      });
+    } catch (error: unknown) {
+      if (error instanceof NotFoundError || error instanceof ConflictError) {
+        throw error;
+      }
+      const mapped = mapPrismaError(error);
+      if (mapped) {
+        throw mapped;
+      }
+      throw error;
+    }
+
+    const row = await this.messages.findById(id);
+    if (!row) {
+      throw new NotFoundError('Message not found');
+    }
+    return toAdminMessageItem(row as AdminMessageRow, this.config.values);
+  }
+}
+
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value,
+  );
+}

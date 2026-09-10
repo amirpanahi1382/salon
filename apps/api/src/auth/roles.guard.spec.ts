@@ -24,11 +24,9 @@ describe('RolesGuard', () => {
     ).toBe(true);
   });
 
-  it('rejects users without the required role', () => {
+  it('rejects platform admins on salon routes', () => {
     expect(() =>
-      guard.canActivate(
-        contextWith({ userId: 'u1', tenantId: 't1', role: 'STAFF' }),
-      ),
+      guard.canActivate(contextWith({ kind: 'platform', adminId: 'a1' })),
     ).toThrow(ForbiddenError);
   });
 });

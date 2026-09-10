@@ -252,13 +252,12 @@ class FakeMessageRepository extends MessageRepository {
           opportunityType: opportunityType,
           provider: 'BALE_SAFIR',
           channel: 'TEXT',
-          status: 'SENT',
+          status: 'QUEUED',
           body: text,
           destinationHint: '0912****111',
           createdBy: 'u1',
           createdAt: DateTime.utc(2026, 9, 9),
           updatedAt: DateTime.utc(2026, 9, 9),
-          submittedAt: DateTime.utc(2026, 9, 9),
         );
   }
 
@@ -755,7 +754,7 @@ void main() {
     await tester.tap(find.text('ارسال').last);
     await tester.pumpAndSettle();
     expect(messages.sendCalls, 1);
-    expect(find.text('ارسال شد'), findsOneWidget);
+    expect(find.text('پیام در صف ارسال قرار گرفت.'), findsOneWidget);
   });
 
   testWidgets('dashboard empty state', (tester) async {

@@ -23,7 +23,8 @@ void main() {
 
   test('Bale message copy stays human-controlled', () {
     expect(AppStrings.sendBaleMessage, 'ارسال پیام در بله');
-    expect(messageStatusLabel('SENT'), 'ارسال شد');
+    expect(messageStatusLabel('SENT'), 'پیام با موفقیت ارسال شد.');
+    expect(messageStatusLabel('QUEUED'), AppStrings.messageQueued);
     expect(messageFailureLabel('NOT_CONFIGURED'), contains('بله'));
     expect(maskCustomerPhone('09121111111'), '0912****111');
   });

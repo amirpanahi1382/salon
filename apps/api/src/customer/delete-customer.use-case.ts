@@ -32,9 +32,12 @@ export class DeleteCustomerUseCase {
         if (financialCount > 0) {
           throw new ConflictError('Customer cannot be deleted while financial records exist');
         }
-        const removedMessages = await tx.messageDelivery.deleteMany({
-            where: { salonId: principal.tenantId, customerId: existing.id },
-          });
+        const messageCount = await tx.messageRequest.count({
+          where: { salonId: principal.tenantId, customerId: existing.id },
+        });
+        if (messageCount > 0) {
+          throw new ConflictError('Customer cannot be deleted while message history exists');
+        }
         const removedActions = await tx.opportunityAction.deleteMany({
             where: { salonId: principal.tenantId, customerId: existing.id },
           });
@@ -58,7 +61,6 @@ export class DeleteCustomerUseCase {
                 salonId: principal.tenantId,
                 visitCount: removedVisits.count,
                 actionCount: removedActions.count,
-                messageCount: removedMessages.count,
               },
             },
           });
@@ -75,7 +77,6 @@ export class DeleteCustomerUseCase {
               metadata: {
                 visitCount: removedVisits.count,
                 actionCount: removedActions.count,
-                messageCount: removedMessages.count,
                 salonId: principal.tenantId,
               },
             },

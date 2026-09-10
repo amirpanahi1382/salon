@@ -1,59 +1,81 @@
-import type { OpportunityType } from '@salon/shared';
-import { maskCustomerPhone, type MessageFailureCode } from '@salon/shared';
-import type { MessageDeliveryResponseDto } from './message.dto';
+import {
+  maskCustomerPhone,
+  salonMessageStatus,
+  type MessageDeliveryMode,
+  type MessageFailureCode,
+  type MessageProvider,
+  type MessageRequestStatus,
+  type OpportunityType,
+} from '@salon/shared';
+import type { MessageRequestResponseDto } from './message.dto';
 
-export const MESSAGE_SELECT = {
+export const MESSAGE_REQUEST_SELECT = {
   id: true,
   customerId: true,
   actionId: true,
-  provider: true,
-  channel: true,
+  opportunityType: true,
+  messageText: true,
   status: true,
-  body: true,
-  failureCode: true,
-  createdBy: true,
+  createdByUserId: true,
+  requestedAt: true,
   createdAt: true,
   updatedAt: true,
-  submittedAt: true,
-  failedAt: true,
-  action: { select: { opportunityType: true } },
   customer: { select: { phoneNumber: true } },
+  deliveries: {
+    select: {
+      id: true,
+      mode: true,
+      provider: true,
+      status: true,
+      failureCode: true,
+      submittedAt: true,
+      failedAt: true,
+    },
+    take: 1,
+  },
 } as const;
 
-export type MessageRow = {
+export type MessageRequestRow = {
   id: string;
   customerId: string;
   actionId: string;
-  provider: 'BALE_SAFIR';
-  channel: 'TEXT';
-  status: 'PENDING' | 'PROCESSING' | 'SENT' | 'FAILED';
-  body: string;
-  failureCode: string | null;
-  createdBy: string;
+  opportunityType: OpportunityType;
+  messageText: string;
+  status: MessageRequestStatus;
+  createdByUserId: string;
+  requestedAt: Date;
   createdAt: Date;
   updatedAt: Date;
-  submittedAt: Date | null;
-  failedAt: Date | null;
-  action: { opportunityType: OpportunityType };
   customer: { phoneNumber: string };
+  deliveries: Array<{
+    id: string;
+    mode: MessageDeliveryMode;
+    provider: MessageProvider | null;
+    status: 'PENDING' | 'PROCESSING' | 'SENT' | 'FAILED';
+    failureCode: string | null;
+    submittedAt: Date | null;
+    failedAt: Date | null;
+  }>;
 };
 
-export function toMessageResponse(row: MessageRow): MessageDeliveryResponseDto {
+export function toMessageResponse(row: MessageRequestRow): MessageRequestResponseDto {
+  const delivery = row.deliveries[0];
   return {
     id: row.id,
     customerId: row.customerId,
     actionId: row.actionId,
-    opportunityType: row.action.opportunityType,
-    provider: row.provider,
-    channel: row.channel,
-    status: row.status,
-    body: row.body,
+    opportunityType: row.opportunityType,
+    channel: 'TEXT',
+    status: salonMessageStatus(row.status),
+    mode: delivery?.mode ?? null,
+    provider: delivery?.provider ?? null,
+    body: row.messageText,
     destinationHint: maskCustomerPhone(row.customer.phoneNumber),
-    failureCode: (row.failureCode as MessageFailureCode | null) ?? null,
-    createdBy: row.createdBy,
+    failureCode: (delivery?.failureCode as MessageFailureCode | null) ?? null,
+    createdBy: row.createdByUserId,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
-    submittedAt: row.submittedAt?.toISOString() ?? null,
-    failedAt: row.failedAt?.toISOString() ?? null,
+    submittedAt: delivery?.submittedAt?.toISOString() ?? null,
+    failedAt: delivery?.failedAt?.toISOString() ?? null,
   };
 }

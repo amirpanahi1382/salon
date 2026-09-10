@@ -3,7 +3,8 @@ import { Reflector } from '@nestjs/core';
 import {
   ForbiddenError,
   UnauthenticatedError,
-  type AuthenticatedPrincipal,
+  isSalonPrincipal,
+  type RequestPrincipal,
   type UserRole,
 } from '@salon/shared';
 import { ROLES_KEY } from './roles.decorator';
@@ -23,11 +24,11 @@ export class RolesGuard implements CanActivate {
 
     const request = context
       .switchToHttp()
-      .getRequest<{ user?: AuthenticatedPrincipal }>();
+      .getRequest<{ user?: RequestPrincipal }>();
     if (!request.user) {
       throw new UnauthenticatedError();
     }
-    if (!roles.includes(request.user.role)) {
+    if (!isSalonPrincipal(request.user) || !roles.includes(request.user.role)) {
       throw new ForbiddenError();
     }
     return true;

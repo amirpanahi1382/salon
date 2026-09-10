@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { NotFoundError, ValidationError, type AuthenticatedPrincipal } from '@salon/shared';
 import { CustomerRepository } from '../customer/customer.repository';
 import { decodeCursor, encodeCursor, toListPage } from '../infrastructure/http/list-page';
-import { toMessageResponse, type MessageRow } from './message.mapper';
+import { toMessageResponse, type MessageRequestRow } from './message.mapper';
 import { ListCustomerMessagesQueryDto } from './message.dto';
 import { MESSAGE_LIST_LIMIT, MessageRepository } from './message.repository';
 
@@ -11,11 +11,12 @@ export class GetMessageUseCase {
   constructor(private readonly messages: MessageRepository) {}
 
   async execute(principal: AuthenticatedPrincipal, id: string) {
-    const row = await this.messages.findById(principal.tenantId, id);
+    const byRequest = await this.messages.findRequestById(principal.tenantId, id);
+    const row = byRequest ?? (await this.messages.findRequestByDeliveryId(principal.tenantId, id));
     if (!row) {
       throw new NotFoundError('Message not found');
     }
-    return toMessageResponse(row as MessageRow);
+    return toMessageResponse(row as MessageRequestRow);
   }
 }
 
@@ -43,9 +44,9 @@ export class ListCustomerMessagesUseCase {
       principal.tenantId,
       customer.id,
       cursor,
-    )) as MessageRow[];
+    )) as MessageRequestRow[];
     const page = toListPage(rows, MESSAGE_LIST_LIMIT, (row) =>
-      encodeCursor([row.createdAt.toISOString(), row.id]),
+      encodeCursor([row.requestedAt.toISOString(), row.id]),
     );
     return {
       items: page.items.map(toMessageResponse),

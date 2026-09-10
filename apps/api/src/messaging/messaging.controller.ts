@@ -34,7 +34,7 @@ export class MessagingController {
   })
   @ApiOperation({
     summary:
-      'Request a one-to-one Bale Safir text message for a currently derived opportunity. Does not complete the Action or create a visit.',
+      'Queue a durable one-to-one customer message for a currently derived opportunity. Does not send through Bale, complete the Action, or create a visit.',
   })
   send(
     @CurrentUser() user: AuthenticatedPrincipal,
@@ -53,13 +53,13 @@ export class MessagingController {
   }
 
   @Get('messages/:id')
-  @ApiOperation({ summary: 'Get one message delivery for the authenticated salon' })
+  @ApiOperation({ summary: 'Get one queued message request for the authenticated salon' })
   get(@CurrentUser() user: AuthenticatedPrincipal, @Param('id', UuidParam) id: string) {
     return this.getMessage.execute(user, id);
   }
 
   @Get('customers/:customerId/messages')
-  @ApiOperation({ summary: 'List message deliveries for one customer, newest first' })
+  @ApiOperation({ summary: 'List message requests for one customer, newest first' })
   listForCustomer(
     @CurrentUser() user: AuthenticatedPrincipal,
     @Param('customerId', UuidParam) customerId: string,

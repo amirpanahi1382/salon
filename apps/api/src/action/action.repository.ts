@@ -30,6 +30,43 @@ export class ActionRepository {
     });
   }
 
+  /**
+   * Inserts OPEN without aborting the transaction when the partial unique index
+   * already has a row. ON CONFLICT DO NOTHING does not raise, so callers may
+   * query the same `tx` afterward. Never follow a P2002 with another `tx` query.
+   */
+  async insertOpenIfAbsent(
+    tx: Prisma.TransactionClient,
+    input: {
+      id: string;
+      salonId: string;
+      customerId: string;
+      opportunityType: OpportunityActionType;
+      createdBy: string;
+      now: Date;
+    },
+  ): Promise<boolean> {
+    const inserted = await tx.$queryRaw<Array<{ id: string }>>`
+      INSERT INTO opportunity_actions (
+        id, salon_id, customer_id, opportunity_type, status, created_by, created_at, updated_at
+      )
+      VALUES (
+        ${input.id}::uuid,
+        ${input.salonId}::uuid,
+        ${input.customerId}::uuid,
+        CAST(${input.opportunityType} AS "OpportunityActionType"),
+        'OPEN'::"OpportunityActionStatus",
+        ${input.createdBy}::uuid,
+        ${input.now},
+        ${input.now}
+      )
+      ON CONFLICT (salon_id, customer_id, opportunity_type) WHERE status = 'OPEN'
+      DO NOTHING
+      RETURNING id
+    `;
+    return inserted.length > 0;
+  }
+
   deleteForCustomer(tenantId: string, customerId: string, db: ActionDb = this.prisma.client) {
     return db.opportunityAction.deleteMany({
       where: { salonId: tenantId, customerId },

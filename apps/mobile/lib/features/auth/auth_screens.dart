@@ -102,6 +102,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               onPressed: () => context.go('/register'),
               child: const Text(AppStrings.needAccount),
             ),
+            TextButton(
+              onPressed: () => context.go('/admin/login'),
+              child: const Text(AppStrings.platformAdminLogin),
+            ),
           ],
         ),
       ),
@@ -208,6 +212,99 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
             child: const Text(AppStrings.haveAccount),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class PlatformAdminLoginScreen extends ConsumerStatefulWidget {
+  const PlatformAdminLoginScreen({super.key});
+
+  @override
+  ConsumerState<PlatformAdminLoginScreen> createState() =>
+      _PlatformAdminLoginScreenState();
+}
+
+class _PlatformAdminLoginScreenState extends ConsumerState<PlatformAdminLoginScreen> {
+  final _email = TextEditingController();
+  final _password = TextEditingController();
+  String? _error;
+  bool _loading = false;
+
+  @override
+  void dispose() {
+    _email.dispose();
+    _password.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final email = _email.text.trim();
+    final password = _password.text;
+    if (email.isEmpty || password.isEmpty) {
+      setState(() => _error = AppStrings.enterEmailPassword);
+      return;
+    }
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      await ref.read(authControllerProvider.notifier).loginPlatformAdmin(email, password);
+    } catch (error) {
+      setState(() => _error = friendlyError(error));
+    } finally {
+      if (mounted) {
+        setState(() => _loading = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.all(24),
+          children: [
+            const SizedBox(height: 32),
+            Text(
+              AppStrings.platformAdminLogin,
+              style: Theme.of(context).textTheme.headlineMedium,
+            ),
+            const SizedBox(height: 32),
+            AppTextField(
+              label: AppStrings.email,
+              controller: _email,
+              keyboardType: TextInputType.emailAddress,
+              textDirection: TextDirection.ltr,
+            ),
+            const SizedBox(height: 12),
+            AppTextField(
+              label: AppStrings.password,
+              controller: _password,
+              obscureText: true,
+              textDirection: TextDirection.ltr,
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                _error!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ],
+            const SizedBox(height: 24),
+            AppButton(
+              label: AppStrings.signIn,
+              onPressed: _submit,
+              loading: _loading,
+            ),
+            TextButton(
+              onPressed: () => context.go('/login'),
+              child: const Text(AppStrings.haveAccount),
+            ),
+          ],
+        ),
       ),
     );
   }

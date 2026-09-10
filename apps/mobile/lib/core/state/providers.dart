@@ -53,6 +53,10 @@ final messageRepositoryProvider = Provider<MessageRepository>((ref) {
   return MessageRepository(ref.watch(apiClientProvider));
 });
 
+final adminMessageRepositoryProvider = Provider<AdminMessageRepository>((ref) {
+  return AdminMessageRepository(ref.watch(apiClientProvider));
+});
+
 final salonRepositoryProvider = Provider<SalonRepository>((ref) {
   return SalonRepository(ref.watch(apiClientProvider));
 });
@@ -109,6 +113,13 @@ class AuthController extends Notifier<AuthState> {
     final session = await ref
         .read(authRepositoryProvider)
         .login(email: email, password: password);
+    state = AuthState(status: AuthStatus.signedIn, user: session.user);
+  }
+
+  Future<void> loginPlatformAdmin(String email, String password) async {
+    final session = await ref
+        .read(authRepositoryProvider)
+        .loginPlatformAdmin(email: email, password: password);
     state = AuthState(status: AuthStatus.signedIn, user: session.user);
   }
 

@@ -24,8 +24,9 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const request = ctx.getRequest<AppRequest>();
     const requestId = request.id?.toString() ?? request.headers['x-request-id'];
     const correlationId = request.correlationId;
-    const tenantId = request.user?.tenantId;
-    const userId = request.user?.userId;
+    const tenantId =
+      request.user && 'tenantId' in request.user ? request.user.tenantId : undefined;
+    const userId = request.user && 'userId' in request.user ? request.user.userId : undefined;
     const operation = request.operation;
     const method = request.method;
     const route = request.route?.path ? String(request.route.path) : request.path;

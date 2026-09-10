@@ -15,6 +15,11 @@ export const DOMAIN_EVENT_TYPES = {
   ActionCreated: 'ActionCreated',
   ActionCompleted: 'ActionCompleted',
   ActionDismissed: 'ActionDismissed',
+  MessageRequested: 'MessageRequested',
+  MessageDeliveryActivated: 'MessageDeliveryActivated',
+  MessageSent: 'MessageSent',
+  MessageFailed: 'MessageFailed',
+  /** Legacy Bale-activation fact. Worker still consumes in-flight rows. */
   MessageSendRequested: 'MessageSendRequested',
 } as const;
 

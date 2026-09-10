@@ -3,12 +3,12 @@ import { IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 import {
   MESSAGE_BODY_MAX_LENGTH,
   MESSAGE_CHANNELS,
-  MESSAGE_DELIVERY_STATUSES,
+  MESSAGE_DELIVERY_MODES,
   MESSAGE_FAILURE_CODES,
   MESSAGE_PROVIDERS,
   OPPORTUNITY_TYPES,
   type MessageChannel,
-  type MessageDeliveryStatus,
+  type MessageDeliveryMode,
   type MessageFailureCode,
   type MessageProvider,
   type OpportunityType,
@@ -30,7 +30,7 @@ export class ListCustomerMessagesQueryDto {
   cursor?: string;
 }
 
-export class MessageDeliveryResponseDto {
+export class MessageRequestResponseDto {
   @ApiProperty()
   id!: string;
 
@@ -40,17 +40,20 @@ export class MessageDeliveryResponseDto {
   @ApiProperty()
   actionId!: string;
 
-  @ApiProperty()
+  @ApiProperty({ enum: OPPORTUNITY_TYPES })
   opportunityType!: OpportunityType;
-
-  @ApiProperty({ enum: MESSAGE_PROVIDERS })
-  provider!: MessageProvider;
 
   @ApiProperty({ enum: MESSAGE_CHANNELS })
   channel!: MessageChannel;
 
-  @ApiProperty({ enum: MESSAGE_DELIVERY_STATUSES })
-  status!: MessageDeliveryStatus;
+  @ApiProperty({ enum: ['QUEUED', 'SENT', 'FAILED'] })
+  status!: 'QUEUED' | 'SENT' | 'FAILED';
+
+  @ApiProperty({ nullable: true, enum: MESSAGE_DELIVERY_MODES, type: String })
+  mode!: MessageDeliveryMode | null;
+
+  @ApiProperty({ nullable: true, enum: MESSAGE_PROVIDERS, type: String })
+  provider!: MessageProvider | null;
 
   @ApiProperty()
   body!: string;
@@ -77,9 +80,9 @@ export class MessageDeliveryResponseDto {
   failedAt!: string | null;
 }
 
-export class MessageDeliveryListPageDto {
-  @ApiProperty({ type: [MessageDeliveryResponseDto] })
-  items!: MessageDeliveryResponseDto[];
+export class MessageRequestListPageDto {
+  @ApiProperty({ type: [MessageRequestResponseDto] })
+  items!: MessageRequestResponseDto[];
 
   @ApiProperty()
   hasMore!: boolean;

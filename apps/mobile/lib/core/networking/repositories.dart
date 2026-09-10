@@ -44,7 +44,25 @@ class AuthRepository {
     return session;
   }
 
+  Future<AuthSession> loginPlatformAdmin({
+    required String email,
+    required String password,
+  }) async {
+    final data = await api.post(
+      '/admin/auth/login',
+      data: {'email': email.trim(), 'password': password},
+    ) as Map<String, dynamic>;
+    final session = AuthSession.fromAdminAuthJson(data);
+    await _persist(session);
+    return session;
+  }
+
   Future<AuthUser> me() async {
+    final stored = await sessionStore.read();
+    if (stored?.role == 'PLATFORM_ADMIN') {
+      final data = await api.get('/admin/auth/me') as Map<String, dynamic>;
+      return AuthUser.fromAdminMeJson(data);
+    }
     final data = await api.get('/auth/me') as Map<String, dynamic>;
     return AuthUser.fromMeJson(data);
   }
@@ -387,6 +405,49 @@ class MessageRepository {
       query: cursor == null ? null : {'cursor': cursor},
     );
     return parseItemPage(data, MessageDelivery.fromJson);
+  }
+}
+
+class AdminMessageRepository {
+  AdminMessageRepository(this._api);
+
+  final ApiClient _api;
+
+  Future<ItemPage<AdminQueueItem>> list({String? cursor}) async {
+    final data = await _api.get(
+      '/admin/message-queue',
+      query: cursor == null ? null : {'cursor': cursor},
+    );
+    return parseItemPage(data, AdminQueueItem.fromJson);
+  }
+
+  Future<AdminQueueItem> getById(String id) async {
+    final data = await _api.get('/admin/message-queue/$id') as Map<String, dynamic>;
+    return AdminQueueItem.fromJson(data);
+  }
+
+  Future<AdminQueueItem> selectBale(String id) async {
+    final data =
+        await _api.post('/admin/message-queue/$id/select-bale') as Map<String, dynamic>;
+    return AdminQueueItem.fromJson(data);
+  }
+
+  Future<AdminQueueItem> selectManual(String id) async {
+    final data =
+        await _api.post('/admin/message-queue/$id/select-manual') as Map<String, dynamic>;
+    return AdminQueueItem.fromJson(data);
+  }
+
+  Future<AdminQueueItem> markManualSent(String id) async {
+    final data = await _api.post('/admin/message-queue/$id/mark-manual-sent')
+        as Map<String, dynamic>;
+    return AdminQueueItem.fromJson(data);
+  }
+
+  Future<AdminQueueItem> retry(String id) async {
+    final data =
+        await _api.post('/admin/message-queue/$id/retry') as Map<String, dynamic>;
+    return AdminQueueItem.fromJson(data);
   }
 }
 

@@ -14,6 +14,8 @@ export const LOG_REDACT_PATHS = [
   'JWT_SECRET',
   'accessToken',
   '*.accessToken',
+  'PLATFORM_ADMIN_PASSWORD',
+  '*.PLATFORM_ADMIN_PASSWORD',
   'BALE_SAFIR_API_ACCESS_KEY',
   '*.BALE_SAFIR_API_ACCESS_KEY',
   'api-access-key',

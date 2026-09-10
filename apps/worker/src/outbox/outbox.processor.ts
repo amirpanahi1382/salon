@@ -1,4 +1,4 @@
-import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Injectable, OnModuleDestroy, OnModuleInit, Optional } from '@nestjs/common';
 import {
   claimOutboxEvents,
   markOutboxDeadLetter,
@@ -37,7 +37,7 @@ export class OutboxProcessor implements OnModuleInit, OnModuleDestroy {
     private readonly prisma: PrismaService,
     private readonly config: AppConfigService,
     private readonly sendCustomerMessage: SendCustomerMessageHandler,
-    logger?: Logger,
+    @Optional() logger?: Logger,
   ) {
     this.logger = logger ?? createWorkerLogger(config.values);
   }
@@ -211,7 +211,10 @@ export class OutboxProcessor implements OnModuleInit, OnModuleDestroy {
     lastError: string,
     cause: unknown,
   ): Promise<void> {
-    if (event.eventType !== DOMAIN_EVENT_TYPES.MessageSendRequested) {
+    if (
+      event.eventType !== DOMAIN_EVENT_TYPES.MessageSendRequested &&
+      event.eventType !== DOMAIN_EVENT_TYPES.MessageDeliveryActivated
+    ) {
       await markOutboxDeadLetter(this.prisma.client, event.id, lastError);
       return;
     }
@@ -223,7 +226,10 @@ export class OutboxProcessor implements OnModuleInit, OnModuleDestroy {
   }
 
   private async consume(event: OutboxEvent, signal: AbortSignal): Promise<void> {
-    if (event.eventType === DOMAIN_EVENT_TYPES.MessageSendRequested) {
+    if (
+      event.eventType === DOMAIN_EVENT_TYPES.MessageSendRequested ||
+      event.eventType === DOMAIN_EVENT_TYPES.MessageDeliveryActivated
+    ) {
       await this.sendCustomerMessage.handle(
         event,
         this.config.values.OUTBOX_MAX_ATTEMPTS,

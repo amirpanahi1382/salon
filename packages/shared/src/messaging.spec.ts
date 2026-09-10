@@ -1,7 +1,9 @@
 import {
   maskCustomerPhone,
   MESSAGE_BODY_MAX_LENGTH,
+  messageBusinessDateKey,
   normalizeMessageBody,
+  salonMessageStatus,
   toSafirPhoneNumber,
 } from './messaging';
 
@@ -29,5 +31,21 @@ describe('message body', () => {
 describe('phone masking', () => {
   it('keeps a recognizable prefix without exposing the full number', () => {
     expect(maskCustomerPhone('09121111111')).toBe('0912****111');
+  });
+});
+
+describe('message business day', () => {
+  it('uses Asia/Tehran calendar dates without changing the UTC instant', () => {
+    const endOfTehranDay = new Date('2026-09-10T20:29:00.000Z');
+    const startOfNextTehranDay = new Date('2026-09-10T20:30:00.000Z');
+    expect(messageBusinessDateKey(endOfTehranDay)).toBe('2026-09-10');
+    expect(messageBusinessDateKey(startOfNextTehranDay)).toBe('2026-09-11');
+  });
+
+  it('maps request status for salon clients', () => {
+    expect(salonMessageStatus('QUEUED')).toBe('QUEUED');
+    expect(salonMessageStatus('DISPATCHED')).toBe('QUEUED');
+    expect(salonMessageStatus('SENT')).toBe('SENT');
+    expect(salonMessageStatus('FAILED')).toBe('FAILED');
   });
 });

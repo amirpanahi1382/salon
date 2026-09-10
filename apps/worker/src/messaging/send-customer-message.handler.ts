@@ -19,18 +19,25 @@ export class SendCustomerMessageHandler {
     if (
       !deliveryId ||
       !event.tenantId ||
-      event.eventType !== DOMAIN_EVENT_TYPES.MessageSendRequested
+      (event.eventType !== DOMAIN_EVENT_TYPES.MessageSendRequested &&
+        event.eventType !== DOMAIN_EVENT_TYPES.MessageDeliveryActivated)
     ) {
-      throw new Error('Invalid MessageSendRequested payload');
+      throw new Error('Invalid message delivery payload');
     }
 
     const db = this.prisma.client;
     const delivery = await db.messageDelivery.findFirst({
       where: { id: deliveryId, salonId: event.tenantId },
-      include: { customer: { select: { phoneNumber: true } } },
+      include: {
+        customer: { select: { phoneNumber: true } },
+        messageRequest: { select: { id: true, messageText: true } },
+      },
     });
     if (!delivery) {
       throw new Error('Message delivery not found');
+    }
+    if (delivery.mode !== 'BALE') {
+      return;
     }
     if (delivery.status === 'SENT' || delivery.status === 'FAILED') {
       return;
@@ -40,9 +47,14 @@ export class SendCustomerMessageHandler {
       where: {
         id: delivery.id,
         salonId: delivery.salonId,
+        mode: 'BALE',
         status: { in: ['PENDING', 'PROCESSING'] },
       },
-      data: { status: 'PROCESSING', updatedAt: new Date() },
+      data: {
+        status: 'PROCESSING',
+        attempts: { increment: 1 },
+        updatedAt: new Date(),
+      },
     });
     if (claimed.count === 0) {
       return;
@@ -51,12 +63,18 @@ export class SendCustomerMessageHandler {
     const result = await this.sender.sendText({
       requestId: delivery.providerRequestId,
       phoneNumber: delivery.customer.phoneNumber,
-      text: delivery.body,
+      text: delivery.messageRequest.messageText,
       signal,
     });
 
     if (result.outcome === 'sent') {
-      await this.markSent(delivery.id, delivery.salonId, result.providerMessageId, delivery.createdBy);
+      await this.markSent(
+        delivery.id,
+        delivery.salonId,
+        delivery.messageRequest.id,
+        result.providerMessageId,
+        delivery.createdBy,
+      );
       return;
     }
 
@@ -65,19 +83,31 @@ export class SendCustomerMessageHandler {
     }
 
     if (result.outcome === 'failed') {
-      await this.markFailed(delivery.id, delivery.salonId, result.code, delivery.createdBy);
+      await this.markFailed(
+        delivery.id,
+        delivery.salonId,
+        delivery.messageRequest.id,
+        result.code,
+        delivery.createdBy,
+      );
       return;
     }
 
     if (event.attemptCount >= maxAttempts) {
-      await this.markFailed(delivery.id, delivery.salonId, result.code, delivery.createdBy);
+      await this.markFailed(
+        delivery.id,
+        delivery.salonId,
+        delivery.messageRequest.id,
+        result.code,
+        delivery.createdBy,
+      );
       throw new RetryableMessageSendError(result.code, result.retryAfterMs);
     }
     throw new RetryableMessageSendError(result.code, result.retryAfterMs);
   }
 
   /**
-   * Closes a delivery that is still in-flight after the outbox event is dead-lettered.
+   * Closes a Bale delivery that is still in-flight after the outbox event is dead-lettered.
    * SENT/FAILED (terminal) rows are left unchanged. Tenant scope is event.tenantId.
    */
   async abandonIfInFlight(
@@ -91,10 +121,19 @@ export class SendCustomerMessageHandler {
     }
 
     const now = new Date();
+    const delivery = await db.messageDelivery.findFirst({
+      where: { id: deliveryId, salonId: event.tenantId },
+      select: { id: true, messageRequestId: true, mode: true },
+    });
+    if (!delivery || delivery.mode !== 'BALE') {
+      return;
+    }
+
     await db.messageDelivery.updateMany({
       where: {
-        id: deliveryId,
+        id: delivery.id,
         salonId: event.tenantId,
+        mode: 'BALE',
         status: { in: ['PENDING', 'PROCESSING'] },
       },
       data: {
@@ -105,11 +144,20 @@ export class SendCustomerMessageHandler {
         updatedAt: now,
       },
     });
+    await db.messageRequest.updateMany({
+      where: {
+        id: delivery.messageRequestId,
+        salonId: event.tenantId,
+        status: { in: ['QUEUED', 'DISPATCHED'] },
+      },
+      data: { status: 'FAILED', updatedAt: now },
+    });
   }
 
   private async markSent(
     id: string,
     salonId: string,
+    messageRequestId: string,
     providerMessageId: string,
     actorId: string,
   ): Promise<void> {
@@ -126,6 +174,23 @@ export class SendCustomerMessageHandler {
           updatedAt: now,
         },
       });
+      await tx.messageRequest.updateMany({
+        where: { id: messageRequestId, salonId, status: { in: ['QUEUED', 'DISPATCHED'] } },
+        data: { status: 'SENT', updatedAt: now },
+      });
+      await tx.outboxEvent.create({
+        data: {
+          id: createId(),
+          tenantId: salonId,
+          eventType: DOMAIN_EVENT_TYPES.MessageSent,
+          payload: {
+            messageDeliveryId: id,
+            messageRequestId,
+            salonId,
+            mode: 'BALE',
+          },
+        },
+      });
       await tx.auditLog.create({
         data: {
           id: createId(),
@@ -135,7 +200,7 @@ export class SendCustomerMessageHandler {
           resource: 'message_delivery',
           resourceId: id,
           result: 'SUCCESS',
-          metadata: { provider: 'BALE_SAFIR', status: 'SENT' },
+          metadata: { provider: 'BALE_SAFIR', status: 'SENT', mode: 'BALE' },
         },
       });
     });
@@ -144,6 +209,7 @@ export class SendCustomerMessageHandler {
   private async markFailed(
     id: string,
     salonId: string,
+    messageRequestId: string,
     code: MessageFailureCode,
     actorId: string,
   ): Promise<void> {
@@ -159,6 +225,24 @@ export class SendCustomerMessageHandler {
           updatedAt: now,
         },
       });
+      await tx.messageRequest.updateMany({
+        where: { id: messageRequestId, salonId, status: { in: ['QUEUED', 'DISPATCHED'] } },
+        data: { status: 'FAILED', updatedAt: now },
+      });
+      await tx.outboxEvent.create({
+        data: {
+          id: createId(),
+          tenantId: salonId,
+          eventType: DOMAIN_EVENT_TYPES.MessageFailed,
+          payload: {
+            messageDeliveryId: id,
+            messageRequestId,
+            salonId,
+            mode: 'BALE',
+            failureCode: code,
+          },
+        },
+      });
       await tx.auditLog.create({
         data: {
           id: createId(),
@@ -168,7 +252,7 @@ export class SendCustomerMessageHandler {
           resource: 'message_delivery',
           resourceId: id,
           result: 'SUCCESS',
-          metadata: { provider: 'BALE_SAFIR', status: 'FAILED', failureCode: code },
+          metadata: { provider: 'BALE_SAFIR', status: 'FAILED', failureCode: code, mode: 'BALE' },
         },
       });
     });

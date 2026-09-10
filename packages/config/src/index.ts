@@ -84,6 +84,18 @@ const envSchema = z.object({
   }, z.coerce.number().int().positive().optional()),
   BALE_SAFIR_BASE_URL: z.string().url().default('https://safir.bale.ai/api/v3'),
   BALE_SAFIR_TIMEOUT_MS: z.coerce.number().int().min(1000).max(60_000).default(10_000),
+  PLATFORM_ADMIN_EMAIL: z.preprocess((value) => {
+    if (value === undefined || value === '') {
+      return undefined;
+    }
+    return value;
+  }, z.string().email().max(255).optional()),
+  PLATFORM_ADMIN_PASSWORD: z.preprocess((value) => {
+    if (value === undefined || value === '') {
+      return undefined;
+    }
+    return value;
+  }, z.string().min(12).max(128).optional()),
 });
 
 export type AppConfig = z.infer<typeof envSchema>;
@@ -97,6 +109,13 @@ export function loadConfig(
       .map((issue) => `${issue.path.join('.') || '(root)'}: ${issue.message}`)
       .join('; ');
     throw new Error(`Invalid configuration: ${issues}`);
+  }
+  const email = parsed.data.PLATFORM_ADMIN_EMAIL;
+  const password = parsed.data.PLATFORM_ADMIN_PASSWORD;
+  if ((email && !password) || (!email && password)) {
+    throw new Error(
+      'Invalid configuration: PLATFORM_ADMIN_EMAIL and PLATFORM_ADMIN_PASSWORD must both be set or both omitted',
+    );
   }
   return parsed.data;
 }

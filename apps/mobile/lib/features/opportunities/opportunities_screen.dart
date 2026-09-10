@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/state/providers.dart';
+import '../../core/theme/app_tokens.dart';
 import '../../core/widgets/app_widgets.dart';
 import '../../shared/labels.dart';
 import '../../shared/models/models.dart';
@@ -155,87 +156,112 @@ class _OpportunitiesScreenState extends ConsumerState<OpportunitiesScreen> {
     return OpportunityActionsScope(
       onChanged: _load,
       child: Scaffold(
-      appBar: AppBar(title: const Text(AppStrings.opportunities)),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-            child: Wrap(
-              spacing: 8,
-              children: [
-                ChoiceChip(
-                  label: const Text(AppStrings.all),
-                  selected: _type == null,
-                  onSelected: (_) {
-                    _type = null;
-                    _load();
-                  },
-                ),
-                ChoiceChip(
-                  label: const Text(AppStrings.reactivation),
-                  selected: _type == 'REACTIVATION',
-                  onSelected: (_) {
-                    _type = 'REACTIVATION';
-                    _load();
-                  },
-                ),
-                ChoiceChip(
-                  label: const Text(AppStrings.customerReturn),
-                  selected: _type == 'CUSTOMER_RETURN',
-                  onSelected: (_) {
-                    _type = 'CUSTOMER_RETURN';
-                    _load();
-                  },
-                ),
-                ChoiceChip(
-                  label: const Text(AppStrings.revenueDecline),
-                  selected: _type == 'REVENUE_DECLINE',
-                  onSelected: (_) {
-                    _type = 'REVENUE_DECLINE';
-                    _load();
-                  },
-                ),
-              ],
+        appBar: AppBar(title: const Text(AppStrings.opportunities)),
+        body: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppTokens.space16,
+                AppTokens.space8,
+                AppTokens.space16,
+                AppTokens.space4,
+              ),
+              child: Wrap(
+                spacing: AppTokens.space8,
+                runSpacing: AppTokens.space8,
+                children: [
+                  _TypeFilterChip(
+                    label: AppStrings.all,
+                    selected: _type == null,
+                    onSelected: () {
+                      _type = null;
+                      _load();
+                    },
+                  ),
+                  _TypeFilterChip(
+                    label: AppStrings.reactivation,
+                    selected: _type == 'REACTIVATION',
+                    onSelected: () {
+                      _type = 'REACTIVATION';
+                      _load();
+                    },
+                  ),
+                  _TypeFilterChip(
+                    label: AppStrings.customerReturn,
+                    selected: _type == 'CUSTOMER_RETURN',
+                    onSelected: () {
+                      _type = 'CUSTOMER_RETURN';
+                      _load();
+                    },
+                  ),
+                  _TypeFilterChip(
+                    label: AppStrings.revenueDecline,
+                    selected: _type == 'REVENUE_DECLINE',
+                    onSelected: () {
+                      _type = 'REVENUE_DECLINE';
+                      _load();
+                    },
+                  ),
+                ],
+              ),
             ),
-          ),
-          Expanded(
-            child: _loading
-                ? const LoadingView()
-                : _error != null
-                ? ErrorView(message: friendlyError(_error!), onRetry: _load)
-                : RefreshIndicator(
-                    onRefresh: _load,
-                    child: PagedNotificationListener(
-                      hasMore: _hasMore || _historyHasMore,
-                      loading: _loading || _loadingMore,
-                      onLoadMore: _loadMore,
-                      child: ListView.builder(
-                            primary: true,
-                            padding: const EdgeInsets.all(16),
-                            itemCount: (_items.isEmpty ? 1 : _items.length) +
-                                (_history.isEmpty ? 0 : _history.length + 1) +
-                                ((_hasMore || _historyHasMore) ? 1 : 0),
-                            itemBuilder: (context, index) {
-                              if (_items.isEmpty && index == 0) {
-                                return const Padding(
-                                  padding: EdgeInsets.only(bottom: 24),
-                                  child: EmptyStateView(
-                                    title: AppStrings.caughtUpTitle,
-                                    body: AppStrings.caughtUpBody,
-                                  ),
-                                );
-                              }
-                              if (index < _items.length) {
-                                final item = _items[index];
-                                return Padding(
-                                  padding: const EdgeInsets.only(bottom: 12),
-                                  child: OpportunityCard(
+            Expanded(
+              child: _loading
+                  ? const LoadingSkeleton(lines: 5)
+                  : _error != null
+                  ? ErrorView(message: friendlyError(_error!), onRetry: _load)
+                  : RefreshIndicator(
+                      onRefresh: _load,
+                      child: PagedNotificationListener(
+                        hasMore: _hasMore || _historyHasMore,
+                        loading: _loading || _loadingMore,
+                        onLoadMore: _loadMore,
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            final extra =
+                                constraints.maxWidth > AppTokens.contentMaxWidth
+                                    ? (constraints.maxWidth -
+                                            AppTokens.contentMaxWidth) /
+                                        2
+                                    : AppTokens.space16;
+                            final pad = extra.clamp(AppTokens.space16, 80.0);
+                            return ListView.builder(
+                              primary: true,
+                              padding: EdgeInsets.fromLTRB(
+                                pad,
+                                AppTokens.space8,
+                                pad,
+                                AppTokens.space32,
+                              ),
+                              itemCount: (_items.isEmpty ? 1 : _items.length) +
+                                  (_history.isEmpty ? 0 : _history.length + 1) +
+                                  ((_hasMore || _historyHasMore) ? 1 : 0),
+                              itemBuilder: (context, index) {
+                                if (_items.isEmpty && index == 0) {
+                                  return const Padding(
+                                    padding: EdgeInsets.only(
+                                      bottom: AppTokens.space24,
+                                    ),
+                                    child: EmptyStateView(
+                                      title: AppStrings.caughtUpTitle,
+                                      body: AppStrings.caughtUpBody,
+                                      icon: Icons.check_circle_outline,
+                                      compact: true,
+                                    ),
+                                  );
+                                }
+                                if (index < _items.length) {
+                                  final item = _items[index];
+                                  return OpportunityCard(
+                                    emphasize: index == 0,
                                     name: item.fullName,
                                     status: item.status,
                                     type: item.type,
                                     reason: item.reason,
                                     action: item.recommendedAction,
                                     footer: OpportunityActionBar(
+                                      layout: OpportunityActionLayout.stacked,
                                       customerId: item.customerId,
                                       opportunityType: item.type,
                                       customerName: item.fullName,
@@ -248,43 +274,69 @@ class _OpportunitiesScreenState extends ConsumerState<OpportunitiesScreen> {
                                     onTap: () => context.push(
                                       '/customers/${item.customerId}',
                                     ),
-                                  ),
-                                );
-                              }
-                              final historyStart = _items.isEmpty ? 1 : _items.length;
-                              if (index == historyStart && _history.isNotEmpty) {
-                                return Padding(
-                                  padding: const EdgeInsets.only(
-                                    top: 8,
-                                    bottom: 12,
-                                  ),
-                                  child: Text(
-                                    AppStrings.actionHistory,
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .titleMedium,
-                                  ),
-                                );
-                              }
-                              if (_history.isNotEmpty &&
-                                  index > historyStart &&
-                                  index <= historyStart + _history.length) {
-                                final action =
-                                    _history[index - historyStart - 1];
-                                return Padding(
-                                  padding: const EdgeInsets.only(bottom: 12),
-                                  child: ActionHistoryTile(action: action),
-                                );
-                              }
-                              return PagedFooter(loading: _loadingMore);
-                            },
-                          ),
+                                  );
+                                }
+                                final historyStart =
+                                    _items.isEmpty ? 1 : _items.length;
+                                if (index == historyStart &&
+                                    _history.isNotEmpty) {
+                                  return const Padding(
+                                    padding: EdgeInsets.only(
+                                      top: AppTokens.space8,
+                                      bottom: AppTokens.space8,
+                                    ),
+                                    child: SectionHeader(
+                                      AppStrings.actionHistory,
+                                    ),
+                                  );
+                                }
+                                if (_history.isNotEmpty &&
+                                    index > historyStart &&
+                                    index <= historyStart + _history.length) {
+                                  final action =
+                                      _history[index - historyStart - 1];
+                                  return Column(
+                                    children: [
+                                      ActionHistoryTile(action: action),
+                                      const Divider(),
+                                    ],
+                                  );
+                                }
+                                return PagedFooter(loading: _loadingMore);
+                              },
+                            );
+                          },
+                        ),
+                      ),
                     ),
-                  ),
-          ),
-        ],
+            ),
+          ],
+        ),
       ),
-    ),
+    );
+  }
+}
+
+class _TypeFilterChip extends StatelessWidget {
+  const _TypeFilterChip({
+    required this.label,
+    required this.selected,
+    required this.onSelected,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return ChoiceChip(
+      label: Text(label),
+      selected: selected,
+      onSelected: (_) => onSelected(),
+      showCheckmark: false,
+      labelPadding: const EdgeInsets.symmetric(horizontal: AppTokens.space8),
+      visualDensity: VisualDensity.comfortable,
     );
   }
 }

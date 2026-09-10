@@ -69,12 +69,23 @@ class AppStrings {
   static const messageTextLabel = 'متن پیام';
   static const confirmSendMessage = 'ارسال شود؟';
   static const confirmSendMessageBody =
-      'پیام برای مشتری از طریق بله ارسال می‌شود. این کار مراجعه یا درآمد نمی‌سازد.';
+      'پیام در صف ارسال قرار می‌گیرد. ارسال از بله یا به‌صورت دستی بعداً توسط پلتفرم انجام می‌شود.';
   static const sendMessage = 'ارسال';
-  static const messageQueued = 'درخواست ارسال شد';
-  static const messageSent = 'ارسال شد';
+  static const messageQueued = 'پیام در صف ارسال قرار گرفت.';
+  static const messageSent = 'پیام با موفقیت ارسال شد.';
   static const messageFailed = 'ارسال ناموفق بود';
-  static const messageSending = 'در حال ارسال…';
+  static const messageSending = 'در حال ثبت درخواست…';
+  static const messageDailyLimit =
+      'برای این مشتری امروز قبلاً پیام ثبت شده است.';
+  static const platformAdminLogin = 'ورود مدیر پلتفرم';
+  static const adminQueueTitle = 'صف ارسال پیام';
+  static const adminManualSend = 'ارسال دستی';
+  static const copyMessage = 'کپی پیام';
+  static const markManualSent = 'علامت‌گذاری به عنوان ارسال‌شده';
+  static const selectBale = 'ارسال با بله';
+  static const selectManual = 'ارسال دستی';
+  static const baleProviderNotReady = 'سرویس بله در حال حاضر آماده نیست.';
+  static const adminQueueEmpty = 'پیامی در صف نیست.';
   static const baleNotConfigured =
       'اتصال پیام‌رسان بله برای این سالن نیاز به بررسی دارد.';
   static const baleTemporaryFailure =
@@ -137,6 +148,7 @@ class AppStrings {
   static const customerReturn = 'دعوت دوباره';
   static const revenueDecline = 'افت درآمد';
   static const customersNeedingAttention = 'مشتریانی که الان باید بهشان توجه کنید';
+  static const customerStatusHeading = 'وضعیت مشتریان';
   static const metricTotalCustomers = 'همه مشتریان';
   static const metricActive = 'فعال';
   static const metricAtRisk = 'در آستانه از دست رفتن';
@@ -305,6 +317,8 @@ String localizeUserFacingMessage(String message) {
     'Phone number must be exactly 11 digits and start with 09.':
         'شماره موبایل باید دقیقاً ۱۱ رقم باشد و با ۰۹ شروع شود.',
     'Bale messaging is not configured': AppStrings.baleNotConfigured,
+    'A message was already requested for this customer today':
+        AppStrings.messageDailyLimit,
     'Message text is invalid': 'متن پیام معتبر نیست.',
     'Idempotency-Key is required': 'کلید تکرار درخواست لازم است.',
     'Opportunity not found': 'این فرصت الان وجود ندارد.',
@@ -404,8 +418,10 @@ String maskCustomerPhone(String phone) {
 
 String messageStatusLabel(String status) {
   switch (status) {
+    case 'QUEUED':
     case 'PENDING':
     case 'PROCESSING':
+    case 'DISPATCHED':
       return AppStrings.messageQueued;
     case 'SENT':
       return AppStrings.messageSent;
