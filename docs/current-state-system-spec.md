@@ -494,7 +494,7 @@ Evidence: `apps/api/src/action/`, Flutter `opportunity_action_bar.dart`, `action
 - API: `POST /intelligence/opportunities/:opportunityType/customers/:customerId/messages` (STAFF+; required `Idempotency-Key`). Returns salon status `QUEUED`. Missing Bale credentials do **not** block this.
 - One **new** salon request per salon+customer per **Asia/Tehran** calendar day (`MESSAGE_DAILY_LIMIT_REACHED`), enforced by partial unique index `message_requests_salon_customer_day_key` on rows with `counts_toward_daily_limit`. Pre-queue deliveries are backfilled 1:1 with that flag false. Idempotency is a separate key+hash replay.
 - `GET /messages/:id`, `GET /customers/:customerId/messages` (tenant-scoped).
-- Admin: `GET /admin/message-queue`, `POST .../select-bale|select-manual|mark-manual-sent|retry`.
+- Admin: `GET /admin/message-queue`, `POST .../select-bale|select-manual|mark-manual-sent|retry`. Development bootstrap: `pnpm db:bootstrap-admin` using `PLATFORM_ADMIN_EMAIL` / `PLATFORM_ADMIN_PASSWORD` (never in production).
 - Outbox: `MessageRequested` on queue; `MessageDeliveryActivated` when Bale is selected **and** credentials exist. Worker still accepts legacy `MessageSendRequested`.
 - Credentials remain platform env. Customer delete is blocked while message history exists.
 - Retention: message requests/deliveries are operational PII history; they are **not** auto-deleted. Outbox/idempotency retention is unchanged.

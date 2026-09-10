@@ -34,4 +34,4 @@ The worker executes **BALE** deliveries only. MANUAL rows are ignored. Legacy `M
 
 `BALE_SAFIR_API_ACCESS_KEY` and `BALE_SAFIR_BOT_ID` stay platform env. Never stored in DB, Flutter, audit, or logs.
 
-Platform admin bootstrap (optional): `PLATFORM_ADMIN_EMAIL` + `PLATFORM_ADMIN_PASSWORD` (both or neither). Password is argon2id hashed into `platform_admins`.
+Platform admin bootstrap (optional, development only): `PLATFORM_ADMIN_EMAIL` + `PLATFORM_ADMIN_PASSWORD` (both or neither). Password is argon2id hashed into `platform_admins`. API startup never bootstraps when `NODE_ENV=production`. Local command: `pnpm db:bootstrap-admin` (prints the email, never the password).

@@ -145,6 +145,38 @@ describeIfDb('Salon and users (e2e)', () => {
     const staffToken = await login(staffEmail);
 
     await request(app.getHttpServer())
+      .get('/admin/message-queue')
+      .set('Authorization', `Bearer ${salonA.token}`)
+      .expect(403);
+    await request(app.getHttpServer())
+      .get('/admin/message-queue')
+      .set('Authorization', `Bearer ${managerToken}`)
+      .expect(403);
+    await request(app.getHttpServer())
+      .get('/admin/message-queue')
+      .set('Authorization', `Bearer ${staffToken}`)
+      .expect(403);
+
+    const adminEmail = process.env.PLATFORM_ADMIN_EMAIL;
+    const adminPassword = process.env.PLATFORM_ADMIN_PASSWORD;
+    if (adminEmail && adminPassword) {
+      const adminLogin = await request(app.getHttpServer())
+        .post('/admin/auth/login')
+        .send({ email: adminEmail, password: adminPassword })
+        .expect(201);
+      const adminToken = adminLogin.body.accessToken as string;
+      expect(adminLogin.body.admin.email).toBe(adminEmail.trim().toLowerCase());
+      await request(app.getHttpServer())
+        .get('/admin/message-queue')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+      await request(app.getHttpServer())
+        .get('/auth/me')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(403);
+    }
+
+    await request(app.getHttpServer())
       .get('/users')
       .set('Authorization', `Bearer ${salonA.token}`)
       .expect(200)

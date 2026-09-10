@@ -8,7 +8,7 @@ Customer messaging is a **human-initiated, one-to-one** operational action. It i
 
 **MessageDelivery** is fulfillment: `BALE` (Bale Safir adapter) or `MANUAL` (human operator). Platform admin chooses the mode. Salon users cannot.
 
-**Platform admin** is not OWNER/MANAGER/STAFF. Admins live in `platform_admins` and authenticate with JWT claim `scp=platform` (no tenant id).
+**Platform admin** is not OWNER/MANAGER/STAFF. Admins live in `platform_admins` and authenticate with JWT claim `scp=platform` (no tenant id). Local development: `pnpm db:bootstrap-admin`.
 
 ## Business rules
 
