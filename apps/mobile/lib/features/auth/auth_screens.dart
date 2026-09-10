@@ -1,10 +1,26 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/errors/api_exception.dart';
 import '../../core/state/providers.dart';
 import '../../core/widgets/app_widgets.dart';
 import '../../shared/labels.dart';
+
+String loginErrorText(Object error) {
+  final friendly = friendlyError(error);
+  if (kDebugMode) {
+    if (error is ApiException) {
+      return 'HTTP ${error.statusCode} ${error.code}\n${error.message}\n$friendly';
+    }
+    if (error is NetworkException) {
+      return 'NetworkException: ${error.message}';
+    }
+    return '${error.runtimeType}: $error\n$friendly';
+  }
+  return friendly;
+}
 
 class SplashScreen extends StatelessWidget {
   const SplashScreen({super.key});
@@ -49,7 +65,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     try {
       await ref.read(authControllerProvider.notifier).login(email, password);
     } catch (error) {
-      setState(() => _error = friendlyError(error));
+      setState(() => _error = loginErrorText(error));
     } finally {
       if (mounted) {
         setState(() => _loading = false);
@@ -162,7 +178,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
             password: _password.text,
           );
     } catch (error) {
-      setState(() => _error = friendlyError(error));
+      setState(() => _error = loginErrorText(error));
     } finally {
       if (mounted) {
         setState(() => _loading = false);
@@ -252,7 +268,7 @@ class _PlatformAdminLoginScreenState extends ConsumerState<PlatformAdminLoginScr
     try {
       await ref.read(authControllerProvider.notifier).loginPlatformAdmin(email, password);
     } catch (error) {
-      setState(() => _error = friendlyError(error));
+      setState(() => _error = loginErrorText(error));
     } finally {
       if (mounted) {
         setState(() => _loading = false);

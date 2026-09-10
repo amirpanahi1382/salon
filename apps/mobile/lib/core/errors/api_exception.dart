@@ -20,10 +20,16 @@ class ApiException implements Exception {
 
   String get userMessage {
     if (isUnauthenticated) {
+      if (message.trim() == 'Invalid email or password') {
+        return localizeUserFacingMessage(message);
+      }
       return AppStrings.sessionExpired;
     }
     if (isForbidden) {
       return AppStrings.permissionDenied;
+    }
+    if (statusCode == 429 || code == 'RATE_LIMITED') {
+      return localizeUserFacingMessage('Too Many Requests');
     }
     if (isNotFound) {
       return AppStrings.recordNotFound;

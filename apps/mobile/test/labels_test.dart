@@ -46,5 +46,9 @@ void main() {
       localizeIntelligenceCopy('Send a reactivation message.'),
       'یک پیام یادآوری بفرستید تا دوباره سر بزند.',
     );
+    expect(
+      localizeUserFacingMessage('email must be an email'),
+      'ایمیل معتبر نیست.',
+    );
   });
 }

@@ -60,10 +60,12 @@ class SecureSessionStore implements SessionStore {
       return null;
     }
     final decoded = jsonDecode(raw);
-    if (decoded is! Map<String, dynamic>) {
+    if (decoded is! Map) {
       return null;
     }
-    return StoredSession.fromJson(decoded);
+    return StoredSession.fromJson({
+      for (final entry in decoded.entries) entry.key.toString(): entry.value,
+    });
   }
 
   @override

@@ -298,6 +298,11 @@ String localizeUserFacingMessage(String message) {
     'Something went wrong. Please try again.': AppStrings.genericError,
     'Unable to reach the salon platform.': AppStrings.networkError,
     'Invalid email or password': 'ایمیل یا رمز عبور درست نیست.',
+    'email must be an email': 'ایمیل معتبر نیست.',
+    'password must be a string': 'رمز عبور معتبر نیست.',
+    'password must be longer than or equal to 1 characters':
+        'رمز عبور را وارد کنید.',
+    'Too Many Requests': 'تعداد تلاش‌ها زیاد بود. کمی بعد دوباره وارد شوید.',
     'visitedAt must be a completed visit time, not a future booking':
         'تاریخ باید برای مراجعه انجام‌شده باشد، نه نوبت آینده.',
     'visitedAt must be a valid timestamp': 'تاریخ مراجعه معتبر نیست.',

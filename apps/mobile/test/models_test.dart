@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:salon_mobile/core/errors/api_exception.dart';
+import 'package:salon_mobile/core/networking/repositories.dart';
 import 'package:salon_mobile/shared/models/models.dart';
 
 void main() {
@@ -249,6 +250,47 @@ void main() {
         message: 'nope',
       ).userMessage,
       'این مورد پیدا نشد.',
+    );
+    expect(
+      const ApiException(
+        statusCode: 401,
+        code: 'UNAUTHENTICATED',
+        message: 'Invalid email or password',
+      ).userMessage,
+      'ایمیل یا رمز عبور درست نیست.',
+    );
+    expect(
+      const ApiException(
+        statusCode: 429,
+        code: 'RATE_LIMITED',
+        message: 'ThrottlerException: Too Many Requests',
+      ).userMessage,
+      contains('تعداد تلاش'),
+    );
+  });
+
+  test('parses platform-admin login JSON even when maps are untyped', () {
+    final session = AuthSession.fromAdminAuthJson(
+      <dynamic, dynamic>{
+        'accessToken': 'admin-token',
+        'admin': <dynamic, dynamic>{
+          'id': 'adm1',
+          'email': 'admin@salon.local',
+          'name': 'Platform Admin',
+        },
+      },
+    );
+    expect(session.accessToken, 'admin-token');
+    expect(session.user.isPlatformAdmin, isTrue);
+    expect(session.user.id, 'adm1');
+    expect(session.user.tenantId, isEmpty);
+    expect(session.user.email, 'admin@salon.local');
+  });
+
+  test('strips hidden bidi marks from login emails', () {
+    expect(
+      sanitizeAuthEmail('\u200eadmin@salon.local\u200f'),
+      'admin@salon.local',
     );
   });
 }

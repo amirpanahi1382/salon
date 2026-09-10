@@ -1,3 +1,22 @@
+Map<String, dynamic> asJsonMap(Object? value) {
+  if (value is Map<String, dynamic>) {
+    return value;
+  }
+  if (value is Map) {
+    return {
+      for (final entry in value.entries) entry.key.toString(): entry.value,
+    };
+  }
+  throw FormatException('Expected a JSON object, got ${value.runtimeType}');
+}
+
+String requiredJsonString(Object? value, String field) {
+  if (value is String && value.isNotEmpty) {
+    return value;
+  }
+  throw FormatException('Expected non-empty string for $field');
+}
+
 class AuthUser {
   const AuthUser({
     required this.id,
@@ -27,7 +46,7 @@ class AuthUser {
 
   factory AuthUser.fromAdminLoginJson(Map<String, dynamic> json) {
     return AuthUser(
-      id: json['id'] as String,
+      id: requiredJsonString(json['id'], 'admin.id'),
       tenantId: '',
       role: 'PLATFORM_ADMIN',
       name: json['name'] as String?,
@@ -58,17 +77,19 @@ class AuthSession {
   final String accessToken;
   final AuthUser user;
 
-  factory AuthSession.fromAdminAuthJson(Map<String, dynamic> json) {
+  factory AuthSession.fromAdminAuthJson(Object? json) {
+    final map = asJsonMap(json);
     return AuthSession(
-      accessToken: json['accessToken'] as String,
-      user: AuthUser.fromAdminLoginJson(json['admin'] as Map<String, dynamic>),
+      accessToken: requiredJsonString(map['accessToken'], 'accessToken'),
+      user: AuthUser.fromAdminLoginJson(asJsonMap(map['admin'])),
     );
   }
 
-  factory AuthSession.fromAuthJson(Map<String, dynamic> json) {
+  factory AuthSession.fromAuthJson(Object? json) {
+    final map = asJsonMap(json);
     return AuthSession(
-      accessToken: json['accessToken'] as String,
-      user: AuthUser.fromLoginJson(json['user'] as Map<String, dynamic>),
+      accessToken: requiredJsonString(map['accessToken'], 'accessToken'),
+      user: AuthUser.fromLoginJson(asJsonMap(map['user'])),
     );
   }
 }

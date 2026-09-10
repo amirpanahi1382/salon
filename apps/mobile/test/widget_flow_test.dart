@@ -689,7 +689,7 @@ void main() {
     await tester.enterText(find.byType(TextField).last, 'password1');
     await tester.tap(find.text('ورود'));
     await tester.pump();
-    expect(find.text('لطفاً دوباره وارد شوید.'), findsOneWidget);
+    expect(find.textContaining('ایمیل یا رمز عبور درست نیست.'), findsOneWidget);
   });
 
   testWidgets('dashboard renders summary and opportunities', (tester) async {

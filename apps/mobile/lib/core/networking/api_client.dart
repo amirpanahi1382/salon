@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 
 import '../../shared/labels.dart';
 import '../errors/api_exception.dart';
@@ -34,7 +35,10 @@ class ApiClient {
               baseUrl: baseUrl,
               connectTimeout: const Duration(seconds: 12),
               receiveTimeout: const Duration(seconds: 20),
-              headers: const {'Content-Type': 'application/json'},
+              contentType: Headers.jsonContentType,
+              headers: const {'Accept': 'application/json'},
+              validateStatus: (status) =>
+                  status != null && status >= 200 && status < 300,
             ),
           ) {
     _dio.interceptors.add(
@@ -123,6 +127,7 @@ class ApiClient {
   Future<dynamic> _send(Future<Response<dynamic>> Function() request) async {
     try {
       final response = await request();
+      _debugResponse(response);
       return response.data;
     } on DioException catch (error) {
       throw mapDioException(error);
@@ -131,6 +136,7 @@ class ApiClient {
 }
 
 Exception mapDioException(DioException error) {
+  _debugDioException(error);
   if (error.type == DioExceptionType.connectionError ||
       error.type == DioExceptionType.connectionTimeout ||
       error.type == DioExceptionType.receiveTimeout ||
@@ -153,6 +159,38 @@ Exception mapDioException(DioException error) {
     code: 'HTTP_ERROR',
     message: AppStrings.genericError,
   );
+}
+
+void _debugResponse(Response<dynamic> response) {
+  if (!kDebugMode) {
+    return;
+  }
+  debugPrint(
+    'api ${response.requestOptions.method} ${response.requestOptions.path} '
+    '-> ${response.statusCode} keys=${_safeJsonKeys(response.data)}',
+  );
+}
+
+void _debugDioException(DioException error) {
+  if (!kDebugMode) {
+    return;
+  }
+  final data = error.response?.data;
+  debugPrint(
+    'api dio type=${error.type} '
+    '${error.requestOptions.method} ${error.requestOptions.path} '
+    '-> ${error.response?.statusCode} '
+    'code=${data is Map ? data['error'] : null} '
+    'message=${data is Map ? stringifyApiMessage(data['message']) : error.message} '
+    'keys=${_safeJsonKeys(data)}',
+  );
+}
+
+List<String> _safeJsonKeys(Object? data) {
+  if (data is Map) {
+    return data.keys.map((key) => key.toString()).toList();
+  }
+  return const [];
 }
 
 String stringifyApiMessage(Object? message) {

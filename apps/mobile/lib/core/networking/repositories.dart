@@ -1,9 +1,21 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 
 import '../../core/errors/api_exception.dart';
 import '../../core/networking/api_client.dart';
 import '../../core/storage/session_store.dart';
 import '../../shared/models/models.dart';
+
+String sanitizeAuthEmail(String email) {
+  return email
+      .replaceAll(
+        RegExp(
+          r'[\u0000-\u001F\u007F\u200B-\u200F\u202A-\u202E\u2066-\u2069]',
+        ),
+        '',
+      )
+      .trim();
+}
 
 class AuthRepository {
   AuthRepository({required this.api, required this.sessionStore});
@@ -17,9 +29,9 @@ class AuthRepository {
   }) async {
     final data = await api.post(
       '/auth/login',
-      data: {'email': email.trim(), 'password': password},
-    ) as Map<String, dynamic>;
-    final session = AuthSession.fromAuthJson(data);
+      data: {'email': sanitizeAuthEmail(email), 'password': password},
+    );
+    final session = AuthSession.fromAuthJson(asJsonMap(data));
     await _persist(session);
     return session;
   }
@@ -35,11 +47,11 @@ class AuthRepository {
       data: {
         'salonName': salonName.trim(),
         'ownerName': ownerName.trim(),
-        'email': email.trim(),
+        'email': sanitizeAuthEmail(email),
         'password': password,
       },
-    ) as Map<String, dynamic>;
-    final session = AuthSession.fromAuthJson(data);
+    );
+    final session = AuthSession.fromAuthJson(asJsonMap(data));
     await _persist(session);
     return session;
   }
@@ -50,8 +62,13 @@ class AuthRepository {
   }) async {
     final data = await api.post(
       '/admin/auth/login',
-      data: {'email': email.trim(), 'password': password},
-    ) as Map<String, dynamic>;
+      data: {'email': sanitizeAuthEmail(email), 'password': password},
+    );
+    if (kDebugMode) {
+      debugPrint(
+        'admin login response type=${data.runtimeType} keys=${data is Map ? data.keys.toList() : null}',
+      );
+    }
     final session = AuthSession.fromAdminAuthJson(data);
     await _persist(session);
     return session;
@@ -60,7 +77,7 @@ class AuthRepository {
   Future<AuthUser> me() async {
     final stored = await sessionStore.read();
     if (stored?.role == 'PLATFORM_ADMIN') {
-      final data = await api.get('/admin/auth/me') as Map<String, dynamic>;
+      final data = asJsonMap(await api.get('/admin/auth/me'));
       return AuthUser.fromAdminMeJson(data);
     }
     final data = await api.get('/auth/me') as Map<String, dynamic>;
