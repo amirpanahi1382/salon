@@ -14,7 +14,7 @@ export async function fetchWithTimeout(
   const timeoutAbort = new AbortController();
   const timer = setTimeout(() => timeoutAbort.abort(), timeoutMs);
   const signal =
-    callerSignal !== undefined
+    callerSignal != null
       ? AbortSignal.any([callerSignal, timeoutAbort.signal])
       : timeoutAbort.signal;
 
