@@ -38,7 +38,9 @@ class _SalonAppState extends ConsumerState<SalonApp> {
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      theme: AppTheme.light(),
+      theme: AppTheme.app(),
+      darkTheme: AppTheme.app(),
+      themeMode: ThemeMode.dark,
       routerConfig: router,
     );
   }

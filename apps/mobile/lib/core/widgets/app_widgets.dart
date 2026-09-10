@@ -2,10 +2,226 @@ import 'package:flutter/material.dart';
 
 import '../errors/api_exception.dart';
 import '../theme/app_theme.dart';
+import '../theme/app_tokens.dart';
 import '../../shared/labels.dart';
 
-class AppButton extends StatelessWidget {
-  const AppButton({
+enum AppSurfaceTone { base, elevated, hero }
+
+class AppSurface extends StatelessWidget {
+  const AppSurface({
+    super.key,
+    required this.child,
+    this.tone = AppSurfaceTone.base,
+    this.padding,
+    this.onTap,
+    this.radius,
+  });
+
+  final Widget child;
+  final AppSurfaceTone tone;
+  final EdgeInsetsGeometry? padding;
+  final VoidCallback? onTap;
+  final double? radius;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = switch (tone) {
+      AppSurfaceTone.base => AppTokens.surface,
+      AppSurfaceTone.elevated => AppTokens.surfaceElevated,
+      AppSurfaceTone.hero => AppTokens.surfaceElevated,
+    };
+    final resolvedRadius = radius ??
+        (tone == AppSurfaceTone.hero ? AppTokens.radiusLg : AppTokens.radiusMd);
+    final content = Padding(
+      padding: padding ?? const EdgeInsets.all(AppTokens.space16),
+      child: child,
+    );
+    final box = DecoratedBox(
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(resolvedRadius),
+        border: Border.all(
+          color: tone == AppSurfaceTone.hero
+              ? AppTokens.accent.withValues(alpha: 0.28)
+              : AppTokens.line,
+        ),
+      ),
+      child: content,
+    );
+    if (onTap == null) {
+      return box;
+    }
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(resolvedRadius),
+        child: box,
+      ),
+    );
+  }
+}
+
+class SectionHeader extends StatelessWidget {
+  const SectionHeader(this.title, {super.key});
+
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppTokens.space12),
+      child: Text(title, style: Theme.of(context).textTheme.titleMedium),
+    );
+  }
+}
+
+class InsightHero extends StatelessWidget {
+  const InsightHero({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppSurface(tone: AppSurfaceTone.hero, child: child);
+  }
+}
+
+enum MetricSize { hero, standard, compact }
+
+class MetricWidget extends StatelessWidget {
+  const MetricWidget({
+    super.key,
+    required this.label,
+    required this.value,
+    this.valueDirection,
+    this.size = MetricSize.standard,
+  });
+
+  final String label;
+  final Object value;
+  final TextDirection? valueDirection;
+  final MetricSize size;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final valueStyle = switch (size) {
+      MetricSize.hero => theme.textTheme.headlineMedium,
+      MetricSize.standard => theme.textTheme.headlineSmall,
+      MetricSize.compact => theme.textTheme.titleLarge,
+    };
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '$value',
+          style: valueStyle,
+          textDirection: valueDirection,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+        const SizedBox(height: AppTokens.space4),
+        Text(label, style: theme.textTheme.bodySmall),
+      ],
+    );
+  }
+}
+
+class MetricRow extends StatelessWidget {
+  const MetricRow({super.key, required this.children});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final wide = constraints.maxWidth >= 520;
+        if (wide) {
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (var i = 0; i < children.length; i++) ...[
+                if (i > 0) const SizedBox(width: AppTokens.space16),
+                Expanded(child: children[i]),
+              ],
+            ],
+          );
+        }
+        return Wrap(
+          spacing: AppTokens.space24,
+          runSpacing: AppTokens.space16,
+          children: children
+              .map(
+                (child) => SizedBox(
+                  width: (constraints.maxWidth - AppTokens.space24) / 2,
+                  child: child,
+                ),
+              )
+              .toList(),
+        );
+      },
+    );
+  }
+}
+
+class OpportunityPreview extends StatelessWidget {
+  const OpportunityPreview({
+    super.key,
+    required this.name,
+    required this.status,
+    required this.type,
+    required this.reason,
+    required this.action,
+    this.footer,
+    this.onTap,
+  });
+
+  final String name;
+  final String status;
+  final String type;
+  final String reason;
+  final String action;
+  final Widget? footer;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return AppSurface(
+      tone: AppSurfaceTone.base,
+      onTap: onTap,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            opportunityLabel(type),
+            style: theme.textTheme.titleSmall?.copyWith(color: AppTokens.accent),
+          ),
+          const SizedBox(height: AppTokens.space8),
+          Text(name, style: theme.textTheme.titleMedium),
+          const SizedBox(height: AppTokens.space8),
+          StatusBadge(status: status),
+          const SizedBox(height: AppTokens.space12),
+          Text(localizeIntelligenceCopy(reason)),
+          const SizedBox(height: AppTokens.space12),
+          Text(
+            '${AppStrings.recommended}: ${localizeIntelligenceCopy(action)}',
+            style: theme.textTheme.bodySmall,
+          ),
+          if (footer != null) ...[
+            const SizedBox(height: AppTokens.space12),
+            footer!,
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class PrimaryButton extends StatelessWidget {
+  const PrimaryButton({
     super.key,
     required this.label,
     required this.onPressed,
@@ -28,6 +244,40 @@ class AppButton extends StatelessWidget {
             )
           : Text(label),
     );
+  }
+}
+
+class SecondaryButton extends StatelessWidget {
+  const SecondaryButton({
+    super.key,
+    required this.label,
+    required this.onPressed,
+  });
+
+  final String label;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton(onPressed: onPressed, child: Text(label));
+  }
+}
+
+class AppButton extends StatelessWidget {
+  const AppButton({
+    super.key,
+    required this.label,
+    required this.onPressed,
+    this.loading = false,
+  });
+
+  final String label;
+  final VoidCallback? onPressed;
+  final bool loading;
+
+  @override
+  Widget build(BuildContext context) {
+    return PrimaryButton(label: label, onPressed: onPressed, loading: loading);
   }
 }
 
@@ -87,7 +337,43 @@ class LoadingView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Center(child: CircularProgressIndicator());
+    return const Center(
+      child: SizedBox(
+        width: 28,
+        height: 28,
+        child: CircularProgressIndicator(strokeWidth: 2),
+      ),
+    );
+  }
+}
+
+class LoadingSkeleton extends StatelessWidget {
+  const LoadingSkeleton({super.key, this.lines = 3});
+
+  final int lines;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(AppTokens.space16),
+      child: Column(
+        children: [
+          for (var i = 0; i < lines; i++) ...[
+            Container(
+              height: 16,
+              width: double.infinity,
+              decoration: BoxDecoration(
+                color: AppTokens.surfaceElevated,
+                borderRadius: BorderRadius.circular(AppTokens.radiusSm),
+              ),
+            ),
+            if (i < lines - 1) const SizedBox(height: AppTokens.space12),
+          ],
+          const SizedBox(height: AppTokens.space24),
+          const LoadingView(),
+        ],
+      ),
+    );
   }
 }
 
@@ -101,17 +387,20 @@ class ErrorView extends StatelessWidget {
   Widget build(BuildContext context) {
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(AppTokens.space24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            const Icon(
+              Icons.error_outline,
+              color: AppTokens.danger,
+              size: 28,
+            ),
+            const SizedBox(height: AppTokens.space12),
             Text(message, textAlign: TextAlign.center),
             if (onRetry != null) ...[
-              const SizedBox(height: 16),
-              OutlinedButton(
-                onPressed: onRetry,
-                child: const Text(AppStrings.retry),
-              ),
+              const SizedBox(height: AppTokens.space16),
+              SecondaryButton(label: AppStrings.retry, onPressed: onRetry),
             ],
           ],
         ),
@@ -126,31 +415,38 @@ class EmptyStateView extends StatelessWidget {
     required this.title,
     required this.body,
     this.action,
+    this.icon = Icons.info_outline,
   });
 
   final String title;
   final String body;
   final Widget? action;
+  final IconData icon;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(AppTokens.space24),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
+          Icon(icon, size: 28, color: AppTokens.textSecondary),
+          const SizedBox(height: AppTokens.space12),
           Text(
             title,
             style: Theme.of(context).textTheme.titleMedium,
             textAlign: TextAlign.center,
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: AppTokens.space8),
           Text(
             body,
             style: const TextStyle(color: AppColors.muted),
             textAlign: TextAlign.center,
           ),
-          if (action != null) ...[const SizedBox(height: 16), action!],
+          if (action != null) ...[
+            const SizedBox(height: AppTokens.space16),
+            action!,
+          ],
         ],
       ),
     );
@@ -167,24 +463,43 @@ class StatusBadge extends StatelessWidget {
     final color = switch (status) {
       'AT_RISK' => AppColors.warning,
       'INACTIVE' => AppColors.danger,
-      'ACTIVE' || 'RETURNING' => AppColors.success,
+      'RETURNING' => AppTokens.accent,
+      'ACTIVE' => AppColors.success,
+      'NEW' => AppColors.muted,
       _ => AppColors.muted,
     };
+    final icon = switch (status) {
+      'AT_RISK' => Icons.schedule,
+      'INACTIVE' => Icons.hourglass_disabled_outlined,
+      'RETURNING' => Icons.replay,
+      'ACTIVE' => Icons.check_circle_outline,
+      'NEW' => Icons.person_add_alt_outlined,
+      _ => Icons.circle_outlined,
+    };
+    final label = statusLabel(status);
     return Semantics(
-      label: statusLabel(status),
+      label: label,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
         decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(999),
+          color: color.withValues(alpha: 0.14),
+          borderRadius: BorderRadius.circular(AppTokens.radiusSm),
+          border: Border.all(color: color.withValues(alpha: 0.35)),
         ),
-        child: Text(
-          statusLabel(status),
-          style: TextStyle(
-            color: color,
-            fontWeight: FontWeight.w600,
-            fontSize: 12,
-          ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: color),
+            const SizedBox(width: AppTokens.space8),
+            Text(
+              label,
+              style: TextStyle(
+                color: color,
+                fontWeight: FontWeight.w500,
+                fontSize: 12,
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -205,22 +520,10 @@ class MetricCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AppCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: const TextStyle(color: AppColors.muted, fontSize: 13, height: 1.4),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            '$value',
-            style: Theme.of(context).textTheme.headlineSmall,
-            textDirection: valueDirection,
-          ),
-        ],
-      ),
+    return MetricWidget(
+      label: label,
+      value: value,
+      valueDirection: valueDirection,
     );
   }
 }
@@ -233,11 +536,7 @@ class AppCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final content = Padding(padding: const EdgeInsets.all(16), child: child);
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      child: onTap == null ? content : InkWell(onTap: onTap, child: content),
-    );
+    return AppSurface(onTap: onTap, child: child);
   }
 }
 

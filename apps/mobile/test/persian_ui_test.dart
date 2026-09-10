@@ -48,7 +48,7 @@ void main() {
           GlobalWidgetsLocalizations.delegate,
           GlobalCupertinoLocalizations.delegate,
         ],
-        theme: AppTheme.light(),
+        theme: AppTheme.app(),
         routerConfig: router,
       ),
     );

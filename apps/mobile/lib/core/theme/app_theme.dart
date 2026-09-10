@@ -1,16 +1,19 @@
 import 'package:flutter/material.dart';
 
+import 'app_tokens.dart';
+
+/// Compatibility aliases used across existing screens.
 class AppColors {
-  static const background = Color(0xFFF7F3EF);
-  static const surface = Color(0xFFFFFFFF);
-  static const ink = Color(0xFF2B2420);
-  static const muted = Color(0xFF6F645C);
-  static const line = Color(0xFFE6DDD6);
-  static const accent = Color(0xFF8A4B4B);
-  static const accentSoft = Color(0xFFF3E4E0);
-  static const success = Color(0xFF3F6B55);
-  static const warning = Color(0xFF9A5B24);
-  static const danger = Color(0xFF8A3B3B);
+  static const background = AppTokens.bg;
+  static const surface = AppTokens.surface;
+  static const ink = AppTokens.textPrimary;
+  static const muted = AppTokens.textSecondary;
+  static const line = AppTokens.line;
+  static const accent = AppTokens.accent;
+  static const accentSoft = AppTokens.accentMuted;
+  static const success = AppTokens.success;
+  static const warning = AppTokens.warning;
+  static const danger = AppTokens.danger;
 }
 
 class AppTheme {
@@ -20,144 +23,204 @@ class AppTheme {
 
   static const supportedLocales = <Locale>[locale];
 
-  static ThemeData light() {
-    const scheme = ColorScheme.light(
-      primary: AppColors.accent,
-      onPrimary: Colors.white,
-      surface: AppColors.surface,
-      onSurface: AppColors.ink,
-      secondary: AppColors.accentSoft,
-      onSecondary: AppColors.ink,
-      error: AppColors.danger,
+  /// Product theme (dark charcoal + champagne accent).
+  static ThemeData app() => _theme();
+
+  /// Kept for existing tests and call sites; same as [app].
+  static ThemeData light() => app();
+
+  static ThemeData _theme() {
+    const scheme = ColorScheme.dark(
+      brightness: Brightness.dark,
+      primary: AppTokens.accent,
+      onPrimary: AppTokens.onAccent,
+      surface: AppTokens.surface,
+      onSurface: AppTokens.textPrimary,
+      secondary: AppTokens.surfaceElevated,
+      onSecondary: AppTokens.textPrimary,
+      error: AppTokens.danger,
+      onError: AppTokens.textPrimary,
+      outline: AppTokens.line,
     );
 
     final base = ThemeData(
       useMaterial3: true,
+      brightness: Brightness.dark,
       colorScheme: scheme,
       fontFamily: fontFamily,
-      scaffoldBackgroundColor: AppColors.background,
+      scaffoldBackgroundColor: AppTokens.bg,
     );
 
-    return base.copyWith(
-      textTheme: base.textTheme.apply(
+    TextStyle vazir({
+      required double size,
+      FontWeight weight = FontWeight.w400,
+      Color color = AppTokens.textPrimary,
+      double height = 1.5,
+    }) {
+      return TextStyle(
         fontFamily: fontFamily,
-        bodyColor: AppColors.ink,
-        displayColor: AppColors.ink,
-      ).copyWith(
-        bodyMedium: const TextStyle(
-          fontFamily: fontFamily,
-          fontSize: 15,
-          height: 1.65,
-          color: AppColors.ink,
-        ),
-        bodySmall: const TextStyle(
-          fontFamily: fontFamily,
-          fontSize: 13,
-          height: 1.6,
-          color: AppColors.muted,
-        ),
-        titleMedium: const TextStyle(
-          fontFamily: fontFamily,
-          fontSize: 16,
-          height: 1.55,
-          fontWeight: FontWeight.w600,
-          color: AppColors.ink,
-        ),
-        titleLarge: const TextStyle(
-          fontFamily: fontFamily,
-          fontSize: 20,
-          height: 1.5,
-          fontWeight: FontWeight.w600,
-          color: AppColors.ink,
-        ),
-        headlineSmall: const TextStyle(
-          fontFamily: fontFamily,
-          fontSize: 22,
-          height: 1.4,
-          fontWeight: FontWeight.w600,
-          color: AppColors.ink,
-        ),
-        headlineMedium: const TextStyle(
-          fontFamily: fontFamily,
-          fontSize: 28,
-          height: 1.4,
-          fontWeight: FontWeight.w600,
-          color: AppColors.ink,
-        ),
-      ),
-      appBarTheme: const AppBarTheme(
-        backgroundColor: AppColors.background,
-        foregroundColor: AppColors.ink,
+        fontSize: size,
+        fontWeight: weight,
+        color: color,
+        height: height,
+      );
+    }
+
+    return base.copyWith(
+      textTheme: base.textTheme
+          .apply(
+            fontFamily: fontFamily,
+            bodyColor: AppTokens.textPrimary,
+            displayColor: AppTokens.textPrimary,
+          )
+          .copyWith(
+            displaySmall: vazir(size: 24, weight: FontWeight.w600, height: 1.45),
+            headlineMedium: vazir(size: 36, weight: FontWeight.w500, height: 1.2),
+            headlineSmall: vazir(size: 22, weight: FontWeight.w500, height: 1.35),
+            titleLarge: vazir(size: 20, weight: FontWeight.w600, height: 1.4),
+            titleMedium: vazir(size: 16, weight: FontWeight.w600, height: 1.5),
+            titleSmall: vazir(size: 14, weight: FontWeight.w500, height: 1.45),
+            bodyMedium: vazir(size: 15, height: 1.65),
+            bodySmall: vazir(
+              size: 13,
+              color: AppTokens.textSecondary,
+              height: 1.6,
+            ),
+            labelLarge: vazir(size: 15, weight: FontWeight.w600, height: 1.3),
+            labelMedium: vazir(
+              size: 12,
+              weight: FontWeight.w500,
+              color: AppTokens.textSecondary,
+              height: 1.3,
+            ),
+          ),
+      appBarTheme: AppBarTheme(
+        backgroundColor: AppTokens.bg,
+        foregroundColor: AppTokens.textPrimary,
         elevation: 0,
+        scrolledUnderElevation: 0,
         centerTitle: false,
-        titleTextStyle: TextStyle(
-          fontFamily: fontFamily,
-          fontSize: 18,
-          height: 1.45,
-          fontWeight: FontWeight.w600,
-          color: AppColors.ink,
-        ),
+        titleTextStyle: vazir(size: 18, weight: FontWeight.w600, height: 1.45),
       ),
       cardTheme: CardThemeData(
-        color: AppColors.surface,
+        color: AppTokens.surface,
         elevation: 0,
+        margin: EdgeInsets.zero,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-          side: const BorderSide(color: AppColors.line),
+          borderRadius: BorderRadius.circular(AppTokens.radiusMd),
+          side: const BorderSide(color: AppTokens.line),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: AppColors.surface,
+        fillColor: AppTokens.surface,
         alignLabelWithHint: true,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: AppColors.line),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: AppTokens.space16,
+          vertical: 14,
         ),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(AppTokens.radiusMd),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(AppTokens.radiusMd),
+          borderSide: const BorderSide(color: AppTokens.line),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(AppTokens.radiusMd),
+          borderSide: const BorderSide(color: AppTokens.accent),
+        ),
+        labelStyle: vazir(size: 14, color: AppTokens.textSecondary),
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
-          minimumSize: const Size.fromHeight(48),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          foregroundColor: AppTokens.onAccent,
+          backgroundColor: AppTokens.accent,
+          disabledBackgroundColor: AppTokens.surfaceElevated,
+          minimumSize: const Size.fromHeight(AppTokens.buttonHeight),
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppTokens.space16,
+            vertical: AppTokens.space12,
+          ),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(AppTokens.radiusMd),
           ),
-          textStyle: const TextStyle(
-            fontFamily: fontFamily,
-            fontSize: 15,
-            fontWeight: FontWeight.w600,
-            height: 1.3,
+          textStyle: vazir(size: 15, weight: FontWeight.w600, height: 1.3),
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppTokens.textPrimary,
+          minimumSize: const Size(AppTokens.buttonHeight, AppTokens.buttonHeight),
+          side: const BorderSide(color: AppTokens.line),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppTokens.radiusMd),
           ),
+          textStyle: vazir(size: 15, weight: FontWeight.w500, height: 1.3),
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          foregroundColor: AppTokens.accent,
+          textStyle: vazir(size: 14, weight: FontWeight.w500),
         ),
       ),
       navigationBarTheme: NavigationBarThemeData(
-        backgroundColor: AppColors.surface,
-        indicatorColor: AppColors.accentSoft,
-        height: 84,
+        backgroundColor: AppTokens.surface,
+        elevation: 0,
+        height: AppTokens.navHeight,
+        indicatorColor: AppTokens.accentMuted,
+        overlayColor: WidgetStateProperty.all(Colors.transparent),
+        iconTheme: WidgetStateProperty.resolveWith((states) {
+          final selected = states.contains(WidgetState.selected);
+          return IconThemeData(
+            size: AppTokens.iconNav,
+            color: selected ? AppTokens.accent : AppTokens.textSecondary,
+          );
+        }),
         labelTextStyle: WidgetStateProperty.resolveWith((states) {
-          return const TextStyle(
-            fontFamily: fontFamily,
-            fontSize: 11,
+          final selected = states.contains(WidgetState.selected);
+          return vazir(
+            size: 12,
+            weight: selected ? FontWeight.w600 : FontWeight.w400,
+            color: selected ? AppTokens.accent : AppTokens.textSecondary,
             height: 1.2,
-            fontWeight: FontWeight.w600,
           );
         }),
       ),
-      dialogTheme: const DialogThemeData(
-        titleTextStyle: TextStyle(
-          fontFamily: fontFamily,
-          fontSize: 18,
-          height: 1.5,
-          fontWeight: FontWeight.w600,
-          color: AppColors.ink,
+      dividerTheme: const DividerThemeData(
+        color: AppTokens.line,
+        space: 1,
+        thickness: 1,
+      ),
+      chipTheme: ChipThemeData(
+        backgroundColor: AppTokens.surface,
+        selectedColor: AppTokens.accentMuted,
+        side: const BorderSide(color: AppTokens.line),
+        labelStyle: vazir(size: 13, weight: FontWeight.w500),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppTokens.radiusSm),
         ),
+      ),
+      snackBarTheme: const SnackBarThemeData(
+        backgroundColor: AppTokens.surfaceElevated,
         contentTextStyle: TextStyle(
           fontFamily: fontFamily,
-          fontSize: 15,
-          height: 1.65,
-          color: AppColors.ink,
+          color: AppTokens.textPrimary,
         ),
+      ),
+      dialogTheme: DialogThemeData(
+        backgroundColor: AppTokens.surface,
+        titleTextStyle: vazir(size: 18, weight: FontWeight.w600, height: 1.5),
+        contentTextStyle: vazir(size: 15, height: 1.65),
+      ),
+      progressIndicatorTheme: const ProgressIndicatorThemeData(
+        color: AppTokens.accent,
+      ),
+      floatingActionButtonTheme: const FloatingActionButtonThemeData(
+        backgroundColor: AppTokens.accent,
+        foregroundColor: AppTokens.onAccent,
+        elevation: 0,
       ),
     );
   }
