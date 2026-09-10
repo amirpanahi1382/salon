@@ -1,4 +1,4 @@
-import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Injectable, OnModuleDestroy, OnModuleInit, Optional } from '@nestjs/common';
 import { deleteExpiredIdempotencyBatch, deleteProcessedOutboxBatch } from '@salon/database';
 import type { Logger } from 'pino';
 import { AppConfigService } from '../infrastructure/config/app-config.service';
@@ -14,7 +14,7 @@ export class RetentionProcessor implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: AppConfigService,
-    logger?: Logger,
+    @Optional() logger?: Logger,
   ) {
     this.logger = logger ?? createWorkerLogger(config.values);
   }
