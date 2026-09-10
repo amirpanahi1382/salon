@@ -14,6 +14,7 @@ import {
 import { MessagingController } from './messaging.controller';
 import { GetMessageUseCase, ListCustomerMessagesUseCase } from './get-message.use-case';
 import { MessageRepository } from './message.repository';
+import { SendManualOutreachMessageUseCase } from './send-manual-outreach-message.use-case';
 import { SendOpportunityMessageUseCase } from './send-opportunity-message.use-case';
 
 @Module({
@@ -23,6 +24,7 @@ import { SendOpportunityMessageUseCase } from './send-opportunity-message.use-ca
     MessageRepository,
     AdminMessageRepository,
     SendOpportunityMessageUseCase,
+    SendManualOutreachMessageUseCase,
     GetMessageUseCase,
     ListCustomerMessagesUseCase,
     ListAdminMessageQueueUseCase,

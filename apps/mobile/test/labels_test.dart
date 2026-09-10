@@ -11,6 +11,7 @@ void main() {
   test('opportunity and signal labels have safe fallbacks', () {
     expect(opportunityLabel('REACTIVATION'), 'برگشت مشتری قدیمی');
     expect(opportunityLabel('FUTURE_TYPE'), 'فرصت');
+    expect(opportunityLabel(null), AppStrings.sendMessageAction);
     expect(signalLabel('FREQUENT'), 'مراجعه منظم');
     expect(signalLabel('NEW_SIGNAL'), 'نشانه');
   });
@@ -23,6 +24,9 @@ void main() {
 
   test('Bale message copy stays human-controlled', () {
     expect(AppStrings.sendBaleMessage, 'ارسال پیام در بله');
+    expect(AppStrings.selectMultipleCustomers, 'انتخاب چند مشتری');
+    expect(AppStrings.sendMessageAction, 'ارسال پیام');
+    expect(AppStrings.createSuitableMessage, 'ایجاد پیام مناسب');
     expect(messageStatusLabel('SENT'), 'پیام با موفقیت ارسال شد.');
     expect(messageStatusLabel('QUEUED'), AppStrings.messageQueued);
     expect(messageFailureLabel('NOT_CONFIGURED'), contains('بله'));

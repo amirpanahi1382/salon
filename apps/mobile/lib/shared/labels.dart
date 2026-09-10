@@ -64,6 +64,25 @@ class AppStrings {
   static const recommendationNote =
       'ارسال پیام فقط با تصمیم شما انجام می‌شود و به‌معنای اقدام انجام‌شده نیست.';
   static const sendBaleMessage = 'ارسال پیام در بله';
+  static const selectMultipleCustomers = 'انتخاب چند مشتری';
+  static const cancelSelection = 'لغو انتخاب';
+  static const sendMessageAction = 'ارسال پیام';
+  static const createSuitableMessage = 'ایجاد پیام مناسب';
+  static const customerSelectionTitle = 'انتخاب مشتری';
+  static const selectionLimitReached = 'حداکثر ۳۰ مشتری را می‌توانید انتخاب کنید.';
+  static const outreachEmptyTitle = 'مشتری‌ای برای ارسال پیام انتخاب نشده.';
+  static const outreachEmptyBody =
+      'از بخش مشتریان چند مشتری را انتخاب کنید و ارسال پیام را بزنید.';
+  static const outreachComposerTitle = 'ایجاد پیام مناسب';
+  static const outreachFieldCustomerName = 'نام مشتری';
+  static const outreachFieldDate = 'روز';
+  static const outreachFieldTime = 'ساعت';
+  static const outreachFieldDiscount = 'تخفیف (هزار تومان)';
+  static const outreachFieldSalonName = 'نام سالن';
+  static const outreachFieldSalonPhone = 'شماره سالن';
+  static const outreachTomorrow = 'فردا';
+  static const outreachIncompleteFields = 'قسمت‌های مشخص‌شده را کامل کنید.';
+  static const outreachSelectCustomer = 'انتخاب مشتری';
   static const baleProviderName = 'بله';
   static const messageComposerTitle = 'ارسال پیام در بله';
   static const messageTextLabel = 'متن پیام';
@@ -218,7 +237,7 @@ String actionStatusLabel(String value) {
   }
 }
 
-String opportunityLabel(String value) {
+String opportunityLabel(String? value) {
   switch (value) {
     case 'REACTIVATION':
       return AppStrings.reactivation;
@@ -226,6 +245,9 @@ String opportunityLabel(String value) {
       return AppStrings.customerReturn;
     case 'REVENUE_DECLINE':
       return AppStrings.revenueDecline;
+    case null:
+    case '':
+      return AppStrings.sendMessageAction;
     default:
       return AppStrings.opportunityFallback;
   }

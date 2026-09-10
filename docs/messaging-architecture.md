@@ -2,7 +2,8 @@
 
 ```text
 Salon user (JWT tenant)
-  → POST .../messages
+  → POST intelligence/opportunities/:type/customers/:id/messages
+     or POST /customers/:id/messages (manual outreach, no OpportunityAction)
   → MessageRequest QUEUED + Outbox MessageRequested + audit MESSAGE_REQUESTED
   → 201 { status: QUEUED }
 

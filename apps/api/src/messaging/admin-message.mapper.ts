@@ -37,7 +37,7 @@ export type AdminMessageRow = {
   id: string;
   salonId: string;
   customerId: string;
-  opportunityType: OpportunityType;
+  opportunityType: OpportunityType | null;
   messageText: string;
   requestedAt: Date;
   messageBusinessDate: Date;

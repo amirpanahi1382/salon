@@ -408,6 +408,27 @@ class MessageRepository {
     }
   }
 
+  Future<MessageDelivery> sendManualOutreach({
+    required String customerId,
+    required String text,
+    required String idempotencyKey,
+  }) async {
+    Future<MessageDelivery> request() async {
+      final data = await _api.post(
+        '/customers/$customerId/messages',
+        data: {'text': text},
+        headers: {'Idempotency-Key': idempotencyKey},
+      ) as Map<String, dynamic>;
+      return MessageDelivery.fromJson(data);
+    }
+
+    try {
+      return await request();
+    } on NetworkException {
+      return request();
+    }
+  }
+
   Future<MessageDelivery> getById(String id) async {
     final data = await _api.get('/messages/$id') as Map<String, dynamic>;
     return MessageDelivery.fromJson(data);

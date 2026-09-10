@@ -13,6 +13,7 @@ import 'package:salon_mobile/features/auth/auth_screens.dart';
 import 'package:salon_mobile/features/customers/customer_screens.dart';
 import 'package:salon_mobile/features/dashboard/dashboard_screen.dart';
 import 'package:salon_mobile/features/opportunities/opportunities_screen.dart';
+import 'package:salon_mobile/features/outreach/outreach_message_composer.dart';
 import 'package:salon_mobile/features/profile/profile_screen.dart';
 import 'package:salon_mobile/features/services/service_screens.dart';
 import 'package:salon_mobile/features/shell/app_shell.dart';
@@ -97,7 +98,12 @@ class FakeSalonRepository extends SalonRepository {
 
   @override
   Future<SalonProfile> current() async {
-    return const SalonProfile(id: 's1', name: 'Rose Salon', status: 'ACTIVE');
+    return const SalonProfile(
+      id: 's1',
+      name: 'Rose Salon',
+      status: 'ACTIVE',
+      phone: '09120000000',
+    );
   }
 }
 
@@ -232,6 +238,7 @@ class FakeMessageRepository extends MessageRepository {
   MessageDelivery? next;
   Object? error;
   int sendCalls = 0;
+  String? lastText;
 
   @override
   Future<MessageDelivery> send({
@@ -241,6 +248,7 @@ class FakeMessageRepository extends MessageRepository {
     required String idempotencyKey,
   }) async {
     sendCalls += 1;
+    lastText = text;
     if (error != null) {
       throw error!;
     }
@@ -251,6 +259,31 @@ class FakeMessageRepository extends MessageRepository {
           actionId: 'a1',
           opportunityType: opportunityType,
           provider: 'BALE_SAFIR',
+          channel: 'TEXT',
+          status: 'QUEUED',
+          body: text,
+          destinationHint: '0912****111',
+          createdBy: 'u1',
+          createdAt: DateTime.utc(2026, 9, 9),
+          updatedAt: DateTime.utc(2026, 9, 9),
+        );
+  }
+
+  @override
+  Future<MessageDelivery> sendManualOutreach({
+    required String customerId,
+    required String text,
+    required String idempotencyKey,
+  }) async {
+    sendCalls += 1;
+    lastText = text;
+    if (error != null) {
+      throw error!;
+    }
+    return next ??
+        MessageDelivery(
+          id: 'm-manual',
+          customerId: customerId,
           channel: 'TEXT',
           status: 'QUEUED',
           body: text,
@@ -1988,6 +2021,146 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Hair Botox Premium'), findsNothing);
     expect(find.text('هیچ خدمت فعالی وجود ندارد.'), findsOneWidget);
+  });
+
+  testWidgets('customer multi-select navigates to outreach on opportunities', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    final router = GoRouter(
+      initialLocation: '/customers',
+      routes: [
+        GoRoute(
+          path: '/customers',
+          builder: (context, state) => const CustomersScreen(),
+        ),
+        GoRoute(
+          path: '/opportunities',
+          builder: (context, state) => const OpportunitiesScreen(),
+        ),
+      ],
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          customerRepositoryProvider.overrideWithValue(
+            FakeCustomerRepository(
+              items: [
+                _customer(),
+                Customer(
+                  id: 'c2',
+                  firstName: 'Maryam',
+                  lastName: 'Karimi',
+                  phoneNumber: '09121111111',
+                  createdAt: DateTime.utc(2026, 1, 2),
+                  updatedAt: DateTime.utc(2026, 1, 2),
+                ),
+              ],
+            ),
+          ),
+          intelligenceRepositoryProvider.overrideWithValue(
+            FakeIntelligenceRepository(opportunitiesData: [_opportunity()]),
+          ),
+          actionRepositoryProvider.overrideWithValue(FakeActionRepository()),
+        ],
+        child: MaterialApp.router(routerConfig: router),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('انتخاب چند مشتری'));
+    await tester.pumpAndSettle();
+    expect(find.text('انتخاب مشتری 0 / 30'), findsOneWidget);
+    await tester.tap(find.byType(CheckboxListTile).at(0));
+    await tester.pumpAndSettle();
+    expect(find.text('انتخاب مشتری 1 / 30'), findsOneWidget);
+    await tester.tap(find.byType(CheckboxListTile).at(1));
+    await tester.pumpAndSettle();
+    expect(find.text('انتخاب مشتری 2 / 30'), findsOneWidget);
+    await tester.tap(find.text('ارسال پیام'));
+    await tester.pumpAndSettle();
+    expect(find.text('ایجاد پیام مناسب'), findsNWidgets(2));
+    expect(find.text('Sara Ahmadi'), findsOneWidget);
+    expect(find.text('Maryam Karimi'), findsOneWidget);
+  });
+
+  testWidgets('outreach composer generates, edits, and queues a message', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    final messages = FakeMessageRepository();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          customerRepositoryProvider.overrideWithValue(
+            FakeCustomerRepository(items: [_customer()]),
+          ),
+          salonRepositoryProvider.overrideWithValue(FakeSalonRepository()),
+          messageRepositoryProvider.overrideWithValue(messages),
+        ],
+        child: const MaterialApp(
+          home: Scaffold(body: OutreachMessageComposer(customerId: 'c1')),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('ایجاد پیام مناسب'), findsOneWidget);
+    expect(find.text('Sara'), findsOneWidget);
+    expect(find.text('Rose Salon'), findsOneWidget);
+    expect(find.text('فردا'), findsOneWidget);
+    await tester.enterText(find.widgetWithText(TextField, 'ساعت'), '18:00');
+    await tester.enterText(
+      find.widgetWithText(TextField, 'تخفیف (هزار تومان)'),
+      '200',
+    );
+    await tester.tap(find.text('ارسال پیام').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'ارسال پیام').last);
+    await tester.pumpAndSettle();
+    expect(messages.sendCalls, 1);
+    expect(find.text('پیام در صف ارسال قرار گرفت.'), findsOneWidget);
+    expect(messages.lastText, contains('18:00'));
+  });
+
+  testWidgets('outreach composer shows daily limit error', (tester) async {
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          customerRepositoryProvider.overrideWithValue(
+            FakeCustomerRepository(items: [_customer()]),
+          ),
+          salonRepositoryProvider.overrideWithValue(FakeSalonRepository()),
+          messageRepositoryProvider.overrideWithValue(
+            FakeMessageRepository()
+              ..error = const ApiException(
+                statusCode: 409,
+                code: 'MESSAGE_DAILY_LIMIT_REACHED',
+                message: 'limit',
+              ),
+          ),
+        ],
+        child: const MaterialApp(
+          home: Scaffold(body: OutreachMessageComposer(customerId: 'c1')),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(find.widgetWithText(TextField, 'ساعت'), '18:00');
+    await tester.enterText(
+      find.widgetWithText(TextField, 'تخفیف (هزار تومان)'),
+      '200',
+    );
+    await tester.tap(find.text('ارسال پیام').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'ارسال پیام').last);
+    await tester.pumpAndSettle();
+    expect(find.text('برای این مشتری امروز قبلاً پیام ثبت شده است.'), findsOneWidget);
   });
 }
 

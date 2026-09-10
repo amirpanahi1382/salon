@@ -10,6 +10,7 @@ import { UuidParam } from '../infrastructure/http/uuid-param';
 import { OpportunityTypeParam } from '../action/opportunity-type.param';
 import { ListCustomerMessagesQueryDto, SendOpportunityMessageDto } from './message.dto';
 import { GetMessageUseCase, ListCustomerMessagesUseCase } from './get-message.use-case';
+import { SendManualOutreachMessageUseCase } from './send-manual-outreach-message.use-case';
 import { SendOpportunityMessageUseCase } from './send-opportunity-message.use-case';
 
 @ApiTags('messages')
@@ -20,6 +21,7 @@ import { SendOpportunityMessageUseCase } from './send-opportunity-message.use-ca
 export class MessagingController {
   constructor(
     private readonly sendMessage: SendOpportunityMessageUseCase,
+    private readonly sendManualOutreach: SendManualOutreachMessageUseCase,
     private readonly getMessage: GetMessageUseCase,
     private readonly listCustomerMessages: ListCustomerMessagesUseCase,
   ) {}
@@ -47,6 +49,32 @@ export class MessagingController {
       user,
       customerId,
       opportunityType,
+      body.text,
+      requireIdempotencyKey(idempotencyKey),
+    );
+  }
+
+  @Post('customers/:customerId/messages')
+  @HttpCode(201)
+  @ApiHeader({
+    name: 'Idempotency-Key',
+    required: true,
+    description:
+      'Required. Same key and payload replay the original message request. Same key and different payload returns 409.',
+  })
+  @ApiOperation({
+    summary:
+      'Queue a durable one-to-one manual outreach message. Does not send through Bale, create an Opportunity, or create a visit.',
+  })
+  sendManual(
+    @CurrentUser() user: AuthenticatedPrincipal,
+    @Param('customerId', UuidParam) customerId: string,
+    @Body() body: SendOpportunityMessageDto,
+    @Headers('idempotency-key') idempotencyKey?: string | string[],
+  ) {
+    return this.sendManualOutreach.execute(
+      user,
+      customerId,
       body.text,
       requireIdempotencyKey(idempotencyKey),
     );

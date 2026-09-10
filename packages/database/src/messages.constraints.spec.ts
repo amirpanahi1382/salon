@@ -200,4 +200,13 @@ describeIfDb('message request constraints', () => {
     expect(await prisma.messageRequest.findUnique({ where: { id: requestId } })).toBeNull();
     expect(await prisma.outboxEvent.findUnique({ where: { id: outboxId } })).toBeNull();
   });
+
+  it('allows a request without an OpportunityAction for manual outreach', async () => {
+    const seeded = await seedSalon();
+    const created = await prisma.messageRequest.create({
+      data: requestData(seeded, { actionId: null, opportunityType: null, messageText: 'دستی' }),
+    });
+    expect(created.actionId).toBeNull();
+    expect(created.opportunityType).toBeNull();
+  });
 });

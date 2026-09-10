@@ -24,4 +24,25 @@ describe('toMessageResponse', () => {
     expect(dto.destinationHint).not.toContain('09121111111');
     expect(JSON.stringify(dto)).not.toContain('api-access-key');
   });
+
+  it('maps manual outreach without action or opportunity type', () => {
+    const row: MessageRequestRow = {
+      id: '11111111-1111-4111-8111-111111111111',
+      customerId: '22222222-2222-4222-8222-222222222222',
+      actionId: null,
+      opportunityType: null,
+      messageText: 'سلام',
+      status: 'QUEUED',
+      createdByUserId: '44444444-4444-4444-8444-444444444444',
+      requestedAt: new Date('2026-09-09T00:00:00.000Z'),
+      createdAt: new Date('2026-09-09T00:00:00.000Z'),
+      updatedAt: new Date('2026-09-09T00:00:00.000Z'),
+      customer: { phoneNumber: '09121111111' },
+      deliveries: [],
+    };
+    const dto = toMessageResponse(row);
+    expect(dto.actionId).toBeNull();
+    expect(dto.opportunityType).toBeNull();
+    expect(dto.status).toBe('QUEUED');
+  });
 });

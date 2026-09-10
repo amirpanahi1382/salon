@@ -1,6 +1,7 @@
 import { hashIdempotencyPayload } from '../infrastructure/http/idempotency';
 
 export const MESSAGE_SEND_OPERATION = 'OPPORTUNITY_MESSAGE_SEND';
+export const MANUAL_OUTREACH_MESSAGE_SEND_OPERATION = 'MANUAL_OUTREACH_MESSAGE_SEND';
 
 export function messageSendRequestHash(
   customerId: string,
@@ -11,4 +12,8 @@ export function messageSendRequestHash(
     MESSAGE_SEND_OPERATION,
     `${customerId}:${opportunityType}:${body}`,
   );
+}
+
+export function manualOutreachMessageRequestHash(customerId: string, body: string): string {
+  return hashIdempotencyPayload(MANUAL_OUTREACH_MESSAGE_SEND_OPERATION, `${customerId}:${body}`);
 }

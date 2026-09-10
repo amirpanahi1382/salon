@@ -87,6 +87,23 @@ void main() {
     });
     expect(message.provider, 'BALE_SAFIR');
     expect(message.destinationHint, '0912****111');
+
+    final outreach = MessageDelivery.fromJson({
+      'id': 'm2',
+      'customerId': 'c1',
+      'actionId': null,
+      'opportunityType': null,
+      'channel': 'TEXT',
+      'status': 'QUEUED',
+      'body': 'سلام',
+      'destinationHint': '0912****111',
+      'createdBy': 'u1',
+      'createdAt': '2026-09-09T00:00:00.000Z',
+      'updatedAt': '2026-09-09T00:00:00.000Z',
+    });
+    expect(outreach.actionId, isNull);
+    expect(outreach.opportunityType, isNull);
+    expect(outreach.status, 'QUEUED');
   });
 
   test('parses opportunity actions without salonId', () {

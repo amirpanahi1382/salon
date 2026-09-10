@@ -63,8 +63,8 @@ export class AdminMessageQueueItemDto {
   @ApiProperty()
   messageText!: string;
 
-  @ApiProperty({ enum: OPPORTUNITY_TYPES })
-  opportunityType!: OpportunityType;
+  @ApiProperty({ nullable: true, enum: OPPORTUNITY_TYPES, type: String })
+  opportunityType!: OpportunityType | null;
 
   @ApiProperty()
   requestedAt!: string;

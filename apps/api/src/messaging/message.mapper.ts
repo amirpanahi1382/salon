@@ -38,8 +38,8 @@ export const MESSAGE_REQUEST_SELECT = {
 export type MessageRequestRow = {
   id: string;
   customerId: string;
-  actionId: string;
-  opportunityType: OpportunityType;
+  actionId: string | null;
+  opportunityType: OpportunityType | null;
   messageText: string;
   status: MessageRequestStatus;
   createdByUserId: string;

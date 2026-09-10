@@ -28,9 +28,9 @@ export class MessageRepository {
       id: string;
       salonId: string;
       customerId: string;
-      actionId: string;
+      actionId: string | null;
       createdByUserId: string;
-      opportunityType: string;
+      opportunityType: string | null;
       messageText: string;
       requestedAt: Date;
       messageBusinessDate: Date;

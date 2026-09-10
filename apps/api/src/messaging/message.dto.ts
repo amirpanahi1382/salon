@@ -37,11 +37,11 @@ export class MessageRequestResponseDto {
   @ApiProperty()
   customerId!: string;
 
-  @ApiProperty()
-  actionId!: string;
+  @ApiProperty({ nullable: true, type: String })
+  actionId!: string | null;
 
-  @ApiProperty({ enum: OPPORTUNITY_TYPES })
-  opportunityType!: OpportunityType;
+  @ApiProperty({ nullable: true, enum: OPPORTUNITY_TYPES, type: String })
+  opportunityType!: OpportunityType | null;
 
   @ApiProperty({ enum: MESSAGE_CHANNELS })
   channel!: MessageChannel;

@@ -609,8 +609,8 @@ class MessageDelivery {
   const MessageDelivery({
     required this.id,
     required this.customerId,
-    required this.actionId,
-    required this.opportunityType,
+    this.actionId,
+    this.opportunityType,
     required this.channel,
     required this.status,
     required this.body,
@@ -627,8 +627,8 @@ class MessageDelivery {
 
   final String id;
   final String customerId;
-  final String actionId;
-  final String opportunityType;
+  final String? actionId;
+  final String? opportunityType;
   final String? provider;
   final String? mode;
   final String channel;
@@ -646,8 +646,8 @@ class MessageDelivery {
     return MessageDelivery(
       id: json['id'] as String,
       customerId: json['customerId'] as String,
-      actionId: json['actionId'] as String,
-      opportunityType: json['opportunityType'] as String,
+      actionId: json['actionId'] as String?,
+      opportunityType: json['opportunityType'] as String?,
       provider: json['provider'] as String?,
       mode: json['mode'] as String?,
       channel: json['channel'] as String,
@@ -673,7 +673,7 @@ class AdminQueueItem {
     required this.customerName,
     required this.customerPhone,
     required this.messageText,
-    required this.opportunityType,
+    this.opportunityType,
     required this.requestedAt,
     this.messageBusinessDate,
     required this.status,
@@ -693,7 +693,7 @@ class AdminQueueItem {
   final String customerName;
   final String customerPhone;
   final String messageText;
-  final String opportunityType;
+  final String? opportunityType;
   final DateTime requestedAt;
   final String? messageBusinessDate;
   final String status;
@@ -714,7 +714,7 @@ class AdminQueueItem {
       customerName: json['customerName'] as String,
       customerPhone: json['customerPhone'] as String,
       messageText: json['messageText'] as String,
-      opportunityType: json['opportunityType'] as String,
+      opportunityType: json['opportunityType'] as String?,
       requestedAt: DateTime.parse(json['requestedAt'] as String),
       messageBusinessDate: json['messageBusinessDate'] as String?,
       status: json['status'] as String,

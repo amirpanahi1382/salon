@@ -11,6 +11,8 @@ import '../../shared/jalali_date_picker.dart';
 import '../../shared/labels.dart';
 import '../../shared/models/models.dart';
 import '../opportunities/opportunity_action_bar.dart';
+import '../outreach/manual_outreach_selection.dart';
+import '../outreach/manual_outreach_state.dart';
 import 'customer_validation.dart';
 
 class CustomersScreen extends ConsumerStatefulWidget {
@@ -100,32 +102,73 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final outreach = ref.watch(manualOutreachSelectionProvider);
     return Scaffold(
       appBar: AppBar(
-        title: const Text(AppStrings.customers),
+        title: outreach.selecting
+            ? Text(
+                '${AppStrings.customerSelectionTitle} ${outreach.selectedCount} / ${ManualOutreachState.maxSelection}',
+              )
+            : const Text(AppStrings.customers),
         actions: [
-          IconButton(
-            tooltip: AppStrings.importFromExcel,
-            onPressed: () async {
-              final imported = await context.push<bool>('/customers/import');
-              if (imported == true) {
-                _load();
-              }
-            },
-            icon: const Icon(Icons.upload_file_outlined),
-          ),
+          if (outreach.selecting)
+            TextButton(
+              onPressed: () =>
+                  ref.read(manualOutreachSelectionProvider.notifier).exitSelection(),
+              child: const Text(AppStrings.cancelSelection),
+            )
+          else ...[
+            TextButton(
+              onPressed: _items.isEmpty
+                  ? null
+                  : () => ref
+                      .read(manualOutreachSelectionProvider.notifier)
+                      .enterSelection(),
+              child: const Text(AppStrings.selectMultipleCustomers),
+            ),
+            IconButton(
+              tooltip: AppStrings.importFromExcel,
+              onPressed: () async {
+                final imported = await context.push<bool>('/customers/import');
+                if (imported == true) {
+                  _load();
+                }
+              },
+              icon: const Icon(Icons.upload_file_outlined),
+            ),
+          ],
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () async {
-          final created = await context.push<bool>('/customers/new');
-          if (created == true) {
-            _load();
-          }
-        },
-        label: const Text(AppStrings.addCustomer),
-        icon: const Icon(Icons.add),
-      ),
+      floatingActionButton: outreach.selecting
+          ? null
+          : FloatingActionButton.extended(
+              onPressed: () async {
+                final created = await context.push<bool>('/customers/new');
+                if (created == true) {
+                  _load();
+                }
+              },
+              label: const Text(AppStrings.addCustomer),
+              icon: const Icon(Icons.add),
+            ),
+      bottomNavigationBar: outreach.selecting
+          ? SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                child: FilledButton(
+                  onPressed: outreach.selectedCount == 0
+                      ? null
+                      : () {
+                          ref
+                              .read(manualOutreachSelectionProvider.notifier)
+                              .confirmAndFocusOpportunities();
+                          context.go('/opportunities');
+                        },
+                  child: const Text(AppStrings.sendMessageAction),
+                ),
+              ),
+            )
+          : null,
       body: Column(
         children: [
           Padding(
@@ -144,6 +187,14 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
               },
             ),
           ),
+          if (outreach.limitMessage != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Text(
+                outreach.limitMessage!,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
           Expanded(
             child: _loading
                 ? const LoadingView()
@@ -205,6 +256,37 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
                                 return PagedFooter(loading: _loadingMore);
                               }
                               final customer = _items[index];
+                              if (outreach.selecting) {
+                                final selected = outreach.isSelected(customer.id);
+                                return Semantics(
+                                  label:
+                                      '${AppStrings.outreachSelectCustomer} ${customer.fullName}',
+                                  selected: selected,
+                                  child: CheckboxListTile(
+                                    value: selected,
+                                    title: Text(customer.fullName),
+                                    subtitle: LtrText(customer.phoneNumber),
+                                    onChanged: (_) {
+                                      final ok = ref
+                                          .read(
+                                            manualOutreachSelectionProvider
+                                                .notifier,
+                                          )
+                                          .toggle(customer);
+                                      if (!ok && context.mounted) {
+                                        ScaffoldMessenger.of(context)
+                                            .showSnackBar(
+                                          const SnackBar(
+                                            content: Text(
+                                              AppStrings.selectionLimitReached,
+                                            ),
+                                          ),
+                                        );
+                                      }
+                                    },
+                                  ),
+                                );
+                              }
                               return CustomerListTile(
                                 name: customer.fullName,
                                 phone: customer.phoneNumber,

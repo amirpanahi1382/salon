@@ -7,6 +7,8 @@ import '../../core/theme/app_tokens.dart';
 import '../../core/widgets/app_widgets.dart';
 import '../../shared/labels.dart';
 import '../../shared/models/models.dart';
+import '../outreach/manual_outreach_selection.dart';
+import '../outreach/outreach_message_composer.dart';
 import 'opportunity_action_bar.dart';
 
 class OpportunitiesScreen extends ConsumerStatefulWidget {
@@ -19,6 +21,7 @@ class OpportunitiesScreen extends ConsumerStatefulWidget {
 
 class _OpportunitiesScreenState extends ConsumerState<OpportunitiesScreen> {
   String? _type;
+  bool _outreach = false;
   List<Opportunity> _items = const [];
   String? _nextCursor;
   bool _hasMore = false;
@@ -153,6 +156,19 @@ class _OpportunitiesScreenState extends ConsumerState<OpportunitiesScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final outreach = ref.watch(manualOutreachSelectionProvider);
+    if (outreach.focusOutreachTab && !_outreach) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) {
+          return;
+        }
+        ref.read(manualOutreachSelectionProvider.notifier).consumeFocus();
+        setState(() {
+          _outreach = true;
+          _type = null;
+        });
+      });
+    }
     return OpportunityActionsScope(
       onChanged: _load,
       child: Scaffold(
@@ -173,32 +189,46 @@ class _OpportunitiesScreenState extends ConsumerState<OpportunitiesScreen> {
                 children: [
                   _TypeFilterChip(
                     label: AppStrings.all,
-                    selected: _type == null,
+                    selected: !_outreach && _type == null,
                     onSelected: () {
+                      _outreach = false;
                       _type = null;
                       _load();
                     },
                   ),
                   _TypeFilterChip(
-                    label: AppStrings.reactivation,
-                    selected: _type == 'REACTIVATION',
+                    label: AppStrings.sendMessageAction,
+                    selected: _outreach,
                     onSelected: () {
+                      setState(() {
+                        _outreach = true;
+                        _type = null;
+                      });
+                    },
+                  ),
+                  _TypeFilterChip(
+                    label: AppStrings.reactivation,
+                    selected: !_outreach && _type == 'REACTIVATION',
+                    onSelected: () {
+                      _outreach = false;
                       _type = 'REACTIVATION';
                       _load();
                     },
                   ),
                   _TypeFilterChip(
                     label: AppStrings.customerReturn,
-                    selected: _type == 'CUSTOMER_RETURN',
+                    selected: !_outreach && _type == 'CUSTOMER_RETURN',
                     onSelected: () {
+                      _outreach = false;
                       _type = 'CUSTOMER_RETURN';
                       _load();
                     },
                   ),
                   _TypeFilterChip(
                     label: AppStrings.revenueDecline,
-                    selected: _type == 'REVENUE_DECLINE',
+                    selected: !_outreach && _type == 'REVENUE_DECLINE',
                     onSelected: () {
+                      _outreach = false;
                       _type = 'REVENUE_DECLINE';
                       _load();
                     },
@@ -207,7 +237,9 @@ class _OpportunitiesScreenState extends ConsumerState<OpportunitiesScreen> {
               ),
             ),
             Expanded(
-              child: _loading
+              child: _outreach
+                  ? const _OutreachList()
+                  : _loading
                   ? const LoadingSkeleton(lines: 5)
                   : _error != null
                   ? ErrorView(message: friendlyError(_error!), onRetry: _load)
@@ -313,6 +345,54 @@ class _OpportunitiesScreenState extends ConsumerState<OpportunitiesScreen> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _OutreachList extends ConsumerWidget {
+  const _OutreachList();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final items = ref.watch(manualOutreachSelectionProvider).customers;
+    if (items.isEmpty) {
+      return const EmptyStateView(
+        title: AppStrings.outreachEmptyTitle,
+        body: AppStrings.outreachEmptyBody,
+        icon: Icons.chat_bubble_outline,
+        compact: true,
+      );
+    }
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(
+        AppTokens.space16,
+        AppTokens.space8,
+        AppTokens.space16,
+        AppTokens.space32,
+      ),
+      itemCount: items.length,
+      separatorBuilder: (_, _) => const Divider(height: 1),
+      itemBuilder: (context, index) {
+        final customer = items[index];
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: AppTokens.space8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(customer.fullName, style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: AppTokens.space8),
+              FilledButton(
+                onPressed: () => openOutreachMessageComposer(
+                  context: context,
+                  ref: ref,
+                  customerId: customer.id,
+                ),
+                child: const Text(AppStrings.createSuitableMessage),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

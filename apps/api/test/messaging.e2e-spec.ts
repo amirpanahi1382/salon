@@ -56,6 +56,37 @@ describeIfDb('Opportunity messages (e2e)', () => {
     await app.close();
   });
 
+  async function createOwnerBypassingRegisterThrottle(label: string) {
+    const email = `${label}-${Date.now()}-${Math.random().toString(16).slice(2)}@example.test`;
+    const salonId = randomUUID();
+    const userId = randomUUID();
+    const now = new Date();
+    await prisma.client.salon.create({
+      data: { id: salonId, name: `${label} Salon`, updatedAt: now },
+    });
+    await prisma.client.user.create({
+      data: {
+        id: userId,
+        salonId,
+        name: `${label} Owner`,
+        email,
+        passwordHash: await argon2.hash(password, { type: argon2.argon2id }),
+        role: 'OWNER',
+        updatedAt: now,
+      },
+    });
+    const login = await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({ email, password })
+      .expect(201);
+    return {
+      email,
+      token: login.body.accessToken as string,
+      userId: login.body.user.id as string,
+      tenantId: login.body.user.tenantId as string,
+    };
+  }
+
   async function registerOwner(label: string) {
     const email = `${label}-${Date.now()}-${Math.random().toString(16).slice(2)}@example.test`;
     const response = await request(app.getHttpServer())
@@ -429,5 +460,142 @@ describeIfDb('Opportunity messages (e2e)', () => {
       },
     });
     expect(openActions).toBe(1);
+  });
+
+  it('queues manual outreach without an OpportunityAction and shares the daily limit', async () => {
+    const salonA = await createOwnerBypassingRegisterThrottle('outreach-a');
+    const salonB = await createOwnerBypassingRegisterThrottle('outreach-b');
+    const customerA = await createCustomer(salonA.token, 'One');
+    const customerTwo = await createCustomer(salonA.token, 'Two');
+    const customerB = await createCustomer(salonB.token, 'Other');
+    const text =
+      'سارا عزیز برای فردا ساعت ۱۸:۰۰ می‌توانیم با ۲۰۰ هزار تومان تخفیف در سالن گلاب در خدمت شما باشیم! برای رزرو این وقت با شماره ۰۹۱۲۱۱۱۱۱۱۱ تماس بگیرید!';
+
+    const created = await request(app.getHttpServer())
+      .post(`/customers/${customerA}/messages`)
+      .set('Authorization', `Bearer ${salonA.token}`)
+      .set('Idempotency-Key', 'manual-outreach-01')
+      .send({ text })
+      .expect(201);
+
+    expect(created.body.status).toBe('QUEUED');
+    expect(created.body.body).toBe(text);
+    expect(created.body.actionId).toBeNull();
+    expect(created.body.opportunityType).toBeNull();
+    expect(created.body.mode).toBeNull();
+
+    const replay = await request(app.getHttpServer())
+      .post(`/customers/${customerA}/messages`)
+      .set('Authorization', `Bearer ${salonA.token}`)
+      .set('Idempotency-Key', 'manual-outreach-01')
+      .send({ text })
+      .expect(201);
+    expect(replay.body.id).toBe(created.body.id);
+
+    await request(app.getHttpServer())
+      .post(`/customers/${customerA}/messages`)
+      .set('Authorization', `Bearer ${salonA.token}`)
+      .set('Idempotency-Key', 'manual-outreach-01')
+      .send({ text: `${text}۲` })
+      .expect(409);
+
+    const daily = await request(app.getHttpServer())
+      .post(`/customers/${customerA}/messages`)
+      .set('Authorization', `Bearer ${salonA.token}`)
+      .set('Idempotency-Key', 'manual-outreach-02')
+      .send({ text: `${text}۳` })
+      .expect(409);
+    expect(daily.body.error).toBe('MESSAGE_DAILY_LIMIT_REACHED');
+
+    const second = await request(app.getHttpServer())
+      .post(`/customers/${customerTwo}/messages`)
+      .set('Authorization', `Bearer ${salonA.token}`)
+      .set('Idempotency-Key', 'manual-outreach-other')
+      .send({ text })
+      .expect(201);
+    expect(second.body.id).not.toBe(created.body.id);
+
+    await request(app.getHttpServer())
+      .post(`/customers/${customerB}/messages`)
+      .set('Authorization', `Bearer ${salonA.token}`)
+      .set('Idempotency-Key', 'manual-outreach-cross')
+      .send({ text })
+      .expect(404);
+
+    const actions = await prisma.client.opportunityAction.count({
+      where: { salonId: salonA.tenantId, customerId: customerA },
+    });
+    expect(actions).toBe(0);
+
+    const deliveries = await prisma.client.messageDelivery.count({
+      where: { salonId: salonA.tenantId, customerId: customerA },
+    });
+    expect(deliveries).toBe(0);
+
+    const stored = await prisma.client.messageRequest.findFirst({
+      where: { id: created.body.id, salonId: salonA.tenantId },
+    });
+    expect(stored?.messageText).toBe(text);
+    expect(stored?.actionId).toBeNull();
+
+    const outbox = await prisma.client.outboxEvent.findMany({
+      where: { tenantId: salonA.tenantId, eventType: 'MessageRequested' },
+    });
+    expect(
+      outbox.some(
+        (event) =>
+          (event.payload as { messageRequestId?: string }).messageRequestId === created.body.id,
+      ),
+    ).toBe(true);
+    expect(JSON.stringify(outbox)).not.toContain(text);
+
+    const audit = await prisma.client.auditLog.findFirst({
+      where: {
+        tenantId: salonA.tenantId,
+        action: 'MESSAGE_REQUESTED',
+        resourceId: created.body.id,
+      },
+    });
+    expect(audit?.actorId).toBe(salonA.userId);
+    expect(JSON.stringify(audit?.metadata)).not.toContain(text);
+
+    const queue = await request(app.getHttpServer())
+      .get('/admin/message-queue')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    expect(queue.body.items.some((item: { id: string }) => item.id === created.body.id)).toBe(true);
+    const queued = queue.body.items.find((item: { id: string }) => item.id === created.body.id);
+    expect(queued.messageText).toBe(text);
+    expect(queued.opportunityType).toBeNull();
+  });
+
+  it('returns 409 MESSAGE_DAILY_LIMIT_REACHED for concurrent manual outreach', async () => {
+    const salon = await createOwnerBypassingRegisterThrottle('outreach-race');
+    const customerId = await createCustomer(salon.token, 'Race');
+    const results = await Promise.all(
+      Array.from({ length: 10 }, (_, index) =>
+        request(app.getHttpServer())
+          .post(`/customers/${customerId}/messages`)
+          .set('Authorization', `Bearer ${salon.token}`)
+          .set('Idempotency-Key', `outreach-race-${index}-${randomUUID()}`)
+          .send({ text: 'پیام همزمان دستی' }),
+      ),
+    );
+
+    const created = results.filter((result) => result.status === 201);
+    const limited = results.filter(
+      (result) => result.status === 409 && result.body.error === 'MESSAGE_DAILY_LIMIT_REACHED',
+    );
+    const unexpected = results.filter(
+      (result) => result.status !== 201 && result.body.error !== 'MESSAGE_DAILY_LIMIT_REACHED',
+    );
+    expect(unexpected.map((result) => ({ status: result.status, error: result.body.error }))).toEqual(
+      [],
+    );
+    expect(created).toHaveLength(1);
+    expect(limited).toHaveLength(9);
+    expect(await prisma.client.opportunityAction.count({ where: { salonId: salon.tenantId } })).toBe(
+      0,
+    );
   });
 });
