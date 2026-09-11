@@ -21,6 +21,8 @@ export const DOMAIN_EVENT_TYPES = {
   MessageFailed: 'MessageFailed',
   /** Legacy Bale-activation fact. Worker still consumes in-flight rows. */
   MessageSendRequested: 'MessageSendRequested',
+  VipRequestCreated: 'VipRequestCreated',
+  VipRequestSubmitted: 'VipRequestSubmitted',
 } as const;
 
 export type DomainEventType =

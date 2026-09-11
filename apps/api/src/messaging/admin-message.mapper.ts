@@ -17,6 +17,9 @@ export const ADMIN_MESSAGE_SELECT = {
   requestedAt: true,
   messageBusinessDate: true,
   status: true,
+  vipRequestId: true,
+  recipientDisplayName: true,
+  recipientPhoneNumber: true,
   salon: { select: { name: true } },
   customer: { select: { firstName: true, lastName: true, phoneNumber: true } },
   deliveries: {
@@ -36,14 +39,17 @@ export const ADMIN_MESSAGE_SELECT = {
 export type AdminMessageRow = {
   id: string;
   salonId: string;
-  customerId: string;
+  customerId: string | null;
   opportunityType: OpportunityType | null;
   messageText: string;
   requestedAt: Date;
   messageBusinessDate: Date;
   status: MessageRequestStatus;
+  vipRequestId: string | null;
+  recipientDisplayName: string | null;
+  recipientPhoneNumber: string | null;
   salon: { name: string };
-  customer: { firstName: string; lastName: string; phoneNumber: string };
+  customer: { firstName: string; lastName: string; phoneNumber: string } | null;
   deliveries: Array<{
     id: string;
     mode: MessageDeliveryMode;
@@ -62,8 +68,11 @@ export function toAdminMessageItem(row: AdminMessageRow, config: AppConfig): Adm
     salonId: row.salonId,
     salonName: row.salon.name,
     customerId: row.customerId,
-    customerName: `${row.customer.firstName} ${row.customer.lastName}`.trim(),
-    customerPhone: row.customer.phoneNumber,
+    customerName:
+      row.customer
+        ? `${row.customer.firstName} ${row.customer.lastName}`.trim()
+        : (row.recipientDisplayName ?? ''),
+    customerPhone: row.customer?.phoneNumber ?? row.recipientPhoneNumber ?? '',
     messageText: row.messageText,
     opportunityType: row.opportunityType,
     requestedAt: row.requestedAt.toISOString(),
@@ -76,5 +85,6 @@ export function toAdminMessageItem(row: AdminMessageRow, config: AppConfig): Adm
     submittedAt: delivery?.submittedAt?.toISOString() ?? null,
     failedAt: delivery?.failedAt?.toISOString() ?? null,
     providerReady: getBaleSafirSettings(config) !== null,
+    vipRequestId: row.vipRequestId,
   };
 }

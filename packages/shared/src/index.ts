@@ -13,3 +13,4 @@ export * from './timeout.js';
 export * from './logging.js';
 export * from './money.js';
 export * from './messaging.js';
+export * from './vip.js';

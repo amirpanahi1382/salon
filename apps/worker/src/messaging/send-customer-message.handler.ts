@@ -30,7 +30,9 @@ export class SendCustomerMessageHandler {
       where: { id: deliveryId, salonId: event.tenantId },
       include: {
         customer: { select: { phoneNumber: true } },
-        messageRequest: { select: { id: true, messageText: true } },
+        messageRequest: {
+          select: { id: true, messageText: true, recipientPhoneNumber: true, vipRequestId: true },
+        },
       },
     });
     if (!delivery) {
@@ -60,9 +62,33 @@ export class SendCustomerMessageHandler {
       return;
     }
 
+    if (delivery.messageRequest.vipRequestId) {
+      await this.markFailed(
+        delivery.id,
+        delivery.salonId,
+        delivery.messageRequest.id,
+        'PROVIDER_INVALID_REQUEST',
+        delivery.createdBy,
+      );
+      return;
+    }
+
+    const phoneNumber =
+      delivery.customer?.phoneNumber ?? delivery.messageRequest.recipientPhoneNumber;
+    if (!phoneNumber) {
+      await this.markFailed(
+        delivery.id,
+        delivery.salonId,
+        delivery.messageRequest.id,
+        'PROVIDER_INVALID_REQUEST',
+        delivery.createdBy,
+      );
+      return;
+    }
+
     const result = await this.sender.sendText({
       requestId: delivery.providerRequestId,
-      phoneNumber: delivery.customer.phoneNumber,
+      phoneNumber,
       text: delivery.messageRequest.messageText,
       signal,
     });

@@ -35,7 +35,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
       response.status(HttpStatus.PAYLOAD_TOO_LARGE).json({
         statusCode: HttpStatus.PAYLOAD_TOO_LARGE,
         error: 'VALIDATION_ERROR',
-        message: `The Excel file is too large. Maximum size is ${CUSTOMER_IMPORT_MAX_FILE_BYTES / (1024 * 1024)} MB.`,
+        message: `The file is too large. Maximum size is ${CUSTOMER_IMPORT_MAX_FILE_BYTES / (1024 * 1024)} MB.`,
         requestId,
       });
       return;

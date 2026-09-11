@@ -16,7 +16,7 @@ type DeliveryRow = {
   providerRequestId: string;
   createdBy: string;
   customer: { phoneNumber: string };
-  messageRequest: { id: string; messageText: string };
+  messageRequest: { id: string; messageText: string; vipRequestId?: string | null };
 };
 
 function fakePrisma(rows: DeliveryRow[]) {
@@ -161,6 +161,18 @@ describe('SendCustomerMessageHandler.handle races', () => {
     await handler.handle(event(), 8);
     expect(sender.sendText).not.toHaveBeenCalled();
     expect(delivery.status).toBe('SENT');
+  });
+
+  it('does not call Safir for a VIP MessageRequest', async () => {
+    const delivery = row({
+      status: 'PENDING',
+      messageRequest: { id: 'r1', messageText: 'vip', vipRequestId: 'v1' },
+    });
+    const sender = { sendText: jest.fn() };
+    const handler = new SendCustomerMessageHandler(fakePrisma([delivery]) as never, sender as never);
+    await handler.handle(event(), 8);
+    expect(sender.sendText).not.toHaveBeenCalled();
+    expect(delivery.status).toBe('FAILED');
   });
 
   it('does not send again when the delivery is already FAILED', async () => {

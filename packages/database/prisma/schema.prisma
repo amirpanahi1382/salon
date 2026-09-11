@@ -79,6 +79,21 @@ enum MessageChannel {
   TEXT
 }
 
+enum VipTargetListStatus {
+  PENDING
+  ACTIVE
+  INACTIVE
+  IN_USE
+}
+
+enum VipRequestStatus {
+  AWAITING_SAMPLE_WORK
+  SUBMITTED
+  MANUAL_QUEUED
+  BALE_NOT_IMPLEMENTED
+  CANCELLED
+}
+
 model Salon {
   id        String      @id @db.Uuid
   name      String
@@ -95,6 +110,9 @@ model Salon {
   opportunityActions  OpportunityAction[]
   messageRequests     MessageRequest[]
   messageDeliveries   MessageDelivery[]
+  vipEntitlement      VipSalonEntitlement?
+  vipRequests         VipRequest[]
+  reservedVipLists    VipTargetList[]      @relation("VipListReservedBySalon")
 
   @@map("salons")
 }
@@ -209,6 +227,7 @@ model User {
   createdOpportunityActions OpportunityAction[]
   createdMessageRequests    MessageRequest[]
   createdMessageDeliveries  MessageDelivery[]
+  createdVipRequests        VipRequest[]
 
   @@index([salonId])
   @@map("users")
@@ -256,42 +275,58 @@ model PlatformAdmin {
   updatedAt    DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
   dispatchedDeliveries MessageDelivery[] @relation("MessageDeliveryDispatchedBy")
   fulfilledDeliveries  MessageDelivery[] @relation("MessageDeliveryFulfilledBy")
+  createdVipLists      VipTargetList[]   @relation("VipListCreatedByAdmin")
+  grantedVipEntitlements VipSalonEntitlement[] @relation("VipEntitlementGrantedBy")
+  revokedVipEntitlements VipSalonEntitlement[] @relation("VipEntitlementRevokedBy")
 
   @@map("platform_admins")
 }
 
-/// Durable salon intent to message a customer. Independent of Bale or any provider.
+/// Durable salon intent to message a recipient. Independent of Bale or any provider.
+/// Salon-customer messages set customerId. VIP outreach sets vipRequestId + recipient snapshot fields.
 model MessageRequest {
   id                  String                 @id @db.Uuid
   salonId             String                 @map("salon_id") @db.Uuid
   salon               Salon                  @relation(fields: [salonId], references: [id], onDelete: Restrict)
-  customerId          String                 @map("customer_id") @db.Uuid
-  customer            Customer               @relation(fields: [customerId, salonId], references: [id, salonId], onDelete: Restrict)
+  customerId          String?                @map("customer_id") @db.Uuid
+  customer            Customer?              @relation(fields: [customerId, salonId], references: [id, salonId], onDelete: Restrict)
   actionId            String?                @map("action_id") @db.Uuid
   action              OpportunityAction?     @relation(fields: [actionId, salonId], references: [id, salonId], onDelete: Restrict)
   createdByUserId     String                 @map("created_by_user_id") @db.Uuid
   createdByUser       User                   @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
   opportunityType     OpportunityActionType? @map("opportunity_type")
+  vipRequestId        String?                @map("vip_request_id") @db.Uuid
+  vipRequest          VipRequest?            @relation(fields: [vipRequestId, salonId], references: [id, salonId], onDelete: Restrict)
+  /// Snapshot used when customerId is null (VIP). Not a Customer record.
+  recipientDisplayName String?               @map("recipient_display_name")
+  recipientPhoneNumber String?               @map("recipient_phone_number")
   /// Immutable customer-facing text. PII; not written to audit metadata or logs.
   messageText         String                 @map("message_text")
   requestedAt         DateTime               @default(now()) @map("requested_at") @db.Timestamptz(3)
   /// Asia/Tehran calendar date of requestedAt. Stored instants remain timestamptz UTC.
   messageBusinessDate DateTime               @map("message_business_date") @db.Date
-  /// True for salon-originated requests (the enforceable daily limit). False for 1:1 historical delivery backfill.
+  /// True for salon-originated customer messages (the enforceable daily limit). False for VIP and historical backfill.
   countsTowardDailyLimit Boolean             @default(true) @map("counts_toward_daily_limit")
   status              MessageRequestStatus
   createdAt           DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt           DateTime               @updatedAt @map("updated_at") @db.Timestamptz(3)
   deliveries          MessageDelivery[]
+  vipRequestRecipient VipRequestRecipient?
 
   @@unique([id, salonId])
-  /// Partial unique index `message_requests_salon_customer_day_key` is created in SQL:
+  /// SQL CHECKs:
+  /// `message_requests_opportunity_context_consistent`: (action_id IS NULL) = (opportunity_type IS NULL).
+  /// `message_requests_recipient_origin_consistent`: salon customer XOR VIP request snapshot.
+  /// Partial unique index `message_requests_salon_customer_day_key`:
   /// UNIQUE (salon_id, customer_id, message_business_date) WHERE counts_toward_daily_limit.
+  /// Partial unique index `message_requests_one_per_vip_recipient_phone`:
+  /// UNIQUE (vip_request_id, recipient_phone_number) WHERE vip_request_id IS NOT NULL.
   @@index([salonId, customerId, messageBusinessDate])
   @@index([status, requestedAt, id])
   @@index([salonId, requestedAt, id])
   @@index([salonId, customerId, requestedAt, id])
   @@index([customerId, requestedAt])
+  @@index([vipRequestId])
   @@map("message_requests")
 }
 
@@ -302,8 +337,8 @@ model MessageDelivery {
   salon               Salon                  @relation(fields: [salonId], references: [id], onDelete: Restrict)
   messageRequestId    String                 @map("message_request_id") @db.Uuid
   messageRequest      MessageRequest         @relation(fields: [messageRequestId, salonId], references: [id, salonId], onDelete: Restrict)
-  customerId          String                 @map("customer_id") @db.Uuid
-  customer            Customer               @relation(fields: [customerId, salonId], references: [id, salonId], onDelete: Restrict)
+  customerId          String?                @map("customer_id") @db.Uuid
+  customer            Customer?              @relation(fields: [customerId, salonId], references: [id, salonId], onDelete: Restrict)
   actionId            String?                @map("action_id") @db.Uuid
   action              OpportunityAction?     @relation(fields: [actionId, salonId], references: [id, salonId], onDelete: Restrict)
   mode                MessageDeliveryMode
@@ -387,4 +422,127 @@ model IdempotencyRecord {
   @@unique([tenantId, actorId, operation, key])
   @@index([createdAt])
   @@map("idempotency_records")
+}
+
+/// Platform-admin owned VIP contact list. Not salon Customer records.
+model VipTargetList {
+  id                 String              @id @db.Uuid
+  name               String
+  status             VipTargetListStatus
+  contactCount       Int                 @map("contact_count")
+  createdByAdminId   String              @map("created_by_admin_id") @db.Uuid
+  createdByAdmin     PlatformAdmin       @relation("VipListCreatedByAdmin", fields: [createdByAdminId], references: [id], onDelete: Restrict)
+  reservedBySalonId  String?             @map("reserved_by_salon_id") @db.Uuid
+  reservedBySalon    Salon?              @relation("VipListReservedBySalon", fields: [reservedBySalonId], references: [id], onDelete: Restrict)
+  reservedAt         DateTime?           @map("reserved_at") @db.Timestamptz(3)
+  createdAt          DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
+  contacts           VipTargetContact[]
+  requests           VipRequest[]
+
+  @@index([status, createdAt, id])
+  @@map("vip_target_lists")
+}
+
+model VipTargetContact {
+  id          String        @id @db.Uuid
+  listId      String        @map("list_id") @db.Uuid
+  list        VipTargetList @relation(fields: [listId], references: [id], onDelete: Restrict)
+  sortOrder   Int           @map("sort_order")
+  displayName String        @map("display_name")
+  phoneNumber String        @map("phone_number")
+  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  recipientSnapshots VipRequestRecipient[]
+
+  @@unique([listId, phoneNumber])
+  @@unique([listId, sortOrder])
+  @@index([listId, sortOrder, id])
+  @@map("vip_target_contacts")
+}
+
+/// Explicit admin-granted VIP product access. Not payment verification.
+model VipSalonEntitlement {
+  id                 String         @id @db.Uuid
+  salonId            String         @unique @map("salon_id") @db.Uuid
+  salon              Salon          @relation(fields: [salonId], references: [id], onDelete: Restrict)
+  grantedByAdminId   String         @map("granted_by_admin_id") @db.Uuid
+  grantedByAdmin     PlatformAdmin  @relation("VipEntitlementGrantedBy", fields: [grantedByAdminId], references: [id], onDelete: Restrict)
+  grantedAt          DateTime       @map("granted_at") @db.Timestamptz(3)
+  revokedAt          DateTime?      @map("revoked_at") @db.Timestamptz(3)
+  revokedByAdminId   String?        @map("revoked_by_admin_id") @db.Uuid
+  revokedByAdmin     PlatformAdmin? @relation("VipEntitlementRevokedBy", fields: [revokedByAdminId], references: [id], onDelete: Restrict)
+  createdAt          DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@map("vip_salon_entitlements")
+}
+
+/// Salon VIP outreach request. Reservation, quota, and historical snapshot owner.
+model VipRequest {
+  id                 String            @id @db.Uuid
+  salonId            String            @map("salon_id") @db.Uuid
+  salon              Salon             @relation(fields: [salonId], references: [id], onDelete: Restrict)
+  listId             String            @map("list_id") @db.Uuid
+  list               VipTargetList     @relation(fields: [listId], references: [id], onDelete: Restrict)
+  createdByUserId    String            @map("created_by_user_id") @db.Uuid
+  createdByUser      User              @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+  requestedCount     Int               @map("requested_count")
+  geographicRange    String            @map("geographic_range")
+  status             VipRequestStatus
+  reservedUntil      DateTime          @map("reserved_until") @db.Timestamptz(3)
+  submittedAt        DateTime?         @map("submitted_at") @db.Timestamptz(3)
+  cancelledAt        DateTime?         @map("cancelled_at") @db.Timestamptz(3)
+  createdAt          DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
+  recipients         VipRequestRecipient[]
+  sampleWorks        VipSampleWork[]
+  messageRequests    MessageRequest[]
+
+  @@unique([id, salonId])
+  @@index([salonId, createdAt, id])
+  @@index([salonId, status])
+  @@index([listId, status])
+  @@map("vip_requests")
+}
+
+/// Immutable snapshot of a selected VIP target at request time.
+model VipRequestRecipient {
+  id               String         @id @db.Uuid
+  vipRequestId     String         @map("vip_request_id") @db.Uuid
+  salonId          String         @map("salon_id") @db.Uuid
+  vipRequest       VipRequest     @relation(fields: [vipRequestId, salonId], references: [id, salonId], onDelete: Restrict)
+  sortOrder        Int            @map("sort_order")
+  sourceContactId  String         @map("source_contact_id") @db.Uuid
+  sourceContact    VipTargetContact @relation(fields: [sourceContactId], references: [id], onDelete: Restrict)
+  displayName      String         @map("display_name")
+  phoneNumber      String         @map("phone_number")
+  messageText      String         @map("message_text")
+  messageRequestId String?        @unique @map("message_request_id") @db.Uuid
+  messageRequest   MessageRequest? @relation(fields: [messageRequestId], references: [id], onDelete: Restrict)
+  createdAt        DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@unique([vipRequestId, sortOrder])
+  @@index([vipRequestId, sortOrder, id])
+  @@index([salonId])
+  @@map("vip_request_recipients")
+}
+
+/// Sample-work image metadata. Bytes live in object storage, not this row.
+model VipSampleWork {
+  id          String     @id @db.Uuid
+  vipRequestId String    @map("vip_request_id") @db.Uuid
+  salonId     String     @map("salon_id") @db.Uuid
+  vipRequest  VipRequest @relation(fields: [vipRequestId, salonId], references: [id, salonId], onDelete: Restrict)
+  position    Int
+  objectKey   String     @map("object_key")
+  contentType String     @map("content_type")
+  byteSize    Int        @map("byte_size")
+  sha256      String
+  createdAt   DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@unique([vipRequestId, position])
+  @@unique([vipRequestId, sha256])
+  @@unique([objectKey])
+  @@index([salonId, vipRequestId])
+  @@map("vip_sample_works")
 }

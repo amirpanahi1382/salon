@@ -51,8 +51,8 @@ export class AdminMessageQueueItemDto {
   @ApiProperty()
   salonName!: string;
 
-  @ApiProperty()
-  customerId!: string;
+  @ApiProperty({ nullable: true, type: String })
+  customerId!: string | null;
 
   @ApiProperty()
   customerName!: string;
@@ -95,6 +95,9 @@ export class AdminMessageQueueItemDto {
 
   @ApiProperty({ description: 'False when Bale credentials are not configured on the platform' })
   providerReady!: boolean;
+
+  @ApiProperty({ nullable: true, type: String })
+  vipRequestId!: string | null;
 }
 
 export class AdminMessageQueuePageDto {

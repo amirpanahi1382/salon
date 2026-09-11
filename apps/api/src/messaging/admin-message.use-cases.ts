@@ -5,6 +5,7 @@ import {
   ConflictError,
   NotFoundError,
   ValidationError,
+  VIP_BALE_NOT_AVAILABLE_MESSAGE,
   createId,
   DOMAIN_EVENT_TYPES,
   type PlatformAdminPrincipal,
@@ -84,21 +85,28 @@ export class SelectMessageDeliveryModeUseCase {
 
     try {
       await this.prisma.client.$transaction(async (tx) => {
+        const existing = await tx.messageRequest.findFirst({ where: { id } });
+        if (!existing) {
+          throw new NotFoundError('Message not found');
+        }
+        if (mode === 'BALE' && existing.vipRequestId) {
+          throw new ConflictError(VIP_BALE_NOT_AVAILABLE_MESSAGE);
+        }
+
         const claimed = await tx.messageRequest.updateMany({
           where: { id, status: 'QUEUED' },
           data: { status: 'DISPATCHED', updatedAt: now },
         });
         if (claimed.count === 0) {
-          const existing = await tx.messageRequest.findFirst({ where: { id } });
-          if (!existing) {
-            throw new NotFoundError('Message not found');
-          }
           throw new ConflictError('Message is not in a state that allows this action');
         }
 
         const request = await tx.messageRequest.findFirstOrThrow({
           where: { id },
         });
+        if (mode === 'BALE' && request.vipRequestId) {
+          throw new ConflictError(VIP_BALE_NOT_AVAILABLE_MESSAGE);
+        }
 
         await tx.messageDelivery.create({
           data: {
@@ -271,12 +279,15 @@ export class RetryBaleMessageUseCase {
   ) {}
 
   async execute(admin: PlatformAdminPrincipal, id: string) {
+    const queued = await this.messages.findById(id);
+    if (!queued) {
+      throw new NotFoundError('Message not found');
+    }
+    if (queued.vipRequestId) {
+      throw new ConflictError(VIP_BALE_NOT_AVAILABLE_MESSAGE);
+    }
     if (!getBaleSafirSettings(this.config.values)) {
-      const row = await this.messages.findById(id);
-      if (!row) {
-        throw new NotFoundError('Message not found');
-      }
-      return toAdminMessageItem(row as AdminMessageRow, this.config.values);
+      return toAdminMessageItem(queued as AdminMessageRow, this.config.values);
     }
 
     const now = new Date();
@@ -285,6 +296,9 @@ export class RetryBaleMessageUseCase {
         const request = await tx.messageRequest.findFirst({ where: { id } });
         if (!request) {
           throw new NotFoundError('Message not found');
+        }
+        if (request.vipRequestId) {
+          throw new ConflictError(VIP_BALE_NOT_AVAILABLE_MESSAGE);
         }
         const delivery = await tx.messageDelivery.findFirst({
           where: { messageRequestId: id, salonId: request.salonId },

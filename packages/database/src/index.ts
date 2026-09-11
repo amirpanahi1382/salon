@@ -8,6 +8,8 @@ export {
   MessageDeliveryMode,
   MessageProvider,
   MessageChannel,
+  VipTargetListStatus,
+  VipRequestStatus,
   ServiceStatus,
   TransactionStatus,
 } from '@prisma/client';

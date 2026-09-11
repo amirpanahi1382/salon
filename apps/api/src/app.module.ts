@@ -21,6 +21,7 @@ import { TransactionModule } from './transaction/transaction.module';
 import { IntelligenceModule } from './intelligence/intelligence.module';
 import { ActionModule } from './action/action.module';
 import { MessagingModule } from './messaging/messaging.module';
+import { VipModule } from './vip/vip.module';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { AppRequest } from './infrastructure/http/request-context';
 
@@ -95,6 +96,7 @@ import type { AppRequest } from './infrastructure/http/request-context';
     IntelligenceModule,
     ActionModule,
     MessagingModule,
+    VipModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: HttpExceptionFilter },

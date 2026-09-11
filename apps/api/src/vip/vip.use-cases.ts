@@ -1,0 +1,1151 @@
+import { createHash } from 'node:crypto';
+import { Injectable } from '@nestjs/common';
+import {
+  ConflictError,
+  DOMAIN_EVENT_TYPES,
+  ForbiddenError,
+  NotFoundError,
+  ValidationError,
+  VIP_LIST_MAX_CONTACTS,
+  VIP_RESERVATION_EXPIRED_MESSAGE,
+  VIP_LIST_NAME_MAX_LENGTH,
+  VIP_MAX_SAMPLE_WORKS,
+  VIP_MIN_SAMPLE_WORKS,
+  VIP_QUOTA_MAX,
+  createId,
+  isUsableCustomerPhone,
+  renderVipMessageTemplate,
+  type AuthenticatedPrincipal,
+  type PlatformAdminPrincipal,
+} from '@salon/shared';
+import { Prisma } from '@salon/database';
+import { PrismaService } from '../infrastructure/database/prisma.service';
+import {
+  assertSameIdempotentRequest,
+  claimIdempotencyKey,
+  findIdempotencyRecord,
+} from '../infrastructure/http/idempotency';
+import { encodeCursor, toListPage } from '../infrastructure/http/list-page';
+import { mapPrismaError } from '../infrastructure/http/prisma-error';
+import { OBJECT_STORAGE, type ObjectStorage } from '../infrastructure/storage/object-storage';
+import { Inject } from '@nestjs/common';
+import { assertXlsxBuffer } from '../customer/parse-customer-excel';
+import { messageBusinessDateValue } from '@salon/shared';
+import {
+  VIP_DISPATCH_BALE_OPERATION,
+  VIP_DISPATCH_MANUAL_OPERATION,
+  VIP_DISPATCH_TX_TIMEOUT_MS,
+  VIP_ENTITLEMENT_GRANT_OPERATION,
+  VIP_ENTITLEMENT_REVOKE_OPERATION,
+  VIP_EXPORT_FILENAME,
+  VIP_EXPORT_HEADERS,
+  VIP_EXPORT_SHEET_NAME,
+  VIP_IMPORT_MAX_FILE_BYTES,
+  VIP_IMPORT_TX_TIMEOUT_MS,
+  VIP_LIST_IMPORT_OPERATION,
+  VIP_REQUEST_CREATE_OPERATION,
+  VIP_REQUEST_SUBMIT_OPERATION,
+  VIP_SAMPLE_WORK_MAX_BYTES,
+  VIP_SAMPLE_WORK_UPLOAD_OPERATION,
+} from './vip.constants';
+import {
+  vipDispatchHash,
+  vipEntitlementHash,
+  vipListImportHash,
+  vipRequestCreateHash,
+  vipRequestSubmitHash,
+  vipSampleWorkHash,
+} from './vip-idempotency';
+import { detectVipImageContentType, assertSafeObjectFileName } from './image-signature';
+import { parseVipTargetExcel } from './parse-vip-excel';
+import { toListSummary, toVipRequest } from './vip.mapper';
+import { VipRepository } from './vip.repository';
+import type { CreateVipRequestDto, PatchVipListDto } from './vip.dto';
+import ExcelJS from 'exceljs';
+
+function mapImportError(error: unknown): ValidationError {
+  const code = error instanceof Error ? error.message : '';
+  switch (code) {
+    case 'ROW_LIMIT':
+      return new ValidationError(`VIP lists cannot contain more than ${VIP_LIST_MAX_CONTACTS} contacts`);
+    case 'MISSING_HEADERS':
+      return new ValidationError('Excel must include نام and شماره تلفن columns');
+    case 'EMPTY':
+      return new ValidationError('Excel has no valid VIP contacts');
+    case 'INVALID_PHONE':
+      return new ValidationError('Excel contains an invalid phone number');
+    case 'INVALID_ROW':
+      return new ValidationError('Excel contains an invalid name or phone');
+    case 'SHEET_LIMIT':
+      return new ValidationError('Excel has too many worksheets');
+    case 'MALFORMED':
+    case 'ZIP_BOMB':
+    case 'UNSUPPORTED_TYPE':
+      return new ValidationError('Only a valid .xlsx Excel file is supported');
+    default:
+      return new ValidationError('The Excel file could not be imported');
+  }
+}
+
+function sanitizeGeo(raw: string): string {
+  const value = raw.trim().replace(/\s+/g, ' ');
+  if (!value || /[\u0000-\u001F\u007F]/.test(value)) {
+    throw new ValidationError('محدوده سالن is invalid');
+  }
+  return value;
+}
+
+function excelSafeText(value: string): string {
+  if (/^[=+\-@\t\r]/.test(value)) {
+    return `'${value}`;
+  }
+  return value;
+}
+
+async function replayOrClaim(
+  tx: Prisma.TransactionClient,
+  input: {
+    tenantId: string;
+    actorId: string;
+    operation: string;
+    key: string;
+    requestHash: string;
+    resourceType: string;
+    resourceId: string;
+  },
+): Promise<'inserted' | { resourceId: string }> {
+  const claim = await claimIdempotencyKey(tx, {
+    id: createId(),
+    ...input,
+  });
+  if (claim.inserted) {
+    return 'inserted';
+  }
+  const existing = await findIdempotencyRecord(tx, {
+    tenantId: input.tenantId,
+    actorId: input.actorId,
+    operation: input.operation,
+    key: input.key,
+  });
+  if (!existing) {
+    throw new NotFoundError('Request not found');
+  }
+  assertSameIdempotentRequest(existing.requestHash, input.requestHash);
+  return { resourceId: existing.resourceId };
+}
+
+@Injectable()
+export class ImportVipListUseCase {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly vip: VipRepository,
+  ) {}
+
+  async execute(
+    admin: PlatformAdminPrincipal,
+    file: { buffer: Buffer; originalname: string; size: number },
+    idempotencyKey: string,
+  ) {
+    if (!file?.buffer?.length) {
+      throw new ValidationError('Upload an Excel .xlsx file');
+    }
+    if (file.size > VIP_IMPORT_MAX_FILE_BYTES || file.buffer.length > VIP_IMPORT_MAX_FILE_BYTES) {
+      throw new ValidationError(
+        `The Excel file is too large. Maximum size is ${VIP_IMPORT_MAX_FILE_BYTES / (1024 * 1024)} MB.`,
+      );
+    }
+    try {
+      assertXlsxBuffer(file.buffer, file.originalname || 'upload.xlsx');
+    } catch {
+      throw new ValidationError('Only .xlsx Excel files are supported');
+    }
+    let contacts: Awaited<ReturnType<typeof parseVipTargetExcel>>;
+    try {
+      contacts = await parseVipTargetExcel(file.buffer);
+    } catch (error: unknown) {
+      throw mapImportError(error);
+    }
+    const fingerprint = createHash('sha256')
+      .update(contacts.map((row) => `${row.phoneNumber}:${row.displayName}`).join('|'))
+      .digest('hex');
+    const requestHash = vipListImportHash(contacts.length, fingerprint);
+    const listId = createId();
+    const now = new Date();
+    const name = `لیست VIP ${now.toISOString().slice(0, 16).replace('T', ' ')}`.slice(
+      0,
+      VIP_LIST_NAME_MAX_LENGTH,
+    );
+
+    try {
+      await this.prisma.client.$transaction(
+        async (tx) => {
+          const claimed = await replayOrClaim(tx, {
+            tenantId: admin.adminId,
+            actorId: admin.adminId,
+            operation: VIP_LIST_IMPORT_OPERATION,
+            key: idempotencyKey,
+            requestHash,
+            resourceType: 'vip_target_list',
+            resourceId: listId,
+          });
+          if (claimed !== 'inserted') {
+            return;
+          }
+          await tx.vipTargetList.create({
+            data: {
+              id: listId,
+              name,
+              status: 'PENDING',
+              contactCount: contacts.length,
+              createdByAdminId: admin.adminId,
+              updatedAt: now,
+              contacts: {
+                create: contacts.map((row, index) => ({
+                  id: createId(),
+                  sortOrder: index + 1,
+                  displayName: row.displayName,
+                  phoneNumber: row.phoneNumber,
+                })),
+              },
+            },
+          });
+          await tx.auditLog.create({
+            data: {
+              id: createId(),
+              actorId: admin.adminId,
+              action: 'VIP_LIST_CREATED',
+              resource: 'vip_target_list',
+              resourceId: listId,
+              result: 'SUCCESS',
+              metadata: { contactCount: contacts.length },
+            },
+          });
+        },
+        { timeout: VIP_IMPORT_TX_TIMEOUT_MS },
+      );
+    } catch (error: unknown) {
+      const mapped = mapPrismaError(error);
+      if (mapped) {
+        throw mapped;
+      }
+      throw error;
+    }
+
+    const existing = await this.prisma.client.idempotencyRecord.findUnique({
+      where: {
+        tenantId_actorId_operation_key: {
+          tenantId: admin.adminId,
+          actorId: admin.adminId,
+          operation: VIP_LIST_IMPORT_OPERATION,
+          key: idempotencyKey,
+        },
+      },
+    });
+    const id = existing?.resourceId ?? listId;
+    const list = await this.vip.findListById(id);
+    if (!list) {
+      throw new NotFoundError('VIP list not found');
+    }
+    return toListSummary(list);
+  }
+}
+
+@Injectable()
+export class ListVipListsUseCase {
+  constructor(private readonly vip: VipRepository) {}
+
+  async execute(cursor?: string) {
+    let parsed: { createdAt: Date; id: string } | undefined;
+    if (cursor) {
+      const decoded = Buffer.from(cursor, 'base64url').toString('utf8').split('\n');
+      if (decoded.length !== 2 || !decoded[0] || !decoded[1]) {
+        throw new ValidationError('Invalid cursor');
+      }
+      parsed = { createdAt: new Date(decoded[0]), id: decoded[1] };
+      if (Number.isNaN(parsed.createdAt.getTime())) {
+        throw new ValidationError('Invalid cursor');
+      }
+    }
+    const rows = await this.vip.listLists(parsed);
+    const page = toListPage(rows, 50, (row) => encodeCursor([row.createdAt.toISOString(), row.id]));
+    return {
+      items: page.items.map(toListSummary),
+      hasMore: page.hasMore,
+      nextCursor: page.nextCursor,
+    };
+  }
+}
+
+@Injectable()
+export class GetVipListUseCase {
+  constructor(private readonly vip: VipRepository) {}
+
+  async execute(id: string) {
+    const list = await this.vip.findListById(id);
+    if (!list) {
+      throw new NotFoundError('VIP list not found');
+    }
+    const contacts = await this.vip.listContacts(id);
+    const latestRequest = await this.vip.client.vipRequest.findFirst({
+      where: { listId: id, status: { not: 'CANCELLED' } },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        salon: { select: { name: true } },
+        list: { select: { name: true } },
+        sampleWorks: { orderBy: { position: 'asc' } },
+      },
+    });
+    return {
+      ...toListSummary(list),
+      contacts: contacts.map((row) => ({
+        displayName: row.displayName,
+        phoneNumber: row.phoneNumber,
+        sortOrder: row.sortOrder,
+      })),
+      request: latestRequest ? toVipRequest(latestRequest) : null,
+    };
+  }
+}
+
+@Injectable()
+export class PatchVipListUseCase {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly vip: VipRepository,
+  ) {}
+
+  async execute(admin: PlatformAdminPrincipal, id: string, body: PatchVipListDto) {
+    if (!body.name && !body.availability) {
+      throw new ValidationError('Provide a name or availability change');
+    }
+    const now = new Date();
+    const existing = await this.vip.findListById(id);
+    if (!existing) {
+      throw new NotFoundError('VIP list not found');
+    }
+    if (body.availability === 'ACTIVE' && existing.status === 'IN_USE') {
+      throw new ConflictError('An in-use VIP list cannot be activated again until it is released');
+    }
+    if (body.availability === 'INACTIVE' && existing.status === 'IN_USE') {
+      throw new ConflictError('An in-use VIP list cannot be deactivated');
+    }
+    if (body.availability === 'ACTIVE' && existing.status !== 'PENDING' && existing.status !== 'INACTIVE' && existing.status !== 'ACTIVE') {
+      throw new ConflictError('This VIP list cannot be activated');
+    }
+
+    await this.prisma.client.$transaction(async (tx) => {
+      await tx.vipTargetList.update({
+        where: { id },
+        data: {
+          ...(body.name ? { name: body.name.trim() } : {}),
+          ...(body.availability === 'ACTIVE' ? { status: 'ACTIVE' } : {}),
+          ...(body.availability === 'INACTIVE' ? { status: 'INACTIVE' } : {}),
+          updatedAt: now,
+        },
+      });
+      await tx.auditLog.create({
+        data: {
+          id: createId(),
+          actorId: admin.adminId,
+          action: body.availability === 'ACTIVE'
+            ? 'VIP_LIST_ACTIVATED'
+            : body.availability === 'INACTIVE'
+              ? 'VIP_LIST_DEACTIVATED'
+              : 'VIP_LIST_RENAMED',
+          resource: 'vip_target_list',
+          resourceId: id,
+          result: 'SUCCESS',
+          metadata: {
+            name: body.name,
+            availability: body.availability,
+          },
+        },
+      });
+    });
+    const list = await this.vip.findListById(id);
+    if (!list) {
+      throw new NotFoundError('VIP list not found');
+    }
+    return toListSummary(list);
+  }
+}
+
+@Injectable()
+export class DeleteVipListUseCase {
+  constructor(private readonly prisma: PrismaService) {}
+
+  async execute(admin: PlatformAdminPrincipal, id: string) {
+    const list = await this.prisma.client.vipTargetList.findUnique({
+      where: { id },
+      include: { _count: { select: { requests: true, contacts: true } } },
+    });
+    if (!list) {
+      throw new NotFoundError('VIP list not found');
+    }
+    if (list.status === 'IN_USE') {
+      throw new ConflictError('An in-use VIP list cannot be deleted');
+    }
+    if (list._count.requests > 0) {
+      throw new ConflictError('VIP lists with request history cannot be deleted');
+    }
+    await this.prisma.client.$transaction(async (tx) => {
+      await tx.vipTargetContact.deleteMany({ where: { listId: id } });
+      await tx.vipTargetList.delete({ where: { id } });
+      await tx.auditLog.create({
+        data: {
+          id: createId(),
+          actorId: admin.adminId,
+          action: 'VIP_LIST_DELETED',
+          resource: 'vip_target_list',
+          resourceId: id,
+          result: 'SUCCESS',
+        },
+      });
+    });
+  }
+}
+
+@Injectable()
+export class GrantVipEntitlementUseCase {
+  constructor(private readonly prisma: PrismaService) {}
+
+  async execute(admin: PlatformAdminPrincipal, salonId: string, idempotencyKey: string) {
+    if (!/^[0-9a-f-]{36}$/i.test(salonId)) {
+      throw new ValidationError('Invalid salon id');
+    }
+    const requestHash = vipEntitlementHash(salonId, 'grant');
+    const entitlementId = createId();
+    const now = new Date();
+    await this.prisma.client.$transaction(async (tx) => {
+      const claimed = await replayOrClaim(tx, {
+        tenantId: admin.adminId,
+        actorId: admin.adminId,
+        operation: VIP_ENTITLEMENT_GRANT_OPERATION,
+        key: idempotencyKey,
+        requestHash,
+        resourceType: 'vip_salon_entitlement',
+        resourceId: entitlementId,
+      });
+      if (claimed !== 'inserted') {
+        return;
+      }
+      const salon = await tx.salon.findUnique({ where: { id: salonId }, select: { id: true } });
+      if (!salon) {
+        throw new NotFoundError('Salon not found');
+      }
+      await tx.vipSalonEntitlement.upsert({
+        where: { salonId },
+        create: {
+          id: entitlementId,
+          salonId,
+          grantedByAdminId: admin.adminId,
+          grantedAt: now,
+          updatedAt: now,
+        },
+        update: {
+          grantedByAdminId: admin.adminId,
+          grantedAt: now,
+          revokedAt: null,
+          revokedByAdminId: null,
+          updatedAt: now,
+        },
+      });
+      await tx.auditLog.create({
+        data: {
+          id: createId(),
+          tenantId: salonId,
+          actorId: admin.adminId,
+          action: 'VIP_ENTITLEMENT_GRANTED',
+          resource: 'vip_salon_entitlement',
+          resourceId: salonId,
+          result: 'SUCCESS',
+        },
+      });
+    });
+    const row = await this.prisma.client.vipSalonEntitlement.findUnique({
+      where: { salonId },
+      include: { salon: { select: { name: true } } },
+    });
+    if (!row) {
+      throw new NotFoundError('VIP entitlement not found');
+    }
+    return {
+      salonId: row.salonId,
+      salonName: row.salon.name,
+      entitled: row.revokedAt === null,
+      grantedAt: row.grantedAt.toISOString(),
+      revokedAt: row.revokedAt?.toISOString() ?? null,
+    };
+  }
+}
+
+@Injectable()
+export class RevokeVipEntitlementUseCase {
+  constructor(private readonly prisma: PrismaService) {}
+
+  async execute(admin: PlatformAdminPrincipal, salonId: string, idempotencyKey: string) {
+    const requestHash = vipEntitlementHash(salonId, 'revoke');
+    const now = new Date();
+    await this.prisma.client.$transaction(async (tx) => {
+      const claimed = await replayOrClaim(tx, {
+        tenantId: admin.adminId,
+        actorId: admin.adminId,
+        operation: VIP_ENTITLEMENT_REVOKE_OPERATION,
+        key: idempotencyKey,
+        requestHash,
+        resourceType: 'vip_salon_entitlement',
+        resourceId: salonId,
+      });
+      if (claimed !== 'inserted') {
+        return;
+      }
+      const updated = await tx.vipSalonEntitlement.updateMany({
+        where: { salonId, revokedAt: null },
+        data: {
+          revokedAt: now,
+          revokedByAdminId: admin.adminId,
+          updatedAt: now,
+        },
+      });
+      if (updated.count === 0) {
+        throw new NotFoundError('Active VIP entitlement not found');
+      }
+      await tx.auditLog.create({
+        data: {
+          id: createId(),
+          tenantId: salonId,
+          actorId: admin.adminId,
+          action: 'VIP_ENTITLEMENT_REVOKED',
+          resource: 'vip_salon_entitlement',
+          resourceId: salonId,
+          result: 'SUCCESS',
+        },
+      });
+    });
+  }
+}
+
+@Injectable()
+export class ListAdminSalonsUseCase {
+  constructor(private readonly prisma: PrismaService) {}
+
+  async execute() {
+    const salons = await this.prisma.client.salon.findMany({
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: 200,
+      select: {
+        id: true,
+        name: true,
+        vipEntitlement: { select: { revokedAt: true } },
+      },
+    });
+    return {
+      items: salons.map((salon) => ({
+        id: salon.id,
+        name: salon.name,
+        entitled: salon.vipEntitlement != null && salon.vipEntitlement.revokedAt === null,
+      })),
+    };
+  }
+}
+
+@Injectable()
+export class GetVipCapabilityUseCase {
+  constructor(private readonly vip: VipRepository) {}
+
+  async execute(principal: AuthenticatedPrincipal) {
+    const entitled = (await this.vip.findActiveEntitlement(principal.tenantId)) != null;
+    const used = entitled
+      ? await this.vip.client.$transaction(async (tx) => {
+          await this.vip.expireStaleReservations(new Date(), tx);
+          return this.vip.quotaUsedSince(tx, principal.tenantId, this.vip.quotaWindowStart(new Date()));
+        })
+      : 0;
+    const current = entitled ? await this.vip.currentOpenRequest(principal.tenantId) : null;
+    return {
+      entitled,
+      usedQuota: used,
+      remainingQuota: Math.max(0, VIP_QUOTA_MAX - used),
+      currentRequest: current ? toVipRequest(current) : null,
+    };
+  }
+}
+
+@Injectable()
+export class ListActiveVipListsUseCase {
+  constructor(private readonly vip: VipRepository) {}
+
+  async execute(principal: AuthenticatedPrincipal) {
+    if (!(await this.vip.findActiveEntitlement(principal.tenantId))) {
+      throw new ForbiddenError('VIP outreach is not enabled for this salon');
+    }
+    await this.vip.expireStaleReservations(new Date(), this.vip.client);
+    const items = await this.vip.listActiveLists();
+    return {
+      items: items.map((row) => ({
+        id: row.id,
+        name: row.name,
+        status: row.status,
+        contactCount: row.contactCount,
+        createdAt: row.createdAt.toISOString(),
+      })),
+    };
+  }
+}
+
+@Injectable()
+export class CreateVipRequestUseCase {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly vip: VipRepository,
+  ) {}
+
+  async execute(
+    principal: AuthenticatedPrincipal,
+    body: CreateVipRequestDto,
+    idempotencyKey: string,
+  ) {
+    const geographicRange = sanitizeGeo(body.geographicRange);
+    const requestHash = vipRequestCreateHash(body.listId, body.requestedCount, geographicRange);
+    const requestId = createId();
+    const now = new Date();
+
+    try {
+      await this.prisma.client.$transaction(
+        async (tx) => {
+          const claimed = await replayOrClaim(tx, {
+            tenantId: principal.tenantId,
+            actorId: principal.userId,
+            operation: VIP_REQUEST_CREATE_OPERATION,
+            key: idempotencyKey,
+            requestHash,
+            resourceType: 'vip_request',
+            resourceId: requestId,
+          });
+          if (claimed !== 'inserted') {
+            return;
+          }
+          await this.vip.expireStaleReservations(now, tx);
+          const entitlement = await this.vip.lockEntitlement(tx, principal.tenantId);
+          if (!entitlement || entitlement.revoked_at) {
+            throw new ForbiddenError('VIP outreach is not enabled for this salon');
+          }
+          const used = await this.vip.quotaUsedSince(
+            tx,
+            principal.tenantId,
+            this.vip.quotaWindowStart(now),
+          );
+          if (used + body.requestedCount > VIP_QUOTA_MAX) {
+            throw new ConflictError('VIP 14-day quota would be exceeded');
+          }
+          const reserved = await this.vip.tryReserveList(tx, body.listId, principal.tenantId, now);
+          if (!reserved) {
+            throw new ConflictError('This VIP list is not available');
+          }
+          const list = await tx.vipTargetList.findUniqueOrThrow({
+            where: { id: body.listId },
+            select: { contactCount: true, name: true },
+          });
+          if (list.contactCount < body.requestedCount) {
+            throw new ValidationError('This VIP list does not have enough contacts');
+          }
+          const contacts = await this.vip.selectContacts(body.listId, body.requestedCount, tx);
+          if (contacts.length !== body.requestedCount) {
+            throw new ValidationError('This VIP list does not have enough contacts');
+          }
+          await tx.vipRequest.create({
+            data: {
+              id: requestId,
+              salonId: principal.tenantId,
+              listId: body.listId,
+              createdByUserId: principal.userId,
+              requestedCount: body.requestedCount,
+              geographicRange,
+              status: 'AWAITING_SAMPLE_WORK',
+              reservedUntil: this.vip.reservationDeadline(now),
+              updatedAt: now,
+              recipients: {
+                create: contacts.map((contact, index) => ({
+                  id: createId(),
+                  sortOrder: index + 1,
+                  sourceContactId: contact.id,
+                  displayName: contact.displayName,
+                  phoneNumber: contact.phoneNumber,
+                  messageText: renderVipMessageTemplate(contact.displayName, geographicRange),
+                })),
+              },
+            },
+          });
+          await tx.outboxEvent.create({
+            data: {
+              id: createId(),
+              tenantId: principal.tenantId,
+              eventType: DOMAIN_EVENT_TYPES.VipRequestCreated,
+              payload: { vipRequestId: requestId, salonId: principal.tenantId, listId: body.listId },
+            },
+          });
+          await tx.auditLog.create({
+            data: {
+              id: createId(),
+              tenantId: principal.tenantId,
+              actorId: principal.userId,
+              action: 'VIP_REQUEST_CREATED',
+              resource: 'vip_request',
+              resourceId: requestId,
+              result: 'SUCCESS',
+              metadata: { listId: body.listId, requestedCount: body.requestedCount },
+            },
+          });
+        },
+        { timeout: VIP_IMPORT_TX_TIMEOUT_MS },
+      );
+    } catch (error: unknown) {
+      if (
+        error instanceof ForbiddenError ||
+        error instanceof ConflictError ||
+        error instanceof ValidationError ||
+        error instanceof NotFoundError
+      ) {
+        throw error;
+      }
+      const mapped = mapPrismaError(error);
+      if (mapped) {
+        throw mapped;
+      }
+      throw error;
+    }
+
+    const record = await this.prisma.client.idempotencyRecord.findUnique({
+      where: {
+        tenantId_actorId_operation_key: {
+          tenantId: principal.tenantId,
+          actorId: principal.userId,
+          operation: VIP_REQUEST_CREATE_OPERATION,
+          key: idempotencyKey,
+        },
+      },
+    });
+    const id = record?.resourceId ?? requestId;
+    const created = await this.vip.findRequestForSalon(principal.tenantId, id);
+    if (!created) {
+      throw new NotFoundError('VIP request not found');
+    }
+    return toVipRequest(created);
+  }
+}
+
+@Injectable()
+export class UploadVipSampleWorkUseCase {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly vip: VipRepository,
+    @Inject(OBJECT_STORAGE) private readonly storage: ObjectStorage,
+  ) {}
+
+  async execute(
+    principal: AuthenticatedPrincipal,
+    requestId: string,
+    file: { buffer: Buffer; originalname: string; size: number },
+    idempotencyKey: string,
+  ) {
+    if (!file?.buffer?.length) {
+      throw new ValidationError('Upload an image file');
+    }
+    assertSafeObjectFileName(file.originalname || 'image.jpg');
+    if (file.size > VIP_SAMPLE_WORK_MAX_BYTES || file.buffer.length > VIP_SAMPLE_WORK_MAX_BYTES) {
+      throw new ValidationError(
+        `Each sample-work image must be at most ${VIP_SAMPLE_WORK_MAX_BYTES / (1024 * 1024)} MB`,
+      );
+    }
+    const contentType = detectVipImageContentType(file.buffer);
+    if (!contentType) {
+      throw new ValidationError('Only JPEG, PNG, or WebP images are supported');
+    }
+    const sha256 = createHash('sha256').update(file.buffer).digest('hex');
+    const requestHash = vipSampleWorkHash(requestId, sha256);
+    const imageId = createId();
+    const objectKey = `vip/${principal.tenantId}/${requestId}/${imageId}`;
+    const now = new Date();
+    let extraObjectKey: string | undefined;
+
+    await this.storage.putObject({ key: objectKey, body: file.buffer, contentType });
+
+    try {
+      await this.prisma.client.$transaction(async (tx) => {
+        const claimed = await replayOrClaim(tx, {
+          tenantId: principal.tenantId,
+          actorId: principal.userId,
+          operation: VIP_SAMPLE_WORK_UPLOAD_OPERATION,
+          key: idempotencyKey,
+          requestHash,
+          resourceType: 'vip_sample_work',
+          resourceId: imageId,
+        });
+        if (claimed !== 'inserted') {
+          extraObjectKey = objectKey;
+          return;
+        }
+        await this.vip.expireStaleReservations(now, tx);
+        const request = await tx.vipRequest.findFirst({
+          where: { id: requestId, salonId: principal.tenantId },
+          include: { sampleWorks: true },
+        });
+        if (!request) {
+          throw new NotFoundError('VIP request not found');
+        }
+        if (request.status !== 'AWAITING_SAMPLE_WORK') {
+          throw new ConflictError('Sample work cannot be added in the current state');
+        }
+        if (request.sampleWorks.length >= VIP_MAX_SAMPLE_WORKS) {
+          throw new ValidationError('At most 3 sample-work images are allowed');
+        }
+        const used = new Set(request.sampleWorks.map((row) => row.position));
+        const position = [1, 2, 3].find((value) => !used.has(value));
+        if (!position) {
+          throw new ValidationError('At most 3 sample-work images are allowed');
+        }
+        await tx.vipSampleWork.create({
+          data: {
+            id: imageId,
+            vipRequestId: requestId,
+            salonId: principal.tenantId,
+            position,
+            objectKey,
+            contentType,
+            byteSize: file.buffer.length,
+            sha256,
+          },
+        });
+      });
+    } catch (error: unknown) {
+      await this.storage.deleteObject(objectKey).catch(() => undefined);
+      if (
+        error instanceof ForbiddenError ||
+        error instanceof ConflictError ||
+        error instanceof ValidationError ||
+        error instanceof NotFoundError
+      ) {
+        throw error;
+      }
+      const mapped = mapPrismaError(error);
+      if (mapped) {
+        throw mapped;
+      }
+      throw error;
+    }
+    if (extraObjectKey) {
+      await this.storage.deleteObject(extraObjectKey).catch(() => undefined);
+    }
+
+    const request = await this.vip.findRequestForSalon(principal.tenantId, requestId);
+    if (!request) {
+      throw new NotFoundError('VIP request not found');
+    }
+    return toVipRequest(request);
+  }
+}
+
+@Injectable()
+export class SubmitVipRequestUseCase {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly vip: VipRepository,
+  ) {}
+
+  async execute(principal: AuthenticatedPrincipal, requestId: string, idempotencyKey: string) {
+    const requestHash = vipRequestSubmitHash(requestId);
+    const now = new Date();
+    await this.prisma.client.$transaction(async (tx) => {
+      await this.vip.expireStaleReservations(now, tx);
+    });
+    await this.prisma.client.$transaction(async (tx) => {
+      const claimed = await replayOrClaim(tx, {
+        tenantId: principal.tenantId,
+        actorId: principal.userId,
+        operation: VIP_REQUEST_SUBMIT_OPERATION,
+        key: idempotencyKey,
+        requestHash,
+        resourceType: 'vip_request',
+        resourceId: requestId,
+      });
+      if (claimed !== 'inserted') {
+        return;
+      }
+      const request = await tx.vipRequest.findFirst({
+        where: { id: requestId, salonId: principal.tenantId },
+        include: { sampleWorks: true },
+      });
+      if (!request) {
+        throw new NotFoundError('VIP request not found');
+      }
+      if (request.status !== 'AWAITING_SAMPLE_WORK') {
+        throw new ConflictError('This VIP request cannot be submitted');
+      }
+      if (request.sampleWorks.length < VIP_MIN_SAMPLE_WORKS) {
+        throw new ValidationError('Upload at least one sample-work image');
+      }
+      if (request.sampleWorks.length > VIP_MAX_SAMPLE_WORKS) {
+        throw new ValidationError('At most 3 sample-work images are allowed');
+      }
+      const moved = await tx.vipRequest.updateMany({
+        where: {
+          id: requestId,
+          salonId: principal.tenantId,
+          status: 'AWAITING_SAMPLE_WORK',
+          reservedUntil: { gte: now },
+          submittedAt: null,
+          cancelledAt: null,
+        },
+        data: { status: 'SUBMITTED', submittedAt: now, updatedAt: now },
+      });
+      if (moved.count !== 1) {
+        const latest = await tx.vipRequest.findFirst({
+          where: { id: requestId, salonId: principal.tenantId },
+          select: { status: true, reservedUntil: true, submittedAt: true, cancelledAt: true },
+        });
+        if (
+          latest?.status === 'CANCELLED' ||
+          (latest != null && latest.reservedUntil.getTime() < now.getTime())
+        ) {
+          throw new ConflictError(VIP_RESERVATION_EXPIRED_MESSAGE);
+        }
+        throw new ConflictError('This VIP request cannot be submitted');
+      }
+      await tx.outboxEvent.create({
+        data: {
+          id: createId(),
+          tenantId: principal.tenantId,
+          eventType: DOMAIN_EVENT_TYPES.VipRequestSubmitted,
+          payload: { vipRequestId: requestId, salonId: principal.tenantId },
+        },
+      });
+      await tx.auditLog.create({
+        data: {
+          id: createId(),
+          tenantId: principal.tenantId,
+          actorId: principal.userId,
+          action: 'VIP_REQUEST_SUBMITTED',
+          resource: 'vip_request',
+          resourceId: requestId,
+          result: 'SUCCESS',
+          metadata: { sampleWorkCount: request.sampleWorks.length },
+        },
+      });
+    });
+    const request = await this.vip.findRequestForSalon(principal.tenantId, requestId);
+    if (!request) {
+      throw new NotFoundError('VIP request not found');
+    }
+    return toVipRequest(request);
+  }
+}
+
+@Injectable()
+export class GetSalonVipRequestUseCase {
+  constructor(private readonly vip: VipRepository) {}
+
+  async execute(principal: AuthenticatedPrincipal, id: string) {
+    const request = await this.vip.findRequestForSalon(principal.tenantId, id);
+    if (!request) {
+      throw new NotFoundError('VIP request not found');
+    }
+    return toVipRequest(request);
+  }
+}
+
+@Injectable()
+export class DownloadVipSampleWorkUseCase {
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(OBJECT_STORAGE) private readonly storage: ObjectStorage,
+  ) {}
+
+  async executeForAdmin(imageId: string) {
+    const image = await this.prisma.client.vipSampleWork.findUnique({ where: { id: imageId } });
+    if (!image) {
+      throw new NotFoundError('Sample work not found');
+    }
+    return this.storage.getObject(image.objectKey);
+  }
+
+  async executeForSalon(principal: AuthenticatedPrincipal, imageId: string) {
+    const image = await this.prisma.client.vipSampleWork.findFirst({
+      where: { id: imageId, salonId: principal.tenantId },
+    });
+    if (!image) {
+      throw new NotFoundError('Sample work not found');
+    }
+    return this.storage.getObject(image.objectKey);
+  }
+}
+
+@Injectable()
+export class ExportVipRequestExcelUseCase {
+  constructor(private readonly prisma: PrismaService) {}
+
+  async execute(requestId: string): Promise<{ buffer: Buffer; filename: string }> {
+    const request = await this.prisma.client.vipRequest.findUnique({
+      where: { id: requestId },
+      include: {
+        recipients: { orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }] },
+      },
+    });
+    if (!request) {
+      throw new NotFoundError('VIP request not found');
+    }
+    if (request.status === 'AWAITING_SAMPLE_WORK' || request.status === 'CANCELLED') {
+      throw new ConflictError('Export is available after the salon submits sample work');
+    }
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'Salon Attention';
+    const sheet = workbook.addWorksheet(VIP_EXPORT_SHEET_NAME);
+    sheet.views = [{ rightToLeft: true, state: 'frozen', ySplit: 1 }];
+    sheet.addRow([...VIP_EXPORT_HEADERS]);
+    for (const recipient of request.recipients) {
+      sheet.addRow([
+        excelSafeText(recipient.displayName),
+        recipient.phoneNumber,
+        excelSafeText(recipient.messageText),
+      ]);
+    }
+    sheet.getRow(1).font = { bold: true, name: 'Tahoma' };
+    const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
+    return { buffer, filename: VIP_EXPORT_FILENAME };
+  }
+}
+
+@Injectable()
+export class DispatchVipRequestUseCase {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly vip: VipRepository,
+  ) {}
+
+  async execute(
+    admin: PlatformAdminPrincipal,
+    requestId: string,
+    mode: 'MANUAL' | 'BALE',
+    idempotencyKey: string,
+  ) {
+    const requestHash = vipDispatchHash(requestId, mode);
+    const now = new Date();
+    await this.prisma.client.$transaction(
+      async (tx) => {
+        const claimed = await replayOrClaim(tx, {
+          tenantId: admin.adminId,
+          actorId: admin.adminId,
+          operation: mode === 'MANUAL' ? VIP_DISPATCH_MANUAL_OPERATION : VIP_DISPATCH_BALE_OPERATION,
+          key: idempotencyKey,
+          requestHash,
+          resourceType: 'vip_request',
+          resourceId: requestId,
+        });
+        if (claimed !== 'inserted') {
+          return;
+        }
+        const request = await tx.vipRequest.findUnique({
+          where: { id: requestId },
+          include: { recipients: { orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }] } },
+        });
+        if (!request) {
+          throw new NotFoundError('VIP request not found');
+        }
+        if (request.status === 'MANUAL_QUEUED' && mode === 'MANUAL') {
+          return;
+        }
+        if (request.status === 'BALE_NOT_IMPLEMENTED' && mode === 'BALE') {
+          return;
+        }
+        if (request.status !== 'SUBMITTED' && request.status !== 'BALE_NOT_IMPLEMENTED') {
+          throw new ConflictError('This VIP request cannot be dispatched');
+        }
+        if (mode === 'BALE') {
+          await tx.vipRequest.update({
+            where: { id: requestId },
+            data: { status: 'BALE_NOT_IMPLEMENTED', updatedAt: now },
+          });
+          await tx.auditLog.create({
+            data: {
+              id: createId(),
+              tenantId: request.salonId,
+              actorId: admin.adminId,
+              action: 'VIP_DISPATCH_SELECTED',
+              resource: 'vip_request',
+              resourceId: requestId,
+              result: 'SUCCESS',
+              metadata: { mode: 'BALE', implemented: false },
+            },
+          });
+          return;
+        }
+
+        for (const recipient of request.recipients) {
+          if (recipient.messageRequestId) {
+            continue;
+          }
+          if (!isUsableCustomerPhone(recipient.phoneNumber)) {
+            throw new ValidationError('A stored VIP recipient phone is invalid');
+          }
+          const messageRequestId = createId();
+          await tx.messageRequest.create({
+            data: {
+              id: messageRequestId,
+              salonId: request.salonId,
+              customerId: null,
+              actionId: null,
+              createdByUserId: request.createdByUserId,
+              opportunityType: null,
+              vipRequestId: request.id,
+              recipientDisplayName: recipient.displayName,
+              recipientPhoneNumber: recipient.phoneNumber,
+              messageText: recipient.messageText,
+              requestedAt: now,
+              messageBusinessDate: messageBusinessDateValue(now),
+              countsTowardDailyLimit: false,
+              status: 'QUEUED',
+              updatedAt: now,
+            },
+          });
+          await tx.vipRequestRecipient.update({
+            where: { id: recipient.id },
+            data: { messageRequestId },
+          });
+          await tx.outboxEvent.create({
+            data: {
+              id: createId(),
+              tenantId: request.salonId,
+              eventType: DOMAIN_EVENT_TYPES.MessageRequested,
+              payload: {
+                messageRequestId,
+                salonId: request.salonId,
+                vipRequestId: request.id,
+              },
+            },
+          });
+        }
+        await tx.vipRequest.update({
+          where: { id: requestId },
+          data: { status: 'MANUAL_QUEUED', updatedAt: now },
+        });
+        await tx.auditLog.create({
+          data: {
+            id: createId(),
+            tenantId: request.salonId,
+            actorId: admin.adminId,
+            action: 'VIP_DISPATCH_SELECTED',
+            resource: 'vip_request',
+            resourceId: requestId,
+            result: 'SUCCESS',
+            metadata: { mode: 'MANUAL', messageCount: request.recipients.length },
+          },
+        });
+      },
+      { timeout: VIP_DISPATCH_TX_TIMEOUT_MS },
+    );
+    const request = await this.vip.findRequestById(requestId);
+    if (!request) {
+      throw new NotFoundError('VIP request not found');
+    }
+    return toVipRequest(request);
+  }
+}
