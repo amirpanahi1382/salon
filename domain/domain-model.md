@@ -576,7 +576,7 @@ Send reactivation message.
 
 The system should favor explainability.
 
-Implemented operational follow-through is a separate `OpportunityAction` record (OPEN → COMPLETED or DISMISSED). It does not persist the Opportunity itself and is not a campaign, message, visit, or transaction.
+Implemented operational follow-through is a separate `OpportunityAction` record (OPEN → COMPLETED or DISMISSED) keyed to the customer's last visit at the time of the Action (`sourceVisitId`). It does not persist the Opportunity itself and is not a campaign, message, visit, or transaction. COMPLETED is salon follow-through history. DISMISSED suppresses the current episode without counting as completed work. The derived opportunity may be presented again only after a new last visit that still matches intelligence rules.
 
 ---
 

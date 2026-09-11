@@ -11,6 +11,7 @@ import { PrismaService } from '../infrastructure/database/prisma.service';
 import { IntelligenceQueryService } from './intelligence-query.service';
 import { loadCustomerRevenueMap, loadSalonRevenueTotals } from './intelligence-revenue';
 import type { IntelligenceSummaryResponseDto } from './intelligence.dto';
+import { loadSuppressedOpportunityKeys, suppressedOpportunityKey } from '../action/opportunity-suppression';
 
 @Injectable()
 export class GetIntelligenceSummaryUseCase {
@@ -21,10 +22,11 @@ export class GetIntelligenceSummaryUseCase {
 
   async execute(principal: AuthenticatedPrincipal): Promise<IntelligenceSummaryResponseDto> {
     const asOf = utcNow();
-    const [{ rows, truncated }, salonRevenue, revenueByCustomer] = await Promise.all([
+    const [{ rows, truncated }, salonRevenue, revenueByCustomer, suppressed] = await Promise.all([
       this.intelligence.loadSalon(principal.tenantId, asOf),
       loadSalonRevenueTotals(this.prisma.client, principal.tenantId, asOf),
       loadCustomerRevenueMap(this.prisma.client, principal.tenantId, asOf),
+      loadSuppressedOpportunityKeys(this.prisma.client, principal.tenantId),
     ]);
     const summary: IntelligenceSummaryResponseDto = {
       customers: rows.length,
@@ -71,6 +73,9 @@ export class GetIntelligenceSummaryUseCase {
         summary.frequent += 1;
       }
       for (const opportunity of result.opportunities) {
+        if (suppressed.has(suppressedOpportunityKey(row.customer.id, opportunity.type))) {
+          continue;
+        }
         if (opportunity.type === 'REACTIVATION') {
           summary.reactivationOpportunities += 1;
         }
@@ -78,7 +83,11 @@ export class GetIntelligenceSummaryUseCase {
           summary.customerReturnOpportunities += 1;
         }
       }
-      if (revenue && revenueOpportunities(revenue).length > 0) {
+      if (
+        revenue &&
+        revenueOpportunities(revenue).length > 0 &&
+        !suppressed.has(suppressedOpportunityKey(row.customer.id, 'REVENUE_DECLINE'))
+      ) {
         summary.revenueDeclineOpportunities += 1;
       }
     }

@@ -129,6 +129,157 @@ describeIfDb('opportunity_actions constraints', () => {
     });
   });
 
+  it('allows only one action per salon, customer, type, and source visit', async () => {
+    const salonId = randomUUID();
+    const userId = randomUUID();
+    const customerId = randomUUID();
+    const visitId = randomUUID();
+
+    await prisma.salon.create({
+      data: { id: salonId, name: 'Fingerprint Unique', updatedAt: new Date() },
+    });
+    await prisma.user.create({
+      data: {
+        id: userId,
+        salonId,
+        name: 'Owner',
+        email: `act-fp-${Date.now()}@example.test`,
+        passwordHash: 'hash',
+        role: 'OWNER',
+        updatedAt: new Date(),
+      },
+    });
+    await prisma.customer.create({
+      data: {
+        id: customerId,
+        salonId,
+        firstName: 'Sara',
+        lastName: 'Fingerprint',
+        phoneNumber: `0915${Date.now().toString().slice(-7)}`,
+        updatedAt: new Date(),
+      },
+    });
+    await prisma.visit.create({
+      data: {
+        id: visitId,
+        salonId,
+        customerId,
+        visitedAt: new Date('2026-07-01T10:00:00.000Z'),
+        updatedAt: new Date(),
+      },
+    });
+
+    await prisma.opportunityAction.create({
+      data: {
+        id: randomUUID(),
+        salonId,
+        customerId,
+        opportunityType: 'REACTIVATION',
+        status: 'COMPLETED',
+        createdBy: userId,
+        updatedAt: new Date(),
+        completedAt: new Date(),
+        sourceVisitId: visitId,
+      },
+    });
+
+    await expect(
+      prisma.opportunityAction.create({
+        data: {
+          id: randomUUID(),
+          salonId,
+          customerId,
+          opportunityType: 'REACTIVATION',
+          status: 'OPEN',
+          createdBy: userId,
+          updatedAt: new Date(),
+          sourceVisitId: visitId,
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'P2002' });
+
+    const laterVisit = randomUUID();
+    await prisma.visit.create({
+      data: {
+        id: laterVisit,
+        salonId,
+        customerId,
+        visitedAt: new Date('2026-07-20T10:00:00.000Z'),
+        updatedAt: new Date(),
+      },
+    });
+    await prisma.opportunityAction.create({
+      data: {
+        id: randomUUID(),
+        salonId,
+        customerId,
+        opportunityType: 'REACTIVATION',
+        status: 'OPEN',
+        createdBy: userId,
+        updatedAt: new Date(),
+        sourceVisitId: laterVisit,
+      },
+    });
+  });
+
+  it('allows multiple historical actions of the same type when sourceVisitId is null', async () => {
+    const salonId = randomUUID();
+    const userId = randomUUID();
+    const customerId = randomUUID();
+
+    await prisma.salon.create({
+      data: { id: salonId, name: 'Null Fingerprint', updatedAt: new Date() },
+    });
+    await prisma.user.create({
+      data: {
+        id: userId,
+        salonId,
+        name: 'Owner',
+        email: `act-null-${Date.now()}@example.test`,
+        passwordHash: 'hash',
+        role: 'OWNER',
+        updatedAt: new Date(),
+      },
+    });
+    await prisma.customer.create({
+      data: {
+        id: customerId,
+        salonId,
+        firstName: 'Sara',
+        lastName: 'NullFp',
+        phoneNumber: `0916${Date.now().toString().slice(-7)}`,
+        updatedAt: new Date(),
+      },
+    });
+
+    await prisma.opportunityAction.create({
+      data: {
+        id: randomUUID(),
+        salonId,
+        customerId,
+        opportunityType: 'REACTIVATION',
+        status: 'COMPLETED',
+        createdBy: userId,
+        updatedAt: new Date(),
+        completedAt: new Date(),
+        sourceVisitId: null,
+      },
+    });
+    await prisma.opportunityAction.create({
+      data: {
+        id: randomUUID(),
+        salonId,
+        customerId,
+        opportunityType: 'REACTIVATION',
+        status: 'DISMISSED',
+        createdBy: userId,
+        updatedAt: new Date(),
+        dismissedAt: new Date(),
+        sourceVisitId: null,
+      },
+    });
+  });
+
   it('commits neither action nor outbox when the transaction fails', async () => {
     const salonId = randomUUID();
     const userId = randomUUID();

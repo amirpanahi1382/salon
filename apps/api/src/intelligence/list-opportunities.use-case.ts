@@ -11,6 +11,7 @@ import { decodeCursor, encodeCursor, toListPage } from '../infrastructure/http/l
 import { IntelligenceQueryService } from './intelligence-query.service';
 import { loadCustomerRevenueMap } from './intelligence-revenue';
 import { toOpportunityDto } from './intelligence.mapper';
+import { loadSuppressedOpportunityKeys, suppressedOpportunityKey } from '../action/opportunity-suppression';
 
 export const INTELLIGENCE_LIST_LIMIT = 200;
 
@@ -27,9 +28,10 @@ export class ListOpportunitiesUseCase {
     cursor?: string,
   ) {
     const asOf = utcNow();
-    const [{ rows, truncated }, revenueByCustomer] = await Promise.all([
+    const [{ rows, truncated }, revenueByCustomer, suppressed] = await Promise.all([
       this.intelligence.loadSalon(principal.tenantId, asOf),
       loadCustomerRevenueMap(this.prisma.client, principal.tenantId, asOf),
+      loadSuppressedOpportunityKeys(this.prisma.client, principal.tenantId),
     ]);
     const opportunities: Array<{
       daysSinceLastVisit: number;
@@ -50,6 +52,9 @@ export class ListOpportunitiesUseCase {
       ];
       for (const opportunity of opportunitiesForCustomer) {
         if (!this.intelligence.filterByOpportunityType(type, [opportunity.type])) {
+          continue;
+        }
+        if (suppressed.has(suppressedOpportunityKey(row.customer.id, opportunity.type))) {
           continue;
         }
         opportunities.push({

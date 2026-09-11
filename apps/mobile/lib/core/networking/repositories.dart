@@ -369,15 +369,31 @@ class ActionRepository {
   }
 
   Future<OpportunityAction> complete(String id) async {
-    final data =
-        await _api.post('/actions/$id/complete') as Map<String, dynamic>;
-    return OpportunityAction.fromJson(data);
+    Future<OpportunityAction> send() async {
+      final data =
+          await _api.post('/actions/$id/complete') as Map<String, dynamic>;
+      return OpportunityAction.fromJson(data);
+    }
+
+    try {
+      return await send();
+    } on NetworkException {
+      return send();
+    }
   }
 
   Future<OpportunityAction> dismiss(String id) async {
-    final data =
-        await _api.post('/actions/$id/dismiss') as Map<String, dynamic>;
-    return OpportunityAction.fromJson(data);
+    Future<OpportunityAction> send() async {
+      final data =
+          await _api.post('/actions/$id/dismiss') as Map<String, dynamic>;
+      return OpportunityAction.fromJson(data);
+    }
+
+    try {
+      return await send();
+    } on NetworkException {
+      return send();
+    }
   }
 }
 

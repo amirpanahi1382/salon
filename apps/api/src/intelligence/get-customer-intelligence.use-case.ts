@@ -12,6 +12,7 @@ import { IntelligenceQueryService } from './intelligence-query.service';
 import { loadCustomerRevenue } from './intelligence-revenue';
 import { PrismaService } from '../infrastructure/database/prisma.service';
 import { toCustomerIntelligenceResponse } from './intelligence.mapper';
+import { loadSuppressedOpportunityKeys, suppressedOpportunityKey } from '../action/opportunity-suppression';
 
 @Injectable()
 export class GetCustomerIntelligenceUseCase {
@@ -35,10 +36,17 @@ export class GetCustomerIntelligenceUseCase {
       row.behavior,
       this.intelligence.getAnalyzer(),
     );
+    const suppressed = await loadSuppressedOpportunityKeys(
+      this.prisma.client,
+      principal.tenantId,
+    );
     const combined = {
       ...result,
       signals: [...result.signals, ...revenueSignals(revenue)],
-      opportunities: [...result.opportunities, ...revenueOpportunities(revenue)],
+      opportunities: [...result.opportunities, ...revenueOpportunities(revenue)].filter(
+        (opportunity) =>
+          !suppressed.has(suppressedOpportunityKey(customerId, opportunity.type)),
+      ),
     };
     return toCustomerIntelligenceResponse(row.customer, behavior, combined, revenue ?? emptyRevenueMetrics());
   }

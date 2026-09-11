@@ -19,6 +19,7 @@ import 'package:salon_mobile/features/services/service_screens.dart';
 import 'package:salon_mobile/features/shell/app_shell.dart';
 import 'package:salon_mobile/features/visits/visits_screen.dart';
 import 'package:salon_mobile/shared/jalali.dart';
+import 'package:salon_mobile/shared/labels.dart';
 import 'package:salon_mobile/shared/models/models.dart';
 
 ApiClient _client() {
@@ -115,6 +116,7 @@ class FakeActionRepository extends ActionRepository {
   int createCalls = 0;
   int completeCalls = 0;
   int dismissCalls = 0;
+  void Function()? onTerminal;
 
   @override
   Future<ItemPage<OpportunityAction>> list({
@@ -201,6 +203,7 @@ class FakeActionRepository extends ActionRepository {
               : item,
         )
         .toList();
+    onTerminal?.call();
     return items.firstWhere((item) => item.id == id);
   }
 
@@ -228,6 +231,7 @@ class FakeActionRepository extends ActionRepository {
               : item,
         )
         .toList();
+    onTerminal?.call();
     return items.firstWhere((item) => item.id == id);
   }
 }
@@ -922,6 +926,89 @@ void main() {
     await tester.pumpAndSettle();
     expect(actions.createCalls, 1);
     expect(actions.completeCalls, 1);
+  });
+
+  testWidgets('complete hides opportunity card and shows one recent action', (
+    tester,
+  ) async {
+    final intel = FakeIntelligenceRepository(
+      opportunitiesData: [_opportunity()],
+    );
+    final actions = FakeActionRepository()
+      ..onTerminal = () {
+        intel.opportunitiesData = const [];
+      };
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          intelligenceRepositoryProvider.overrideWithValue(intel),
+          actionRepositoryProvider.overrideWithValue(actions),
+        ],
+        child: const MaterialApp(home: OpportunitiesScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('اقدام انجام شد'), findsWidgets);
+    await tester.tap(find.text('اقدام انجام شد').first);
+    await tester.pump();
+    await tester.tap(find.text('اقدام انجام شد').first);
+    await tester.pumpAndSettle();
+    expect(actions.completeCalls, 1);
+    expect(
+      find.widgetWithText(FilledButton, AppStrings.markActionDone),
+      findsNothing,
+    );
+    expect(find.text(AppStrings.actionHistory), findsOneWidget);
+    expect(find.text('Sara Ahmadi'), findsWidgets);
+  });
+
+  testWidgets('ignore hides opportunity card and does not show recent action', (
+    tester,
+  ) async {
+    final intel = FakeIntelligenceRepository(
+      opportunitiesData: [_opportunity()],
+    );
+    final actions = FakeActionRepository()
+      ..onTerminal = () {
+        intel.opportunitiesData = const [];
+      };
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          intelligenceRepositoryProvider.overrideWithValue(intel),
+          actionRepositoryProvider.overrideWithValue(actions),
+        ],
+        child: const MaterialApp(home: OpportunitiesScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('نادیده گرفتن').first);
+    await tester.pumpAndSettle();
+    expect(actions.dismissCalls, 1);
+    expect(find.text('اقدام انجام شد'), findsNothing);
+    expect(find.text(AppStrings.actionHistory), findsNothing);
+    expect(find.text(AppStrings.dismissAction), findsNothing);
+  });
+
+  testWidgets('failed complete keeps the opportunity card', (tester) async {
+    final actions = FakeActionRepository();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          intelligenceRepositoryProvider.overrideWithValue(
+            FakeIntelligenceRepository(opportunitiesData: [_opportunity()]),
+          ),
+          actionRepositoryProvider.overrideWithValue(actions),
+        ],
+        child: const MaterialApp(home: OpportunitiesScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    actions.error = const NetworkException();
+    await tester.tap(find.text('اقدام انجام شد').first);
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(FilledButton, AppStrings.markActionDone), findsWidgets);
+    expect(find.text(AppStrings.actionHistory), findsNothing);
   });
 
   testWidgets('customer detail renders status reason action and visits', (

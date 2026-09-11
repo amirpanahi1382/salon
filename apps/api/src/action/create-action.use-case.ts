@@ -19,6 +19,7 @@ import { ACTION_CREATE_OPERATION, actionCreateRequestHash } from './action-idemp
 import { ActionRepository } from './action.repository';
 import { toActionResponse, type ActionRow } from './action.mapper';
 import { CurrentOpportunityService } from './current-opportunity.service';
+import { findLastVisitId } from './opportunity-suppression';
 
 @Injectable()
 export class CreateActionUseCase {
@@ -76,18 +77,21 @@ export class CreateActionUseCase {
           tx,
         );
         if (open) {
-          await tx.idempotencyRecord.update({
-            where: {
-              tenantId_actorId_operation_key: {
-                tenantId: principal.tenantId,
-                actorId: principal.userId,
-                operation: ACTION_CREATE_OPERATION,
-                key: idempotencyKey,
-              },
-            },
-            data: { resourceId: open.id },
-          });
+          await bindIdempotencyResource(tx, principal, idempotencyKey, open.id);
           return open as ActionRow;
+        }
+
+        const sourceVisitId = await findLastVisitId(tx, principal.tenantId, customerId);
+        const sameEpisode = await this.actions.findBySourceVisit(
+          principal.tenantId,
+          customerId,
+          opportunityType,
+          sourceVisitId,
+          tx,
+        );
+        if (sameEpisode) {
+          await bindIdempotencyResource(tx, principal, idempotencyKey, sameEpisode.id);
+          return sameEpisode as ActionRow;
         }
 
         const presence = await this.opportunities.hasOpportunity(
@@ -102,30 +106,16 @@ export class CreateActionUseCase {
           throw new NotFoundError('Opportunity not found');
         }
 
-        try {
-          const row = await tx.opportunityAction.create({
-            data: {
-              id: actionId,
-              salonId: principal.tenantId,
-              customerId,
-              opportunityType,
-              status: 'OPEN',
-              createdBy: principal.userId,
-              updatedAt: now,
-            },
-            select: {
-              id: true,
-              customerId: true,
-              opportunityType: true,
-              status: true,
-              createdBy: true,
-              createdAt: true,
-              updatedAt: true,
-              completedAt: true,
-              dismissedAt: true,
-              customer: { select: { firstName: true, lastName: true } },
-            },
-          });
+        const inserted = await this.actions.insertOpenIfAbsent(tx, {
+          id: actionId,
+          salonId: principal.tenantId,
+          customerId,
+          opportunityType,
+          createdBy: principal.userId,
+          now,
+          sourceVisitId,
+        });
+        if (inserted) {
           await tx.outboxEvent.create({
             data: {
               id: createId(),
@@ -152,33 +142,35 @@ export class CreateActionUseCase {
               metadata: { customerId, opportunityType, status: 'OPEN' },
             },
           });
-          return row as ActionRow;
-        } catch (error: unknown) {
-          if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-            const existingOpen = await this.actions.findOpen(
-              principal.tenantId,
-              customerId,
-              opportunityType,
-              tx,
-            );
-            if (!existingOpen) {
-              throw new ConflictError('A conflicting record already exists');
-            }
-            await tx.idempotencyRecord.update({
-              where: {
-                tenantId_actorId_operation_key: {
-                  tenantId: principal.tenantId,
-                  actorId: principal.userId,
-                  operation: ACTION_CREATE_OPERATION,
-                  key: idempotencyKey,
-                },
-              },
-              data: { resourceId: existingOpen.id },
-            });
-            return existingOpen as ActionRow;
+          const row = await this.actions.findById(principal.tenantId, actionId, tx);
+          if (!row) {
+            throw new NotFoundError('Action not found');
           }
-          throw error;
+          return row as ActionRow;
         }
+
+        const conflictOpen = await this.actions.findOpen(
+          principal.tenantId,
+          customerId,
+          opportunityType,
+          tx,
+        );
+        if (conflictOpen) {
+          await bindIdempotencyResource(tx, principal, idempotencyKey, conflictOpen.id);
+          return conflictOpen as ActionRow;
+        }
+        const conflictEpisode = await this.actions.findBySourceVisit(
+          principal.tenantId,
+          customerId,
+          opportunityType,
+          sourceVisitId,
+          tx,
+        );
+        if (conflictEpisode) {
+          await bindIdempotencyResource(tx, principal, idempotencyKey, conflictEpisode.id);
+          return conflictEpisode as ActionRow;
+        }
+        throw new ConflictError('A conflicting record already exists');
       });
 
       return toActionResponse(created);
@@ -193,4 +185,23 @@ export class CreateActionUseCase {
       throw error;
     }
   }
+}
+
+async function bindIdempotencyResource(
+  tx: Prisma.TransactionClient,
+  principal: AuthenticatedPrincipal,
+  idempotencyKey: string,
+  resourceId: string,
+) {
+  await tx.idempotencyRecord.update({
+    where: {
+      tenantId_actorId_operation_key: {
+        tenantId: principal.tenantId,
+        actorId: principal.userId,
+        operation: ACTION_CREATE_OPERATION,
+        key: idempotencyKey,
+      },
+    },
+    data: { resourceId },
+  });
 }

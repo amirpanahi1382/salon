@@ -56,7 +56,7 @@ class _OpportunitiesScreenState extends ConsumerState<OpportunitiesScreen> {
       final page = await ref
           .read(intelligenceRepositoryProvider)
           .opportunities(type: _type);
-      final history = await ref.read(actionRepositoryProvider).list();
+      final history = await ref.read(actionRepositoryProvider).list(status: 'COMPLETED');
       final openActions = await ref
           .read(actionRepositoryProvider)
           .list(status: 'OPEN');
@@ -135,7 +135,7 @@ class _OpportunitiesScreenState extends ConsumerState<OpportunitiesScreen> {
       try {
         final history = await ref
             .read(actionRepositoryProvider)
-            .list(cursor: _historyCursor);
+            .list(status: 'COMPLETED', cursor: _historyCursor);
         if (!mounted) {
           return;
         }

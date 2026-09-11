@@ -30,10 +30,23 @@ export class ActionRepository {
     });
   }
 
+  findBySourceVisit(
+    tenantId: string,
+    customerId: string,
+    opportunityType: OpportunityActionType,
+    sourceVisitId: string | null,
+    db: ActionDb = this.prisma.client,
+  ) {
+    return db.opportunityAction.findFirst({
+      where: { salonId: tenantId, customerId, opportunityType, sourceVisitId },
+      select: ACTION_SELECT,
+    });
+  }
+
   /**
-   * Inserts OPEN without aborting the transaction when the partial unique index
-   * already has a row. ON CONFLICT DO NOTHING does not raise, so callers may
-   * query the same `tx` afterward. Never follow a P2002 with another `tx` query.
+   * Inserts OPEN without aborting the transaction when a uniqueness rule
+   * already has a row (one OPEN per type, or one row per source visit).
+   * ON CONFLICT DO NOTHING does not raise, so callers may query the same `tx`.
    */
   async insertOpenIfAbsent(
     tx: Prisma.TransactionClient,
@@ -44,11 +57,13 @@ export class ActionRepository {
       opportunityType: OpportunityActionType;
       createdBy: string;
       now: Date;
+      sourceVisitId: string | null;
     },
   ): Promise<boolean> {
     const inserted = await tx.$queryRaw<Array<{ id: string }>>`
       INSERT INTO opportunity_actions (
-        id, salon_id, customer_id, opportunity_type, status, created_by, created_at, updated_at
+        id, salon_id, customer_id, opportunity_type, status, created_by,
+        created_at, updated_at, source_visit_id
       )
       VALUES (
         ${input.id}::uuid,
@@ -58,10 +73,10 @@ export class ActionRepository {
         'OPEN'::"OpportunityActionStatus",
         ${input.createdBy}::uuid,
         ${input.now},
-        ${input.now}
+        ${input.now},
+        ${input.sourceVisitId}::uuid
       )
-      ON CONFLICT (salon_id, customer_id, opportunity_type) WHERE status = 'OPEN'
-      DO NOTHING
+      ON CONFLICT DO NOTHING
       RETURNING id
     `;
     return inserted.length > 0;

@@ -32,7 +32,7 @@ export class ActionController {
     name: 'Idempotency-Key',
     required: true,
     description:
-      'Required. Same key and payload replay the original Action. Same key and different payload returns 409. Concurrent creates for the same OPEN opportunity return that Action.',
+      'Required. Same key and payload replay the original Action. Same key and different payload returns 409. Concurrent creates for the same OPEN opportunity, or the same last-visit episode, return that Action.',
   })
   @ApiOperation({
     summary:

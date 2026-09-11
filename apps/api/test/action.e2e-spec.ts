@@ -242,7 +242,21 @@ describeIfDb('Opportunity Actions (e2e)', () => {
       .set('Authorization', `Bearer ${salonA.token}`)
       .expect(200);
     expect(afterIntel.body.status).toBe(beforeIntel.body.status);
-    expect(afterIntel.body.opportunities[0].type).toBe('REACTIVATION');
+    expect(afterIntel.body.opportunities).toEqual([]);
+
+    const listedOpportunities = listItems<{ customerId: string; type: string }>(
+      (
+        await request(app.getHttpServer())
+          .get('/intelligence/opportunities')
+          .set('Authorization', `Bearer ${salonA.token}`)
+          .expect(200)
+      ).body,
+    );
+    expect(
+      listedOpportunities.some(
+        (item) => item.customerId === reactivationCustomer && item.type === 'REACTIVATION',
+      ),
+    ).toBe(false);
 
     const staffEmail = `staff-act-${Date.now()}@example.test`;
     await request(app.getHttpServer())
@@ -260,10 +274,12 @@ describeIfDb('Opportunity Actions (e2e)', () => {
       .set('Authorization', `Bearer ${staffLogin.body.accessToken}`)
       .set('Idempotency-Key', 'act-staff-create-01')
       .expect(201);
+    expect(staffCreated.body.id).toBe(created.body.id);
+    expect(staffCreated.body.status).toBe('COMPLETED');
     await request(app.getHttpServer())
       .post(`/actions/${staffCreated.body.id}/dismiss`)
       .set('Authorization', `Bearer ${staffLogin.body.accessToken}`)
-      .expect(201);
+      .expect(409);
 
     const visitAfter = await request(app.getHttpServer())
       .post('/visits')
@@ -363,5 +379,176 @@ describeIfDb('Opportunity Actions (e2e)', () => {
     );
     expect(first.items.length).toBeGreaterThanOrEqual(3);
     expect(first.hasMore).toBe(false);
+  });
+
+  it('hides acted opportunities, omits dismiss from recent actions, and stays unique under concurrency', async () => {
+    const salon = await registerOwner('act-life');
+    const completeCustomer = await createCustomer(salon.token, 'Complete');
+    const ignoreCustomer = await createCustomer(salon.token, 'Ignore');
+    const otherSalon = await registerOwner('act-life-b');
+
+    await recordVisit(salon.token, completeCustomer, daysAgoIso(87));
+    await recordVisit(salon.token, completeCustomer, daysAgoIso(52));
+    await recordVisit(salon.token, ignoreCustomer, daysAgoIso(50));
+
+    const created = await request(app.getHttpServer())
+      .post(createPath('REACTIVATION', completeCustomer))
+      .set('Authorization', `Bearer ${salon.token}`)
+      .set('Idempotency-Key', 'life-complete-open')
+      .expect(201);
+
+    const firstComplete = await request(app.getHttpServer())
+      .post(`/actions/${created.body.id}/complete`)
+      .set('Authorization', `Bearer ${salon.token}`)
+      .expect(201);
+    expect(firstComplete.body.status).toBe('COMPLETED');
+
+    const secondComplete = await request(app.getHttpServer())
+      .post(`/actions/${created.body.id}/complete`)
+      .set('Authorization', `Bearer ${salon.token}`)
+      .expect(201);
+    expect(secondComplete.body.id).toBe(created.body.id);
+
+    const concurrentComplete = await Promise.all(
+      Array.from({ length: 10 }, () =>
+        request(app.getHttpServer())
+          .post(`/actions/${created.body.id}/complete`)
+          .set('Authorization', `Bearer ${salon.token}`),
+      ),
+    );
+    expect(concurrentComplete.every((res) => res.status === 201)).toBe(true);
+    expect(concurrentComplete.every((res) => res.body.id === created.body.id)).toBe(true);
+
+    const concurrentCreate = await Promise.all(
+      Array.from({ length: 10 }, (_, index) =>
+        request(app.getHttpServer())
+          .post(createPath('REACTIVATION', completeCustomer))
+          .set('Authorization', `Bearer ${salon.token}`)
+          .set('Idempotency-Key', `life-complete-again-${index}`),
+      ),
+    );
+    expect(concurrentCreate.every((res) => res.status === 201)).toBe(true);
+    expect(concurrentCreate.every((res) => res.body.id === created.body.id)).toBe(true);
+    expect(concurrentCreate.every((res) => res.body.status === 'COMPLETED')).toBe(true);
+
+    expect(
+      await prisma.client.opportunityAction.count({
+        where: {
+          salonId: salon.tenantId,
+          customerId: completeCustomer,
+          opportunityType: 'REACTIVATION',
+        },
+      }),
+    ).toBe(1);
+    expect(
+      await prisma.client.outboxEvent.count({
+        where: { tenantId: salon.tenantId, eventType: 'ActionCompleted' },
+      }),
+    ).toBe(1);
+    expect(
+      await prisma.client.auditLog.count({
+        where: {
+          tenantId: salon.tenantId,
+          action: 'ACTION_COMPLETED',
+          resourceId: created.body.id,
+        },
+      }),
+    ).toBe(1);
+
+    const afterComplete = await request(app.getHttpServer())
+      .get(`/intelligence/customers/${completeCustomer}`)
+      .set('Authorization', `Bearer ${salon.token}`)
+      .expect(200);
+    expect(afterComplete.body.opportunities).toEqual([]);
+
+    const recentAfterComplete = listItems<{ id: string; status: string }>(
+      (
+        await request(app.getHttpServer())
+          .get('/actions?status=COMPLETED')
+          .set('Authorization', `Bearer ${salon.token}`)
+          .expect(200)
+      ).body,
+    );
+    expect(recentAfterComplete.filter((item) => item.id === created.body.id)).toHaveLength(1);
+
+    await request(app.getHttpServer())
+      .post(`/actions/${created.body.id}/complete`)
+      .set('Authorization', `Bearer ${otherSalon.token}`)
+      .expect(404);
+
+    const ignoreOpen = await request(app.getHttpServer())
+      .post(createPath('CUSTOMER_RETURN', ignoreCustomer))
+      .set('Authorization', `Bearer ${salon.token}`)
+      .set('Idempotency-Key', 'life-ignore-open')
+      .expect(201);
+    await request(app.getHttpServer())
+      .post(`/actions/${ignoreOpen.body.id}/dismiss`)
+      .set('Authorization', `Bearer ${salon.token}`)
+      .expect(201);
+    await request(app.getHttpServer())
+      .post(`/actions/${ignoreOpen.body.id}/dismiss`)
+      .set('Authorization', `Bearer ${salon.token}`)
+      .expect(201);
+
+    const ignoreReplay = await request(app.getHttpServer())
+      .post(createPath('CUSTOMER_RETURN', ignoreCustomer))
+      .set('Authorization', `Bearer ${salon.token}`)
+      .set('Idempotency-Key', 'life-ignore-again')
+      .expect(201);
+    expect(ignoreReplay.body.id).toBe(ignoreOpen.body.id);
+    expect(ignoreReplay.body.status).toBe('DISMISSED');
+
+    expect(
+      await prisma.client.opportunityAction.count({
+        where: {
+          salonId: salon.tenantId,
+          customerId: ignoreCustomer,
+          opportunityType: 'CUSTOMER_RETURN',
+        },
+      }),
+    ).toBe(1);
+
+    const afterIgnore = await request(app.getHttpServer())
+      .get(`/intelligence/customers/${ignoreCustomer}`)
+      .set('Authorization', `Bearer ${salon.token}`)
+      .expect(200);
+    expect(afterIgnore.body.opportunities).toEqual([]);
+
+    const recentAfterIgnore = listItems<{ customerId: string; status: string }>(
+      (
+        await request(app.getHttpServer())
+          .get('/actions?status=COMPLETED')
+          .set('Authorization', `Bearer ${salon.token}`)
+          .expect(200)
+      ).body,
+    );
+    expect(recentAfterIgnore.some((item) => item.customerId === ignoreCustomer)).toBe(false);
+
+    const allActions = listItems<{ customerId: string; status: string }>(
+      (
+        await request(app.getHttpServer())
+          .get('/actions')
+          .set('Authorization', `Bearer ${salon.token}`)
+          .expect(200)
+      ).body,
+    );
+    expect(
+      allActions.some((item) => item.customerId === ignoreCustomer && item.status === 'DISMISSED'),
+    ).toBe(true);
+
+    await recordVisit(salon.token, completeCustomer, daysAgoIso(40));
+    const afterNewVisit = await request(app.getHttpServer())
+      .get(`/intelligence/customers/${completeCustomer}`)
+      .set('Authorization', `Bearer ${salon.token}`)
+      .expect(200);
+    expect(afterNewVisit.body.opportunities[0]?.type).toBe('REACTIVATION');
+
+    const reopened = await request(app.getHttpServer())
+      .post(createPath('REACTIVATION', completeCustomer))
+      .set('Authorization', `Bearer ${salon.token}`)
+      .set('Idempotency-Key', 'life-reopen')
+      .expect(201);
+    expect(reopened.body.status).toBe('OPEN');
+    expect(reopened.body.id).not.toBe(created.body.id);
   });
 });

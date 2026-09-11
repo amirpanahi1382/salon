@@ -471,15 +471,17 @@ List: in-memory after scanning up to 5000 customers; sort by `daysSinceLastVisit
 
 ### 17.1 Opportunity Actions (operational history)
 
-**IMPLEMENTED.** `opportunity_actions` is **not** a second intelligence source of truth. Opportunities remain derived on read. An Action records that the salon responded to a currently derived opportunity (`salonId` + `customerId` + `opportunityType`).
+**IMPLEMENTED.** `opportunity_actions` is **not** a second intelligence source of truth. Opportunities remain derived on read. An Action records that the salon responded to a currently derived opportunity (`salonId` + `customerId` + `opportunityType` + `sourceVisitId` snapshot of the customer's last visit).
 
-Lifecycle: `OPEN` → `COMPLETED` or `DISMISSED`. Terminal states do not reopen. A later `OPEN` may be created after a terminal Action for the same customer and type (no cooldown). At most one `OPEN` row per salon+customer+type (partial unique index). Completing an Action does **not** create a Visit or Transaction and does **not** change intelligence thresholds.
+Lifecycle: `OPEN` → `COMPLETED` or `DISMISSED`. Terminal states do not reopen. Completing or dismissing **does not** change intelligence status, visit history, or thresholds. The **presentation** of that opportunity (list, customer intelligence `opportunities[]`, dashboard counts) is suppressed while the last visit is still the Action's `sourceVisitId`. A later visit that again satisfies the intelligence rules creates a new episode and the opportunity may reappear. At most one `OPEN` row per salon+customer+type (partial unique index). At most one Action row per salon+customer+type+**non-null** `sourceVisitId` (partial unique index). Historical Actions with a NULL fingerprint are preserved as-is; uniqueness is not forced by inventing visit ids. Database uniqueness is the concurrency backstop for identified episodes.
+
+`COMPLETED` is user-visible retention work (`GET /actions?status=COMPLETED`, Opportunities «اقدام‌های اخیر»). `DISMISSED` is suppression only: it is persisted so the same episode does not reopen, audited as `ACTION_DISMISSED`, and excluded from recent-action UI and customer activity. It is not completed business work.
 
 APIs (STAFF+; tenant from JWT):
 
-- `POST /intelligence/opportunities/:opportunityType/customers/:customerId/actions` — required `Idempotency-Key`; replay same key+payload; 409 different payload; existing OPEN is returned instead of a duplicate.
-- `GET /actions`, `GET /customers/:customerId/actions` — cursor `{ createdAt, id }`, page 200.
-- `POST /actions/:id/complete`, `POST /actions/:id/dismiss` — `SELECT … FOR UPDATE`; repeat of the same terminal state is idempotent; opposite terminal is 409.
+- `POST /intelligence/opportunities/:opportunityType/customers/:customerId/actions` — required `Idempotency-Key`; replay same key+payload; 409 different payload; existing OPEN **or** existing Action for the current last visit is returned instead of a duplicate.
+- `GET /actions`, `GET /customers/:customerId/actions` — cursor `{ createdAt, id }`, page 200; optional `status`. Recent-action UI uses `COMPLETED`.
+- `POST /actions/:id/complete`, `POST /actions/:id/dismiss` — `SELECT … FOR UPDATE`; repeat of the same terminal state is idempotent (no extra Action/Audit/Outbox); opposite terminal is 409.
 
 Audit: `ACTION_CREATED`, `ACTION_COMPLETED`, `ACTION_DISMISSED`. Outbox: `ActionCreated`, `ActionCompleted`, `ActionDismissed`.
 

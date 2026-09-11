@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@salon/database';
 import {
-  ConflictError,
   createId,
   DOMAIN_EVENT_TYPES,
   MessageDailyLimitError,
@@ -13,6 +12,7 @@ import {
   type OpportunityType,
 } from '@salon/shared';
 import { ActionRepository } from '../action/action.repository';
+import { findLastVisitId } from '../action/opportunity-suppression';
 import { type ActionRow } from '../action/action.mapper';
 import { CurrentOpportunityService } from '../action/current-opportunity.service';
 import { PrismaService } from '../infrastructure/database/prisma.service';
@@ -186,6 +186,7 @@ export class SendOpportunityMessageUseCase {
       throw new NotFoundError('Opportunity not found');
     }
 
+    const sourceVisitId = await findLastVisitId(tx, principal.tenantId, customerId);
     const actionId = createId();
     const inserted = await this.actions.insertOpenIfAbsent(tx, {
       id: actionId,
@@ -194,6 +195,7 @@ export class SendOpportunityMessageUseCase {
       opportunityType,
       createdBy: principal.userId,
       now,
+      sourceVisitId,
     });
     if (inserted) {
       await tx.outboxEvent.create({
@@ -238,6 +240,6 @@ export class SendOpportunityMessageUseCase {
     if (existingOpen) {
       return existingOpen as ActionRow;
     }
-    throw new ConflictError('A conflicting record already exists');
+    throw new NotFoundError('Opportunity not found');
   }
 }

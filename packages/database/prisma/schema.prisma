@@ -230,6 +230,10 @@ model OpportunityAction {
   updatedAt        DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(3)
   completedAt      DateTime?                @map("completed_at") @db.Timestamptz(3)
   dismissedAt      DateTime?                @map("dismissed_at") @db.Timestamptz(3)
+  /// Snapshot of the customer's last visit when this Action was opened.
+  /// Null when no visit existed at create time, or when a historical collision
+  /// could not be reconstructed without inventing a visit. Not an FK.
+  sourceVisitId    String?                  @map("source_visit_id") @db.Uuid
   messageRequests   MessageRequest[]
   messageDeliveries MessageDelivery[]
 
@@ -237,6 +241,7 @@ model OpportunityAction {
   @@index([salonId, status, createdAt, id])
   @@index([salonId, customerId, createdAt, id])
   @@index([salonId, createdAt, id])
+  @@index([salonId, customerId, opportunityType, sourceVisitId])
   @@map("opportunity_actions")
 }
 

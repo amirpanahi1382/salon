@@ -8,6 +8,7 @@ import {
 import { loadCustomerRevenue } from '../intelligence/intelligence-revenue';
 import { IntelligenceQueryService } from '../intelligence/intelligence-query.service';
 import { PrismaService } from '../infrastructure/database/prisma.service';
+import { isOpportunitySuppressed } from './opportunity-suppression';
 
 @Injectable()
 export class CurrentOpportunityService {
@@ -35,6 +36,12 @@ export class CurrentOpportunityService {
     const types = [...result.opportunities, ...revenueOpportunities(revenue)].map(
       (opportunity) => opportunity.type,
     );
-    return types.includes(type) ? 'present' : 'missing-opportunity';
+    if (!types.includes(type)) {
+      return 'missing-opportunity';
+    }
+    if (await isOpportunitySuppressed(this.prisma.client, tenantId, customerId, type)) {
+      return 'missing-opportunity';
+    }
+    return 'present';
   }
 }
