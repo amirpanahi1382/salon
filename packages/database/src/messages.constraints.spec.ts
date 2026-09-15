@@ -56,6 +56,48 @@ describeIfDb('message request constraints', () => {
     return { salonId, userId, customerId, actionId };
   }
 
+  async function seedVipRequest(seeded: Awaited<ReturnType<typeof seedSalon>>) {
+    const adminId = randomUUID();
+    await prisma.platformAdmin.create({
+      data: {
+        id: adminId,
+        email: `msg-vip-admin-${randomUUID()}@example.test`,
+        passwordHash: 'hash',
+        name: 'Admin',
+        updatedAt: new Date(),
+      },
+    });
+    const listId = randomUUID();
+    const requestId = randomUUID();
+    await prisma.vipTargetList.create({
+      data: {
+        id: listId,
+        name: 'msg-vip-list',
+        status: 'IN_USE',
+        contactCount: 30,
+        createdByAdminId: adminId,
+        reservedBySalonId: seeded.salonId,
+        reservedAt: new Date(),
+        updatedAt: new Date(),
+      },
+    });
+    await prisma.vipRequest.create({
+      data: {
+        id: requestId,
+        salonId: seeded.salonId,
+        listId,
+        createdByUserId: seeded.userId,
+        requestedCount: 30,
+        geographicRange: 'ونک',
+        status: 'SUBMITTED',
+        reservedUntil: new Date(),
+        submittedAt: new Date(),
+        updatedAt: new Date(),
+      },
+    });
+    return { requestId };
+  }
+
   function requestData(
     seeded: Awaited<ReturnType<typeof seedSalon>>,
     overrides: Record<string, unknown>,
@@ -208,5 +250,110 @@ describeIfDb('message request constraints', () => {
     });
     expect(created.actionId).toBeNull();
     expect(created.opportunityType).toBeNull();
+  });
+
+  it('requires a customer XOR a VIP request, never both or neither', async () => {
+    const seeded = await seedSalon();
+    await expect(
+      prisma.messageRequest.create({
+        data: requestData(seeded, { customerId: null, messageText: 'بدون گیرنده' }),
+      }),
+    ).rejects.toThrow(/message_requests_recipient_origin_consistent/);
+
+    const vip = await seedVipRequest(seeded);
+    await expect(
+      prisma.messageRequest.create({
+        data: requestData(seeded, {
+          vipRequestId: vip.requestId,
+          recipientDisplayName: 'مریم',
+          recipientPhoneNumber: '09121111111',
+          messageText: 'هر دو',
+        }),
+      }),
+    ).rejects.toThrow(/message_requests_recipient_origin_consistent/);
+
+    await expect(
+      prisma.messageRequest.create({
+        data: requestData(seeded, {
+          customerId: null,
+          actionId: null,
+          opportunityType: null,
+          vipRequestId: vip.requestId,
+          recipientDisplayName: null,
+          recipientPhoneNumber: '09121111111',
+          countsTowardDailyLimit: false,
+          messageText: 'بدون نام',
+        }),
+      }),
+    ).rejects.toThrow(/message_requests_recipient_origin_consistent/);
+  });
+
+  it('allows opportunity and manual customer messages only with a non-null customer', async () => {
+    const seeded = await seedSalon();
+    const opportunity = await prisma.messageRequest.create({
+      data: requestData(seeded, { messageText: 'فرصت' }),
+    });
+    expect(opportunity.customerId).toBe(seeded.customerId);
+    expect(opportunity.vipRequestId).toBeNull();
+
+    const manual = await prisma.messageRequest.create({
+      data: requestData(seeded, {
+        actionId: null,
+        opportunityType: null,
+        messageText: 'دستی',
+        messageBusinessDate: new Date('2026-09-11T00:00:00.000Z'),
+      }),
+    });
+    expect(manual.customerId).toBe(seeded.customerId);
+    expect(manual.vipRequestId).toBeNull();
+  });
+
+  it('allows a VIP message only with vipRequestId and a snapshot phone, not a customer', async () => {
+    const seeded = await seedSalon();
+    const vip = await seedVipRequest(seeded);
+    const created = await prisma.messageRequest.create({
+      data: requestData(seeded, {
+        customerId: null,
+        actionId: null,
+        opportunityType: null,
+        vipRequestId: vip.requestId,
+        recipientDisplayName: 'مریم',
+        recipientPhoneNumber: '09121111111',
+        countsTowardDailyLimit: false,
+        messageText: 'وی آی پی',
+      }),
+    });
+    expect(created.customerId).toBeNull();
+    expect(created.vipRequestId).toBe(vip.requestId);
+    expect(created.recipientPhoneNumber).toBe('09121111111');
+
+    await expect(
+      prisma.messageRequest.create({
+        data: requestData(seeded, {
+          customerId: null,
+          actionId: null,
+          opportunityType: null,
+          vipRequestId: vip.requestId,
+          recipientDisplayName: 'مریم',
+          recipientPhoneNumber: '09121111111',
+          countsTowardDailyLimit: false,
+          messageText: 'تکراری',
+        }),
+      }),
+    ).rejects.toThrow(/vip_request_id|message_requests_one_per_vip_recipient_phone/);
+  });
+
+  it('rejects mixed opportunity context on a message request', async () => {
+    const seeded = await seedSalon();
+    await expect(
+      prisma.messageRequest.create({
+        data: requestData(seeded, { opportunityType: null, messageText: 'بدون نوع' }),
+      }),
+    ).rejects.toThrow(/message_requests_opportunity_context_consistent/);
+    await expect(
+      prisma.messageRequest.create({
+        data: requestData(seeded, { actionId: null, messageText: 'بدون اقدام' }),
+      }),
+    ).rejects.toThrow(/message_requests_opportunity_context_consistent/);
   });
 });
