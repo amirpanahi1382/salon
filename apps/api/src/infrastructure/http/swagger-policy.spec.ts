@@ -30,6 +30,8 @@ function config(overrides: Partial<AppConfig>): AppConfig {
     API_SHUTDOWN_GRACE_MS: 15_000,
     HTTP_TIMEOUT_MS: 5_000,
     HEALTH_CHECK_TIMEOUT_MS: 2_000,
+    BALE_SAFIR_BASE_URL: 'https://safir.bale.ai/api/v3',
+    BALE_SAFIR_TIMEOUT_MS: 10_000,
     ...overrides,
   };
 }

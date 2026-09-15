@@ -7,7 +7,7 @@ import {
   type MessageRequestStatus,
   type OpportunityType,
 } from '@salon/shared';
-import type { MessageRequestResponseDto } from './message.dto';
+import type { ManualOutreachItemDto, MessageRequestResponseDto } from './message.dto';
 
 export const MESSAGE_REQUEST_SELECT = {
   id: true,
@@ -20,6 +20,7 @@ export const MESSAGE_REQUEST_SELECT = {
   requestedAt: true,
   createdAt: true,
   updatedAt: true,
+  recipientPhoneNumber: true,
   customer: { select: { phoneNumber: true } },
   deliveries: {
     select: {
@@ -37,7 +38,7 @@ export const MESSAGE_REQUEST_SELECT = {
 
 export type MessageRequestRow = {
   id: string;
-  customerId: string;
+  customerId: string | null;
   actionId: string | null;
   opportunityType: OpportunityType | null;
   messageText: string;
@@ -46,7 +47,8 @@ export type MessageRequestRow = {
   requestedAt: Date;
   createdAt: Date;
   updatedAt: Date;
-  customer: { phoneNumber: string };
+  recipientPhoneNumber: string | null;
+  customer: { phoneNumber: string } | null;
   deliveries: Array<{
     id: string;
     mode: MessageDeliveryMode;
@@ -70,12 +72,32 @@ export function toMessageResponse(row: MessageRequestRow): MessageRequestRespons
     mode: delivery?.mode ?? null,
     provider: delivery?.provider ?? null,
     body: row.messageText,
-    destinationHint: maskCustomerPhone(row.customer.phoneNumber),
+    destinationHint: maskCustomerPhone(
+      row.customer?.phoneNumber ?? row.recipientPhoneNumber ?? '',
+    ),
     failureCode: (delivery?.failureCode as MessageFailureCode | null) ?? null,
     createdBy: row.createdByUserId,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     submittedAt: delivery?.submittedAt?.toISOString() ?? null,
     failedAt: delivery?.failedAt?.toISOString() ?? null,
+  };
+}
+
+export function toManualOutreachItem(row: {
+  id: string;
+  customerId: string;
+  status: MessageRequestStatus;
+  requestedAt: Date;
+  updatedAt: Date;
+  customer: { firstName: string; lastName: string };
+}): ManualOutreachItemDto {
+  return {
+    customerId: row.customerId,
+    customerName: `${row.customer.firstName} ${row.customer.lastName}`.trim(),
+    messageRequestId: row.id,
+    status: row.status,
+    requestedAt: row.requestedAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
   };
 }

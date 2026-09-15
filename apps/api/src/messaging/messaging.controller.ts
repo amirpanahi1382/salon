@@ -10,6 +10,7 @@ import { UuidParam } from '../infrastructure/http/uuid-param';
 import { OpportunityTypeParam } from '../action/opportunity-type.param';
 import { ListCustomerMessagesQueryDto, SendOpportunityMessageDto } from './message.dto';
 import { GetMessageUseCase, ListCustomerMessagesUseCase } from './get-message.use-case';
+import { ListManualOutreachUseCase } from './list-manual-outreach.use-case';
 import { SendManualOutreachMessageUseCase } from './send-manual-outreach-message.use-case';
 import { SendOpportunityMessageUseCase } from './send-opportunity-message.use-case';
 
@@ -24,6 +25,7 @@ export class MessagingController {
     private readonly sendManualOutreach: SendManualOutreachMessageUseCase,
     private readonly getMessage: GetMessageUseCase,
     private readonly listCustomerMessages: ListCustomerMessagesUseCase,
+    private readonly listManualOutreach: ListManualOutreachUseCase,
   ) {}
 
   @Post('intelligence/opportunities/:opportunityType/customers/:customerId/messages')
@@ -78,6 +80,18 @@ export class MessagingController {
       body.text,
       requireIdempotencyKey(idempotencyKey),
     );
+  }
+
+  @Get('messages/manual-outreach')
+  @ApiOperation({
+    summary:
+      'List this Tehran-day manual outreach MessageRequests for the authenticated salon. Status is the durable request lifecycle, including DISPATCHED.',
+  })
+  listManual(
+    @CurrentUser() user: AuthenticatedPrincipal,
+    @Query() query: ListCustomerMessagesQueryDto,
+  ) {
+    return this.listManualOutreach.execute(user, query);
   }
 
   @Get('messages/:id')

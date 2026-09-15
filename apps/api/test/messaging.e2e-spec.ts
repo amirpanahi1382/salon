@@ -7,6 +7,7 @@ import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/infrastructure/database/prisma.service';
 import { HttpExceptionFilter } from '../src/infrastructure/http/http-exception.filter';
 import { messageBusinessDateValue } from '@salon/shared';
+import { listPage } from './list-page';
 
 const describeIfDb = process.env.DATABASE_URL ? describe : describe.skip;
 const password = 'correct-horse-battery';
@@ -171,6 +172,7 @@ describeIfDb('Opportunity messages (e2e)', () => {
 
   it('rejects unauthenticated message access', async () => {
     await request(app.getHttpServer()).get(`/messages/${randomUUID()}`).expect(401);
+    await request(app.getHttpServer()).get('/messages/manual-outreach').expect(401);
     await request(app.getHttpServer())
       .post(sendPath('REVENUE_DECLINE', randomUUID()))
       .send({ text: 'سلام' })
@@ -268,6 +270,18 @@ describeIfDb('Opportunity messages (e2e)', () => {
       .set('Authorization', `Bearer ${salonA.token}`)
       .expect(200);
     expect(listed.body.items.length).toBe(1);
+
+    const manualInbox = listPage<{ messageRequestId: string }>(
+      (
+        await request(app.getHttpServer())
+          .get('/messages/manual-outreach')
+          .set('Authorization', `Bearer ${salonA.token}`)
+          .expect(200)
+      ).body,
+    );
+    expect(
+      manualInbox.items.some((item) => item.messageRequestId === created.body.id),
+    ).toBe(false);
 
     await request(app.getHttpServer())
       .get(`/messages/${created.body.id}`)
@@ -569,6 +583,148 @@ describeIfDb('Opportunity messages (e2e)', () => {
     expect(queued.opportunityType).toBeNull();
   });
 
+  it('enforces the same Tehran-day limit across opportunity and manual outreach', async () => {
+    const salon = await createOwnerBypassingRegisterThrottle('msg-cross-day');
+    const opportunityFirst = await seedRevenueDecline(salon.token, 'OppFirst');
+    const manualFirst = await seedRevenueDecline(salon.token, 'ManFirst');
+
+    const opportunityQueued = await request(app.getHttpServer())
+      .post(sendPath('REVENUE_DECLINE', opportunityFirst))
+      .set('Authorization', `Bearer ${salon.token}`)
+      .set('Idempotency-Key', 'cross-opp-first')
+      .send({ text: 'پیام فرصت اول' })
+      .expect(201);
+    expect(opportunityQueued.body.actionId).toBeTruthy();
+    expect(opportunityQueued.body.opportunityType).toBe('REVENUE_DECLINE');
+
+    const blockedManual = await request(app.getHttpServer())
+      .post(`/customers/${opportunityFirst}/messages`)
+      .set('Authorization', `Bearer ${salon.token}`)
+      .set('Idempotency-Key', 'cross-manual-blocked')
+      .send({ text: 'پیام دستی همان روز' })
+      .expect(409);
+    expect(blockedManual.body.error).toBe('MESSAGE_DAILY_LIMIT_REACHED');
+
+    expect(
+      await prisma.client.messageRequest.count({
+        where: { salonId: salon.tenantId, customerId: opportunityFirst, countsTowardDailyLimit: true },
+      }),
+    ).toBe(1);
+    expect(
+      await prisma.client.opportunityAction.count({
+        where: { salonId: salon.tenantId, customerId: opportunityFirst },
+      }),
+    ).toBe(1);
+    expect(
+      await prisma.client.messageDelivery.count({
+        where: { salonId: salon.tenantId, customerId: opportunityFirst },
+      }),
+    ).toBe(0);
+
+    const manualQueued = await request(app.getHttpServer())
+      .post(`/customers/${manualFirst}/messages`)
+      .set('Authorization', `Bearer ${salon.token}`)
+      .set('Idempotency-Key', 'cross-manual-first')
+      .send({ text: 'پیام دستی اول' })
+      .expect(201);
+    expect(manualQueued.body.actionId).toBeNull();
+    expect(manualQueued.body.opportunityType).toBeNull();
+
+    const blockedOpportunity = await request(app.getHttpServer())
+      .post(sendPath('REVENUE_DECLINE', manualFirst))
+      .set('Authorization', `Bearer ${salon.token}`)
+      .set('Idempotency-Key', 'cross-opp-blocked')
+      .send({ text: 'پیام فرصت همان روز' })
+      .expect(409);
+    expect(blockedOpportunity.body.error).toBe('MESSAGE_DAILY_LIMIT_REACHED');
+
+    expect(
+      await prisma.client.messageRequest.count({
+        where: { salonId: salon.tenantId, customerId: manualFirst, countsTowardDailyLimit: true },
+      }),
+    ).toBe(1);
+    expect(
+      await prisma.client.opportunityAction.count({
+        where: { salonId: salon.tenantId, customerId: manualFirst },
+      }),
+    ).toBe(0);
+    expect(
+      await prisma.client.messageDelivery.count({
+        where: { salonId: salon.tenantId, customerId: manualFirst },
+      }),
+    ).toBe(0);
+    const manualFirstOutbox = await prisma.client.outboxEvent.findMany({
+      where: { tenantId: salon.tenantId, eventType: 'MessageRequested' },
+    });
+    expect(
+      manualFirstOutbox.filter(
+        (event) =>
+          (event.payload as { messageRequestId?: string }).messageRequestId === manualQueued.body.id,
+      ),
+    ).toHaveLength(1);
+  });
+
+  it('dispatches a manual outreach request through the admin queue with a null action', async () => {
+    const salon = await createOwnerBypassingRegisterThrottle('outreach-dispatch');
+    const customerId = await createCustomer(salon.token, 'Dispatch');
+    const text = 'پیام دستی برای صف ادمین';
+
+    const created = await request(app.getHttpServer())
+      .post(`/customers/${customerId}/messages`)
+      .set('Authorization', `Bearer ${salon.token}`)
+      .set('Idempotency-Key', 'manual-dispatch-01')
+      .send({ text })
+      .expect(201);
+
+    expect(created.body.status).toBe('QUEUED');
+    expect(created.body.actionId).toBeNull();
+    expect(created.body.opportunityType).toBeNull();
+    expect(created.body.mode).toBeNull();
+
+    const stored = await prisma.client.messageRequest.findFirst({
+      where: { id: created.body.id, salonId: salon.tenantId },
+    });
+    expect(stored?.status).toBe('QUEUED');
+    expect(stored?.actionId).toBeNull();
+    expect(stored?.opportunityType).toBeNull();
+    expect(await prisma.client.opportunityAction.count({ where: { salonId: salon.tenantId } })).toBe(
+      0,
+    );
+    expect(
+      await prisma.client.messageDelivery.count({
+        where: { salonId: salon.tenantId, customerId },
+      }),
+    ).toBe(0);
+
+    const dispatched = await request(app.getHttpServer())
+      .post(`/admin/message-queue/${created.body.id}/select-manual`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(201);
+    expect(dispatched.body.status).toBe('DISPATCHED');
+    expect(dispatched.body.mode).toBe('MANUAL');
+    expect(dispatched.body.opportunityType).toBeNull();
+    expect(dispatched.body.messageText).toBe(text);
+
+    const delivery = await prisma.client.messageDelivery.findFirst({
+      where: { messageRequestId: created.body.id, salonId: salon.tenantId },
+    });
+    expect(delivery).toMatchObject({
+      customerId,
+      actionId: null,
+      mode: 'MANUAL',
+      status: 'PENDING',
+      provider: null,
+    });
+    expect(await prisma.client.opportunityAction.count({ where: { salonId: salon.tenantId } })).toBe(
+      0,
+    );
+    expect(
+      await prisma.client.outboxEvent.count({
+        where: { tenantId: salon.tenantId, eventType: 'MessageDeliveryActivated' },
+      }),
+    ).toBe(0);
+  });
+
   it('returns 409 MESSAGE_DAILY_LIMIT_REACHED for concurrent manual outreach', async () => {
     const salon = await createOwnerBypassingRegisterThrottle('outreach-race');
     const customerId = await createCustomer(salon.token, 'Race');
@@ -597,5 +753,177 @@ describeIfDb('Opportunity messages (e2e)', () => {
     expect(await prisma.client.opportunityAction.count({ where: { salonId: salon.tenantId } })).toBe(
       0,
     );
+  });
+
+  it('exposes manual outreach lifecycle on salon reads without creating OpportunityActions', async () => {
+    const salonA = await createOwnerBypassingRegisterThrottle('outreach-visible-a');
+    const salonB = await createOwnerBypassingRegisterThrottle('outreach-visible-b');
+    const customerA = await createCustomer(salonA.token, 'Visible');
+    const customerB = await createCustomer(salonA.token, 'Second');
+    const otherCustomer = await createCustomer(salonB.token, 'Other');
+    const text = 'پیام دستی برای وضعیت سالن';
+
+    await request(app.getHttpServer())
+      .post('/visits')
+      .set('Authorization', `Bearer ${salonA.token}`)
+      .send({ customerId: customerA, visitedAt: '2026-09-01T10:00:00.000Z' })
+      .expect(201);
+
+    const first = await request(app.getHttpServer())
+      .post(`/customers/${customerA}/messages`)
+      .set('Authorization', `Bearer ${salonA.token}`)
+      .set('Idempotency-Key', 'visible-manual-01')
+      .send({ text })
+      .expect(201);
+    expect(first.body.status).toBe('QUEUED');
+    expect(first.body.actionId).toBeNull();
+
+    const second = await request(app.getHttpServer())
+      .post(`/customers/${customerB}/messages`)
+      .set('Authorization', `Bearer ${salonA.token}`)
+      .set('Idempotency-Key', 'visible-manual-02')
+      .send({ text })
+      .expect(201);
+    expect(second.body.id).not.toBe(first.body.id);
+
+    const listed = listPage<{
+      customerId: string;
+      messageRequestId: string;
+      status: string;
+      customerName: string;
+    }>(
+      (
+        await request(app.getHttpServer())
+          .get('/messages/manual-outreach')
+          .set('Authorization', `Bearer ${salonA.token}`)
+          .expect(200)
+      ).body,
+    );
+    expect(listed.items).toHaveLength(2);
+    const firstItem = listed.items.find((item) => item.customerId === customerA);
+    const secondItem = listed.items.find((item) => item.customerId === customerB);
+    expect(firstItem).toMatchObject({
+      messageRequestId: first.body.id,
+      status: 'QUEUED',
+    });
+    expect(secondItem).toMatchObject({
+      messageRequestId: second.body.id,
+      status: 'QUEUED',
+    });
+    expect(JSON.stringify(listed)).not.toContain(text);
+    expect(JSON.stringify(listed)).not.toContain('actionId');
+    expect(JSON.stringify(listed)).not.toContain('opportunityType');
+
+    await request(app.getHttpServer())
+      .get('/messages/manual-outreach')
+      .set('Authorization', `Bearer ${salonB.token}`)
+      .expect(200)
+      .expect((response) => {
+        expect(
+          listPage(response.body).items.some(
+            (item: { customerId: string }) => item.customerId === customerA,
+          ),
+        ).toBe(false);
+      });
+
+    const activity = listPage<{ type: string; status: string | null; id: string }>(
+      (
+        await request(app.getHttpServer())
+          .get(`/customers/${customerA}/activity`)
+          .set('Authorization', `Bearer ${salonA.token}`)
+          .expect(200)
+      ).body,
+    );
+    expect(activity.items.filter((item) => item.type === 'MANUAL_MESSAGE')).toHaveLength(1);
+    expect(activity.items.some((item) => item.type === 'VISIT')).toBe(true);
+    expect(activity.items.find((item) => item.type === 'MANUAL_MESSAGE')).toMatchObject({
+      id: first.body.id,
+      status: 'QUEUED',
+    });
+    expect(JSON.stringify(activity)).not.toContain(text);
+
+    await request(app.getHttpServer())
+      .get(`/customers/${customerA}/activity`)
+      .set('Authorization', `Bearer ${salonB.token}`)
+      .expect(404);
+    await request(app.getHttpServer())
+      .get(`/customers/${otherCustomer}/activity`)
+      .set('Authorization', `Bearer ${salonA.token}`)
+      .expect(404);
+
+    const storedQueued = await prisma.client.messageRequest.findFirst({
+      where: { id: first.body.id, salonId: salonA.tenantId },
+    });
+    expect(storedQueued).toMatchObject({
+      actionId: null,
+      opportunityType: null,
+      status: 'QUEUED',
+    });
+
+    await request(app.getHttpServer())
+      .post(`/admin/message-queue/${first.body.id}/select-manual`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(201);
+
+    const afterDispatch = listPage<{ customerId: string; status: string }>(
+      (
+        await request(app.getHttpServer())
+          .get('/messages/manual-outreach')
+          .set('Authorization', `Bearer ${salonA.token}`)
+          .expect(200)
+      ).body,
+    );
+    expect(afterDispatch.items.find((item) => item.customerId === customerA)?.status).toBe(
+      'DISPATCHED',
+    );
+    expect(afterDispatch.items.find((item) => item.customerId === customerB)?.status).toBe('QUEUED');
+
+    const salonCollapsed = await request(app.getHttpServer())
+      .get(`/messages/${first.body.id}`)
+      .set('Authorization', `Bearer ${salonA.token}`)
+      .expect(200);
+    expect(salonCollapsed.body.status).toBe('QUEUED');
+
+    const activityAfter = listPage<{ type: string; status: string | null }>(
+      (
+        await request(app.getHttpServer())
+          .get(`/customers/${customerA}/activity`)
+          .set('Authorization', `Bearer ${salonA.token}`)
+          .expect(200)
+      ).body,
+    );
+    expect(activityAfter.items.filter((item) => item.type === 'MANUAL_MESSAGE')).toHaveLength(1);
+    expect(activityAfter.items.find((item) => item.type === 'MANUAL_MESSAGE')?.status).toBe(
+      'DISPATCHED',
+    );
+
+    const delivery = await prisma.client.messageDelivery.findFirst({
+      where: { messageRequestId: first.body.id, salonId: salonA.tenantId },
+    });
+    expect(delivery?.actionId).toBeNull();
+    expect(delivery?.status).toBe('PENDING');
+    expect(await prisma.client.opportunityAction.count({ where: { salonId: salonA.tenantId } })).toBe(
+      0,
+    );
+
+    await request(app.getHttpServer())
+      .post(`/admin/message-queue/${first.body.id}/mark-manual-sent`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(201);
+
+    const afterSent = listPage<{ customerId: string; status: string; messageRequestId: string }>(
+      (
+        await request(app.getHttpServer())
+          .get('/messages/manual-outreach')
+          .set('Authorization', `Bearer ${salonA.token}`)
+          .expect(200)
+      ).body,
+    );
+    expect(afterSent.items).toHaveLength(2);
+    expect(afterSent.items.find((item) => item.customerId === customerA)).toMatchObject({
+      messageRequestId: first.body.id,
+      status: 'SENT',
+    });
+    expect(afterSent.items.find((item) => item.customerId === customerB)?.status).toBe('QUEUED');
   });
 });

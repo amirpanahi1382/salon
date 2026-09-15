@@ -27,6 +27,7 @@ import { CreateCustomerUseCase } from './create-customer.use-case';
 import {
   CreateCustomerDto,
   CustomerImportResultDto,
+  ListCustomerActivityQueryDto,
   ListCustomersQueryDto,
   UpdateCustomerDto,
 } from './customer.dto';
@@ -37,6 +38,7 @@ import {
   XLSX_CONTENT_TYPE,
 } from './customer-import.constants';
 import { GetCustomerUseCase } from './get-customer.use-case';
+import { ListCustomerActivityUseCase } from './list-customer-activity.use-case';
 import { ImportCustomersUseCase } from './import-customers.use-case';
 import { ListCustomersUseCase } from './list-customers.use-case';
 import { UpdateCustomerUseCase } from './update-customer.use-case';
@@ -53,6 +55,7 @@ export class CustomerController {
     private readonly importCustomers: ImportCustomersUseCase,
     private readonly listCustomers: ListCustomersUseCase,
     private readonly getCustomer: GetCustomerUseCase,
+    private readonly listCustomerActivity: ListCustomerActivityUseCase,
     private readonly updateCustomer: UpdateCustomerUseCase,
     private readonly deleteCustomer: DeleteCustomerUseCase,
   ) {}
@@ -112,6 +115,20 @@ export class CustomerController {
   @ApiOperation({ summary: 'Create a customer in the authenticated salon' })
   create(@CurrentUser() user: AuthenticatedPrincipal, @Body() body: CreateCustomerDto) {
     return this.createCustomer.execute(user, body);
+  }
+
+  @Get(':id/activity')
+  @Roles('OWNER', 'MANAGER', 'STAFF')
+  @ApiOperation({
+    summary:
+      'List business activity for one customer (visits, sales, opportunity actions, manual outreach). Newest first.',
+  })
+  listActivity(
+    @CurrentUser() user: AuthenticatedPrincipal,
+    @Param('id', UuidParam) id: string,
+    @Query() query: ListCustomerActivityQueryDto,
+  ) {
+    return this.listCustomerActivity.execute(user, id, query);
   }
 
   @Get(':id')

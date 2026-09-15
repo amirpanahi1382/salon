@@ -62,6 +62,45 @@ export class ListCustomersQueryDto {
   cursor?: string;
 }
 
+export class ListCustomerActivityQueryDto {
+  @ApiPropertyOptional({ description: 'Opaque cursor from the previous page' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(512)
+  cursor?: string;
+}
+
+export class CustomerActivityItemDto {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty({ enum: ['VISIT', 'TRANSACTION', 'OPPORTUNITY_ACTION', 'MANUAL_MESSAGE'] })
+  type!: 'VISIT' | 'TRANSACTION' | 'OPPORTUNITY_ACTION' | 'MANUAL_MESSAGE';
+
+  @ApiProperty()
+  occurredAt!: string;
+
+  @ApiProperty()
+  createdAt!: string;
+
+  @ApiProperty({ nullable: true, type: String })
+  status!: string | null;
+
+  @ApiProperty({ nullable: true, type: String })
+  opportunityType!: string | null;
+}
+
+export class CustomerActivityListPageDto {
+  @ApiProperty({ type: [CustomerActivityItemDto] })
+  items!: CustomerActivityItemDto[];
+
+  @ApiProperty()
+  hasMore!: boolean;
+
+  @ApiProperty({ nullable: true, type: String })
+  nextCursor!: string | null;
+}
+
 export class CustomerImportRowResultDto {
   @ApiProperty()
   row!: number;

@@ -34,8 +34,8 @@ export class MessageRequestResponseDto {
   @ApiProperty()
   id!: string;
 
-  @ApiProperty()
-  customerId!: string;
+  @ApiProperty({ nullable: true, type: String })
+  customerId!: string | null;
 
   @ApiProperty({ nullable: true, type: String })
   actionId!: string | null;
@@ -83,6 +83,37 @@ export class MessageRequestResponseDto {
 export class MessageRequestListPageDto {
   @ApiProperty({ type: [MessageRequestResponseDto] })
   items!: MessageRequestResponseDto[];
+
+  @ApiProperty()
+  hasMore!: boolean;
+
+  @ApiProperty({ nullable: true, type: String })
+  nextCursor!: string | null;
+}
+
+export class ManualOutreachItemDto {
+  @ApiProperty()
+  customerId!: string;
+
+  @ApiProperty()
+  customerName!: string;
+
+  @ApiProperty()
+  messageRequestId!: string;
+
+  @ApiProperty({ enum: ['QUEUED', 'DISPATCHED', 'SENT', 'FAILED'] })
+  status!: 'QUEUED' | 'DISPATCHED' | 'SENT' | 'FAILED';
+
+  @ApiProperty()
+  requestedAt!: string;
+
+  @ApiProperty()
+  updatedAt!: string;
+}
+
+export class ManualOutreachListPageDto {
+  @ApiProperty({ type: [ManualOutreachItemDto] })
+  items!: ManualOutreachItemDto[];
 
   @ApiProperty()
   hasMore!: boolean;

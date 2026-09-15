@@ -59,6 +59,9 @@ describeIfDb('Customers (e2e)', () => {
   it('rejects unauthenticated customer access', async () => {
     await request(app.getHttpServer()).get('/customers').expect(401);
     await request(app.getHttpServer())
+      .get('/customers/11111111-1111-4111-8111-111111111111/activity')
+      .expect(401);
+    await request(app.getHttpServer())
       .post('/customers')
       .send({ firstName: 'Sara', lastName: 'Ahmadi', phoneNumber: '09121234567' })
       .expect(401);

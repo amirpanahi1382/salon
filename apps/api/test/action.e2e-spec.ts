@@ -536,6 +536,16 @@ describeIfDb('Opportunity Actions (e2e)', () => {
       allActions.some((item) => item.customerId === ignoreCustomer && item.status === 'DISMISSED'),
     ).toBe(true);
 
+    const activity = listItems<{ type: string; status: string | null }>(
+      (
+        await request(app.getHttpServer())
+          .get(`/customers/${ignoreCustomer}/activity`)
+          .set('Authorization', `Bearer ${salon.token}`)
+          .expect(200)
+      ).body,
+    );
+    expect(activity.some((item) => item.type === 'OPPORTUNITY_ACTION')).toBe(false);
+
     await recordVisit(salon.token, completeCustomer, daysAgoIso(40));
     const afterNewVisit = await request(app.getHttpServer())
       .get(`/intelligence/customers/${completeCustomer}`)

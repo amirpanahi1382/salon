@@ -4,7 +4,9 @@ import { CreateCustomerUseCase } from './create-customer.use-case';
 import { CustomerController } from './customer.controller';
 import { CustomerRepository } from './customer.repository';
 import { DeleteCustomerUseCase } from './delete-customer.use-case';
+import { CustomerActivityRepository } from './customer-activity.repository';
 import { GetCustomerUseCase } from './get-customer.use-case';
+import { ListCustomerActivityUseCase } from './list-customer-activity.use-case';
 import { ListCustomersUseCase } from './list-customers.use-case';
 import { UpdateCustomerUseCase } from './update-customer.use-case';
 import { ImportCustomersUseCase } from './import-customers.use-case';
@@ -14,6 +16,8 @@ import { ImportCustomersUseCase } from './import-customers.use-case';
   controllers: [CustomerController],
   providers: [
     CustomerRepository,
+    CustomerActivityRepository,
+    ListCustomerActivityUseCase,
     CreateCustomerUseCase,
     ImportCustomersUseCase,
     ListCustomersUseCase,

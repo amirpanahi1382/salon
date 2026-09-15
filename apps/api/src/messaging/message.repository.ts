@@ -94,4 +94,39 @@ export class MessageRepository {
       take: MESSAGE_LIST_LIMIT + 1,
     });
   }
+
+  listManualForBusinessDate(
+    tenantId: string,
+    messageBusinessDate: Date,
+    cursor?: { requestedAt: Date; id: string },
+  ) {
+    return this.prisma.client.messageRequest.findMany({
+      where: {
+        salonId: tenantId,
+        actionId: null,
+        opportunityType: null,
+        vipRequestId: null,
+        countsTowardDailyLimit: true,
+        messageBusinessDate,
+        ...(cursor
+          ? {
+              OR: [
+                { requestedAt: { lt: cursor.requestedAt } },
+                { requestedAt: cursor.requestedAt, id: { lt: cursor.id } },
+              ],
+            }
+          : {}),
+      },
+      select: {
+        id: true,
+        customerId: true,
+        status: true,
+        requestedAt: true,
+        updatedAt: true,
+        customer: { select: { firstName: true, lastName: true } },
+      },
+      orderBy: [{ requestedAt: 'desc' as const }, { id: 'desc' as const }],
+      take: MESSAGE_LIST_LIMIT + 1,
+    });
+  }
 }
