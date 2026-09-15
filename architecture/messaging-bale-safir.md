@@ -41,9 +41,11 @@ Official phone examples include both `989196111003` and `+98919611003` (the latt
 ```text
 Flutter (Persian composer)
   -> POST /intelligence/opportunities/:type/customers/:id/messages
+     or POST /customers/:id/messages
   -> DB transaction: MessageRequest QUEUED + Outbox MessageRequested + audit
   -> Platform admin selects BALE or MANUAL
-  -> BALE: Outbox MessageDeliveryActivated -> Worker -> BaleSafirMessageSender -> SENT | FAILED
+  -> BALE (non-VIP only): Outbox MessageDeliveryActivated -> Worker -> BaleSafirMessageSender -> SENT | FAILED
+  -> VIP MessageRequests: select-bale rejected; campaign dispatch-bale records BALE_NOT_IMPLEMENTED
 ```
 
 Domain modules do not import Safir DTOs. `OpportunityService` / `ActionService` do not call Bale.
@@ -64,7 +66,7 @@ Environment:
 - `BALE_SAFIR_BOT_ID`
 - optional `BALE_SAFIR_BASE_URL`, `BALE_SAFIR_TIMEOUT_MS`
 
-If either required value is missing, the salon API **still queues** a `MessageRequest`. Bale execution happens only after a platform admin selects BALE **and** credentials exist.
+If either required value is missing, the salon API **still queues** a `MessageRequest`. Bale execution happens only after a platform admin selects BALE **and** credentials exist. VIP rows cannot use BALE until an explicit implementation.
 
 ## Customer deletion
 
@@ -85,7 +87,7 @@ If none: actions, then visits, then the customer. Message history is not erased.
 | Code 8 / 17 | FAILED PROVIDER_RECIPIENT_UNAVAILABLE | no | ارسال پیام به این شماره امکان‌پذیر نیست | warn |
 | Code 4 / 20 / 21 / HTTP 400 | FAILED PROVIDER_INVALID_REQUEST | no | generic retry copy | warn |
 | Malformed 2xx body | retry (same request_id) | yes | temporary | warn |
-| Missing env | no row (API 503) or FAILED NOT_CONFIGURED in worker | no | اتصال… | error |
+| Missing env | salon queue still created; Bale select/worker cannot send | n/a until BALE selected | اتصال… after dispatch | error |
 | Worker crash before HTTP | PROCESSING, lease reclaim, resend same request_id | yes | queued | info |
 | Crash after HTTP before DB | retry same request_id | yes | queued then SENT | warn |
 | Duplicate Idempotency-Key + same body | replay row | n/a | same delivery | — |

@@ -1,6 +1,6 @@
-# Performance and scale (Phase C)
+# Performance and scale
 
-Measured against PostgreSQL 16 with a disposable salon of **3,000 customers / 15,000 visits** (`pnpm perf:bench`). HTTP load: `RUN_LOAD=true pnpm perf:load` against a running API.
+Dated measurements (2026-09-06) used a disposable salon of **3,000 customers / 15,000 visits** (`pnpm perf:bench`). HTTP load: `RUN_LOAD=true pnpm perf:load` against a running API. Those numbers are historical evidence, not a live SLA.
 
 ## Pagination
 

@@ -37,7 +37,10 @@ Option 2. Header `Idempotency-Key` is optional for backward compatibility. The F
 - Keys are not a generic framework for every POST.
 - `POST /visits/complete-with-sale` reuses this table with operation `VISIT_COMPLETE_WITH_SALE` and a fingerprint of customer, visitedAt, service, amount, and currency.
 
-## Future considerations
+## Later use of the same table
 
-- Retention/cleanup of old keys (Phase C/D).
-- Apply the same table to future campaign/message sends.
+Retention of keys older than `IDEMPOTENCY_RETENTION_DAYS` (default 7) is implemented by the worker.
+
+The same `idempotency_records` table is reused (different `operation` values) for complete-with-sale, standalone transactions, opportunity actions, opportunity/manual messages, and VIP mutating APIs. It is still not a generic middleware for every POST.
+
+Campaign aggregates were never added; messaging uses this table plus the Tehran-day unique index.

@@ -1,6 +1,6 @@
-# Operations (Phase B)
+# Operations
 
-Production-candidate operations for the modular monolith. Not a distributed tracing platform.
+Production operations for the modular monolith. Not a distributed tracing platform.
 
 ## Logging
 
@@ -46,7 +46,7 @@ No AsyncLocalStorage: request fields ride on the Express request / Pino `customP
 | `GET /health` | Liveness: process is up | none | 200 `{ status: "ok" }` | process not running |
 | `GET /health/ready` | Ready to serve API traffic | PostgreSQL; not draining | 200 `{ status: "ok", checks.postgres: "up" }` | 503 |
 
-Redis and MinIO are **not** readiness dependencies. They are not used on the request path today. Constructing a client is not a health check.
+Redis is **not** a readiness dependency and is **not used by application code**. MinIO is used for VIP sample-work upload/download on the API; it is still **not** part of `/health/ready` (Postgres only). A MinIO outage fails VIP image use-cases, not process liveness.
 
 During SIGTERM/SIGINT the API marks itself draining; readiness returns 503 while in-flight requests finish.
 
@@ -63,7 +63,7 @@ The worker has no HTTP server. Orchestrators should treat process exit / contain
 Delivery is **at-least-once**, not exactly-once. Consumers must be idempotent.
 
 - Claim: `FOR UPDATE SKIP LOCKED` + lease (`OUTBOX_LEASE_MS`, default 30s).
-- Handler timeout is 80% of the lease so a stuck handler fails before another worker reclaims the row. No heartbeat: current handlers are no-ops and must stay faster than the lease.
+- Handler timeout is 80% of the lease so a stuck handler fails before another worker reclaims the row. No heartbeat. Bale send must finish (or abort) within that budget; other event types are no-ops.
 - Retry: full jitter backoff, then `DEAD_LETTER` at `OUTBOX_MAX_ATTEMPTS`.
 - Unknown `eventType` values are **dead-lettered immediately** with `UNKNOWN_EVENT_TYPE`. They are never marked processed. Replay after deploying a handler.
 - Crash after a side effect and before `PROCESSED` will retry (duplicate delivery).
@@ -73,7 +73,7 @@ Processed events older than `OUTBOX_PROCESSED_RETENTION_DAYS` (default 14) are d
 ## Timeouts
 
 - Outbound HTTP helper `fetchWithTimeout` uses `HTTP_TIMEOUT_MS` (default 5s). No automatic retries.
-- There are no production outbound HTTP calls in this phase.
+- Worker outbound HTTP: Bale Safir send (`BALE_SAFIR_TIMEOUT_MS`, default 10s) when a BALE delivery is activated. VIP Bale is not implemented.
 - PostgreSQL readiness uses `HEALTH_CHECK_TIMEOUT_MS` (default 2s).
 - Inbound HTTP socket idle timeout is 120s (Excel import client timeout is 90s).
 

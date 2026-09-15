@@ -1,39 +1,45 @@
 # Beauty Salon Revenue Intelligence Platform
 
-Vertical SaaS for women's beauty salons. The product is **not** a booking system.
+Vertical SaaS for **women's beauty salons**. North star: help salons generate more revenue from customers they already have.
 
-North star: help salons generate more revenue from customers they already have.
+This is **not** a booking, calendar, POS, accounting, or marketplace product.
 
-## Current phase
-
-Phase 5 intelligence plus financial source-of-truth (services, transactions) and Phase C scale work (`architecture/performance.md`, `domain/financial-domain.md`).
-
-Product, domain, and architecture specifications live in:
-
-- `agents.md`
-- `business-model.md`
-- `product-strategy.md`
-- `product/mvp.md`
-- `domain/domain-model.md`
-- `architecture/architecture.md`
-- `architecture/data-model.md`
-- `architecture/security.md`
-- `architecture/operations.md`
-- `architecture/performance.md`
-- `architecture/messaging-bale-safir.md`
+Authoritative docs: [`AGENTS.md`](AGENTS.md) (coding-agent contract) · [`product/mvp.md`](product/mvp.md) (scope) · [`docs/current-state-system-spec.md`](docs/current-state-system-spec.md) (what exists today). Full map in `AGENTS.md`.
 
 ## Layout
 
-This directory is the project root. The HTTP API and the async worker are **separate NestJS applications**:
+pnpm workspace (`apps/*` except Flutter, plus `packages/*`):
 
-- `apps/api` — REST API on port 3000
-- `apps/worker` — outbox worker via `createApplicationContext` (no HTTP server)
-- `apps/mobile` — Flutter MVP client
-- `packages/database`, `packages/config`, `packages/shared` — shared libraries used by both
+| Path | Role |
+| --- | --- |
+| `apps/api` | NestJS HTTP API (default port 3000) |
+| `apps/worker` | NestJS `createApplicationContext` outbox worker (no HTTP server) |
+| `apps/mobile` | Flutter client (excluded from pnpm; needs Flutter SDK) |
+| `packages/database` | Prisma schema, migrations, client |
+| `packages/config` | Zod env loading |
+| `packages/shared` | Money, JWT principal types, intelligence rules, events |
+| `infra/docker` | Compose: PostgreSQL 16, Redis 7, MinIO |
 
-## Local development
+API and worker are **two processes**, not one Nest app with a background thread.
 
-Requires Node.js 20+, pnpm 9+, and Docker.
+```text
+Flutter  →  NestJS API  →  PostgreSQL (Prisma)
+                              ↓ transactional outbox
+                         NestJS worker  →  Bale Safir (BALE deliveries only)
+                              ↓
+                         MinIO (VIP sample-work images)
+```
+
+Redis is required by env/Compose and is **not used by application code**. MinIO **is** used for VIP sample work.
+
+## Prerequisites
+
+- Node.js 20+
+- pnpm 9+ (`packageManager`: `pnpm@9.15.0`)
+- Docker
+- Flutter SDK (for `apps/mobile`)
+
+## Local setup
 
 ```bash
 cp .env.example .env
@@ -43,78 +49,80 @@ pnpm db:migrate
 pnpm build:packages
 ```
 
-API (port 3000):
+Optional development platform admin (never production; never commit a real password):
+
+```bash
+# Set PLATFORM_ADMIN_EMAIL and PLATFORM_ADMIN_PASSWORD in .env (both or neither)
+pnpm db:bootstrap-admin
+```
+
+Starter service catalog for real registrations: Hair Service + Nail Service (skipped for `@example.test`).
+
+API:
 
 ```bash
 pnpm dev:api
 ```
 
-Worker (no HTTP port):
+Worker (required for Bale execution and outbox/idempotency retention):
 
 ```bash
 pnpm dev:worker
 ```
 
-OpenAPI UI: `http://localhost:3000/docs` (disabled in production unless `SWAGGER_ENABLED=true`)
+OpenAPI: `http://localhost:3000/docs` (off in production unless `SWAGGER_ENABLED=true`).
 
 Health:
 
-- `GET /health` — process liveness (no dependency checks)
-- `GET /health/ready` — PostgreSQL only; HTTP 503 if down or shutting down
-- `GET /metrics` — Prometheus text (low-cardinality HTTP + outbox gauges)
+- `GET /health` — process liveness
+- `GET /health/ready` — PostgreSQL; 503 if down or draining
+- `GET /metrics` — Prometheus text (keep off the public internet)
 
-Operational detail: `architecture/operations.md`.
+Flutter: see [`apps/mobile/README.md`](apps/mobile/README.md).
+
+## Commands
+
+| Script | Purpose |
+| --- | --- |
+| `pnpm infra:up` / `infra:down` / `infra:logs` | Docker Compose |
+| `pnpm db:generate` | Prisma client |
+| `pnpm db:migrate` | `migrate deploy` |
+| `pnpm db:migrate:dev` | `migrate dev` |
+| `pnpm db:ensure-dev-catalog` | Dev starter services helper |
+| `pnpm db:bootstrap-admin` | Dev platform admin upsert |
+| `pnpm build:packages` / `pnpm build` | Packages, then API + worker |
+| `pnpm dev:api` / `pnpm dev:worker` | Watch mode |
+| `pnpm start:api` / `pnpm start:worker` | Compiled start |
+| `pnpm test` | Recursive unit tests |
+| `pnpm test:e2e` | API Jest E2E |
+| `pnpm typecheck` | Recursive typecheck |
+| `pnpm perf:bench` / `pnpm perf:load` | Scale benches (`RUN_LOAD=true` for load) |
 
 ## Authentication
 
-Tenant identity is taken from the authenticated user, never from a client-supplied `salonId`.
+Tenant JWT: `POST /auth/register`, `POST /auth/login`, `GET /auth/me`. Claims include `sub`, `tid`, `role`. Expiry `JWT_EXPIRES_IN` (default `8h`). No refresh token. Logout is client-side.
 
-```http
-POST /auth/register
-POST /auth/login
-GET /auth/me
+Platform admin JWT: `POST /admin/auth/login`, `GET /admin/auth/me`. Claim `scp=platform`. No `tid`.
 
-GET /salon
-PATCH /salon
+Tenant is always taken from the authenticated user. A body `salonId` is ignored/rejected.
 
-GET /users
-POST /users
-GET /users/:id
-PATCH /users/:id/role
-PATCH /users/:id/status
+A **Visit** is a completed historical interaction, not a booking.
 
-POST /customers
-GET /customers
-GET /customers/:id
-PATCH /customers/:id
-DELETE /customers/:id
+## Capability map
 
-GET /visits
-GET /visits/:id
-POST /visits
-POST /visits/complete-with-sale
-DELETE /visits/:id
-GET /customers/:customerId/visits
+| Area | Salon API (JWT tenant) | Notes |
+| --- | --- | --- |
+| Salon | `GET/PATCH /salon` | Flutter profile does not expose PATCH |
+| Users | `GET/POST /users`, role/status patches | API only in Flutter |
+| Customers | CRUD, Excel import, `GET /customers/:id/activity` | Phone `09` + 9 digits |
+| Visits | create, complete-with-sale, list, export, delete | STAFF cannot delete |
+| Services | list/create/patch | Create/patch OWNER only |
+| Transactions | create, list, void | Create/void OWNER/MANAGER; Flutter uses complete-with-sale |
+| Intelligence | summary, opportunities, segments, per-customer | Derived on read |
+| Actions | create/complete/dismiss | Durable response to opportunities |
+| Messages | opportunity + manual queue, get, list, manual-outreach inbox | Admin dispatches later |
+| VIP | `/vip/capability`, lists, requests, sample works, submit | Entitlement required |
 
-GET /intelligence/summary
-GET /intelligence/opportunities
-GET /intelligence/segments
-GET /intelligence/customers/:customerId
+Platform admin: `/admin/message-queue`, `/admin/vip/*`.
 
-POST /intelligence/opportunities/:opportunityType/customers/:customerId/actions
-POST /intelligence/opportunities/:opportunityType/customers/:customerId/messages
-GET /messages/:id
-GET /customers/:customerId/messages
-GET /actions
-GET /customers/:customerId/actions
-POST /actions/:id/complete
-POST /actions/:id/dismiss
-```
-
-A **Visit** is a completed historical salon interaction. It is not a booking, appointment, or calendar event.
-
-**Intelligence** is derived from customer + completed visit history. It is not stored as a competing source of truth. Statuses: `NEW`, `ACTIVE`, `RETURNING`, `AT_RISK`, `INACTIVE`. Opportunities in this phase are `REACTIVATION` (repeat visitors who are overdue) and `CUSTOMER_RETURN` (single-visit overdue). Spend-based and cross-sell signals wait for transactions and services.
-
-`DELETE /customers/:id` (OWNER/MANAGER) hard-deletes the customer and that customer's completed visits in one transaction. Audit logs are kept. `DELETE /visits/:id` (OWNER/MANAGER) removes one completed visit. `GET /visits` lists salon visits newest first (limit 200) and accepts `customerId`, `date=YYYY-MM-DD` (UTC day), or `from`/`to` ISO instants. STAFF can create and read visits but cannot delete customers or visits.
-
-Tenant identity is always taken from the authenticated user. `salonId` in a request body is ignored and rejected when unexpected.
+Details: [`docs/current-state-system-spec.md`](docs/current-state-system-spec.md).

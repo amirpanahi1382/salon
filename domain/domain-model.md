@@ -1,1266 +1,146 @@
-# Domain Model
+# Domain model
 
-**Version:** 0.1
-**Status:** MVP Domain Definition
-**Product:** Beauty Salon Revenue & Customer Intelligence Platform
+**Status:** Current domain (reconciled with schema and use-cases)  
+**Physical tables:** `architecture/data-model.md`  
+**Money:** `domain/financial-domain.md`  
+**Messaging:** `docs/messaging-domain.md`
 
----
-
-# 1. Purpose
-
-This document defines the core business domain of the MVP.
-
-The purpose is to establish:
-
-- Core business concepts
-- Entity responsibilities
-- Relationships
-- Business rules
-- Domain boundaries
-- Source-of-truth ownership
-- Derived intelligence
-- Future extension points
-
-The domain model must remain intentionally small.
-
-Do not introduce entities only because they may be useful in the future.
+Do not treat Campaign, Product, ProductPrice, Supplier, or Appointment as current entities. They are not in the schema.
 
 ---
 
-# 2. Core Domain
-
-The core business domain is:
+## 1. Loop
 
 ```text
-Salon
-   ↓
-Customer
-   ↓
-Visits & Transactions
-   ↓
-Customer Behavior
-   ↓
-Intelligence
-   ↓
-Opportunity
-   ↓
-Campaign
-   ↓
-Customer Outcome
+Salon (tenant)
+  User (operator)
+  Customer (salon client)
+    Visit          ← business fact
+    Transaction    ← financial fact
+        TransactionItem + Service
+  Intelligence     ← derived on read
+  OpportunityAction ← durable human response
+  MessageRequest   ← durable send intent
+  MessageDelivery  ← execution
 ```
 
-This is the primary business loop.
-
----
-
-# 3. Domain Boundaries
-
-The MVP should contain these primary domains:
+VIP lives on the tenant but **not** on Customer:
 
 ```text
-Salon
-Customer
-Service
-Visit
-Transaction
-Customer Intelligence
-Campaign
-Product Price Intelligence
-```
-
-Future domains:
-
-```text
-Supplier
-Marketplace
-Attribution
-Incentive
-Reward
-```
-
-Future domains must not become dependencies of the MVP core.
-
----
-
-# 4. Salon Domain
-
-## Responsibility
-
-The Salon domain represents the business using the platform.
-
-A salon is the primary tenant.
-
-```text
-Salon
-├── Users
-├── Customers
-├── Services
-├── Visits
-├── Transactions
-├── Campaigns
-└── Internal business data
-```
-
-### Core attributes
-
-```text
-Salon
-- id
-- name
-- phone
-- address
-- createdAt
-- updatedAt
-- status
-```
-
-The exact fields may evolve.
-
----
-
-# 5. User Domain
-
-Users operate the system on behalf of a salon.
-
-Minimum roles:
-
-```text
-OWNER
-MANAGER
-STAFF
-```
-
-The User belongs to exactly one salon in the MVP.
-
-Conceptually:
-
-```text
-Salon 1 ─────── * User
-```
-
-The MVP should not implement complex organizational hierarchies.
-
----
-
-# 6. Customer Domain
-
-Customer is one of the most important entities in the product.
-
-The platform exists partly to understand the economic relationship between a salon and its customers.
-
-### Customer responsibilities
-
-Customer represents:
-
-- Customer identity
-- Salon relationship
-- Customer lifecycle
-- Customer profile
-
-Customer should NOT own:
-
-- Intelligence calculation
-- Campaign logic
-- Messaging logic
-- Revenue calculations
-- Recommendation algorithms
-
-Those responsibilities belong to their respective domains.
-
-### Core attributes
-
-```text
-Customer
-- id
-- salonId
-- firstName
-- lastName
-- phoneNumber
-- createdAt
-- updatedAt
-- status
+PlatformAdmin
+  VipTargetList / VipTargetContact
+VipSalonEntitlement
+  VipRequest / VipRequestRecipient / VipSampleWork
+    → MessageRequest (customerId null, vipRequestId set)
 ```
 
 ---
 
-# 7. Customer Identity
+## 2. Fact vs derived vs execution
 
-The MVP should treat the phone number as an important customer identifier.
-
-Customer phone numbers must be exactly 11 digits and start with `09` (example: `09121111111`). Manual create and Excel import use this same rule. Alternative representations are rejected.
-
-However:
-
-> Phone number uniqueness is scoped to a salon unless a future business decision explicitly introduces a global customer identity.
-
-Therefore:
-
-```text
-Unique:
-(salonId, phoneNumber)
-```
-
-not simply:
-
-```text
-phoneNumber
-```
-
-This prevents different salons from accidentally sharing the same customer record.
-
-OWNER and MANAGER may hard-delete a customer in their salon when the customer has **no** financial records. That also deletes the customer's completed visits. Customers with any transaction (including VOIDED) cannot be deleted (409). Financial rows are never cascade-deleted. It does not delete audit logs. STAFF cannot delete customers.
+| Layer | Concepts | Source of truth? |
+| --- | --- | --- |
+| Business facts | Salon, User, PlatformAdmin, Customer, Visit, Service | Yes |
+| Financial facts | LedgerTransaction (`transactions`), TransactionItem | Yes (amount header) |
+| Derived intelligence | status, signals, opportunities, segments, revenue metrics | No — computed |
+| Human/operational facts | OpportunityAction | Yes (the salon responded) |
+| Intent | MessageRequest, VipRequest | Yes (requested) |
+| Execution | MessageDelivery, VipSampleWork object storage | Yes (how it was fulfilled) |
+| Infrastructure | OutboxEvent, AuditLog, IdempotencyRecord | Yes (ops), not business meaning |
 
 ---
 
-# 8. Customer Lifecycle
+## 3. Aggregates
 
-Customer status is primarily derived from behavior.
+### Salon
 
-Possible statuses:
+Tenant. Owns users, customers, services, visits, transactions, actions, messages, VIP requests. Status `ACTIVE` | `SUSPENDED`. Duplicate names allowed.
 
-```text
-NEW
-ACTIVE
-RETURNING
-AT_RISK
-INACTIVE
-```
+### User
 
-These statuses should not become the authoritative customer history.
+Salon operator. One salon. Roles `OWNER` | `MANAGER` | `STAFF`. Status `ACTIVE` | `DISABLED`. Email globally unique. Last active OWNER cannot be removed/demoted. MANAGER may create/disable STAFF only. OWNER assigns any role.
 
-For example:
+`createdBy` on actions/messages points at `users.id` **without** a composite tenant FK (known debt).
 
-```text
-Customer
-   ↓
-Visits
-   ↓
-Transactions
-   ↓
-Behavior
-   ↓
-Derived Status
-```
+### PlatformAdmin
 
-If the rules change, the status may change without modifying historical transactions.
+Not a salon user. No tenant. JWT `scp=platform`. Owns VIP lists and entitlements; dispatches the message queue.
 
----
+### Customer
 
-# 9. Service Domain
+Salon client. Identity: `firstName`, `lastName`, `phoneNumber`. Unique `(salonId, phoneNumber)`. Hard delete only with **no** transactions (including voided) and **no** message history; then visits/actions for that customer may be removed in the same tenant transaction. Audit/outbox rows remain.
 
-A salon provides services.
+### Visit
 
-Examples:
+Completed interaction: `visitedAt` (timestamptz, not in the future beyond small skew). **Not** a booking. No notes column. Optional link from transactions. Multiple visits at the same instant are allowed; duplicates are prevented by idempotency keys, not by unique visitedAt.
 
-```text
-Hair Color
-Hair Cut
-Nail
-Manicure
-Pedicure
-Makeup
-Facial
-Hair Treatment
-```
+### Service
 
-### Service attributes
+Named offering for line items. Unique `(salonId, name)`. `ACTIVE`/`INACTIVE`. Not inventory, not a price list. Amount is entered per sale.
 
-```text
-Service
-- id
-- salonId
-- name
-- category
-- active
-```
+### LedgerTransaction / TransactionItem
 
-Services belong to a salon in the MVP.
+See `domain/financial-domain.md`. Visit link optional. Items RESTRICT-bound to services.
+
+### Opportunity (not a table)
+
+Read-time interpretation: this customer currently qualifies for `REACTIVATION` | `CUSTOMER_RETURN` | `REVENUE_DECLINE`. Must not be stored as the ledger.
+
+### OpportunityAction
+
+Durable record that staff responded to a derived opportunity. Status `OPEN` | `COMPLETED` | `DISMISSED`. Sending a message does not complete it.
+
+`sourceVisitId` snapshots the customer's last visit at open time. It is **not** an FK. It identifies the episode so a new visit can open a new action of the same type. Unique protection: one OPEN per (salon, customer, type); one row per (salon, customer, type, sourceVisitId) via insert `ON CONFLICT DO NOTHING`.
+
+### MessageRequest / MessageDelivery
+
+See `docs/messaging-domain.md`. Intent vs fulfillment. Origins: opportunity (both `actionId` and `opportunityType` set), manual (both null), VIP (`vipRequestId` + recipient snapshot).
+
+### VIP
+
+- **VipTargetList** — platform list; `PENDING` → `ACTIVE`/`INACTIVE`; `IN_USE` while reserved.
+- **VipTargetContact** — name+phone on a list; not a Customer.
+- **VipSalonEntitlement** — admin-granted product flag; revoke is a timestamp, not a delete of history.
+- **VipRequest** — salon request: count 30/50/100, geographic range **text** (template only), statuses `AWAITING_SAMPLE_WORK` | `SUBMITTED` | `MANUAL_QUEUED` | `BALE_NOT_IMPLEMENTED` | `CANCELLED`. Reservation TTL 30 minutes.
+- **VipRequestRecipient** — immutable snapshot including generated Persian template.
+- **VipSampleWork** — metadata; bytes in MinIO.
+
+Quota: 100 contacts per salon per rolling 14 days, excluding `CANCELLED`.
+
+### OutboxEvent / AuditLog / IdempotencyRecord
+
+Infrastructure. Outbox is at-least-once transport. Most event types have **no side-effect consumer** (no-op, then PROCESSED). Worker executes Bale for `MessageDeliveryActivated` / legacy `MessageSendRequested`. Audit must not store message bodies or secrets.
 
 ---
 
-# 10. Visit Domain
+## 4. Intelligence rules (derived)
 
-A Visit represents a customer's interaction with the salon on a specific occasion.
+Defined in `@salon/shared` (`thresholds.ts`, `retention.ts`, `revenue.ts`):
 
-A visit may contain one or more services and/or transactions.
+- Default expected return: 35 days (or measured average positive whole-day gaps).
+- `AT_RISK` if days since last visit > expected; `INACTIVE` if > 2× expected.
+- `REACTIVATION` if overdue and visitCount ≥ 2; `CUSTOMER_RETURN` if overdue and one visit.
+- `FREQUENT` signal: ≥ 6 visits and average interval ≤ 28 days.
+- Revenue from `COMPLETED` transactions only; `REVENUE_DECLINE` when UTC-month trend is `DECREASING` (previous month must have ≥ 1 completed tx).
+- `HIGH_VALUE` not implemented.
 
-Conceptually:
-
-```text
-Customer
-    ↓
-Visit
-    ↓
-Services
-    ↓
-Transaction
-```
-
-### Visit attributes
-
-```text
-Visit
-- id
-- salonId
-- customerId
-- visitedAt
-- createdAt
-```
-
-Phase 4 records completed visits only. Visits do not store `serviceId`. When a completed visit includes amount received, `POST /visits/complete-with-sale` creates a Visit plus a linked COMPLETED Transaction and TransactionItem. A complimentary visit uses `POST /visits` and has no revenue.
-
-A visit is historical business data.
-
-It should not be confused with an appointment.
-
-> **Important: A Visit is NOT a Booking or Reservation.**
-
-The product does not currently manage future appointments.
+Salon-wide intelligence scans at most **5,000** newest customers (`INTELLIGENCE_CUSTOMER_CAP`).
 
 ---
 
-# 11. Transaction Domain
+## 5. Tenant boundary
 
-A Transaction represents money generated by a customer's salon activity.
-
-### Core attributes
-
-```text
-Transaction
-- id
-- salonId
-- customerId
-- visitId
-- amount
-- transactionDate
-- createdAt
-```
-
-The transaction is the source of truth for historical revenue.
+Everything salon-owned is keyed by `salon_id`. Platform tables (`platform_admins`, `vip_target_lists`, `vip_target_contacts`) are **not** salon CRM. VIP contacts must not leak into another salon's Customer list. MessageRequest for VIP still has `salon_id` of the requesting salon.
 
 ---
 
-# 12. Money Rules
-
-Money must never be represented using floating-point numbers.
-
-Avoid:
-
-```text
-float
-double
-```
-
-Prefer:
-
-```text
-BigDecimal
-```
-
-or a carefully designed minor-unit representation.
-
-The choice must be consistent throughout the application.
-
----
-
-# 13. Historical Data Principle
-
-The system must distinguish between:
-
-### Source Data
-
-```text
-Customer
-Visit
-Service
-Transaction
-Campaign
-```
-
-and:
-
-### Derived Data
-
-```text
-Customer Status
-Visit Frequency
-Average Spend
-Customer Segment
-Retention Score
-Opportunity
-```
-
-Derived data must never silently replace source data.
-
-Example:
-
-```text
-Transaction History
-        ↓
-Calculated Total Spend
-```
-
-not:
-
-```text
-Customer.totalSpend = independent source of truth
-```
-
-unless there is a deliberate architectural decision to maintain a materialized value.
-
----
-
-# 14. Customer Behavior
-
-Customer behavior is not necessarily a physical database entity in the MVP.
-
-It is a business concept derived from source data.
-
-Examples:
-
-```text
-Visit Frequency
-Average Return Interval
-Last Visit
-Total Visits
-Total Spend
-Average Transaction
-Service Preferences
-Recency
-```
-
-Conceptually:
-
-```text
-Customer
-   +
-Visits
-   +
-Transactions
-   +
-Services
-   ↓
-Customer Behavior
-```
-
-The intelligence layer consumes this behavior.
-
----
-
-# 15. Customer Intelligence Domain
-
-This is the heart of the product.
-
-Its responsibility is:
-
-> Turn historical customer behavior into understandable business insights.
-
-It should NOT:
-
-- Send messages
-- Modify customer history
-- Own transactions
-- Manage salon users
-- Manage suppliers
-
----
-
-# 16. Intelligence Pipeline
-
-The intelligence domain follows:
-
-```text
-Data
- ↓
-Behavior
- ↓
-Signal
- ↓
-Insight
- ↓
-Opportunity
- ↓
-Recommended Action
-```
-
-Example:
-
-```text
-Customer historically returns every 35 days
-        ↓
-Last visit was 52 days ago
-        ↓
-Expected return window passed
-        ↓
-Customer may be at risk
-        ↓
-Reactivation opportunity
-        ↓
-Recommend campaign
-```
-
----
-
-# 17. Retention Rule
-
-The first retention engine should be deterministic.
-
-Example:
-
-```text
-averageReturnInterval = 35 days
-lastVisit = 52 days ago
-
-if daysSinceLastVisit > expectedReturnInterval
-then customer may be overdue
-```
-
-The exact algorithm should be isolated behind a domain abstraction.
-
-For example:
-
-```text
-RetentionRule
-```
-
-This allows future implementations such as:
-
-```text
-RuleBasedRetention
-PredictiveRetention
-MLRetention
-```
-
-without rewriting the entire application.
-
----
-
-# 18. Opportunity
-
-An Opportunity represents a business action worth considering.
-
-Examples:
-
-```text
-REACTIVATION
-CROSS_SELL
-HIGH_VALUE_RETENTION
-CUSTOMER_RETURN
-```
-
-An opportunity should explain:
-
-1. Which customer/group is affected
-2. Why the opportunity exists
-3. What action is recommended
-4. When it was detected
-
-Example:
-
-```text
-Opportunity
-
-Type:
-REACTIVATION
-
-Customer:
-Sara Ahmadi
-
-Reason:
-Customer normally returns every 35 days.
-Last visit was 52 days ago.
-
-Recommended Action:
-Send reactivation message.
-```
-
-The system should favor explainability.
-
-Implemented operational follow-through is a separate `OpportunityAction` record (OPEN → COMPLETED or DISMISSED) keyed to the customer's last visit at the time of the Action (`sourceVisitId`). It does not persist the Opportunity itself and is not a campaign, message, visit, or transaction. COMPLETED is salon follow-through history. DISMISSED suppresses the current episode without counting as completed work. The derived opportunity may be presented again only after a new last visit that still matches intelligence rules.
-
----
-
-# 19. Opportunity Is Not an Action
-
-An important distinction:
-
-```text
-Opportunity ≠ Campaign
-```
-
-An opportunity identifies a possible business action.
-
-A campaign is the actual operational action.
-
-Example:
-
-```text
-Opportunity
-    ↓
-Salon reviews it
-    ↓
-Campaign created
-```
-
-This separation is important for future analytics.
-
----
-
-# 20. Campaign Domain
-
-The Campaign domain is responsible for turning business opportunities into customer communication.
-
-Responsibilities:
-
-- Campaign creation
-- Audience selection
-- Message content
-- Campaign status
-- Sending
-- Delivery tracking
-- Campaign history
-
-Campaign should not calculate customer retention scores.
-
----
-
-# 21. Campaign Lifecycle
-
-```text
-DRAFT
-  ↓
-READY
-  ↓
-SENDING
-  ↓
-SENT
-  ↓
-COMPLETED
-```
-
-Failure states may be added where needed.
-
-The exact state machine should remain simple.
-
----
-
-# 22. Campaign Recipient
-
-A Campaign targets customers.
-
-Conceptually:
-
-```text
-Campaign
-   ↓
-CampaignRecipient
-   ↓
-Customer
-```
-
-CampaignRecipient should capture operational state such as:
-
-```text
-PENDING
-SENT
-DELIVERED
-FAILED
-```
-
-This allows campaign performance to be measured.
-
----
-
-# 23. Messaging Boundary
-
-Campaign logic must not directly depend on an SMS provider.
-
-Use an abstraction:
-
-```text
-MessagingProvider
-```
-
-Possible future implementations:
-
-```text
-SmsProvider
-WhatsAppProvider
-EmailProvider
-```
-
-The campaign domain should depend on the capability:
-
-> Send customer communication
-
-rather than a specific vendor.
-
----
-
-# 24. Campaign Outcome
-
-The product should eventually connect communication to customer behavior.
-
-Conceptually:
-
-```text
-Campaign
-   ↓
-Message
-   ↓
-Customer
-   ↓
-Customer Returns
-   ↓
-Transaction
-```
-
-The MVP may use a simple attribution window.
-
-Example:
-
-```text
-Campaign sent
-       ↓
-Customer returns within defined period
-       ↓
-Transaction may be associated with campaign outcome
-```
-
-The exact attribution rules should be explicit and configurable later.
-
----
-
-# 25. Important Attribution Distinction
-
-The MVP may measure:
-
-> **Campaign → Customer → Revenue**
-
-It must NOT implement:
-
-> **Employee → Customer → Revenue → Employee Reward**
-
-The second flow belongs to the future Attribution & Incentive domain.
-
-This distinction must remain clear in the codebase.
-
----
-
-# 26. Product Price Intelligence Domain
-
-The Product Price Intelligence domain is intentionally lightweight.
-
-Its responsibility:
-
-> Provide useful beauty-product market price information to salons.
-
-Core concepts:
-
-```text
-Product
-ProductPrice
-```
-
----
-
-# 27. Product
-
-A Product represents a beauty-related product that salons may purchase.
-
-Examples:
-
-```text
-Hair Color
-Nail Gel
-Shampoo
-Hair Treatment
-Beauty Consumable
-```
-
-### Core attributes
-
-```text
-Product
-- id
-- name
-- category
-- brand
-- active
-```
-
----
-
-# 28. Product Price
-
-ProductPrice represents an observed market price.
-
-```text
-Product
-    ↓
-ProductPrice
-```
-
-Attributes:
-
-```text
-ProductPrice
-- id
-- productId
-- price
-- observedAt
-- source
-```
-
-Price history must be preserved.
-
-The system should not simply overwrite the previous price.
-
----
-
-# 29. Supplier Boundary
-
-Supplier is intentionally outside the primary MVP customer experience.
-
-A future supplier domain may contain:
-
-```text
-Supplier
-SupplierProduct
-SupplierPrice
-```
-
-But MVP should expose primarily:
-
-```text
-Product
- ↓
-Latest Price
- ↓
-Price History
-```
-
-The product should not become a marketplace yet.
-
----
-
-# 30. Future Attribution Domain
-
-The architecture should leave room for a future domain:
-
-```text
-Attribution
-```
-
-Its future responsibility may include:
-
-```text
-Customer Acquisition
-      ↓
-Employee Attribution
-      ↓
-Cross-Service Purchase
-      ↓
-Revenue Attribution
-      ↓
-Reward Calculation
-```
-
-This domain should be isolated from:
-
-```text
-Customer
-Transaction
-Campaign
-```
-
-as much as practical.
-
-The MVP should not contain:
-
-```text
-Reward
-Commission
-IncentiveRule
-EmployeeAttribution
-```
-
-unless explicitly required later.
-
----
-
-# 31. Core Relationships
-
-Conceptual relationship model:
-
-```text
-Salon
- ├── Users
- ├── Customers
- ├── Services
- ├── Visits
- ├── Transactions
- └── Campaigns
-
-Customer
- ├── Visits
- ├── Transactions
- └── CampaignRecipients
-
-Visit
- ├── Customer
- ├── Services
- └── Transactions
-
-Transaction
- ├── Customer
- └── Visit
-
-Customer
-      ↓
-Customer Behavior
-      ↓
-Customer Intelligence
-      ↓
-Opportunity
-      ↓
-Campaign
-
-Product
- └── ProductPrices
-```
-
----
-
-# 32. Domain Ownership
-
-Each business concept must have a clear owner.
-
-```text
-Customer
-→ Customer Domain
-
-Visit
-→ Visit Domain
-
-Transaction
-→ Transaction Domain
-
-Retention Calculation
-→ Intelligence Domain
-
-Opportunity
-→ Intelligence Domain
-
-Campaign
-→ Campaign Domain
-
-Messaging
-→ Messaging Boundary
-
-Product
-→ Product Domain
-
-Market Price
-→ Product Price Intelligence Domain
-```
-
-No domain should casually modify another domain's internal state.
-
----
-
-# 33. Domain Interaction
-
-Prefer explicit interactions.
-
-Example:
-
-```text
-TransactionCompleted
-        ↓
-Intelligence
-        ↓
-Customer Behavior Updated/Calculated
-        ↓
-New Opportunity
-```
-
-Another example:
-
-```text
-Opportunity
-        ↓
-Campaign
-        ↓
-Messaging Provider
-```
-
-Avoid:
-
-```text
-CustomerService
-    ↓
-TransactionService
-    ↓
-CampaignService
-    ↓
-MessagingService
-    ↓
-IntelligenceService
-```
-
-with every service directly calling every other service.
-
-That creates a tightly coupled system.
-
----
-
-# 34. Business Invariants
-
-The following rules must always hold.
-
-### Tenant Isolation
-
-Every business record belongs to a salon.
-
-A user cannot access another salon's data.
-
-### Customer Identity
-
-Within a salon, customer phone numbers should not create duplicate customer identities unless explicitly allowed.
-
-### Transaction Integrity
-
-A transaction must reference a valid customer and, where applicable, a valid visit.
-
-### Historical Integrity
-
-Historical transactions and visits must not be silently rewritten by intelligence calculations.
-
-### Campaign Safety
-
-A campaign must not send to customers who are not valid recipients.
-
-### Messaging Safety
-
-Consent and opt-out rules must be respected.
-
-### Price History
-
-A new product price observation must not destroy historical price information.
-
----
-
-# 35. Derived Data
-
-The following are derived concepts:
-
-```text
-Customer Status
-Last Visit
-Visit Frequency
-Average Transaction
-Total Spend
-Average Return Interval
-Retention Opportunity
-Customer Segment
-Campaign Outcome
-```
-
-The application should make it clear which values are calculated and which are authoritative.
-
----
-
-# 36. Query vs Command Thinking
-
-The application should distinguish between:
-
-### Commands
-
-Actions that change business state.
-
-Examples:
-
-```text
-CreateCustomer
-ImportCustomers
-RecordVisit
-CompleteVisitWithSale
-RecordTransaction
-CreateCampaign
-SendCampaign
-AddProductPrice
-```
-
-### Queries
-
-Actions that retrieve information.
-
-Examples:
-
-```text
-GetCustomer
-GetCustomerHistory
-GetAtRiskCustomers
-GetReactivationOpportunities
-GetCampaignResults
-GetLatestProductPrice
-```
-
-This distinction does not require implementing full CQRS.
-
-It is primarily a way to keep business responsibilities clear.
-
----
-
-# 37. Domain Events
-
-Useful MVP events include:
-
-```text
-CustomerCreated
-CustomerImported
-VisitCompleted
-TransactionCompleted
-CampaignCreated
-CampaignSent
-MessageDelivered
-CustomerReturned
-ProductPriceUpdated
-```
-
-Events should represent meaningful business facts.
-
-Avoid creating events for every trivial internal method call.
-
----
-
-# 38. Event Principle
-
-An event represents something that **already happened**.
-
-Good:
-
-```text
-TransactionCompleted
-```
-
-Bad:
-
-```text
-ShouldCalculateCustomerScore
-```
-
-The latter is an instruction, not a business fact.
-
----
-
-# 39. Intelligence Must Be Replaceable
-
-The first implementation may be:
-
-```text
-Rule-Based Intelligence
-```
-
-Future implementations may include:
-
-```text
-Predictive Models
-Machine Learning
-Advanced Recommendation Systems
-```
-
-The domain should therefore depend on business capabilities rather than a specific algorithm.
-
-Example conceptual interface:
-
-```text
-RetentionAnalyzer
-```
-
-Possible implementations:
-
-```text
-RuleBasedRetentionAnalyzer
-PredictiveRetentionAnalyzer
-```
-
-The rest of the application should not care which implementation is used.
-
----
-
-# 40. Domain Design Principle
-
-The most important domain relationship is:
-
-```text
-Customer History
-      ↓
-Customer Understanding
-      ↓
-Business Opportunity
-      ↓
-Business Action
-      ↓
-Business Outcome
-```
-
-The software should be designed around this business loop.
-
-Not around:
-
-```text
-Tables
-Controllers
-CRUD screens
-```
-
----
-
-# 41. Future Evolution
-
-The domain model should be able to evolve toward:
-
-```text
-                    ┌── Retention
-Customer Data ──────┼── Revenue Intelligence
-                    ├── Campaign Automation
-                    │
-                    └── Customer Insights
-
-Product Data ───────→ Price Intelligence
-                           ↓
-                      Marketplace
-                           ↓
-                       Suppliers
-
-Future:
-Customer Acquisition
-        ↓
-Attribution
-        ↓
-Incentives
-        ↓
-Rewards
-```
-
-Future domains should be added as independent business capabilities rather than embedded into the existing MVP entities.
-
----
-
-# 42. Final Domain Rule
-
-> **The domain model should represent the salon's business, not the database schema.**
-
-Before creating a new entity, ask:
-
-1. Is this a real business concept?
-2. Does it have its own business rules?
-3. Does it have its own lifecycle?
-4. Does it need independent ownership?
-5. Does it create meaningful business value?
-
-If not, prefer a value object, derived model, or simpler representation.
-
-The MVP should remain small enough for the entire domain model to be understood by one engineer.
+## 6. Invariants (selected)
+
+- No future visits (booking).
+- Phone canonical `09XXXXXXXXX`.
+- Opportunity context on MessageRequest is all-or-nothing (`action_id` null iff `opportunity_type` null).
+- Recipient origin XOR: salon customer **or** VIP snapshot, not both, not neither.
+- One daily-limit MessageRequest per salon+customer+Tehran date when `counts_toward_daily_limit`.
+- One MessageDelivery per MessageRequest.
+- Financial rows never cascade-deleted.
+- Intelligence must be recomputable from visits + completed transactions.

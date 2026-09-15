@@ -1,8 +1,11 @@
 # Financial domain semantics
 
-**Status:** Approved for implementation  
+**Status:** Implemented  
 **Currency:** IRR only  
-**Reporting time:** UTC calendar (not salon-local)
+**Reporting time:** UTC calendar (not salon-local)  
+**See also:** `domain/domain-model.md`, `architecture/data-model.md`
+
+Header vs line-item equality is **application-enforced** (no database CHECK that `SUM(items) = transactions.amount)`). Treat that as known debt, not as a missing product feature.
 
 ## Source of truth
 
