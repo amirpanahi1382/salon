@@ -37,7 +37,7 @@ describe('buildVisitsWorkbook', () => {
     expect(shared).toContain('نام مشتری');
 
     const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(buffer);
+    await workbook.xlsx.load(buffer as never);
     const sheet = workbook.getWorksheet(VISIT_EXPORT_SHEET_NAME);
     expect(sheet).toBeDefined();
     expect(sheet!.views?.[0]?.rightToLeft).toBe(true);
