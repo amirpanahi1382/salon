@@ -99,7 +99,11 @@ class ApiClient {
     );
   }
 
-  Future<dynamic> postForm(String path, FormData data) {
+  Future<dynamic> postForm(
+    String path,
+    FormData data, {
+    Map<String, String>? headers,
+  }) {
     return _send(
       () => _dio.post<dynamic>(
         path,
@@ -107,6 +111,7 @@ class ApiClient {
         options: Options(
           sendTimeout: const Duration(seconds: 90),
           receiveTimeout: const Duration(seconds: 90),
+          headers: headers,
         ),
       ),
     );

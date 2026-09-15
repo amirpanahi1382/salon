@@ -65,7 +65,52 @@ class ManualOutreachController extends Notifier<ManualOutreachState> {
     }
   }
 
+  void markSubmitted({
+    required String customerId,
+    required String messageRequestId,
+    required String status,
+    required DateTime requestedAt,
+  }) {
+    OutreachCustomerRef? selected;
+    for (final item in state.customers) {
+      if (item.id == customerId) {
+        selected = item;
+        break;
+      }
+    }
+    var fullName = selected?.fullName ?? '';
+    if (fullName.isEmpty) {
+      for (final item in state.requested) {
+        if (item.id == customerId) {
+          fullName = item.fullName;
+          break;
+        }
+      }
+    }
+    final submitted = OutreachCustomerRef(
+      id: customerId,
+      fullName: fullName,
+      messageRequestId: messageRequestId,
+      status: status,
+      requestedAt: requestedAt,
+    );
+    state = state.copyWith(
+      requested: [
+        submitted,
+        for (final item in state.requested)
+          if (item.id != customerId) item,
+      ],
+    );
+  }
+
+  void ingestRequested(List<OutreachCustomerRef> items) {
+    state = state.copyWith(requested: items);
+  }
+
   void remove(String customerId) {
+    if (state.requested.any((item) => item.id == customerId)) {
+      return;
+    }
     state = state.copyWith(
       customers: [
         for (final item in state.customers)

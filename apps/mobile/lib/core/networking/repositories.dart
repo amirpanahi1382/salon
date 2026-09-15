@@ -123,6 +123,17 @@ class CustomerRepository {
     return Customer.fromJson(data);
   }
 
+  Future<ItemPage<CustomerActivityItem>> listActivity(
+    String customerId, {
+    String? cursor,
+  }) async {
+    final data = await _api.get(
+      '/customers/$customerId/activity',
+      query: cursor == null ? null : {'cursor': cursor},
+    );
+    return parseItemPage(data, CustomerActivityItem.fromJson);
+  }
+
   Future<Customer> create({
     required String firstName,
     required String lastName,
@@ -450,6 +461,14 @@ class MessageRepository {
     return MessageDelivery.fromJson(data);
   }
 
+  Future<ItemPage<ManualOutreachRequest>> listManualOutreach({String? cursor}) async {
+    final data = await _api.get(
+      '/messages/manual-outreach',
+      query: cursor == null ? null : {'cursor': cursor},
+    );
+    return parseItemPage(data, ManualOutreachRequest.fromJson);
+  }
+
   Future<ItemPage<MessageDelivery>> listForCustomer(
     String customerId, {
     String? cursor,
@@ -607,5 +626,176 @@ class TransactionRepository {
     final data =
         await _api.post('/transactions/$id/void') as Map<String, dynamic>;
     return LedgerTransaction.fromJson(data);
+  }
+}
+
+class VipRepository {
+  VipRepository(this._api);
+
+  final ApiClient _api;
+
+  Future<VipCapability> capability() async {
+    return VipCapability.fromJson(asJsonMap(await _api.get('/vip/capability')));
+  }
+
+  Future<List<VipTargetList>> activeLists() async {
+    final data = asJsonMap(await _api.get('/vip/lists'));
+    final items = data['items'];
+    if (items is! List) {
+      return const [];
+    }
+    return items
+        .whereType<Map>()
+        .map((row) => VipTargetList.fromJson(asJsonMap(row)))
+        .toList();
+  }
+
+  Future<VipRequest> createRequest({
+    required String listId,
+    required int requestedCount,
+    required String geographicRange,
+    required String idempotencyKey,
+  }) async {
+    final data = asJsonMap(
+      await _api.post(
+        '/vip/requests',
+        data: {
+          'listId': listId,
+          'requestedCount': requestedCount,
+          'geographicRange': geographicRange,
+        },
+        headers: {'Idempotency-Key': idempotencyKey},
+      ),
+    );
+    return VipRequest.fromJson(data);
+  }
+
+  Future<VipRequest> getRequest(String id) async {
+    return VipRequest.fromJson(asJsonMap(await _api.get('/vip/requests/$id')));
+  }
+
+  Future<VipRequest> uploadSampleWork({
+    required String requestId,
+    required List<int> bytes,
+    required String filename,
+    required String idempotencyKey,
+  }) async {
+    final data = asJsonMap(
+        await _api.postForm(
+          '/vip/requests/$requestId/sample-works',
+          FormData.fromMap({
+            'file': MultipartFile.fromBytes(bytes, filename: filename),
+          }),
+          headers: {'Idempotency-Key': idempotencyKey},
+        ),
+    );
+    return VipRequest.fromJson(data);
+  }
+
+  Future<VipRequest> submit(String requestId, String idempotencyKey) async {
+    return VipRequest.fromJson(
+      asJsonMap(
+        await _api.post(
+          '/vip/requests/$requestId/submit',
+          headers: {'Idempotency-Key': idempotencyKey},
+        ),
+      ),
+    );
+  }
+
+  Future<ItemPage<VipTargetList>> adminLists({String? cursor}) async {
+    final data = await _api.get(
+      '/admin/vip/lists',
+      query: cursor == null ? null : {'cursor': cursor},
+    );
+    return parseItemPage(data, VipTargetList.fromJson);
+  }
+
+  Future<VipTargetList> adminGetList(String id) async {
+    return VipTargetList.fromJson(
+      asJsonMap(await _api.get('/admin/vip/lists/$id')),
+    );
+  }
+
+  Future<VipTargetList> importList(List<int> bytes, String filename, String key) async {
+    return VipTargetList.fromJson(
+      asJsonMap(
+        await _api.postForm(
+          '/admin/vip/lists/import',
+          FormData.fromMap({
+            'file': MultipartFile.fromBytes(bytes, filename: filename),
+          }),
+          headers: {'Idempotency-Key': key},
+        ),
+      ),
+    );
+  }
+
+  Future<VipTargetList> patchList(
+    String id, {
+    String? name,
+    String? availability,
+  }) async {
+    return VipTargetList.fromJson(
+      asJsonMap(
+        await _api.patch(
+          '/admin/vip/lists/$id',
+          data: {
+            'name': ?name,
+            'availability': ?availability,
+          },
+        ),
+      ),
+    );
+  }
+
+  Future<List<AdminSalonSummary>> adminSalons() async {
+    final data = asJsonMap(await _api.get('/admin/vip/salons'));
+    final items = data['items'];
+    if (items is! List) {
+      return const [];
+    }
+    return items
+        .whereType<Map>()
+        .map((row) => AdminSalonSummary.fromJson(asJsonMap(row)))
+        .toList();
+  }
+
+  Future<void> grantEntitlement(String salonId, String key) async {
+    await _api.post(
+      '/admin/vip/entitlements',
+      data: {'salonId': salonId},
+      headers: {'Idempotency-Key': key},
+    );
+  }
+
+  Future<List<int>> exportRequest(String requestId) {
+    return _api.getBytes('/admin/vip/requests/$requestId/export');
+  }
+
+  Future<List<int>> downloadAdminImage(String imageId) {
+    return _api.getBytes('/admin/vip/sample-works/$imageId');
+  }
+
+  Future<VipRequest> dispatchManual(String requestId, String key) async {
+    return VipRequest.fromJson(
+      asJsonMap(
+        await _api.post(
+          '/admin/vip/requests/$requestId/dispatch-manual',
+          headers: {'Idempotency-Key': key},
+        ),
+      ),
+    );
+  }
+
+  Future<VipRequest> dispatchBale(String requestId, String key) async {
+    return VipRequest.fromJson(
+      asJsonMap(
+        await _api.post(
+          '/admin/vip/requests/$requestId/dispatch-bale',
+          headers: {'Idempotency-Key': key},
+        ),
+      ),
+    );
   }
 }

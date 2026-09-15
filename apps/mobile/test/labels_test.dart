@@ -26,9 +26,41 @@ void main() {
     expect(AppStrings.sendBaleMessage, 'ارسال پیام در بله');
     expect(AppStrings.selectMultipleCustomers, 'انتخاب چند مشتری');
     expect(AppStrings.sendMessageAction, 'ارسال پیام');
+    expect(AppStrings.vipSendMessage, 'ارسال پیام vip');
+    expect(AppStrings.vipAdminNav, 'ارسال VIP');
+    expect(AppStrings.vipSalonRange, 'محدوده سالن');
+    expect(AppStrings.vipExcelExport, 'خروجی اکسل');
+    expect(AppStrings.vipSendManual, 'ارسال دستی');
+    expect(AppStrings.vipSendBale, 'ارسال با بله');
+    expect(AppStrings.vipRename, 'تغییر نام');
+    expect(AppStrings.vipAddSample, 'افزودن نمونه کار');
+    expect(AppStrings.vipNeedsReview, 'نیازمند بررسی');
+    expect(AppStrings.vipMaxSamples, 'حداکثر ۳ نمونه کار مجاز است.');
+    expect(
+      AppStrings.vipQuotaExhausted,
+      contains('سهمیه ۱۴روزه'),
+    );
+    expect(AppStrings.vipSampleProgress(1), 'نمونه کارها: 1 از 3');
+    expect(
+      localizeUserFacingMessage('VIP 14-day quota would be exceeded'),
+      AppStrings.vipQuotaExhausted,
+    );
+    expect(
+      localizeUserFacingMessage('At most 3 sample-work images are allowed'),
+      AppStrings.vipMaxSamples,
+    );
+    expect(
+      localizeUserFacingMessage('Bale is not available for VIP outreach'),
+      AppStrings.vipBaleNotImplemented,
+    );
     expect(AppStrings.createSuitableMessage, 'ایجاد پیام مناسب');
     expect(messageStatusLabel('SENT'), 'پیام با موفقیت ارسال شد.');
     expect(messageStatusLabel('QUEUED'), AppStrings.messageQueued);
+    expect(messageStatusLabel('DISPATCHED'), AppStrings.outreachStatusDispatched);
+    expect(outreachLifecycleLabel('QUEUED'), AppStrings.outreachStatusQueued);
+    expect(outreachLifecycleLabel('DISPATCHED'), AppStrings.outreachStatusDispatched);
+    expect(outreachLifecycleLabel('SENT'), AppStrings.outreachStatusSent);
+    expect(outreachLifecycleLabel('FAILED'), AppStrings.outreachStatusFailed);
     expect(messageFailureLabel('NOT_CONFIGURED'), contains('بله'));
     expect(maskCustomerPhone('09121111111'), '0912****111');
   });

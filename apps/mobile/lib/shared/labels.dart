@@ -1,4 +1,5 @@
 import 'jalali.dart';
+import 'models/models.dart';
 
 class AppStrings {
   static const appName = 'توجه سالن';
@@ -121,10 +122,47 @@ class AppStrings {
       'اقدام یعنی شما کاری کردید. مراجعه یا درآمد جدا ثبت می‌شود.';
   static const why = 'چرا';
   static const visitHistory = 'سابقه مراجعه';
+  static const customerActivity = 'فعالیت مشتری';
+  static const visitCompletedActivity = 'بازدید انجام شده';
+  static const purchaseRecordedActivity = 'خرید ثبت شده';
+  static const outreachStatusQueued = 'در صف ارسال';
+  static const outreachStatusDispatched = 'ارسال به اجرا';
+  static const outreachStatusSent = 'ارسال شد';
+  static const outreachStatusFailed = 'ارسال ناموفق';
   static const logout = 'خروج';
   static const retry = 'تلاش مجدد';
   static const searchCustomers = 'جستجو با نام یا موبایل';
   static const addCustomer = 'افزودن مشتری';
+  static const vipSendMessage = 'ارسال پیام vip';
+  static const vipAdminNav = 'ارسال VIP';
+  static const vipInUse = 'در حال استفاده';
+  static const vipActive = 'فعال';
+  static const vipInactive = 'غیرفعال';
+  static const vipPending = 'در انتظار';
+  static const vipSalonRange = 'محدوده سالن';
+  static const vipSampleWorks = 'نمونه کارها';
+  static const vipExcelExport = 'خروجی اکسل';
+  static const vipSendManual = 'ارسال دستی';
+  static const vipSendBale = 'ارسال با بله';
+  static const vipBaleNotImplemented = 'ارسال با بله برای VIP هنوز فعال نشده است.';
+  static const vipChooseCount = 'تعداد پیام را انتخاب کنید';
+  static const vipGrant = 'فعال‌سازی VIP سالن';
+  static const vipImportExcel = 'ورود لیست از اکسل';
+  static const vipRename = 'تغییر نام';
+  static const vipRenameSuccess = 'نام لیست به‌روز شد.';
+  static const vipRenameRequired = 'نام لیست را وارد کنید.';
+  static const vipNoLists = 'هنوز لیست VIP ساخته نشده.';
+  static const vipUploadSamples = 'نمونه کارها را بارگذاری کنید';
+  static const vipAddSample = 'افزودن نمونه کار';
+  static const vipSubmit = 'ثبت درخواست';
+  static const vipNeedEntitlement = 'ارسال VIP برای این سالن فعال نیست.';
+  static const vipNeedsReview = 'نیازمند بررسی';
+  static const vipMaxSamples = 'حداکثر ۳ نمونه کار مجاز است.';
+  static const vipQuotaExhausted =
+      'سهمیه ۱۴روزه ارسال VIP تمام شده است. درخواست جدیدی نمی‌توان ثبت کرد.';
+  static const vipSampleNeeded = 'نمونه کار لازم است';
+
+  static String vipSampleProgress(int count) => 'نمونه کارها: $count از 3';
   static const customerCreated = 'مشتری با موفقیت اضافه شد';
   static const backToCustomers = 'بازگشت به مشتریان';
   static const importFromExcel = 'ورود اطلاعات از اکسل';
@@ -336,6 +374,11 @@ String localizeUserFacingMessage(String message) {
     'Action was already dismissed': 'این فرصت قبلاً نادیده گرفته شده.',
     'Action was already completed': 'اقدام این فرصت قبلاً ثبت شده.',
     'Export failed': 'خروجی اکسل گرفته نشد.',
+    'VIP 14-day quota would be exceeded': AppStrings.vipQuotaExhausted,
+    'At most 3 sample-work images are allowed': AppStrings.vipMaxSamples,
+    'Bale is not available for VIP outreach': AppStrings.vipBaleNotImplemented,
+    'This VIP request reservation has expired':
+        'مهلت رزرو این درخواست VIP تمام شده است.',
     'Service not found': 'این خدمت پیدا نشد.',
     'Name is missing': 'نام وارد نشده.',
     'Phone is missing': 'شماره موبایل وارد نشده.',
@@ -448,14 +491,60 @@ String messageStatusLabel(String status) {
     case 'QUEUED':
     case 'PENDING':
     case 'PROCESSING':
-    case 'DISPATCHED':
       return AppStrings.messageQueued;
+    case 'DISPATCHED':
+      return AppStrings.outreachStatusDispatched;
     case 'SENT':
       return AppStrings.messageSent;
     case 'FAILED':
       return AppStrings.messageFailed;
     default:
       return 'وضعیت پیام';
+  }
+}
+
+String outreachLifecycleLabel(String status) {
+  switch (status) {
+    case 'QUEUED':
+    case 'PENDING':
+    case 'PROCESSING':
+      return AppStrings.outreachStatusQueued;
+    case 'DISPATCHED':
+      return AppStrings.outreachStatusDispatched;
+    case 'SENT':
+      return AppStrings.outreachStatusSent;
+    case 'FAILED':
+      return AppStrings.outreachStatusFailed;
+    default:
+      return AppStrings.outreachStatusQueued;
+  }
+}
+
+String customerActivityTitle(CustomerActivityItem item) {
+  switch (item.type) {
+    case 'MANUAL_MESSAGE':
+      return AppStrings.sendMessageAction;
+    case 'VISIT':
+      return AppStrings.visitCompletedActivity;
+    case 'TRANSACTION':
+      return AppStrings.purchaseRecordedActivity;
+    case 'OPPORTUNITY_ACTION':
+      return opportunityLabel(item.opportunityType);
+    default:
+      return AppStrings.customerActivity;
+  }
+}
+
+String customerActivitySubtitle(CustomerActivityItem item) {
+  switch (item.type) {
+    case 'MANUAL_MESSAGE':
+      return outreachLifecycleLabel(item.status ?? 'QUEUED');
+    case 'OPPORTUNITY_ACTION':
+      return actionStatusLabel(item.status ?? 'OPEN');
+    case 'TRANSACTION':
+      return item.status == 'VOIDED' ? AppStrings.failed : formatJalaliDateTime(item.occurredAt);
+    default:
+      return formatJalaliDateTime(item.occurredAt);
   }
 }
 

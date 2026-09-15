@@ -173,12 +173,12 @@ class _OutreachMessageComposerState extends ConsumerState<OutreachMessageCompose
         _busy = false;
         _status = messageStatusLabel(delivery.status);
       });
-      if (delivery.status == 'QUEUED' ||
-          delivery.status == 'SENT' ||
-          delivery.status == 'PENDING' ||
-          delivery.status == 'PROCESSING') {
-        ref.read(manualOutreachSelectionProvider.notifier).remove(widget.customerId);
-      }
+      ref.read(manualOutreachSelectionProvider.notifier).markSubmitted(
+            customerId: widget.customerId,
+            messageRequestId: delivery.id,
+            status: delivery.status,
+            requestedAt: delivery.createdAt,
+          );
     } catch (error) {
       if (!mounted) {
         return;
@@ -232,19 +232,19 @@ class _OutreachMessageComposerState extends ConsumerState<OutreachMessageCompose
                     _EditableChipField(
                       label: AppStrings.outreachFieldCustomerName,
                       controller: _customerName,
-                      enabled: !_busy,
+                      enabled: !_busy && _status == null,
                     ),
                     const _FixedLine('عزیز برای'),
                     _EditableChipField(
                       label: AppStrings.outreachFieldDate,
                       controller: _date,
-                      enabled: !_busy,
+                      enabled: !_busy && _status == null,
                     ),
                     const _FixedLine('ساعت'),
                     _EditableChipField(
                       label: AppStrings.outreachFieldTime,
                       controller: _time,
-                      enabled: !_busy,
+                      enabled: !_busy && _status == null,
                       keyboardType: TextInputType.datetime,
                       textDirection: TextDirection.ltr,
                     ),
@@ -252,7 +252,7 @@ class _OutreachMessageComposerState extends ConsumerState<OutreachMessageCompose
                     _EditableChipField(
                       label: AppStrings.outreachFieldDiscount,
                       controller: _discount,
-                      enabled: !_busy,
+                      enabled: !_busy && _status == null,
                       keyboardType: TextInputType.number,
                       textDirection: TextDirection.ltr,
                       inputFormatters: [FilteringTextInputFormatter.digitsOnly],
@@ -261,13 +261,13 @@ class _OutreachMessageComposerState extends ConsumerState<OutreachMessageCompose
                     _EditableChipField(
                       label: AppStrings.outreachFieldSalonName,
                       controller: _salonName,
-                      enabled: !_busy,
+                      enabled: !_busy && _status == null,
                     ),
                     const _FixedLine('در خدمت شما باشیم! برای رزرو این وقت با شماره'),
                     _EditableChipField(
                       label: AppStrings.outreachFieldSalonPhone,
                       controller: _salonPhone,
-                      enabled: !_busy,
+                      enabled: !_busy && _status == null,
                       keyboardType: TextInputType.phone,
                       textDirection: TextDirection.ltr,
                     ),
@@ -277,7 +277,7 @@ class _OutreachMessageComposerState extends ConsumerState<OutreachMessageCompose
                       width: double.infinity,
                       height: AppTokens.buttonHeight,
                       child: FilledButton(
-                        onPressed: _busy ? null : _confirmAndSend,
+                        onPressed: _busy || _status != null ? null : _confirmAndSend,
                         child: _busy
                             ? const SizedBox(
                                 height: 18,

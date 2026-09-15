@@ -9,6 +9,7 @@ import 'package:salon_mobile/core/networking/api_client.dart';
 import 'package:salon_mobile/core/networking/repositories.dart';
 import 'package:salon_mobile/core/state/providers.dart';
 import 'package:salon_mobile/core/storage/session_store.dart';
+import 'package:salon_mobile/features/admin/admin_message_queue_screen.dart';
 import 'package:salon_mobile/features/auth/auth_screens.dart';
 import 'package:salon_mobile/features/customers/customer_screens.dart';
 import 'package:salon_mobile/features/dashboard/dashboard_screen.dart';
@@ -237,11 +238,13 @@ class FakeActionRepository extends ActionRepository {
 }
 
 class FakeMessageRepository extends MessageRepository {
-  FakeMessageRepository({this.next}) : super(_client());
+  FakeMessageRepository({this.next, this.manualOutreach = const []}) : super(_client());
 
   MessageDelivery? next;
+  List<ManualOutreachRequest> manualOutreach;
   Object? error;
   int sendCalls = 0;
+  int listManualCalls = 0;
   String? lastText;
 
   @override
@@ -284,7 +287,7 @@ class FakeMessageRepository extends MessageRepository {
     if (error != null) {
       throw error!;
     }
-    return next ??
+    final created = next ??
         MessageDelivery(
           id: 'm-manual',
           customerId: customerId,
@@ -296,6 +299,27 @@ class FakeMessageRepository extends MessageRepository {
           createdAt: DateTime.utc(2026, 9, 9),
           updatedAt: DateTime.utc(2026, 9, 9),
         );
+    manualOutreach = [
+      ManualOutreachRequest(
+        customerId: customerId,
+        customerName: 'Sara Ahmadi',
+        messageRequestId: created.id,
+        status: created.status,
+        requestedAt: created.createdAt,
+        updatedAt: created.updatedAt,
+      ),
+      ...manualOutreach.where((item) => item.customerId != customerId),
+    ];
+    return created;
+  }
+
+  @override
+  Future<ItemPage<ManualOutreachRequest>> listManualOutreach({String? cursor}) async {
+    listManualCalls += 1;
+    if (error != null) {
+      throw error!;
+    }
+    return ItemPage(items: manualOutreach, hasMore: false);
   }
 
   @override
@@ -322,6 +346,30 @@ class FakeMessageRepository extends MessageRepository {
   }
 }
 
+class FakeVipRepository extends VipRepository {
+  FakeVipRepository({this.entitled = false}) : super(_client());
+
+  final bool entitled;
+
+  @override
+  Future<VipCapability> capability() async {
+    return VipCapability(
+      entitled: entitled,
+      remainingQuota: 100,
+      usedQuota: 0,
+    );
+  }
+}
+
+class FakeAdminMessageRepository extends AdminMessageRepository {
+  FakeAdminMessageRepository(this.item) : super(_client());
+
+  final AdminQueueItem item;
+
+  @override
+  Future<AdminQueueItem> getById(String id) async => item;
+}
+
 class FakeCustomerRepository extends CustomerRepository {
   FakeCustomerRepository({this.items = const [], this.pageSize}) : super(_client());
 
@@ -329,6 +377,7 @@ class FakeCustomerRepository extends CustomerRepository {
   Object? error;
   int? pageSize;
   int listCalls = 0;
+  List<CustomerActivityItem> activity = const [];
   String? lastQuery;
   String? lastCursor;
 
@@ -368,6 +417,17 @@ class FakeCustomerRepository extends CustomerRepository {
       throw error!;
     }
     return items.firstWhere((item) => item.id == id);
+  }
+
+  @override
+  Future<ItemPage<CustomerActivityItem>> listActivity(
+    String customerId, {
+    String? cursor,
+  }) async {
+    if (error != null) {
+      throw error!;
+    }
+    return ItemPage(items: activity, hasMore: false);
   }
 
   @override
@@ -820,6 +880,7 @@ void main() {
           customerRepositoryProvider.overrideWithValue(
             FakeCustomerRepository(),
           ),
+          vipRepositoryProvider.overrideWithValue(FakeVipRepository()),
         ],
         child: const MaterialApp(home: CustomersScreen()),
       ),
@@ -848,6 +909,7 @@ void main() {
       ProviderScope(
         overrides: [
           customerRepositoryProvider.overrideWithValue(repo),
+          vipRepositoryProvider.overrideWithValue(FakeVipRepository()),
         ],
         child: const MaterialApp(home: CustomersScreen()),
       ),
@@ -866,6 +928,7 @@ void main() {
           customerRepositoryProvider.overrideWithValue(
             FakeCustomerRepository(items: [_customer()]),
           ),
+          vipRepositoryProvider.overrideWithValue(FakeVipRepository()),
         ],
         child: const MaterialApp(home: CustomersScreen()),
       ),
@@ -881,6 +944,7 @@ void main() {
           customerRepositoryProvider.overrideWithValue(
             FakeCustomerRepository()..error = const NetworkException(),
           ),
+          vipRepositoryProvider.overrideWithValue(FakeVipRepository()),
         ],
         child: const MaterialApp(home: CustomersScreen()),
       ),
@@ -898,6 +962,7 @@ void main() {
             FakeIntelligenceRepository(opportunitiesData: [_opportunity()]),
           ),
           actionRepositoryProvider.overrideWithValue(FakeActionRepository()),
+          vipRepositoryProvider.overrideWithValue(FakeVipRepository()),
         ],
         child: const MaterialApp(home: OpportunitiesScreen()),
       ),
@@ -916,6 +981,7 @@ void main() {
             FakeIntelligenceRepository(opportunitiesData: [_opportunity()]),
           ),
           actionRepositoryProvider.overrideWithValue(actions),
+          vipRepositoryProvider.overrideWithValue(FakeVipRepository()),
         ],
         child: const MaterialApp(home: OpportunitiesScreen()),
       ),
@@ -943,6 +1009,7 @@ void main() {
         overrides: [
           intelligenceRepositoryProvider.overrideWithValue(intel),
           actionRepositoryProvider.overrideWithValue(actions),
+          vipRepositoryProvider.overrideWithValue(FakeVipRepository()),
         ],
         child: const MaterialApp(home: OpportunitiesScreen()),
       ),
@@ -977,6 +1044,7 @@ void main() {
         overrides: [
           intelligenceRepositoryProvider.overrideWithValue(intel),
           actionRepositoryProvider.overrideWithValue(actions),
+          vipRepositoryProvider.overrideWithValue(FakeVipRepository()),
         ],
         child: const MaterialApp(home: OpportunitiesScreen()),
       ),
@@ -999,6 +1067,7 @@ void main() {
             FakeIntelligenceRepository(opportunitiesData: [_opportunity()]),
           ),
           actionRepositoryProvider.overrideWithValue(actions),
+          vipRepositoryProvider.overrideWithValue(FakeVipRepository()),
         ],
         child: const MaterialApp(home: OpportunitiesScreen()),
       ),
@@ -1137,7 +1206,10 @@ void main() {
     );
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [customerRepositoryProvider.overrideWithValue(repo)],
+        overrides: [
+          customerRepositoryProvider.overrideWithValue(repo),
+          vipRepositoryProvider.overrideWithValue(FakeVipRepository()),
+        ],
         child: MaterialApp.router(routerConfig: router),
       ),
     );
@@ -1230,6 +1302,7 @@ void main() {
           customerRepositoryProvider.overrideWithValue(
             FakeCustomerRepository(items: [_customer()]),
           ),
+          vipRepositoryProvider.overrideWithValue(FakeVipRepository()),
           authControllerProvider.overrideWith(_SignedInAuth.new),
         ],
         child: const MaterialApp(home: VisitsScreen()),
@@ -1276,6 +1349,7 @@ void main() {
           customerRepositoryProvider.overrideWithValue(
             FakeCustomerRepository(items: [_customer()]),
           ),
+          vipRepositoryProvider.overrideWithValue(FakeVipRepository()),
           authControllerProvider.overrideWith(_StaffAuth.new),
         ],
         child: const MaterialApp(home: VisitsScreen()),
@@ -1329,6 +1403,7 @@ void main() {
           customerRepositoryProvider.overrideWithValue(
             FakeCustomerRepository(items: [_customer()]),
           ),
+          vipRepositoryProvider.overrideWithValue(FakeVipRepository()),
           authControllerProvider.overrideWith(_SignedInAuth.new),
         ],
         child: const MaterialApp(home: VisitsScreen()),
@@ -1380,6 +1455,7 @@ void main() {
           customerRepositoryProvider.overrideWithValue(
             FakeCustomerRepository(items: [_customer()]),
           ),
+          vipRepositoryProvider.overrideWithValue(FakeVipRepository()),
           visitExcelSaverProvider.overrideWithValue(({
             required bytes,
             required fileName,
@@ -1430,6 +1506,7 @@ void main() {
           customerRepositoryProvider.overrideWithValue(
             FakeCustomerRepository(items: [_customer()]),
           ),
+          vipRepositoryProvider.overrideWithValue(FakeVipRepository()),
           visitExcelSaverProvider.overrideWithValue(({
             required bytes,
             required fileName,
@@ -1470,6 +1547,7 @@ void main() {
           customerRepositoryProvider.overrideWithValue(
             FakeCustomerRepository(items: [_customer()]),
           ),
+          vipRepositoryProvider.overrideWithValue(FakeVipRepository()),
           authControllerProvider.overrideWith(_SignedInAuth.new),
         ],
         child: const MaterialApp(home: VisitsScreen()),
@@ -1532,6 +1610,7 @@ void main() {
       ProviderScope(
         overrides: [
           customerRepositoryProvider.overrideWithValue(repo),
+          vipRepositoryProvider.overrideWithValue(FakeVipRepository()),
           intelligenceRepositoryProvider.overrideWith(
             (ref) => FakeIntelligenceRepository(
               customerIntelligence: _intelligence(),
@@ -1907,6 +1986,7 @@ void main() {
       ProviderScope(
         overrides: [
           customerRepositoryProvider.overrideWithValue(repo),
+          vipRepositoryProvider.overrideWithValue(FakeVipRepository()),
           intelligenceRepositoryProvider.overrideWith(
             (ref) => FakeIntelligenceRepository(
               customerIntelligence: _intelligence(),
@@ -2147,10 +2227,12 @@ void main() {
               ],
             ),
           ),
+          vipRepositoryProvider.overrideWithValue(FakeVipRepository()),
           intelligenceRepositoryProvider.overrideWithValue(
             FakeIntelligenceRepository(opportunitiesData: [_opportunity()]),
           ),
           actionRepositoryProvider.overrideWithValue(FakeActionRepository()),
+          messageRepositoryProvider.overrideWithValue(FakeMessageRepository()),
         ],
         child: MaterialApp.router(routerConfig: router),
       ),
@@ -2185,6 +2267,7 @@ void main() {
           customerRepositoryProvider.overrideWithValue(
             FakeCustomerRepository(items: [_customer()]),
           ),
+          vipRepositoryProvider.overrideWithValue(FakeVipRepository()),
           salonRepositoryProvider.overrideWithValue(FakeSalonRepository()),
           messageRepositoryProvider.overrideWithValue(messages),
         ],
@@ -2222,6 +2305,7 @@ void main() {
           customerRepositoryProvider.overrideWithValue(
             FakeCustomerRepository(items: [_customer()]),
           ),
+          vipRepositoryProvider.overrideWithValue(FakeVipRepository()),
           salonRepositoryProvider.overrideWithValue(FakeSalonRepository()),
           messageRepositoryProvider.overrideWithValue(
             FakeMessageRepository()
@@ -2248,6 +2332,300 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, 'ارسال پیام').last);
     await tester.pumpAndSettle();
     expect(find.text('برای این مشتری امروز قبلاً پیام ثبت شده است.'), findsOneWidget);
+  });
+
+  testWidgets('submitted outreach stays visible, disabled, and shows server status', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 1800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    final messages = FakeMessageRepository();
+    final router = GoRouter(
+      initialLocation: '/customers',
+      routes: [
+        GoRoute(
+          path: '/customers',
+          builder: (context, state) => const CustomersScreen(),
+        ),
+        GoRoute(
+          path: '/opportunities',
+          builder: (context, state) => const OpportunitiesScreen(),
+        ),
+      ],
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          customerRepositoryProvider.overrideWithValue(
+            FakeCustomerRepository(
+              items: [
+                _customer(),
+                Customer(
+                  id: 'c2',
+                  firstName: 'Maryam',
+                  lastName: 'Karimi',
+                  phoneNumber: '09121111111',
+                  createdAt: DateTime.utc(2026, 1, 2),
+                  updatedAt: DateTime.utc(2026, 1, 2),
+                ),
+              ],
+            ),
+          ),
+          vipRepositoryProvider.overrideWithValue(FakeVipRepository()),
+          salonRepositoryProvider.overrideWithValue(FakeSalonRepository()),
+          intelligenceRepositoryProvider.overrideWithValue(
+            FakeIntelligenceRepository(opportunitiesData: [_opportunity()]),
+          ),
+          actionRepositoryProvider.overrideWithValue(FakeActionRepository()),
+          messageRepositoryProvider.overrideWithValue(messages),
+        ],
+        child: MaterialApp.router(routerConfig: router),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('انتخاب چند مشتری'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(CheckboxListTile).at(0));
+    await tester.tap(find.byType(CheckboxListTile).at(1));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('ارسال پیام'));
+    await tester.pumpAndSettle();
+    expect(find.text('ایجاد پیام مناسب'), findsNWidgets(2));
+
+    await tester.tap(find.text('ایجاد پیام مناسب').first);
+    await tester.pumpAndSettle();
+    await tester.enterText(find.widgetWithText(TextField, 'ساعت'), '18:00');
+    await tester.enterText(
+      find.widgetWithText(TextField, 'تخفیف (هزار تومان)'),
+      '200',
+    );
+    await tester.tap(
+      find.descendant(
+        of: find.byType(OutreachMessageComposer),
+        matching: find.widgetWithText(FilledButton, 'ارسال پیام'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'ارسال پیام').last);
+    await tester.pumpAndSettle();
+    expect(find.text('پیام در صف ارسال قرار گرفت.'), findsOneWidget);
+    Navigator.of(tester.element(find.text('پیام در صف ارسال قرار گرفت.'))).pop();
+    await tester.pumpAndSettle();
+
+    expect(find.text('Sara Ahmadi'), findsOneWidget);
+    expect(find.text('Maryam Karimi'), findsOneWidget);
+    expect(find.text('در صف ارسال'), findsOneWidget);
+    expect(find.text('ایجاد پیام مناسب'), findsOneWidget);
+
+    await tester.tap(find.text('Sara Ahmadi'), warnIfMissed: false);
+    await tester.pumpAndSettle();
+    expect(find.byType(OutreachMessageComposer), findsNothing);
+
+    final callsBeforeReload = messages.listManualCalls;
+    await tester.tap(find.widgetWithText(ChoiceChip, 'همه'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(ChoiceChip, 'ارسال پیام'));
+    await tester.pumpAndSettle();
+    expect(find.text('Sara Ahmadi'), findsOneWidget);
+    expect(find.text('Maryam Karimi'), findsOneWidget);
+    expect(find.text('در صف ارسال'), findsOneWidget);
+    expect(find.text('ایجاد پیام مناسب'), findsOneWidget);
+    expect(messages.listManualCalls, greaterThan(callsBeforeReload));
+  });
+
+  testWidgets('outreach list shows dispatched status from the server after reload', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    final messages = FakeMessageRepository(
+      manualOutreach: [
+        ManualOutreachRequest(
+          customerId: 'c1',
+          customerName: 'Sara Ahmadi',
+          messageRequestId: 'm1',
+          status: 'DISPATCHED',
+          requestedAt: DateTime.utc(2026, 9, 11),
+          updatedAt: DateTime.utc(2026, 9, 11),
+        ),
+        ManualOutreachRequest(
+          customerId: 'c2',
+          customerName: 'Maryam Karimi',
+          messageRequestId: 'm2',
+          status: 'QUEUED',
+          requestedAt: DateTime.utc(2026, 9, 11),
+          updatedAt: DateTime.utc(2026, 9, 11),
+        ),
+        ManualOutreachRequest(
+          customerId: 'c3',
+          customerName: 'Neda Rezaei',
+          messageRequestId: 'm3',
+          status: 'SENT',
+          requestedAt: DateTime.utc(2026, 9, 11),
+          updatedAt: DateTime.utc(2026, 9, 11),
+        ),
+      ],
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          intelligenceRepositoryProvider.overrideWithValue(
+            FakeIntelligenceRepository(opportunitiesData: [_opportunity()]),
+          ),
+          actionRepositoryProvider.overrideWithValue(FakeActionRepository()),
+          messageRepositoryProvider.overrideWithValue(messages),
+          vipRepositoryProvider.overrideWithValue(FakeVipRepository()),
+        ],
+        child: const MaterialApp(home: OpportunitiesScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(ChoiceChip, 'ارسال پیام'));
+    await tester.pumpAndSettle();
+    expect(find.text('Sara Ahmadi'), findsOneWidget);
+    expect(find.text('Maryam Karimi'), findsOneWidget);
+    expect(find.text('Neda Rezaei'), findsOneWidget);
+    expect(find.text('ارسال به اجرا'), findsOneWidget);
+    expect(find.text('در صف ارسال'), findsOneWidget);
+    expect(find.text('ارسال شد'), findsOneWidget);
+    expect(find.text('ایجاد پیام مناسب'), findsNothing);
+    expect(messages.listManualCalls, greaterThan(0));
+  });
+
+  testWidgets('customer profile shows manual outreach activity status', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          customerRepositoryProvider.overrideWithValue(
+            FakeCustomerRepository(items: [_customer()])
+              ..activity = [
+                CustomerActivityItem(
+                  id: 'm1',
+                  type: 'MANUAL_MESSAGE',
+                  occurredAt: DateTime.utc(2026, 9, 11, 7, 5),
+                  createdAt: DateTime.utc(2026, 9, 11, 7, 5),
+                  status: 'QUEUED',
+                ),
+              ],
+          ),
+          intelligenceRepositoryProvider.overrideWithValue(
+            FakeIntelligenceRepository(customerIntelligence: _intelligence()),
+          ),
+          actionRepositoryProvider.overrideWithValue(FakeActionRepository()),
+          visitRepositoryProvider.overrideWithValue(FakeVisitListRepository()),
+        ],
+        child: const MaterialApp(home: CustomerDetailScreen(customerId: 'c1')),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('فعالیت مشتری'), findsOneWidget);
+    expect(find.text('ارسال پیام'), findsOneWidget);
+    expect(find.textContaining('در صف ارسال'), findsOneWidget);
+  });
+
+  testWidgets('non-VIP salon hides customer VIP send action', (tester) async {
+    tester.view.physicalSize = const Size(800, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          customerRepositoryProvider.overrideWithValue(
+            FakeCustomerRepository(items: [_customer()]),
+          ),
+          vipRepositoryProvider.overrideWithValue(FakeVipRepository()),
+        ],
+        child: const MaterialApp(home: CustomersScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('ارسال پیام vip'), findsNothing);
+  });
+
+  testWidgets('entitled salon shows customer VIP send action', (tester) async {
+    tester.view.physicalSize = const Size(800, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          customerRepositoryProvider.overrideWithValue(
+            FakeCustomerRepository(items: [_customer()]),
+          ),
+          vipRepositoryProvider.overrideWithValue(FakeVipRepository(entitled: true)),
+        ],
+        child: const MaterialApp(home: CustomersScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('ارسال پیام vip'), findsOneWidget);
+  });
+
+  testWidgets('non-VIP salon hides opportunities VIP chip', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          intelligenceRepositoryProvider.overrideWithValue(
+            FakeIntelligenceRepository(opportunitiesData: [_opportunity()]),
+          ),
+          actionRepositoryProvider.overrideWithValue(FakeActionRepository()),
+          vipRepositoryProvider.overrideWithValue(FakeVipRepository()),
+        ],
+        child: const MaterialApp(home: OpportunitiesScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('ارسال پیام vip'), findsNothing);
+  });
+
+  testWidgets('entitled salon shows opportunities VIP chip', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          intelligenceRepositoryProvider.overrideWithValue(
+            FakeIntelligenceRepository(opportunitiesData: [_opportunity()]),
+          ),
+          actionRepositoryProvider.overrideWithValue(FakeActionRepository()),
+          vipRepositoryProvider.overrideWithValue(FakeVipRepository(entitled: true)),
+        ],
+        child: const MaterialApp(home: OpportunitiesScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('ارسال پیام vip'), findsOneWidget);
+  });
+
+  testWidgets('VIP queue items hide Bale and keep manual send', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          adminMessageRepositoryProvider.overrideWithValue(
+            FakeAdminMessageRepository(
+              AdminQueueItem(
+                id: 'q1',
+                salonId: 's1',
+                salonName: 'Rose Salon',
+                customerId: '',
+                customerName: 'VIP recipient',
+                customerPhone: '0912****111',
+                messageText: 'سلام',
+                requestedAt: DateTime.utc(2026, 9, 11),
+                status: 'QUEUED',
+                attempts: 0,
+                providerReady: true,
+                vipRequestId: 'vip-1',
+              ),
+            ),
+          ),
+        ],
+        child: const MaterialApp(home: AdminMessageDetailSheet(itemId: 'q1')),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('ارسال با بله'), findsNothing);
+    expect(find.text('ارسال دستی'), findsOneWidget);
   });
 }
 

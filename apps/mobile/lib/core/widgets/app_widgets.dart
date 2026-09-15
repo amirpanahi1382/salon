@@ -63,14 +63,15 @@ class AppSurface extends StatelessWidget {
 }
 
 class SectionHeader extends StatelessWidget {
-  const SectionHeader(this.title, {super.key});
+  const SectionHeader(this.title, {super.key, this.padding});
 
   final String title;
+  final EdgeInsetsGeometry? padding;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: AppTokens.space12),
+      padding: padding ?? const EdgeInsets.only(bottom: AppTokens.space12),
       child: Text(title, style: Theme.of(context).textTheme.titleMedium),
     );
   }
@@ -83,7 +84,16 @@ class InsightHero extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AppSurface(tone: AppSurfaceTone.hero, child: child);
+    return AppSurface(
+      tone: AppSurfaceTone.hero,
+      padding: const EdgeInsets.fromLTRB(
+        AppTokens.space16,
+        AppTokens.space12,
+        AppTokens.space16,
+        AppTokens.space12,
+      ),
+      child: child,
+    );
   }
 }
 
@@ -96,54 +106,94 @@ class MetricWidget extends StatelessWidget {
     required this.value,
     this.valueDirection,
     this.size = MetricSize.standard,
+    this.align = CrossAxisAlignment.start,
+    this.emphasize = false,
   });
 
   final String label;
   final Object value;
   final TextDirection? valueDirection;
   final MetricSize size;
+  final CrossAxisAlignment align;
+  final bool emphasize;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final valueStyle = switch (size) {
-      MetricSize.hero => theme.textTheme.headlineMedium,
-      MetricSize.standard => theme.textTheme.headlineSmall,
-      MetricSize.compact => theme.textTheme.titleLarge,
-    };
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          '$value',
-          style: valueStyle,
-          textDirection: valueDirection,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
+      MetricSize.hero => theme.textTheme.headlineMedium?.copyWith(
+          fontSize: 40,
+          height: 0.95,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 0.4,
+          color: emphasize ? AppTokens.accent : null,
+          leadingDistribution: TextLeadingDistribution.even,
         ),
-        const SizedBox(height: AppTokens.space4),
-        Text(label, style: theme.textTheme.bodySmall),
-      ],
+      MetricSize.standard => theme.textTheme.headlineSmall,
+      MetricSize.compact => theme.textTheme.headlineSmall?.copyWith(
+          fontSize: 22,
+          height: 1.1,
+          fontWeight: FontWeight.w500,
+          leadingDistribution: TextLeadingDistribution.even,
+        ),
+    };
+    final valueText = Text(
+      '$value',
+      style: valueStyle,
+      textDirection: valueDirection,
+      textAlign: align == CrossAxisAlignment.center
+          ? TextAlign.center
+          : TextAlign.start,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      textHeightBehavior: const TextHeightBehavior(
+        applyHeightToFirstAscent: false,
+        applyHeightToLastDescent: false,
+      ),
+    );
+    return Semantics(
+      label: '$label $value',
+      child: Column(
+        crossAxisAlignment: align,
+        children: [
+          valueText,
+          const SizedBox(height: AppTokens.space4),
+          Text(
+            label,
+            style: theme.textTheme.bodySmall,
+            textAlign: align == CrossAxisAlignment.center
+                ? TextAlign.center
+                : TextAlign.start,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ),
     );
   }
 }
 
 class MetricRow extends StatelessWidget {
-  const MetricRow({super.key, required this.children});
+  const MetricRow({
+    super.key,
+    required this.children,
+    this.evenColumns = false,
+  });
 
   final List<Widget> children;
+  final bool evenColumns;
 
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final wide = constraints.maxWidth >= 520;
+        final wide = evenColumns || constraints.maxWidth >= 520;
         if (wide) {
           return Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               for (var i = 0; i < children.length; i++) ...[
-                if (i > 0) const SizedBox(width: AppTokens.space16),
+                if (i > 0) const SizedBox(width: AppTokens.space12),
                 Expanded(child: children[i]),
               ],
             ],
@@ -166,6 +216,46 @@ class MetricRow extends StatelessWidget {
   }
 }
 
+class QuietStat extends StatelessWidget {
+  const QuietStat({
+    super.key,
+    required this.label,
+    required this.value,
+  });
+
+  final String label;
+  final Object value;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Semantics(
+      label: '$label $value',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: theme.textTheme.bodySmall,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: AppTokens.space4),
+          Text(
+            '$value',
+            style: theme.textTheme.headlineSmall?.copyWith(
+              fontSize: 20,
+              height: 1,
+              fontWeight: FontWeight.w500,
+              leadingDistribution: TextLeadingDistribution.even,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class OpportunityPreview extends StatelessWidget {
   const OpportunityPreview({
     super.key,
@@ -176,6 +266,7 @@ class OpportunityPreview extends StatelessWidget {
     required this.action,
     this.footer,
     this.onTap,
+    this.framed = true,
   });
 
   final String name;
@@ -185,37 +276,52 @@ class OpportunityPreview extends StatelessWidget {
   final String action;
   final Widget? footer;
   final VoidCallback? onTap;
+  final bool framed;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return AppSurface(
-      tone: AppSurfaceTone.base,
-      onTap: onTap,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            opportunityLabel(type),
-            style: theme.textTheme.titleSmall?.copyWith(color: AppTokens.accent),
-          ),
-          const SizedBox(height: AppTokens.space8),
-          Text(name, style: theme.textTheme.titleMedium),
-          const SizedBox(height: AppTokens.space8),
-          StatusBadge(status: status),
+    final content = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          opportunityLabel(type),
+          style: theme.textTheme.titleSmall?.copyWith(color: AppTokens.accent),
+        ),
+        const SizedBox(height: AppTokens.space8),
+        Text(name, style: theme.textTheme.titleMedium),
+        const SizedBox(height: AppTokens.space8),
+        StatusBadge(status: status),
+        const SizedBox(height: AppTokens.space12),
+        Text(localizeIntelligenceCopy(reason)),
+        const SizedBox(height: AppTokens.space8),
+        Text(
+          '${AppStrings.recommended}: ${localizeIntelligenceCopy(action)}',
+          style: theme.textTheme.bodySmall,
+        ),
+        if (footer != null) ...[
           const SizedBox(height: AppTokens.space12),
-          Text(localizeIntelligenceCopy(reason)),
-          const SizedBox(height: AppTokens.space12),
-          Text(
-            '${AppStrings.recommended}: ${localizeIntelligenceCopy(action)}',
-            style: theme.textTheme.bodySmall,
-          ),
-          if (footer != null) ...[
-            const SizedBox(height: AppTokens.space12),
-            footer!,
-          ],
+          footer!,
         ],
-      ),
+      ],
+    );
+    if (framed) {
+      return AppSurface(
+        tone: AppSurfaceTone.base,
+        onTap: onTap,
+        child: content,
+      );
+    }
+    final padded = Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppTokens.space16),
+      child: content,
+    );
+    if (onTap == null) {
+      return padded;
+    }
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(onTap: onTap, child: padded),
     );
   }
 }
@@ -416,32 +522,56 @@ class EmptyStateView extends StatelessWidget {
     required this.body,
     this.action,
     this.icon = Icons.info_outline,
+    this.compact = false,
   });
 
   final String title;
   final String body;
   final Widget? action;
   final IconData icon;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.all(AppTokens.space24),
+      padding: EdgeInsets.symmetric(
+        vertical: compact ? AppTokens.space8 : AppTokens.space24,
+        horizontal: compact ? 0 : AppTokens.space24,
+      ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: compact
+            ? CrossAxisAlignment.start
+            : CrossAxisAlignment.center,
         children: [
-          Icon(icon, size: 28, color: AppTokens.textSecondary),
-          const SizedBox(height: AppTokens.space12),
-          Text(
-            title,
-            style: Theme.of(context).textTheme.titleMedium,
-            textAlign: TextAlign.center,
-          ),
+          if (compact)
+            Row(
+              children: [
+                Icon(icon, size: 20, color: AppTokens.textSecondary),
+                const SizedBox(width: AppTokens.space8),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                ),
+              ],
+            )
+          else ...[
+            Icon(icon, size: 28, color: AppTokens.textSecondary),
+            const SizedBox(height: AppTokens.space12),
+            Text(
+              title,
+              style: theme.textTheme.titleMedium,
+              textAlign: TextAlign.center,
+            ),
+          ],
           const SizedBox(height: AppTokens.space8),
           Text(
             body,
-            style: const TextStyle(color: AppColors.muted),
-            textAlign: TextAlign.center,
+            style: theme.textTheme.bodySmall,
+            textAlign: compact ? TextAlign.start : TextAlign.center,
           ),
           if (action != null) ...[
             const SizedBox(height: AppTokens.space16),
@@ -540,6 +670,92 @@ class AppCard extends StatelessWidget {
   }
 }
 
+IconData opportunityTypeIcon(String type) {
+  return switch (type) {
+    'REVENUE_DECLINE' => Icons.trending_down,
+    'REACTIVATION' => Icons.replay,
+    'CUSTOMER_RETURN' => Icons.keyboard_return,
+    _ => Icons.flag_outlined,
+  };
+}
+
+Color opportunityTypeEmphasis(String type) {
+  return switch (type) {
+    'REVENUE_DECLINE' => AppTokens.warning,
+    _ => AppTokens.accent,
+  };
+}
+
+class OpportunityTypeMark extends StatelessWidget {
+  const OpportunityTypeMark({super.key, required this.type});
+
+  final String type;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = opportunityTypeEmphasis(type);
+    final label = opportunityLabel(type);
+    return Semantics(
+      label: label,
+      child: Row(
+        children: [
+          Icon(opportunityTypeIcon(type), size: AppTokens.iconSize, color: color),
+          const SizedBox(width: AppTokens.space8),
+          Expanded(
+            child: Text(
+              label,
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    color: color,
+                    fontWeight: FontWeight.w600,
+                  ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class ActionStatusMark extends StatelessWidget {
+  const ActionStatusMark({super.key, required this.status});
+
+  final String status;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = switch (status) {
+      'COMPLETED' => AppTokens.success,
+      'DISMISSED' => AppTokens.textSecondary,
+      'OPEN' => AppTokens.accent,
+      _ => AppTokens.textSecondary,
+    };
+    final icon = switch (status) {
+      'COMPLETED' => Icons.check_circle_outline,
+      'DISMISSED' => Icons.remove_circle_outline,
+      'OPEN' => Icons.flag_outlined,
+      _ => Icons.circle_outlined,
+    };
+    final label = actionStatusLabel(status);
+    return Semantics(
+      label: label,
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: color),
+          const SizedBox(width: AppTokens.space8),
+          Flexible(
+            child: Text(
+              label,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: color),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class OpportunityCard extends StatelessWidget {
   const OpportunityCard({
     super.key,
@@ -550,6 +766,7 @@ class OpportunityCard extends StatelessWidget {
     required this.action,
     this.footer,
     this.onTap,
+    this.emphasize = false,
   });
 
   final String name;
@@ -559,40 +776,80 @@ class OpportunityCard extends StatelessWidget {
   final String action;
   final Widget? footer;
   final VoidCallback? onTap;
+  final bool emphasize;
 
   @override
   Widget build(BuildContext context) {
-    return AppCard(
-      onTap: onTap,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(name, style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              StatusBadge(status: status),
-              Text(
-                opportunityLabel(type),
-                style: const TextStyle(fontWeight: FontWeight.w600),
-              ),
-            ],
+    final theme = Theme.of(context);
+    final startSide = Directionality.of(context) == TextDirection.rtl
+        ? Border(right: BorderSide(
+            color: opportunityTypeEmphasis(type).withValues(alpha: 0.75),
+            width: 2,
+          ))
+        : Border(left: BorderSide(
+            color: opportunityTypeEmphasis(type).withValues(alpha: 0.75),
+            width: 2,
+          ));
+    final content = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        OpportunityTypeMark(type: type),
+        const SizedBox(height: AppTokens.space12),
+        Text(
+          name,
+          style: theme.textTheme.titleLarge,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+        const SizedBox(height: AppTokens.space8),
+        StatusBadge(status: status),
+        const SizedBox(height: AppTokens.space12),
+        Text(localizeIntelligenceCopy(reason)),
+        const SizedBox(height: AppTokens.space12),
+        DecoratedBox(
+          decoration: BoxDecoration(border: startSide),
+          child: Padding(
+            padding: const EdgeInsetsDirectional.only(start: AppTokens.space12),
+            child: Text(
+              '${AppStrings.recommended}: ${localizeIntelligenceCopy(action)}',
+              style: theme.textTheme.bodyMedium,
+            ),
           ),
-          const SizedBox(height: 12),
-          Text(localizeIntelligenceCopy(reason)),
-          const SizedBox(height: 12),
-          Text(
-            '${AppStrings.recommended}: ${localizeIntelligenceCopy(action)}',
-            style: const TextStyle(color: AppColors.muted, height: 1.6),
-          ),
-          if (footer != null) ...[
-            const SizedBox(height: 12),
-            footer!,
-          ],
+        ),
+        if (footer != null) ...[
+          const SizedBox(height: AppTokens.space16),
+          footer!,
         ],
-      ),
+      ],
+    );
+    if (emphasize) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: AppTokens.space16),
+        child: AppSurface(
+          tone: type == 'REVENUE_DECLINE'
+              ? AppSurfaceTone.elevated
+              : AppSurfaceTone.hero,
+          onTap: onTap,
+          child: content,
+        ),
+      );
+    }
+    final padded = Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppTokens.space16),
+      child: content,
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (onTap == null)
+          padded
+        else
+          Material(
+            color: Colors.transparent,
+            child: InkWell(onTap: onTap, child: padded),
+          ),
+        const Divider(),
+      ],
     );
   }
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/state/providers.dart';
 import '../../core/theme/app_tokens.dart';
@@ -72,6 +73,10 @@ class _AdminMessageQueueScreenState extends ConsumerState<AdminMessageQueueScree
       appBar: AppBar(
         title: const Text(AppStrings.adminQueueTitle),
         actions: [
+          TextButton(
+            onPressed: () => context.go('/admin/vip'),
+            child: const Text(AppStrings.vipAdminNav),
+          ),
           IconButton(
             onPressed: () => ref.read(authControllerProvider.notifier).logout(),
             icon: const Icon(Icons.logout),
@@ -221,14 +226,17 @@ class _AdminMessageDetailSheetState extends ConsumerState<AdminMessageDetailShee
                     },
                   ),
                   if (item.mode == null) ...[
-                    const SizedBox(height: 8),
-                    AppButton(
-                      label: AppStrings.selectBale,
-                      loading: _busy,
-                      onPressed: () => _run(
-                        () => ref.read(adminMessageRepositoryProvider).selectBale(item.id),
+                    if (item.vipRequestId == null) ...[
+                      const SizedBox(height: 8),
+                      AppButton(
+                        label: AppStrings.selectBale,
+                        loading: _busy,
+                        onPressed: () => _run(
+                          () =>
+                              ref.read(adminMessageRepositoryProvider).selectBale(item.id),
+                        ),
                       ),
-                    ),
+                    ],
                     const SizedBox(height: 8),
                     AppButton(
                       label: AppStrings.selectManual,
@@ -249,7 +257,9 @@ class _AdminMessageDetailSheetState extends ConsumerState<AdminMessageDetailShee
                       ),
                     ),
                   ],
-                  if (item.mode == 'BALE' && item.status != 'SENT') ...[
+                  if (item.mode == 'BALE' &&
+                      item.status != 'SENT' &&
+                      item.vipRequestId == null) ...[
                     const SizedBox(height: 8),
                     AppButton(
                       label: 'تلاش دوباره بله',

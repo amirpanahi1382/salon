@@ -135,14 +135,23 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       onChanged: _load,
       child: Scaffold(
         appBar: AppBar(
+          toolbarHeight: 64,
+          titleSpacing: AppTokens.space16,
           title: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Text(_salon?.name ?? AppStrings.appName),
+              Text(
+                _salon?.name ?? AppStrings.appName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
               if (user?.name != null)
                 Text(
                   user!.name!,
                   style: theme.textTheme.bodySmall,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
             ],
           ),
@@ -168,22 +177,29 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                     AppTokens.space32,
                   ),
                   children: [
-                    Text(
-                      AppStrings.attentionQuestion,
-                      style: theme.textTheme.displaySmall,
-                    ),
-                    const SizedBox(height: AppTokens.space20),
                     InsightHero(
                       child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
+                          Text(
+                            AppStrings.attentionQuestion,
+                            style: theme.textTheme.displaySmall?.copyWith(
+                              fontSize: 22,
+                              height: 1.4,
+                            ),
+                          ),
+                          const SizedBox(height: AppTokens.space8),
                           MetricWidget(
                             label: AppStrings.metricAtRisk,
                             value: toPersianDigits(summary.atRisk.toString()),
                             size: MetricSize.hero,
+                            emphasize: true,
                           ),
-                          const SizedBox(height: AppTokens.space20),
+                          const SizedBox(height: AppTokens.space8),
+                          const Divider(),
+                          const SizedBox(height: AppTokens.space8),
                           MetricRow(
+                            evenColumns: true,
                             children: [
                               MetricWidget(
                                 label: AppStrings.metricInactive,
@@ -212,89 +228,49 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                         ],
                       ),
                     ),
-                    const SizedBox(height: AppTokens.space32),
-                    const SectionHeader(AppStrings.metricRevenueThisMonth),
-                    MetricWidget(
-                      label: AppStrings.rial,
-                      value: summary.revenueThisUtcMonth,
-                      valueDirection: TextDirection.ltr,
-                      size: MetricSize.standard,
+                    const SizedBox(height: AppTokens.space24),
+                    _RevenueBlock(
+                      monthAmount: summary.revenueThisUtcMonth,
+                      completedAmount: summary.totalRevenue,
                     ),
-                    const SizedBox(height: AppTokens.space8),
-                    Text(
-                      AppStrings.metricCompletedRevenue,
-                      style: theme.textTheme.bodySmall,
-                    ),
-                    LtrText(
-                      '${summary.totalRevenue} ${AppStrings.rial}',
-                      style: theme.textTheme.bodySmall,
-                    ),
-                    const SizedBox(height: AppTokens.space8),
-                    Text(
-                      AppStrings.revenueUtcNote,
-                      style: theme.textTheme.bodySmall,
-                    ),
-                    const SizedBox(height: AppTokens.space32),
-                    Wrap(
-                      spacing: AppTokens.space24,
-                      runSpacing: AppTokens.space12,
-                      children: [
-                        _QuietMetric(
-                          label: AppStrings.metricTotalCustomers,
-                          value: summary.customers,
-                        ),
-                        _QuietMetric(
-                          label: AppStrings.metricActive,
-                          value: summary.active,
-                        ),
-                        _QuietMetric(
-                          label: AppStrings.metricNew,
-                          value: summary.newCustomers,
-                        ),
-                        _QuietMetric(
-                          label: statusLabel('RETURNING'),
-                          value: summary.returning,
-                        ),
-                        _QuietMetric(
-                          label: signalLabel('FREQUENT'),
-                          value: summary.frequent,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: AppTokens.space32),
+                    const SizedBox(height: AppTokens.space24),
+                    const SectionHeader(AppStrings.customerStatusHeading),
+                    _CustomerStatusRow(summary: summary),
+                    const SizedBox(height: AppTokens.space24),
                     const SectionHeader(AppStrings.customersNeedingAttention),
                     if (_opportunities.isEmpty)
                       const EmptyStateView(
                         title: AppStrings.caughtUpTitle,
                         body: AppStrings.caughtUpBody,
                         icon: Icons.check_circle_outline,
+                        compact: true,
                       )
                     else
-                      ..._opportunities.map(
-                        (item) => Padding(
-                          padding: const EdgeInsets.only(
-                            bottom: AppTokens.space16,
-                          ),
-                          child: OpportunityPreview(
-                            name: item.fullName,
-                            status: item.status,
-                            type: item.type,
-                            reason: item.reason,
-                            action: item.recommendedAction,
+                      ...[
+                        for (var i = 0; i < _opportunities.length; i++) ...[
+                          if (i > 0) const Divider(),
+                          OpportunityPreview(
+                            framed: false,
+                            name: _opportunities[i].fullName,
+                            status: _opportunities[i].status,
+                            type: _opportunities[i].type,
+                            reason: _opportunities[i].reason,
+                            action: _opportunities[i].recommendedAction,
                             footer: OpportunityActionBar(
-                              customerId: item.customerId,
-                              opportunityType: item.type,
-                              customerName: item.fullName,
+                              customerId: _opportunities[i].customerId,
+                              opportunityType: _opportunities[i].type,
+                              customerName: _opportunities[i].fullName,
                               openAction: _openActions[opportunityActionKey(
-                                item.customerId,
-                                item.type,
+                                _opportunities[i].customerId,
+                                _opportunities[i].type,
                               )],
                             ),
-                            onTap: () =>
-                                context.push('/customers/${item.customerId}'),
+                            onTap: () => context.push(
+                              '/customers/${_opportunities[i].customerId}',
+                            ),
                           ),
-                        ),
-                      ),
+                        ],
+                      ],
                     if (_opportunitiesHasMore)
                       PagedFooter(loading: _loadingMore),
                   ],
@@ -308,17 +284,99 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   }
 }
 
-class _QuietMetric extends StatelessWidget {
-  const _QuietMetric({required this.label, required this.value});
+class _RevenueBlock extends StatelessWidget {
+  const _RevenueBlock({
+    required this.monthAmount,
+    required this.completedAmount,
+  });
 
-  final String label;
-  final int value;
+  final String monthAmount;
+  final String completedAmount;
 
   @override
   Widget build(BuildContext context) {
-    return Text(
-      '${toPersianDigits(value.toString())} $label',
-      style: Theme.of(context).textTheme.bodySmall,
+    final theme = Theme.of(context);
+    return Semantics(
+      container: true,
+      label:
+          '${AppStrings.metricRevenueThisMonth} $monthAmount ${AppStrings.rial}. ${AppStrings.metricCompletedRevenue} $completedAmount',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SectionHeader(
+            AppStrings.metricRevenueThisMonth,
+            padding: EdgeInsets.only(bottom: AppTokens.space8),
+          ),
+          LtrText(
+            monthAmount,
+            style: theme.textTheme.headlineSmall?.copyWith(
+              fontSize: 28,
+              height: 1.15,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: AppTokens.space4),
+          Text(AppStrings.rial, style: theme.textTheme.bodySmall),
+          const SizedBox(height: AppTokens.space12),
+          Text(
+            AppStrings.metricCompletedRevenue,
+            style: theme.textTheme.bodySmall,
+          ),
+          const SizedBox(height: AppTokens.space4),
+          LtrText(completedAmount, style: theme.textTheme.titleSmall),
+        ],
+      ),
+    );
+  }
+}
+
+class _CustomerStatusRow extends StatelessWidget {
+  const _CustomerStatusRow({required this.summary});
+
+  final IntelligenceSummary summary;
+
+  @override
+  Widget build(BuildContext context) {
+    final stats = [
+      QuietStat(
+        label: AppStrings.metricTotalCustomers,
+        value: toPersianDigits(summary.customers.toString()),
+      ),
+      QuietStat(
+        label: AppStrings.metricActive,
+        value: toPersianDigits(summary.active.toString()),
+      ),
+      QuietStat(
+        label: AppStrings.metricNew,
+        value: toPersianDigits(summary.newCustomers.toString()),
+      ),
+      QuietStat(
+        label: statusLabel('RETURNING'),
+        value: toPersianDigits(summary.returning.toString()),
+      ),
+      QuietStat(
+        label: signalLabel('FREQUENT'),
+        value: toPersianDigits(summary.frequent.toString()),
+      ),
+    ];
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final columns = constraints.maxWidth >= 560
+            ? 5
+            : constraints.maxWidth >= 360
+                ? 3
+                : 2;
+        final gap = AppTokens.space12;
+        final width =
+            (constraints.maxWidth - gap * (columns - 1)) / columns;
+        return Wrap(
+          spacing: gap,
+          runSpacing: AppTokens.space16,
+          children: [
+            for (final stat in stats) SizedBox(width: width, child: stat),
+          ],
+        );
+      },
     );
   }
 }

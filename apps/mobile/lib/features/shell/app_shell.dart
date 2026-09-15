@@ -37,6 +37,7 @@ class AppShell extends StatelessWidget {
         ),
         child: NavigationBar(
           selectedIndex: _index(context),
+          labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
           destinations: const [
             NavigationDestination(
               icon: Icon(Icons.wb_sunny_outlined),

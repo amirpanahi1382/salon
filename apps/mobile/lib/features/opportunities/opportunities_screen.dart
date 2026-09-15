@@ -8,7 +8,9 @@ import '../../core/widgets/app_widgets.dart';
 import '../../shared/labels.dart';
 import '../../shared/models/models.dart';
 import '../outreach/manual_outreach_selection.dart';
+import '../outreach/manual_outreach_state.dart';
 import '../outreach/outreach_message_composer.dart';
+import '../vip/salon_vip_section.dart';
 import 'opportunity_action_bar.dart';
 
 class OpportunitiesScreen extends ConsumerStatefulWidget {
@@ -22,6 +24,7 @@ class OpportunitiesScreen extends ConsumerStatefulWidget {
 class _OpportunitiesScreenState extends ConsumerState<OpportunitiesScreen> {
   String? _type;
   bool _outreach = false;
+  bool _vip = false;
   List<Opportunity> _items = const [];
   String? _nextCursor;
   bool _hasMore = false;
@@ -34,6 +37,7 @@ class _OpportunitiesScreenState extends ConsumerState<OpportunitiesScreen> {
   bool _openActionsHasMore = false;
   Object? _error;
   bool _loading = true;
+  bool _vipEntitled = false;
 
   @override
   void initState() {
@@ -60,6 +64,10 @@ class _OpportunitiesScreenState extends ConsumerState<OpportunitiesScreen> {
       final openActions = await ref
           .read(actionRepositoryProvider)
           .list(status: 'OPEN');
+      var entitled = false;
+      try {
+        entitled = (await ref.read(vipRepositoryProvider).capability()).entitled;
+      } catch (_) {}
       if (!mounted) {
         return;
       }
@@ -77,6 +85,10 @@ class _OpportunitiesScreenState extends ConsumerState<OpportunitiesScreen> {
         };
         _openActionsCursor = openActions.nextCursor;
         _openActionsHasMore = openActions.hasMore;
+        _vipEntitled = entitled;
+        if (!entitled && _vip) {
+          _vip = false;
+        }
         _loading = false;
       });
     } catch (error) {
@@ -157,6 +169,7 @@ class _OpportunitiesScreenState extends ConsumerState<OpportunitiesScreen> {
   @override
   Widget build(BuildContext context) {
     final outreach = ref.watch(manualOutreachSelectionProvider);
+    final openVip = ref.watch(vipSectionOpenProvider);
     if (outreach.focusOutreachTab && !_outreach) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) {
@@ -165,6 +178,20 @@ class _OpportunitiesScreenState extends ConsumerState<OpportunitiesScreen> {
         ref.read(manualOutreachSelectionProvider.notifier).consumeFocus();
         setState(() {
           _outreach = true;
+          _vip = false;
+          _type = null;
+        });
+      });
+    }
+    if (openVip && !_vip) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) {
+          return;
+        }
+        ref.read(vipSectionOpenProvider.notifier).setOpen(false);
+        setState(() {
+          _vip = true;
+          _outreach = false;
           _type = null;
         });
       });
@@ -189,9 +216,10 @@ class _OpportunitiesScreenState extends ConsumerState<OpportunitiesScreen> {
                 children: [
                   _TypeFilterChip(
                     label: AppStrings.all,
-                    selected: !_outreach && _type == null,
+                    selected: !_outreach && !_vip && _type == null,
                     onSelected: () {
                       _outreach = false;
+                      _vip = false;
                       _type = null;
                       _load();
                     },
@@ -202,33 +230,49 @@ class _OpportunitiesScreenState extends ConsumerState<OpportunitiesScreen> {
                     onSelected: () {
                       setState(() {
                         _outreach = true;
+                        _vip = false;
                         _type = null;
                       });
                     },
                   ),
+                  if (_vipEntitled)
+                    _TypeFilterChip(
+                      label: AppStrings.vipSendMessage,
+                      selected: _vip,
+                      onSelected: () {
+                        setState(() {
+                          _vip = true;
+                          _outreach = false;
+                          _type = null;
+                        });
+                      },
+                    ),
                   _TypeFilterChip(
                     label: AppStrings.reactivation,
-                    selected: !_outreach && _type == 'REACTIVATION',
+                    selected: !_outreach && !_vip && _type == 'REACTIVATION',
                     onSelected: () {
                       _outreach = false;
+                      _vip = false;
                       _type = 'REACTIVATION';
                       _load();
                     },
                   ),
                   _TypeFilterChip(
                     label: AppStrings.customerReturn,
-                    selected: !_outreach && _type == 'CUSTOMER_RETURN',
+                    selected: !_outreach && !_vip && _type == 'CUSTOMER_RETURN',
                     onSelected: () {
                       _outreach = false;
+                      _vip = false;
                       _type = 'CUSTOMER_RETURN';
                       _load();
                     },
                   ),
                   _TypeFilterChip(
                     label: AppStrings.revenueDecline,
-                    selected: !_outreach && _type == 'REVENUE_DECLINE',
+                    selected: !_outreach && !_vip && _type == 'REVENUE_DECLINE',
                     onSelected: () {
                       _outreach = false;
+                      _vip = false;
                       _type = 'REVENUE_DECLINE';
                       _load();
                     },
@@ -237,7 +281,9 @@ class _OpportunitiesScreenState extends ConsumerState<OpportunitiesScreen> {
               ),
             ),
             Expanded(
-              child: _outreach
+              child: _vip
+                  ? const SalonVipSection()
+                  : _outreach
                   ? const _OutreachList()
                   : _loading
                   ? const LoadingSkeleton(lines: 5)
@@ -349,12 +395,112 @@ class _OpportunitiesScreenState extends ConsumerState<OpportunitiesScreen> {
   }
 }
 
-class _OutreachList extends ConsumerWidget {
+class _OutreachList extends ConsumerStatefulWidget {
   const _OutreachList();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final items = ref.watch(manualOutreachSelectionProvider).customers;
+  ConsumerState<_OutreachList> createState() => _OutreachListState();
+}
+
+class _OutreachListState extends ConsumerState<_OutreachList> {
+  bool _loading = true;
+  bool _loadingMore = false;
+  Object? _error;
+  String? _nextCursor;
+  bool _hasMore = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _refresh();
+  }
+
+  Future<void> _refresh() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+      _nextCursor = null;
+      _hasMore = false;
+    });
+    try {
+      final page = await ref.read(messageRepositoryProvider).listManualOutreach();
+      if (!mounted) {
+        return;
+      }
+      ref.read(manualOutreachSelectionProvider.notifier).ingestRequested([
+        for (final item in page.items)
+          OutreachCustomerRef(
+            id: item.customerId,
+            fullName: item.customerName,
+            messageRequestId: item.messageRequestId,
+            status: item.status,
+            requestedAt: item.requestedAt,
+          ),
+      ]);
+      setState(() {
+        _nextCursor = page.nextCursor;
+        _hasMore = page.hasMore;
+        _loading = false;
+      });
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _error = error;
+        _loading = false;
+      });
+    }
+  }
+
+  Future<void> _loadMore() async {
+    if (_loading || _loadingMore || !_hasMore || _nextCursor == null) {
+      return;
+    }
+    setState(() => _loadingMore = true);
+    try {
+      final page = await ref
+          .read(messageRepositoryProvider)
+          .listManualOutreach(cursor: _nextCursor);
+      if (!mounted) {
+        return;
+      }
+      final existing = ref.read(manualOutreachSelectionProvider).requested;
+      final seen = {for (final item in existing) item.id};
+      ref.read(manualOutreachSelectionProvider.notifier).ingestRequested([
+        ...existing,
+        for (final item in page.items)
+          if (!seen.contains(item.customerId))
+            OutreachCustomerRef(
+              id: item.customerId,
+              fullName: item.customerName,
+              messageRequestId: item.messageRequestId,
+              status: item.status,
+              requestedAt: item.requestedAt,
+            ),
+      ]);
+      setState(() {
+        _nextCursor = page.nextCursor;
+        _hasMore = page.hasMore;
+        _loadingMore = false;
+      });
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _loadingMore = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final items = ref.watch(manualOutreachSelectionProvider).inbox;
+    if (_loading && items.isEmpty) {
+      return const LoadingSkeleton(lines: 4);
+    }
+    if (_error != null && items.isEmpty) {
+      return ErrorView(message: friendlyError(_error!), onRetry: _refresh);
+    }
     if (items.isEmpty) {
       return const EmptyStateView(
         title: AppStrings.outreachEmptyTitle,
@@ -363,36 +509,67 @@ class _OutreachList extends ConsumerWidget {
         compact: true,
       );
     }
-    return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(
-        AppTokens.space16,
-        AppTokens.space8,
-        AppTokens.space16,
-        AppTokens.space32,
-      ),
-      itemCount: items.length,
-      separatorBuilder: (_, _) => const Divider(height: 1),
-      itemBuilder: (context, index) {
-        final customer = items[index];
-        return Padding(
-          padding: const EdgeInsets.symmetric(vertical: AppTokens.space8),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(customer.fullName, style: Theme.of(context).textTheme.titleMedium),
-              const SizedBox(height: AppTokens.space8),
-              FilledButton(
-                onPressed: () => openOutreachMessageComposer(
-                  context: context,
-                  ref: ref,
-                  customerId: customer.id,
-                ),
-                child: const Text(AppStrings.createSuitableMessage),
-              ),
-            ],
+    return RefreshIndicator(
+      onRefresh: _refresh,
+      child: PagedNotificationListener(
+        hasMore: _hasMore,
+        loading: _loading || _loadingMore,
+        onLoadMore: _loadMore,
+        child: ListView.separated(
+          padding: const EdgeInsets.fromLTRB(
+            AppTokens.space16,
+            AppTokens.space8,
+            AppTokens.space16,
+            AppTokens.space32,
           ),
-        );
-      },
+          itemCount: items.length + (_hasMore ? 1 : 0),
+          separatorBuilder: (_, _) => const Divider(height: 1),
+          itemBuilder: (context, index) {
+            if (index >= items.length) {
+              return PagedFooter(loading: _loadingMore);
+            }
+            final customer = items[index];
+            final submitted = customer.submitted;
+            return IgnorePointer(
+              ignoring: submitted,
+              child: Opacity(
+                opacity: submitted ? 0.72 : 1,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: AppTokens.space8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        customer.fullName,
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                              color: submitted ? AppTokens.textSecondary : null,
+                            ),
+                      ),
+                      const SizedBox(height: AppTokens.space8),
+                      if (submitted)
+                        Text(
+                          outreachLifecycleLabel(customer.status ?? 'QUEUED'),
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                color: AppTokens.textSecondary,
+                              ),
+                        )
+                      else
+                        FilledButton(
+                          onPressed: () => openOutreachMessageComposer(
+                            context: context,
+                            ref: ref,
+                            customerId: customer.id,
+                          ),
+                          child: const Text(AppStrings.createSuitableMessage),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+      ),
     );
   }
 }

@@ -125,6 +125,64 @@ class Customer {
   }
 }
 
+class CustomerActivityItem {
+  const CustomerActivityItem({
+    required this.id,
+    required this.type,
+    required this.occurredAt,
+    required this.createdAt,
+    this.status,
+    this.opportunityType,
+  });
+
+  final String id;
+  final String type;
+  final DateTime occurredAt;
+  final DateTime createdAt;
+  final String? status;
+  final String? opportunityType;
+
+  factory CustomerActivityItem.fromJson(Map<String, dynamic> json) {
+    return CustomerActivityItem(
+      id: json['id'] as String,
+      type: json['type'] as String,
+      occurredAt: DateTime.parse(json['occurredAt'] as String),
+      createdAt: DateTime.parse(json['createdAt'] as String),
+      status: json['status'] as String?,
+      opportunityType: json['opportunityType'] as String?,
+    );
+  }
+}
+
+class ManualOutreachRequest {
+  const ManualOutreachRequest({
+    required this.customerId,
+    required this.customerName,
+    required this.messageRequestId,
+    required this.status,
+    required this.requestedAt,
+    required this.updatedAt,
+  });
+
+  final String customerId;
+  final String customerName;
+  final String messageRequestId;
+  final String status;
+  final DateTime requestedAt;
+  final DateTime updatedAt;
+
+  factory ManualOutreachRequest.fromJson(Map<String, dynamic> json) {
+    return ManualOutreachRequest(
+      customerId: json['customerId'] as String,
+      customerName: json['customerName'] as String,
+      messageRequestId: json['messageRequestId'] as String,
+      status: json['status'] as String,
+      requestedAt: DateTime.parse(json['requestedAt'] as String),
+      updatedAt: DateTime.parse(json['updatedAt'] as String),
+    );
+  }
+}
+
 class Visit {
   const Visit({
     required this.id,
@@ -645,7 +703,7 @@ class MessageDelivery {
   factory MessageDelivery.fromJson(Map<String, dynamic> json) {
     return MessageDelivery(
       id: json['id'] as String,
-      customerId: json['customerId'] as String,
+      customerId: json['customerId'] as String? ?? '',
       actionId: json['actionId'] as String?,
       opportunityType: json['opportunityType'] as String?,
       provider: json['provider'] as String?,
@@ -679,6 +737,7 @@ class AdminQueueItem {
     required this.status,
     required this.attempts,
     required this.providerReady,
+    this.vipRequestId,
     this.mode,
     this.deliveryStatus,
     this.failureCode,
@@ -704,13 +763,14 @@ class AdminQueueItem {
   final DateTime? submittedAt;
   final DateTime? failedAt;
   final bool providerReady;
+  final String? vipRequestId;
 
   factory AdminQueueItem.fromJson(Map<String, dynamic> json) {
     return AdminQueueItem(
       id: json['id'] as String,
       salonId: json['salonId'] as String,
       salonName: json['salonName'] as String,
-      customerId: json['customerId'] as String,
+      customerId: json['customerId'] as String? ?? '',
       customerName: json['customerName'] as String,
       customerPhone: json['customerPhone'] as String,
       messageText: json['messageText'] as String,
@@ -725,6 +785,182 @@ class AdminQueueItem {
       submittedAt: _parseDate(json['submittedAt']),
       failedAt: _parseDate(json['failedAt']),
       providerReady: json['providerReady'] as bool? ?? false,
+      vipRequestId: json['vipRequestId'] as String?,
+    );
+  }
+}
+
+class VipTargetList {
+  const VipTargetList({
+    required this.id,
+    required this.name,
+    required this.status,
+    required this.contactCount,
+    this.attentionRequestId,
+    this.reservedBySalonName,
+    this.request,
+    this.contacts = const [],
+  });
+
+  final String id;
+  final String name;
+  final String status;
+  final int contactCount;
+  final String? attentionRequestId;
+  final String? reservedBySalonName;
+  final VipRequest? request;
+  final List<VipContact> contacts;
+
+  bool get needsAttention => attentionRequestId != null;
+
+  factory VipTargetList.fromJson(Map<String, dynamic> json) {
+    return VipTargetList(
+      id: json['id'] as String,
+      name: json['name'] as String,
+      status: json['status'] as String,
+      contactCount: json['contactCount'] as int? ?? 0,
+      attentionRequestId: json['attentionRequestId'] as String?,
+      reservedBySalonName: json['reservedBySalonName'] as String?,
+      request: json['request'] is Map
+          ? VipRequest.fromJson(asJsonMap(json['request']))
+          : null,
+      contacts: json['contacts'] is List
+          ? (json['contacts'] as List)
+              .whereType<Map>()
+              .map((row) => VipContact.fromJson(asJsonMap(row)))
+              .toList()
+          : const [],
+    );
+  }
+}
+
+class VipContact {
+  const VipContact({
+    required this.displayName,
+    required this.phoneNumber,
+    required this.sortOrder,
+  });
+
+  final String displayName;
+  final String phoneNumber;
+  final int sortOrder;
+
+  factory VipContact.fromJson(Map<String, dynamic> json) {
+    return VipContact(
+      displayName: json['displayName'] as String,
+      phoneNumber: json['phoneNumber'] as String,
+      sortOrder: json['sortOrder'] as int? ?? 0,
+    );
+  }
+}
+
+class VipRequest {
+  const VipRequest({
+    required this.id,
+    required this.salonId,
+    required this.salonName,
+    required this.listId,
+    required this.listName,
+    required this.requestedCount,
+    required this.geographicRange,
+    required this.status,
+    this.sampleWorks = const [],
+  });
+
+  final String id;
+  final String salonId;
+  final String salonName;
+  final String listId;
+  final String listName;
+  final int requestedCount;
+  final String geographicRange;
+  final String status;
+  final List<VipSampleWork> sampleWorks;
+
+  factory VipRequest.fromJson(Map<String, dynamic> json) {
+    return VipRequest(
+      id: json['id'] as String,
+      salonId: json['salonId'] as String,
+      salonName: json['salonName'] as String? ?? '',
+      listId: json['listId'] as String,
+      listName: json['listName'] as String? ?? '',
+      requestedCount: json['requestedCount'] as int? ?? 0,
+      geographicRange: json['geographicRange'] as String? ?? '',
+      status: json['status'] as String,
+      sampleWorks: json['sampleWorks'] is List
+          ? (json['sampleWorks'] as List)
+              .whereType<Map>()
+              .map((row) => VipSampleWork.fromJson(asJsonMap(row)))
+              .toList()
+          : const [],
+    );
+  }
+}
+
+class VipSampleWork {
+  const VipSampleWork({
+    required this.id,
+    required this.position,
+    required this.contentType,
+    required this.byteSize,
+  });
+
+  final String id;
+  final int position;
+  final String contentType;
+  final int byteSize;
+
+  factory VipSampleWork.fromJson(Map<String, dynamic> json) {
+    return VipSampleWork(
+      id: json['id'] as String,
+      position: json['position'] as int? ?? 0,
+      contentType: json['contentType'] as String? ?? '',
+      byteSize: json['byteSize'] as int? ?? 0,
+    );
+  }
+}
+
+class VipCapability {
+  const VipCapability({
+    required this.entitled,
+    required this.remainingQuota,
+    required this.usedQuota,
+    this.currentRequest,
+  });
+
+  final bool entitled;
+  final int remainingQuota;
+  final int usedQuota;
+  final VipRequest? currentRequest;
+
+  factory VipCapability.fromJson(Map<String, dynamic> json) {
+    return VipCapability(
+      entitled: json['entitled'] as bool? ?? false,
+      remainingQuota: json['remainingQuota'] as int? ?? 0,
+      usedQuota: json['usedQuota'] as int? ?? 0,
+      currentRequest: json['currentRequest'] is Map
+          ? VipRequest.fromJson(asJsonMap(json['currentRequest']))
+          : null,
+    );
+  }
+}
+
+class AdminSalonSummary {
+  const AdminSalonSummary({
+    required this.id,
+    required this.name,
+    required this.entitled,
+  });
+
+  final String id;
+  final String name;
+  final bool entitled;
+
+  factory AdminSalonSummary.fromJson(Map<String, dynamic> json) {
+    return AdminSalonSummary(
+      id: json['id'] as String,
+      name: json['name'] as String,
+      entitled: json['entitled'] as bool? ?? false,
     );
   }
 }

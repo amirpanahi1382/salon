@@ -13,6 +13,7 @@ import '../../shared/models/models.dart';
 import '../opportunities/opportunity_action_bar.dart';
 import '../outreach/manual_outreach_selection.dart';
 import '../outreach/manual_outreach_state.dart';
+import '../vip/salon_vip_section.dart';
 import 'customer_validation.dart';
 
 class CustomersScreen extends ConsumerStatefulWidget {
@@ -30,6 +31,7 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
   Object? _error;
   bool _loading = true;
   bool _loadingMore = false;
+  bool _vipEntitled = false;
 
   @override
   void initState() {
@@ -54,6 +56,10 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
       final page = await ref
           .read(customerRepositoryProvider)
           .list(query: _search.text);
+      var entitled = false;
+      try {
+        entitled = (await ref.read(vipRepositoryProvider).capability()).entitled;
+      } catch (_) {}
       if (!mounted) {
         return;
       }
@@ -61,6 +67,7 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
         _items = page.items;
         _nextCursor = page.nextCursor;
         _hasMore = page.hasMore;
+        _vipEntitled = entitled;
         _loading = false;
       });
     } catch (error) {
@@ -141,15 +148,43 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
       ),
       floatingActionButton: outreach.selecting
           ? null
-          : FloatingActionButton.extended(
-              onPressed: () async {
-                final created = await context.push<bool>('/customers/new');
-                if (created == true) {
-                  _load();
-                }
-              },
-              label: const Text(AppStrings.addCustomer),
-              icon: const Icon(Icons.add),
+          : Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                if (_vipEntitled)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: FloatingActionButton.extended(
+                      heroTag: 'vip-outreach',
+                      onPressed: () async {
+                        final count = await showModalBottomSheet<int>(
+                          context: context,
+                          builder: (context) => const _VipCountSheet(),
+                        );
+                        if (count == null || !context.mounted) {
+                          return;
+                        }
+                        ref.read(vipSelectedCountProvider.notifier).setValue(count);
+                        ref.read(vipSectionOpenProvider.notifier).setOpen(true);
+                        context.go('/opportunities');
+                      },
+                      label: const Text(AppStrings.vipSendMessage),
+                      icon: const Icon(Icons.star_outline),
+                    ),
+                  ),
+                FloatingActionButton.extended(
+                  heroTag: 'add-customer',
+                  onPressed: () async {
+                    final created = await context.push<bool>('/customers/new');
+                    if (created == true) {
+                      _load();
+                    }
+                  },
+                  label: const Text(AppStrings.addCustomer),
+                  icon: const Icon(Icons.add),
+                ),
+              ],
             ),
       bottomNavigationBar: outreach.selecting
           ? SafeArea(
@@ -498,6 +533,10 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
   String? _visitsCursor;
   bool _visitsHasMore = false;
   bool _loadingMoreVisits = false;
+  List<CustomerActivityItem> _activity = const [];
+  String? _activityCursor;
+  bool _activityHasMore = false;
+  bool _loadingMoreActivity = false;
   Map<String, OpportunityAction> _openActions = const {};
   Object? _error;
   bool _loading = true;
@@ -523,6 +562,9 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
       final visits = await ref
           .read(visitRepositoryProvider)
           .listForCustomer(widget.customerId);
+      final activity = await ref
+          .read(customerRepositoryProvider)
+          .listActivity(widget.customerId);
       final openActions = await ref
           .read(actionRepositoryProvider)
           .listForCustomer(widget.customerId, status: 'OPEN');
@@ -535,6 +577,9 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
         _visits = visits.items;
         _visitsCursor = visits.nextCursor;
         _visitsHasMore = visits.hasMore;
+        _activity = activity.items;
+        _activityCursor = activity.nextCursor;
+        _activityHasMore = activity.hasMore;
         _openActions = {
           for (final action in openActions.items)
             opportunityActionKey(action.customerId, action.opportunityType):
@@ -576,6 +621,36 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
         return;
       }
       setState(() => _loadingMoreVisits = false);
+    }
+  }
+
+  Future<void> _loadMoreActivity() async {
+    if (_loading || _loadingMoreActivity || !_activityHasMore || _activityCursor == null) {
+      return;
+    }
+    setState(() => _loadingMoreActivity = true);
+    try {
+      final page = await ref
+          .read(customerRepositoryProvider)
+          .listActivity(widget.customerId, cursor: _activityCursor);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        final seen = {for (final item in _activity) '${item.type}:${item.id}'};
+        _activity = [
+          ..._activity,
+          ...page.items.where((item) => seen.add('${item.type}:${item.id}')),
+        ];
+        _activityCursor = page.nextCursor;
+        _activityHasMore = page.hasMore;
+        _loadingMoreActivity = false;
+      });
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _loadingMoreActivity = false);
     }
   }
 
@@ -724,9 +799,12 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
       body: RefreshIndicator(
         onRefresh: _load,
         child: PagedNotificationListener(
-          hasMore: _visitsHasMore,
-          loading: _loading || _loadingMoreVisits,
-          onLoadMore: _loadMoreVisits,
+          hasMore: _visitsHasMore || _activityHasMore,
+          loading: _loading || _loadingMoreVisits || _loadingMoreActivity,
+          onLoadMore: () {
+            _loadMoreVisits();
+            _loadMoreActivity();
+          },
           child: ListView(
           primary: true,
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
@@ -844,6 +922,44 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
               ),
               const SizedBox(height: 16),
             ],
+            Builder(
+              builder: (context) {
+                final visibleActivity = [
+                  for (final item in _activity)
+                    if (item.type != 'VISIT') item,
+                ];
+                if (visibleActivity.isEmpty && !_activityHasMore) {
+                  return const SizedBox.shrink();
+                }
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      AppStrings.customerActivity,
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 8),
+                    ...visibleActivity.map((item) {
+                      return ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(customerActivityTitle(item)),
+                        subtitle: Text(
+                          item.type == 'MANUAL_MESSAGE' ||
+                                  item.type == 'OPPORTUNITY_ACTION'
+                              ? '${customerActivitySubtitle(item)}\n${formatJalaliDateTime(item.occurredAt)}'
+                              : customerActivitySubtitle(item),
+                        ),
+                        isThreeLine: item.type == 'MANUAL_MESSAGE' ||
+                            item.type == 'OPPORTUNITY_ACTION',
+                      );
+                    }),
+                    if (_activityHasMore)
+                      PagedFooter(loading: _loadingMoreActivity),
+                    const SizedBox(height: 16),
+                  ],
+                );
+              },
+            ),
             Text(
               AppStrings.visitHistory,
               style: Theme.of(context).textTheme.titleMedium,
@@ -1168,6 +1284,31 @@ class _RecordVisitScreenState extends ConsumerState<RecordVisitScreen> {
             loading: _loading,
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _VipCountSheet extends StatelessWidget {
+  const _VipCountSheet();
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(AppStrings.vipChooseCount),
+            const SizedBox(height: 12),
+            for (final count in [30, 50, 100])
+              ListTile(
+                title: Text('$count'),
+                onTap: () => Navigator.of(context).pop(count),
+              ),
+          ],
+        ),
       ),
     );
   }

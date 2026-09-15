@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/admin/admin_message_queue_screen.dart';
+import '../../features/admin/admin_vip_screen.dart';
 import '../../features/auth/auth_screens.dart';
 import '../../features/customers/customer_edit_loader.dart';
 import '../../features/customers/customer_import_screen.dart';
@@ -75,6 +76,16 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/admin/messages',
         builder: (context, state) => const AdminMessageQueueScreen(),
+      ),
+      GoRoute(
+        path: '/admin/vip',
+        builder: (context, state) => const AdminVipScreen(),
+      ),
+      GoRoute(
+        path: '/admin/vip/:id',
+        builder: (context, state) => AdminVipListDetailScreen(
+          listId: state.pathParameters['id']!,
+        ),
       ),
       GoRoute(
         path: '/register',

@@ -169,8 +169,10 @@ class AppTheme {
         backgroundColor: AppTokens.surface,
         elevation: 0,
         height: AppTokens.navHeight,
-        indicatorColor: AppTokens.accentMuted,
+        indicatorColor: Colors.transparent,
+        indicatorShape: const RoundedRectangleBorder(),
         overlayColor: WidgetStateProperty.all(Colors.transparent),
+        labelPadding: const EdgeInsets.only(top: 2, bottom: 4),
         iconTheme: WidgetStateProperty.resolveWith((states) {
           final selected = states.contains(WidgetState.selected);
           return IconThemeData(
@@ -181,10 +183,10 @@ class AppTheme {
         labelTextStyle: WidgetStateProperty.resolveWith((states) {
           final selected = states.contains(WidgetState.selected);
           return vazir(
-            size: 12,
-            weight: selected ? FontWeight.w600 : FontWeight.w400,
+            size: 11,
+            weight: selected ? FontWeight.w500 : FontWeight.w400,
             color: selected ? AppTokens.accent : AppTokens.textSecondary,
-            height: 1.2,
+            height: 1.15,
           );
         }),
       ),

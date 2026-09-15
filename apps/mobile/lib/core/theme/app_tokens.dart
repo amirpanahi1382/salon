@@ -31,7 +31,7 @@ abstract final class AppTokens {
   static const double buttonHeight = 48;
   static const double inputHeight = 52;
   static const double iconSize = 20;
-  static const double iconNav = 22;
-  static const double navHeight = 72;
+  static const double iconNav = 20;
+  static const double navHeight = 64;
   static const double contentMaxWidth = 640;
 }

@@ -57,6 +57,10 @@ final adminMessageRepositoryProvider = Provider<AdminMessageRepository>((ref) {
   return AdminMessageRepository(ref.watch(apiClientProvider));
 });
 
+final vipRepositoryProvider = Provider<VipRepository>((ref) {
+  return VipRepository(ref.watch(apiClientProvider));
+});
+
 final salonRepositoryProvider = Provider<SalonRepository>((ref) {
   return SalonRepository(ref.watch(apiClientProvider));
 });
