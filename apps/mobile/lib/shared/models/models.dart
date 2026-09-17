@@ -1172,3 +1172,100 @@ class AdminSalonSummary {
     );
   }
 }
+
+class RecoveryOutcomesPeriod {
+  const RecoveryOutcomesPeriod({
+    required this.timezone,
+    required this.start,
+    required this.end,
+    required this.previousWeekStart,
+    required this.nextWeekStart,
+    required this.current,
+  });
+
+  final String timezone;
+  final DateTime start;
+  final DateTime end;
+  final DateTime previousWeekStart;
+  final DateTime nextWeekStart;
+  final bool current;
+
+  factory RecoveryOutcomesPeriod.fromJson(Map<String, dynamic> json) {
+    return RecoveryOutcomesPeriod(
+      timezone: json['timezone'] as String? ?? 'Asia/Tehran',
+      start: DateTime.parse(json['start'] as String).toUtc(),
+      end: DateTime.parse(json['end'] as String).toUtc(),
+      previousWeekStart: DateTime.parse(json['previousWeekStart'] as String).toUtc(),
+      nextWeekStart: DateTime.parse(json['nextWeekStart'] as String).toUtc(),
+      current: json['current'] as bool? ?? false,
+    );
+  }
+}
+
+class RecoveryOutcomesSummary {
+  const RecoveryOutcomesSummary({
+    required this.period,
+    required this.sentFollowUps,
+    required this.returnCommitmentsRecorded,
+    required this.commitmentBackedReturns,
+    required this.commitmentBackedRecordedRevenue,
+    required this.observedReturns,
+  });
+
+  final RecoveryOutcomesPeriod period;
+  final int sentFollowUps;
+  final int returnCommitmentsRecorded;
+  final int commitmentBackedReturns;
+  final AssociatedRevenue commitmentBackedRecordedRevenue;
+  final int observedReturns;
+
+  factory RecoveryOutcomesSummary.fromJson(Map<String, dynamic> json) {
+    return RecoveryOutcomesSummary(
+      period: RecoveryOutcomesPeriod.fromJson(asJsonMap(json['period'])),
+      sentFollowUps: json['sentFollowUps'] as int? ?? 0,
+      returnCommitmentsRecorded: json['returnCommitmentsRecorded'] as int? ?? 0,
+      commitmentBackedReturns: json['commitmentBackedReturns'] as int? ?? 0,
+      commitmentBackedRecordedRevenue: AssociatedRevenue.fromJson(
+        asJsonMap(json['commitmentBackedRecordedRevenue']),
+      ),
+      observedReturns: json['observedReturns'] as int? ?? 0,
+    );
+  }
+}
+
+class RecoveryOutcomeReturnItem {
+  const RecoveryOutcomeReturnItem({
+    required this.associationKind,
+    required this.customerId,
+    required this.customerName,
+    required this.visitId,
+    required this.visitedAt,
+    required this.associatedRevenue,
+    this.expectedAt,
+  });
+
+  final String associationKind;
+  final String customerId;
+  final String customerName;
+  final String visitId;
+  final DateTime visitedAt;
+  final DateTime? expectedAt;
+  final AssociatedRevenue associatedRevenue;
+
+  factory RecoveryOutcomeReturnItem.fromJson(Map<String, dynamic> json) {
+    final customer = json['customer'] is Map
+        ? asJsonMap(json['customer'])
+        : const <String, dynamic>{};
+    return RecoveryOutcomeReturnItem(
+      associationKind: json['associationKind'] as String? ?? '',
+      customerId: customer['id'] as String? ?? '',
+      customerName: customer['name'] as String? ?? '',
+      visitId: json['visitId'] as String,
+      visitedAt: DateTime.parse(json['visitedAt'] as String),
+      expectedAt: _parseDate(json['expectedAt']),
+      associatedRevenue: AssociatedRevenue.fromJson(
+        asJsonMap(json['associatedRevenue']),
+      ),
+    );
+  }
+}

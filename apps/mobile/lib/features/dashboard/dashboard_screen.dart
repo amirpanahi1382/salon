@@ -229,6 +229,27 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                       ),
                     ),
                     const SizedBox(height: AppTokens.space24),
+                    if (user?.role == 'OWNER' || user?.role == 'MANAGER')
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: AppTokens.space24),
+                        child: AppSurface(
+                          onTap: () => context.push('/recovery'),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Text(
+                                AppStrings.recoveryOutcomesTitle,
+                                style: theme.textTheme.titleMedium,
+                              ),
+                              const SizedBox(height: AppTokens.space8),
+                              Text(
+                                AppStrings.recoveryOutcomesOpen,
+                                style: theme.textTheme.bodySmall,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
                     _RevenueBlock(
                       monthAmount: summary.revenueThisUtcMonth,
                       completedAmount: summary.totalRevenue,

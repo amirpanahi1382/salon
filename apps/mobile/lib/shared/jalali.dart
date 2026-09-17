@@ -36,6 +36,25 @@ String _two(int value) => value.toString().padLeft(2, '0');
 DateTime asLocalDateTime(DateTime value) =>
     value.isUtc ? value.toLocal() : value;
 
+/// Display-only Asia/Tehran wall clock. Iran uses UTC+03:30 without DST.
+DateTime tehranWallClock(DateTime instant) =>
+    instant.toUtc().add(const Duration(hours: 3, minutes: 30));
+
+Jalali jalaliFromTehranInstant(DateTime instant) {
+  final wall = tehranWallClock(instant);
+  return Gregorian(wall.year, wall.month, wall.day).toJalali();
+}
+
+String formatJalaliPrettyDateTehran(DateTime instant) {
+  final jalali = jalaliFromTehranInstant(instant);
+  return '${toPersianDigits(jalali.day.toString())} ${jalaliMonthNames[jalali.month - 1]} ${toPersianDigits(jalali.year.toString())}';
+}
+
+String formatOwnerBusinessWeekLabel(DateTime start, DateTime endExclusive) {
+  final last = endExclusive.toUtc().subtract(const Duration(milliseconds: 1));
+  return '${formatJalaliPrettyDateTehran(start)} — ${formatJalaliPrettyDateTehran(last)}';
+}
+
 Jalali jalaliFromLocal(DateTime value) =>
     Jalali.fromDateTime(asLocalDateTime(value));
 

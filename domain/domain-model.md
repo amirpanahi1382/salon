@@ -101,6 +101,8 @@ See `docs/messaging-domain.md`. Intent vs fulfillment. Origins: opportunity (bot
 
 Salon-recorded fact that a customer agreed to return after an eligible SENT customer (non-VIP) `MessageRequest`/`MessageDelivery`. Stores `expectedAt` (UTC). Not a Visit, appointment, booking, or slot. At most one row per source request and per source delivery. `actualVisitId` is set only by explicit arrival (`POST .../arrive`) or correction (`POST .../link-visit`). Visit delete unlinks in application code (must not rely on `ON DELETE SET NULL` of composite `(actual_visit_id, salon_id)`). Flutter records/edits `expectedAt` and arrives through the commitment command; it does not invent MISSED/NO_SHOW. COMMITMENT_BACKED evidence (Visit + associated ledger revenue) outranks OBSERVED last-touch association for the same Visit.
 
+Owner recovery outcomes (`GET /recovery/outcomes/summary`) are **derived on read** for one Asia/Tehran Saturday business week. Headline money is COMPLETED ledger amounts on chronology-eligible COMMITMENT_BACKED Visits only. OBSERVED remains a separate count. Live derivation; voids and unlinks change later reads. Not a campaign, booking, or incremental-revenue ledger.
+
 ### VIP
 
 - **VipTargetList** — platform list; `PENDING` → `ACTIVE`/`INACTIVE`; `IN_USE` while reserved.

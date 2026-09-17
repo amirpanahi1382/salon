@@ -62,6 +62,7 @@ These capabilities exist in the repository (API + schema + tests; Flutter unless
 - Platform admin queue; worker sends Bale
 - Flutter multi-select (session, max 30) + composer + server-authoritative status after submit
 - Return commitment after SENT customer outreach (agreed future return time, not a booking); arrival creates an actual Visit; Flutter shows commitments vs completed visits and associated recorded revenue where present
+- Owner recovery outcome view (EVENT, Tehran Saturday week): SENT follow-ups, recorded return commitments, commitment-backed Visits + associated recorded revenue, separate OBSERVED counts; no rates or causal claims
 
 ### VIP outreach
 
@@ -85,7 +86,7 @@ These capabilities exist in the repository (API + schema + tests; Flutter unless
 | --- | --- | --- |
 | Flutter vs API | Core salon loop + admin queue + VIP UI in current repository HEAD | User admin, salon PATCH, void, segments screen, standalone transactions |
 | Campaigns | Per-customer MessageRequest | Campaign aggregate, recipient lists as a first-class entity, send-all |
-| Outcome measurement | Customer OBSERVED/COMMITMENT_BACKED evidence | Cohort analytics, rates, incremental/causal revenue |
+| Outcome measurement | EVENT owner view + customer OBSERVED/COMMITMENT_BACKED evidence | Cohort analytics, rates, incremental/causal revenue |
 | Consent | — | Opt-in/opt-out, STOP handling |
 | VIP Bale | Status + API rejection | Safir send for VIP phones |
 | Intelligence scale | SQL aggregates for visits | Uncapped, indexed serving for large tenants |

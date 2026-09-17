@@ -74,6 +74,7 @@ Roles: `OWNER` | `MANAGER` | `STAFF`. User status `ACTIVE` | `DISABLED`. Salon `
 | Service read ACTIVE | yes | yes | yes | no |
 | User admin | any role | STAFF only | no | no |
 | Intelligence / actions / messages / return commitments | yes | yes | yes | queue only |
+| Owner recovery outcomes (`GET /recovery/outcomes/*`) | yes | yes | no | no |
 | VIP salon routes | if entitled | if entitled | if entitled | lists/entitlements/dispatch |
 | Message queue dispatch | no | no | no | yes |
 
@@ -153,9 +154,11 @@ Worker: BALE only. `SENT` = provider accepted.
 
 Daily limit Tehran calendar, shared opportunity+manual. VIP excluded from daily limit.
 
-`ReturnCommitment` **Implemented (API + Flutter customer/recovery UX):** `POST /messages/:messageRequestId/return-commitments` (Idempotency-Key required), `PATCH /return-commitments/:id` (Idempotency-Key + `updatedAt` CAS), `GET /customers/:id/return-commitments`, `GET /return-commitments/upcoming` (14-day default / 31-day max **query window**, not a booking horizon), `POST /return-commitments/:id/arrive` (atomic Visit + link; OWNER/MANAGER optional sale), `POST /return-commitments/:id/link-visit` (API correction; **not** Flutter V1). Message GET/list include `returnCommitment` summary or null. OWNER/MANAGER/STAFF. Not a Visit or appointment. Flutter records agreed return time from SENT customer outreach, edits unfulfilled commitments, arrives via `/arrive` (not generic `POST /visits`), and shows future commitments separately from completed visits. Composer shows upcoming commitments as send-time context only (failure does not block send). No calendar, booking, or capacity.
+`ReturnCommitment` **Implemented (API + Flutter customer/recovery UX):** `POST /messages/:messageRequestId/return-commitments` (Idempotency-Key required), `PATCH /return-commitments/:id` (Idempotency-Key + `updatedAt` CAS), `GET /customers/:id/return-commitments`, `GET /return-commitments/upcoming` (14-day default / 31-day max **query window**, not a booking horizon), `POST /return-commitments/:id/arrive` (atomic Visit + link; OWNER/MANAGER optional sale), `POST /return-commitments/:id/link-visit` (API correction; **not** Flutter V1). Message GET/list include `returnCommitment` summary or null. OWNER/MANAGER/STAFF. Not a Visit or appointment. Flutter records agreed return time from SENT customer outreach, edits unfulfilled commitments, arrives via `/arrive` (not generic `POST /visits`), and shows future commitments separately from completed visits. Composer shows upcoming commitments as send-time context only (failure does not block send). No calendar, booking, or capacity. Salon-wide EVENT recovery totals: `GET /recovery/outcomes/*`.
 
 `GET /customers/:id/observed-returns` **Implemented (API + Flutter):** derived last-touch SENT message → later Visit. Flutter presents OBSERVED only when the same Visit is not already shown as COMMITMENT_BACKED. Copy is evidence-based (associated recorded revenue), not campaign causality.
+
+`GET /recovery/outcomes/summary` and `GET /recovery/outcomes/returns` **Implemented (API + Flutter owner/manager):** live EVENT-based salon totals for the Asia/Tehran Saturday business week `[Saturday 00:00, next Saturday 00:00)`. Counts SENT eligible deliveries (`submittedAt`), ReturnCommitments (`createdAt`), commitment-backed Visits (`visitedAt` and `visitedAt > source submittedAt`), associated COMPLETED visit-linked IRR on those Visits only, and OBSERVED-only Visits after `visitId` dedup (COMMITMENT_BACKED wins). No rates, no causal/incremental claims, no intelligence scan / 5,000 cap. STAFF is forbidden. Corrections (void, unlink) appear on the next read.
 
 ---
 
