@@ -8,6 +8,7 @@ import { GetVisitUseCase } from './get-visit.use-case';
 import { ExportVisitsUseCase } from './export-visits.use-case';
 import { ListCustomerVisitsUseCase } from './list-customer-visits.use-case';
 import { ListVisitsUseCase } from './list-visits.use-case';
+import { RecordCompletedVisit } from './record-completed-visit';
 import { VisitController } from './visit.controller';
 import { VisitRepository } from './visit.repository';
 
@@ -16,6 +17,7 @@ import { VisitRepository } from './visit.repository';
   controllers: [VisitController],
   providers: [
     VisitRepository,
+    RecordCompletedVisit,
     CreateVisitUseCase,
     CompleteVisitWithSaleUseCase,
     GetVisitUseCase,
@@ -24,6 +26,6 @@ import { VisitRepository } from './visit.repository';
     ExportVisitsUseCase,
     DeleteVisitUseCase,
   ],
-  exports: [VisitRepository],
+  exports: [VisitRepository, RecordCompletedVisit],
 })
 export class VisitModule {}

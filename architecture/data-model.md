@@ -24,7 +24,7 @@ Platform-owned: `platform_admins`, `vip_target_lists`, `vip_target_contacts` (li
 | Table | Kind | Notes |
 | --- | --- | --- |
 | `salons` | Tenant | `ACTIVE` / `SUSPENDED` |
-| `users` | Operator | Unique `email`; `role`, `status`; FK `salon_id` only (no `@@unique([id, salonId])`) |
+| `users` | Operator | Unique `email`; `role`, `status`; unique `(id, salon_id)` (for ReturnCommitment composite creator FKs). Other creator FKs still global-id only (TD-03) |
 | `platform_admins` | Platform operator | No tenant |
 | `customers` | Business fact | Unique `(salon_id, phone_number)` |
 | `visits` | Business fact | `visited_at`; unique `(id, salon_id)` |
@@ -34,6 +34,7 @@ Platform-owned: `platform_admins`, `vip_target_lists`, `vip_target_contacts` (li
 | `opportunity_actions` | Human fact | `source_visit_id` UUID nullable, **not FK** |
 | `message_requests` | Intent | See CHECKs below |
 | `message_deliveries` | Execution | Unique `message_request_id`; unique `(salon_id, provider_request_id)` |
+| `return_commitments` | Recovery fact | Unique per `(salon_id, source_message_request_id)` and `(salon_id, source_message_delivery_id)`. Partial unique `(salon_id, actual_visit_id)` WHERE not null. Composite tenant FKs including creator/updater users. Not an appointment. |
 | `vip_target_lists` | Platform list | Reservation CHECK: `IN_USE` iff reserved fields set |
 | `vip_target_contacts` | List rows | Phone CHECK `09[0-9]{9}`; unique phone per list |
 | `vip_salon_entitlements` | Product flag | Unique `salon_id`; revoke pair CHECK |
@@ -44,7 +45,7 @@ Platform-owned: `platform_admins`, `vip_target_lists`, `vip_target_contacts` (li
 | `audit_logs` | Infra | `tenant_id` nullable (platform actors) |
 | `idempotency_records` | Infra | Unique `(tenant_id, actor_id, operation, key)` |
 
-There are **no** `campaigns`, `products`, or `appointments` tables.
+There are **no** `campaigns`, `products`, or `appointments` tables. `return_commitments` is not an appointment table.
 
 ---
 

@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ActionModule } from '../action/action.module';
 import { AuthModule } from '../auth/auth.module';
 import { CustomerModule } from '../customer/customer.module';
+import { ReturnCommitmentModule } from '../return-commitment/return-commitment.module';
 import { AdminMessageQueueController } from './admin-message-queue.controller';
 import { AdminMessageRepository } from './admin-message.repository';
 import {
@@ -19,7 +20,7 @@ import { SendManualOutreachMessageUseCase } from './send-manual-outreach-message
 import { SendOpportunityMessageUseCase } from './send-opportunity-message.use-case';
 
 @Module({
-  imports: [AuthModule, ActionModule, CustomerModule],
+  imports: [AuthModule, ActionModule, CustomerModule, ReturnCommitmentModule],
   controllers: [MessagingController, AdminMessageQueueController],
   providers: [
     MessageRepository,

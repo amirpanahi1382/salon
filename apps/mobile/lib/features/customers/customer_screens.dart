@@ -13,6 +13,8 @@ import '../../shared/models/models.dart';
 import '../opportunities/opportunity_action_bar.dart';
 import '../outreach/manual_outreach_selection.dart';
 import '../outreach/manual_outreach_state.dart';
+import '../recovery/recovery_presentation.dart';
+import '../recovery/return_commitment_form.dart';
 import '../vip/salon_vip_section.dart';
 import 'customer_validation.dart';
 
@@ -537,6 +539,10 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
   String? _activityCursor;
   bool _activityHasMore = false;
   bool _loadingMoreActivity = false;
+  List<MessageDelivery> _messages = const [];
+  List<ReturnCommitment> _commitments = const [];
+  List<ObservedReturn> _observedReturns = const [];
+  bool _messagesLoaded = false;
   Map<String, OpportunityAction> _openActions = const {};
   Object? _error;
   bool _loading = true;
@@ -587,6 +593,7 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
         };
         _loading = false;
       });
+      await _loadRecovery();
     } catch (error) {
       if (!mounted) {
         return;
@@ -651,6 +658,82 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
         return;
       }
       setState(() => _loadingMoreActivity = false);
+    }
+  }
+
+  Future<void> _loadRecovery() async {
+    List<MessageDelivery> messages = _messages;
+    var messagesLoaded = _messagesLoaded;
+    List<ReturnCommitment> commitments = _commitments;
+    List<ObservedReturn> observed = _observedReturns;
+    try {
+      final page = await ref
+          .read(messageRepositoryProvider)
+          .listForCustomer(widget.customerId);
+      messages = page.items;
+      messagesLoaded = true;
+    } catch (_) {
+      messagesLoaded = false;
+    }
+    try {
+      final page = await ref
+          .read(returnCommitmentRepositoryProvider)
+          .listForCustomer(widget.customerId);
+      commitments = page.items;
+    } catch (_) {}
+    try {
+      final page = await ref
+          .read(returnCommitmentRepositoryProvider)
+          .listObservedReturns(widget.customerId);
+      observed = page.items;
+    } catch (_) {}
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _messages = messages;
+      _messagesLoaded = messagesLoaded;
+      _commitments = commitments;
+      _observedReturns = observed;
+    });
+  }
+
+  Future<void> _recordCommitment(MessageDelivery message) async {
+    final saved = await showReturnCommitmentForm(
+      context: context,
+      ref: ref,
+      customerId: widget.customerId,
+      messageRequestId: message.id,
+    );
+    if (saved != null) {
+      await _load();
+    }
+  }
+
+  Future<void> _editCommitment(ReturnCommitment commitment) async {
+    if (!isOpenReturnCommitment(commitment)) {
+      return;
+    }
+    final saved = await showReturnCommitmentForm(
+      context: context,
+      ref: ref,
+      customerId: widget.customerId,
+      existing: commitment,
+    );
+    if (saved != null) {
+      await _load();
+    } else {
+      await _loadRecovery();
+    }
+  }
+
+  Future<void> _arrive(ReturnCommitment commitment) async {
+    final recorded = await context.push<bool>(
+      '/customers/${widget.customerId}/record-visit',
+      extra: commitment,
+    );
+    if (recorded == true) {
+      await _load();
     }
   }
 
@@ -728,6 +811,169 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(friendlyError(error))));
     }
+  }
+
+  List<Widget> _outcomeCards(BuildContext context) {
+    final backed = [
+      for (final row in _commitments)
+        if (row.commitmentBackedReturn != null) row,
+    ];
+    final observed = observedReturnsWithoutCommitmentWins(
+      observed: _observedReturns,
+      commitments: _commitments,
+    );
+    if (backed.isEmpty && observed.isEmpty) {
+      return const [];
+    }
+    return [
+      for (final row in backed)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 16),
+          child: AppCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  commitmentBackedHeadline(),
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+                const SizedBox(height: 8),
+                Text(commitmentBackedBody()),
+                const SizedBox(height: 8),
+                Text(
+                  '${AppStrings.agreedAtLabel}: ${formatJalaliDateTime(row.expectedAt)}',
+                ),
+                Text(
+                  '${AppStrings.actualVisitLabel}: ${formatJalaliDateTime(row.commitmentBackedReturn!.visitedAt)}',
+                ),
+                const SizedBox(height: 8),
+                Text(associatedRevenueCopy(row.commitmentBackedReturn!.associatedRevenue)),
+              ],
+            ),
+          ),
+        ),
+      for (final row in observed)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 16),
+          child: AppCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  observedReturnCopy(),
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+                const SizedBox(height: 8),
+                Text(associatedRevenueCopy(row.associatedRevenue)),
+              ],
+            ),
+          ),
+        ),
+    ];
+  }
+
+  List<Widget> _agreedReturnCards(BuildContext context) {
+    if (_commitments.isEmpty) {
+      return const [];
+    }
+    return [
+      Text(
+        AppStrings.agreedReturnsTitle,
+        style: Theme.of(context).textTheme.titleMedium,
+      ),
+      const SizedBox(height: 8),
+      for (final row in _commitments)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: AppCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  formatJalaliPrettyDate(row.expectedAt),
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+                Text(formatClock(row.expectedAt)),
+                const SizedBox(height: 4),
+                Text(
+                  row.isFulfilled
+                      ? AppStrings.recoveryCommitmentBackedTitle
+                      : isAgreedTimePast(row)
+                          ? AppStrings.agreedTimePast
+                          : AppStrings.agreedReturnCaption,
+                ),
+                if (isOpenReturnCommitment(row)) ...[
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      OutlinedButton(
+                        onPressed: () => _editCommitment(row),
+                        child: const Text(AppStrings.editAgreedReturn),
+                      ),
+                      FilledButton(
+                        onPressed: () => _arrive(row),
+                        child: const Text(AppStrings.markArrived),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      const SizedBox(height: 8),
+    ];
+  }
+
+  List<Widget> _messageHistory(BuildContext context) {
+    if (!_messagesLoaded && _messages.isEmpty) {
+      return const [];
+    }
+    return [
+      Text(
+        AppStrings.customerMessagesTitle,
+        style: Theme.of(context).textTheme.titleMedium,
+      ),
+      const SizedBox(height: 8),
+      if (_messages.isEmpty)
+        const Padding(
+          padding: EdgeInsets.only(bottom: 16),
+          child: Text(AppStrings.noCustomerMessages),
+        )
+      else
+        for (final message in _messages)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: AppCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    message.opportunityType == null
+                        ? AppStrings.messageManualOrigin
+                        : AppStrings.messageOpportunityOrigin,
+                  ),
+                  Text(messageStatusLabel(message.status)),
+                  Text(
+                    formatJalaliDateTime(message.submittedAt ?? message.createdAt),
+                  ),
+                  if (canRecordReturnCommitment(message)) ...[
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: OutlinedButton(
+                        onPressed: () => _recordCommitment(message),
+                        child: const Text(AppStrings.recordAgreedReturn),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+      const SizedBox(height: 8),
+    ];
   }
 
   @override
@@ -922,11 +1168,16 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
               ),
               const SizedBox(height: 16),
             ],
+            ..._outcomeCards(context),
+            ..._agreedReturnCards(context),
+            ..._messageHistory(context),
             Builder(
               builder: (context) {
                 final visibleActivity = [
                   for (final item in _activity)
-                    if (item.type != 'VISIT') item,
+                    if (item.type != 'VISIT' &&
+                        !(_messagesLoaded && item.type == 'MANUAL_MESSAGE'))
+                      item,
                 ];
                 if (visibleActivity.isEmpty && !_activityHasMore) {
                   return const SizedBox.shrink();
@@ -998,9 +1249,14 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
 }
 
 class RecordVisitScreen extends ConsumerStatefulWidget {
-  const RecordVisitScreen({super.key, required this.customerId});
+  const RecordVisitScreen({
+    super.key,
+    required this.customerId,
+    this.commitment,
+  });
 
   final String customerId;
+  final ReturnCommitment? commitment;
 
   @override
   ConsumerState<RecordVisitScreen> createState() => _RecordVisitScreenState();
@@ -1141,7 +1397,15 @@ class _RecordVisitScreenState extends ConsumerState<RecordVisitScreen> {
     });
     try {
       _idempotencyKey ??= _newIdempotencyKey();
-      if (wantsSale) {
+      if (widget.commitment != null) {
+        await ref.read(returnCommitmentRepositoryProvider).arrive(
+              id: widget.commitment!.id,
+              visitedAt: _visitedAt,
+              idempotencyKey: _idempotencyKey!,
+              serviceId: wantsSale ? _serviceId : null,
+              amount: wantsSale ? amount : null,
+            );
+      } else if (wantsSale) {
         await ref.read(visitRepositoryProvider).recordCompletedWithSale(
               customerId: widget.customerId,
               visitedAt: _visitedAt,
@@ -1223,15 +1487,24 @@ class _RecordVisitScreenState extends ConsumerState<RecordVisitScreen> {
   @override
   Widget build(BuildContext context) {
     final captureSale = _canCaptureSale;
+    final arriving = widget.commitment != null;
     return Scaffold(
-      appBar: AppBar(title: const Text(AppStrings.recordVisit)),
+      appBar: AppBar(
+        title: Text(arriving ? AppStrings.markArrived : AppStrings.recordVisit),
+      ),
       body: ListView(
         padding: const EdgeInsets.all(24),
         children: [
-          const Text(
-            AppStrings.recordVisitHint,
-            style: TextStyle(height: 1.65),
+          Text(
+            arriving ? AppStrings.arrivalHint : AppStrings.recordVisitHint,
+            style: const TextStyle(height: 1.65),
           ),
+          if (arriving) ...[
+            const SizedBox(height: 16),
+            Text(
+              '${AppStrings.agreedAtLabel}: ${formatJalaliDateTime(widget.commitment!.expectedAt)}',
+            ),
+          ],
           const SizedBox(height: 24),
           ListTile(
             key: const Key('visit-date-tile'),
@@ -1278,11 +1551,14 @@ class _RecordVisitScreenState extends ConsumerState<RecordVisitScreen> {
             ),
           ],
           const SizedBox(height: 24),
-          AppButton(
-            label: AppStrings.saveCompletedVisit,
-            onPressed: _loading ? null : _save,
-            loading: _loading,
-          ),
+            AppButton(
+              key: const Key('save-visit'),
+              label: arriving
+                  ? AppStrings.markArrived
+                  : AppStrings.saveCompletedVisit,
+              onPressed: _loading ? null : _save,
+              loading: _loading,
+            ),
         ],
       ),
     );

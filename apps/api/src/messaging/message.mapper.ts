@@ -8,6 +8,7 @@ import {
   type OpportunityType,
 } from '@salon/shared';
 import type { ManualOutreachItemDto, MessageRequestResponseDto } from './message.dto';
+import type { ReturnCommitmentSummaryDto } from '../return-commitment/return-commitment.dto';
 
 export const MESSAGE_REQUEST_SELECT = {
   id: true,
@@ -60,7 +61,10 @@ export type MessageRequestRow = {
   }>;
 };
 
-export function toMessageResponse(row: MessageRequestRow): MessageRequestResponseDto {
+export function toMessageResponse(
+  row: MessageRequestRow,
+  returnCommitment: ReturnCommitmentSummaryDto | null = null,
+): MessageRequestResponseDto {
   const delivery = row.deliveries[0];
   return {
     id: row.id,
@@ -81,6 +85,7 @@ export function toMessageResponse(row: MessageRequestRow): MessageRequestRespons
     updatedAt: row.updatedAt.toISOString(),
     submittedAt: delivery?.submittedAt?.toISOString() ?? null,
     failedAt: delivery?.failedAt?.toISOString() ?? null,
+    returnCommitment,
   };
 }
 

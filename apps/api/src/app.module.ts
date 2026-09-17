@@ -15,6 +15,8 @@ import { HealthModule } from './health/health.module';
 import { SalonModule } from './salon/salon.module';
 import { UserModule } from './user/user.module';
 import { CustomerModule } from './customer/customer.module';
+import { ObservedOutcomeModule } from './observed-outcome/observed-outcome.module';
+import { ReturnCommitmentModule } from './return-commitment/return-commitment.module';
 import { VisitModule } from './visit/visit.module';
 import { ServiceModule } from './service/service.module';
 import { TransactionModule } from './transaction/transaction.module';
@@ -90,6 +92,8 @@ import type { AppRequest } from './infrastructure/http/request-context';
     SalonModule,
     UserModule,
     CustomerModule,
+    ObservedOutcomeModule,
+    ReturnCommitmentModule,
     VisitModule,
     ServiceModule,
     TransactionModule,

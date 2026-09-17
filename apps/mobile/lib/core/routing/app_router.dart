@@ -159,8 +159,13 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/customers/:id/record-visit',
-        builder: (context, state) =>
-            RecordVisitScreen(customerId: state.pathParameters['id']!),
+        builder: (context, state) {
+          final extra = state.extra;
+          return RecordVisitScreen(
+            customerId: state.pathParameters['id']!,
+            commitment: extra is ReturnCommitment ? extra : null,
+          );
+        },
       ),
     ],
   );

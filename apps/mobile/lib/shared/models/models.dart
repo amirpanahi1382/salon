@@ -681,6 +681,7 @@ class MessageDelivery {
     this.failureCode,
     this.submittedAt,
     this.failedAt,
+    this.returnCommitment,
   });
 
   final String id;
@@ -699,6 +700,7 @@ class MessageDelivery {
   final DateTime updatedAt;
   final DateTime? submittedAt;
   final DateTime? failedAt;
+  final ReturnCommitmentSummary? returnCommitment;
 
   factory MessageDelivery.fromJson(Map<String, dynamic> json) {
     return MessageDelivery(
@@ -718,6 +720,9 @@ class MessageDelivery {
       updatedAt: DateTime.parse(json['updatedAt'] as String),
       submittedAt: _parseDate(json['submittedAt']),
       failedAt: _parseDate(json['failedAt']),
+      returnCommitment: json['returnCommitment'] is Map
+          ? ReturnCommitmentSummary.fromJson(asJsonMap(json['returnCommitment']))
+          : null,
     );
   }
 }
@@ -941,6 +946,209 @@ class VipCapability {
       currentRequest: json['currentRequest'] is Map
           ? VipRequest.fromJson(asJsonMap(json['currentRequest']))
           : null,
+    );
+  }
+}
+
+class ReturnCommitmentSummary {
+  const ReturnCommitmentSummary({
+    required this.id,
+    required this.expectedAt,
+    this.actualVisitId,
+  });
+
+  final String id;
+  final DateTime expectedAt;
+  final String? actualVisitId;
+
+  bool get isFulfilled => actualVisitId != null;
+
+  factory ReturnCommitmentSummary.fromJson(Map<String, dynamic> json) {
+    return ReturnCommitmentSummary(
+      id: json['id'] as String,
+      expectedAt: DateTime.parse(json['expectedAt'] as String),
+      actualVisitId: json['actualVisitId'] as String?,
+    );
+  }
+}
+
+class AssociatedRevenue {
+  const AssociatedRevenue({
+    required this.recorded,
+    required this.currency,
+    this.amount,
+  });
+
+  final bool recorded;
+  final String currency;
+  final String? amount;
+
+  factory AssociatedRevenue.fromJson(Map<String, dynamic> json) {
+    return AssociatedRevenue(
+      recorded: json['recorded'] as bool? ?? false,
+      currency: json['currency'] as String? ?? 'IRR',
+      amount: json['amount'] as String?,
+    );
+  }
+}
+
+class CommitmentBackedReturn {
+  const CommitmentBackedReturn({
+    required this.associationKind,
+    required this.actualVisitId,
+    required this.visitedAt,
+    required this.associatedRevenue,
+  });
+
+  final String associationKind;
+  final String actualVisitId;
+  final DateTime visitedAt;
+  final AssociatedRevenue associatedRevenue;
+
+  factory CommitmentBackedReturn.fromJson(Map<String, dynamic> json) {
+    final visit = asJsonMap(json['actualVisit']);
+    return CommitmentBackedReturn(
+      associationKind: json['associationKind'] as String? ?? 'COMMITMENT_BACKED',
+      actualVisitId: visit['visitId'] as String,
+      visitedAt: DateTime.parse(visit['visitedAt'] as String),
+      associatedRevenue: AssociatedRevenue.fromJson(
+        asJsonMap(json['associatedRevenue']),
+      ),
+    );
+  }
+}
+
+class ReturnCommitment {
+  const ReturnCommitment({
+    required this.id,
+    required this.customerId,
+    required this.sourceRequestId,
+    required this.sourceDeliveryId,
+    required this.expectedAt,
+    required this.createdAt,
+    required this.updatedAt,
+    this.actualVisitId,
+    this.commitmentBackedReturn,
+  });
+
+  final String id;
+  final String customerId;
+  final String sourceRequestId;
+  final String sourceDeliveryId;
+  final DateTime expectedAt;
+  final String? actualVisitId;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  final CommitmentBackedReturn? commitmentBackedReturn;
+
+  bool get isFulfilled => actualVisitId != null;
+
+  factory ReturnCommitment.fromJson(Map<String, dynamic> json) {
+    final source = json['sourceMessage'] is Map
+        ? asJsonMap(json['sourceMessage'])
+        : const <String, dynamic>{};
+    return ReturnCommitment(
+      id: json['id'] as String,
+      customerId: json['customerId'] as String,
+      sourceRequestId: source['requestId'] as String? ?? '',
+      sourceDeliveryId: source['deliveryId'] as String? ?? '',
+      expectedAt: DateTime.parse(json['expectedAt'] as String),
+      actualVisitId: json['actualVisitId'] as String?,
+      createdAt: DateTime.parse(json['createdAt'] as String),
+      updatedAt: DateTime.parse(json['updatedAt'] as String),
+      commitmentBackedReturn: json['commitmentBackedReturn'] is Map
+          ? CommitmentBackedReturn.fromJson(
+              asJsonMap(json['commitmentBackedReturn']),
+            )
+          : null,
+    );
+  }
+}
+
+class UpcomingReturnCommitment {
+  const UpcomingReturnCommitment({
+    required this.id,
+    required this.customerId,
+    required this.customerName,
+    required this.expectedAt,
+  });
+
+  final String id;
+  final String customerId;
+  final String customerName;
+  final DateTime expectedAt;
+
+  factory UpcomingReturnCommitment.fromJson(Map<String, dynamic> json) {
+    return UpcomingReturnCommitment(
+      id: json['id'] as String,
+      customerId: json['customerId'] as String,
+      customerName: json['customerName'] as String,
+      expectedAt: DateTime.parse(json['expectedAt'] as String),
+    );
+  }
+}
+
+class UpcomingReturnCommitmentPage {
+  const UpcomingReturnCommitmentPage({
+    required this.items,
+    required this.hasMore,
+    this.nextCursor,
+    this.from,
+    this.to,
+  });
+
+  final List<UpcomingReturnCommitment> items;
+  final bool hasMore;
+  final String? nextCursor;
+  final DateTime? from;
+  final DateTime? to;
+
+  factory UpcomingReturnCommitmentPage.fromJson(Object? json) {
+    final page = parseItemPage(json, UpcomingReturnCommitment.fromJson);
+    final map = json is Map ? asJsonMap(json) : <String, dynamic>{};
+    return UpcomingReturnCommitmentPage(
+      items: page.items,
+      hasMore: page.hasMore,
+      nextCursor: page.nextCursor,
+      from: _parseDate(map['from']),
+      to: _parseDate(map['to']),
+    );
+  }
+}
+
+class ObservedReturn {
+  const ObservedReturn({
+    required this.associationKind,
+    required this.requestId,
+    required this.visitId,
+    required this.visitedAt,
+    required this.associatedRevenue,
+  });
+
+  final String associationKind;
+  final String requestId;
+  final String visitId;
+  final DateTime visitedAt;
+  final AssociatedRevenue associatedRevenue;
+
+  factory ObservedReturn.fromJson(Map<String, dynamic> json) {
+    final intervention = json['intervention'] is Map
+        ? asJsonMap(json['intervention'])
+        : const <String, dynamic>{};
+    final message = intervention['message'] is Map
+        ? asJsonMap(intervention['message'])
+        : const <String, dynamic>{};
+    final observed = json['observedReturn'] is Map
+        ? asJsonMap(json['observedReturn'])
+        : const <String, dynamic>{};
+    return ObservedReturn(
+      associationKind: json['associationKind'] as String? ?? 'OBSERVED',
+      requestId: message['requestId'] as String? ?? '',
+      visitId: observed['visitId'] as String,
+      visitedAt: DateTime.parse(observed['occurredAt'] as String),
+      associatedRevenue: AssociatedRevenue.fromJson(
+        asJsonMap(json['associatedRevenue']),
+      ),
     );
   }
 }

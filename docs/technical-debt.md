@@ -9,7 +9,7 @@ Severity: **P1** blocks trustworthy production at modest scale or integrity. **P
 | --- | --- | --- | --- | --- |
 | TD-01 | P1 | Intelligence | Salon intelligence/opportunity/segment serving scans at most 5,000 newest customers; `hasMore` understates the rest. SQL is better than loading every visit into Node, but this is still the main **scale** risk. | Serving model / indexes / possibly persisted snapshots **without** making snapshots the ledger |
 | TD-02 | P2 | Tenancy | No PostgreSQL RLS. Isolation is application filters + composite FKs. | Optional RLS later; do not weaken composite FKs |
-| TD-03 | P2 | Integrity | `users.id` creator FKs (`opportunity_actions.created_by`, `message_requests.created_by_user_id`, `message_deliveries.created_by`, `vip_requests.created_by_user_id`) are not tenant-composite | Composite creator relations if we can do it without breaking history |
+| TD-03 | P2 | Integrity | `users.id` creator FKs (`opportunity_actions.created_by`, `message_requests.created_by_user_id`, `message_deliveries.created_by`, `vip_requests.created_by_user_id`) are not tenant-composite. `return_commitments` creator/updater FKs **are** composite. | Composite creator relations if we can do it without breaking history |
 | TD-04 | P2 | Money | Header `transactions.amount` vs `SUM(transaction_items)` is application-enforced only | DB CHECK or constraint trigger |
 | TD-05 | P2 | Money | `transaction_items` have no `@@unique([id, salonId])` unlike sibling tables | Add composite unique if needed for FKs |
 | TD-06 | P2 | Idempotency | Duplicate-key guarantee is only `IDEMPOTENCY_RETENTION_DAYS` (7). After that, the same client key can insert again | Documented window; longer retention or hashed durable keys if required |

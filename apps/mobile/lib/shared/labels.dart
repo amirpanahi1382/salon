@@ -121,7 +121,46 @@ class AppStrings {
   static const actionDoesNotCreateVisit =
       'اقدام یعنی شما کاری کردید. مراجعه یا درآمد جدا ثبت می‌شود.';
   static const why = 'چرا';
-  static const visitHistory = 'سابقه مراجعه';
+  static const visitHistory = 'مراجعه‌های انجام‌شده';
+  static const agreedReturnsTitle = 'مراجعه‌های توافق‌شده';
+  static const agreedReturnCaption = 'زمان مراجعه پس از پیگیری ثبت شده';
+  static const agreedTimePast = 'زمان توافق‌شده گذشته است';
+  static const recordAgreedReturn = 'ثبت زمان مراجعه توافق‌شده';
+  static const agreedReturnFormBody =
+      'زمانی که مشتری اعلام کرده برای مراجعه برمی‌گردد را ثبت کنید. این رزرو سالن نیست.';
+  static const editAgreedReturn = 'ویرایش';
+  static const markArrived = 'مراجعه کرد';
+  static const saveAgreedReturn = 'ثبت زمان مراجعه';
+  static const customerMessagesTitle = 'پیام‌های پیگیری';
+  static const noCustomerMessages = 'هنوز پیام پیگیری برای این مشتری ثبت نشده.';
+  static const messageOpportunityOrigin = 'پیام فرصت';
+  static const messageManualOrigin = 'پیام دستی';
+  static const arrivalHint =
+      'زمان مراجعهٔ واقعی را ثبت کنید. این همان زمان توافق‌شده نیست.';
+  static const agreedAtLabel = 'توافق شده';
+  static const actualVisitLabel = 'مراجعه واقعی';
+  static const recoveryCommitmentBackedTitle = 'بازگشت ثبت‌شده پس از پیگیری';
+  static const recoveryCommitmentBackedBody =
+      'مشتری پس از پیگیری، زمان مراجعه اعلام کرد و مراجعه انجام شد.';
+  static const recoveryObservedBody =
+      'پس از پیام ارسال‌شده، مراجعه بعدی مشتری ثبت شده است.';
+  static const recoveryRevenueNone = 'برای این مراجعه درآمدی ثبت نشده است.';
+  static const recoveryRevenueRecorded =
+      'در این مراجعه {amount} درآمد ثبت شده است.';
+  static const upcomingCommitmentsTitle = 'مراجعه‌های توافق‌شده آینده';
+  static const upcomingCommitmentsEmpty =
+      'فعلاً زمان مراجعه توافق‌شده‌ای برای روزهای نزدیک ثبت نشده.';
+  static const upcomingCommitmentsHint =
+      'این فهرست فقط برای نوشتن پیام است؛ پر یا خالی بودن ساعت را نشان نمی‌دهد.';
+  static const staleCommitmentEdit =
+      'این زمان را کس دیگری تغییر داده. فهرست به‌روز شد؛ دوباره ذخیره کنید.';
+  static const commitmentAlreadyExists = 'برای این پیام قبلاً زمان مراجعه ثبت شده.';
+  static const messageNotEligibleForCommitment =
+      'فقط برای پیام ارسال‌شده می‌توان زمان مراجعه ثبت کرد.';
+  static const expectedAtAfterSent =
+      'زمان مراجعه باید بعد از ارسال پیام باشد.';
+  static const expectedAtMustBeFuture = 'زمان مراجعه باید در آینده باشد.';
+  static const arrivalAlreadyRecorded = 'برای این پیگیری قبلاً مراجعه ثبت شده.';
   static const customerActivity = 'فعالیت مشتری';
   static const visitCompletedActivity = 'بازدید انجام شده';
   static const purchaseRecordedActivity = 'خرید ثبت شده';
@@ -394,6 +433,22 @@ String localizeUserFacingMessage(String message) {
     'Opportunity not found': 'این فرصت الان وجود ندارد.',
     'Customer not found': 'این مشتری پیدا نشد.',
     'Message not found': 'این پیام پیدا نشد.',
+    'A return commitment already exists for this outreach':
+        AppStrings.commitmentAlreadyExists,
+    'Message is not an eligible SENT customer outreach':
+        AppStrings.messageNotEligibleForCommitment,
+    'expectedAt must be after the source message was sent':
+        AppStrings.expectedAtAfterSent,
+    'expectedAt must be a future return time': AppStrings.expectedAtMustBeFuture,
+    'expectedAt must be a valid timestamp': 'زمان مراجعه معتبر نیست.',
+    'Return commitment cannot be edited after an actual visit is linked':
+        'پس از ثبت مراجعه واقعی، زمان توافق‌شده قابل ویرایش نیست.',
+    'Return commitment was updated by another request':
+        AppStrings.staleCommitmentEdit,
+    'Return commitment is already linked to an actual visit':
+        AppStrings.arrivalAlreadyRecorded,
+    'Visit does not belong to this customer':
+        'این مراجعه مربوط به این مشتری نیست.',
   };
   final mapped = exact[trimmed];
   if (mapped != null) {

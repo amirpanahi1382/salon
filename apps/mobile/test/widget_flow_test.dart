@@ -323,6 +323,17 @@ class FakeMessageRepository extends MessageRepository {
   }
 
   @override
+  Future<ItemPage<MessageDelivery>> listForCustomer(
+    String customerId, {
+    String? cursor,
+  }) async {
+    if (error != null) {
+      throw error!;
+    }
+    return const ItemPage(items: [], hasMore: false);
+  }
+
+  @override
   Future<MessageDelivery> getById(String id) async {
     if (error != null) {
       throw error!;

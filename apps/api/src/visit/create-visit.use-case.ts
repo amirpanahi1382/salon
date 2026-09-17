@@ -2,11 +2,9 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@salon/database';
 import {
   createId,
-  DOMAIN_EVENT_TYPES,
   NotFoundError,
   type AuthenticatedPrincipal,
 } from '@salon/shared';
-import { CustomerRepository } from '../customer/customer.repository';
 import { PrismaService } from '../infrastructure/database/prisma.service';
 import { mapPrismaError } from '../infrastructure/http/prisma-error';
 import type { CreateVisitDto } from './visit.dto';
@@ -17,6 +15,7 @@ import {
   findIdempotencyRecord,
   visitCreateRequestHash,
 } from './idempotency';
+import { RecordCompletedVisit } from './record-completed-visit';
 import { toVisitResponse } from './visit.mapper';
 import { parseCompletedVisitedAt } from './visited-at';
 
@@ -24,7 +23,7 @@ import { parseCompletedVisitedAt } from './visited-at';
 export class CreateVisitUseCase {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly customers: CustomerRepository,
+    private readonly recordVisit: RecordCompletedVisit,
   ) {}
 
   async execute(
@@ -78,59 +77,13 @@ export class CreateVisitUseCase {
           }
         }
 
-        const customer = await this.customers.findById(
-          principal.tenantId,
-          input.customerId,
-          tx,
-        );
-        if (!customer) {
-          throw new NotFoundError('Customer not found');
-        }
-
-        const visit = await tx.visit.create({
-          data: {
-            id: visitId,
-            salonId: principal.tenantId,
-            customerId: customer.id,
-            visitedAt,
-            updatedAt: now,
-          },
-          select: {
-            id: true,
-            customerId: true,
-            visitedAt: true,
-            createdAt: true,
-          },
+        return this.recordVisit.create(tx, {
+          principal,
+          customerId: input.customerId,
+          visitedAt,
+          visitId,
+          now,
         });
-
-        await tx.outboxEvent.create({
-          data: {
-            id: createId(),
-            tenantId: principal.tenantId,
-            eventType: DOMAIN_EVENT_TYPES.VisitCompleted,
-            payload: {
-              visitId,
-              customerId: customer.id,
-              salonId: principal.tenantId,
-              visitedAt: visitedAt.toISOString(),
-            },
-          },
-        });
-
-        await tx.auditLog.create({
-          data: {
-            id: createId(),
-            tenantId: principal.tenantId,
-            actorId: principal.userId,
-            action: 'VISIT_CREATED',
-            resource: 'visit',
-            resourceId: visitId,
-            result: 'SUCCESS',
-            metadata: { customerId: customer.id },
-          },
-        });
-
-        return visit;
       });
 
       return toVisitResponse(created);

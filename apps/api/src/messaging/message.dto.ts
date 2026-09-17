@@ -13,6 +13,7 @@ import {
   type MessageProvider,
   type OpportunityType,
 } from '@salon/shared';
+import { ReturnCommitmentSummaryDto } from '../return-commitment/return-commitment.dto';
 
 export class SendOpportunityMessageDto {
   @ApiProperty({ maxLength: MESSAGE_BODY_MAX_LENGTH })
@@ -78,6 +79,14 @@ export class MessageRequestResponseDto {
 
   @ApiProperty({ nullable: true, type: String })
   failedAt!: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    type: () => ReturnCommitmentSummaryDto,
+    description:
+      'Product-originated return commitment for this outreach, if recorded. Null when none exists.',
+  })
+  returnCommitment!: ReturnCommitmentSummaryDto | null;
 }
 
 export class MessageRequestListPageDto {

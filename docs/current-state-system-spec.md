@@ -73,7 +73,7 @@ Roles: `OWNER` | `MANAGER` | `STAFF`. User status `ACTIVE` | `DISABLED`. Salon `
 | Service write | yes | no | no | no |
 | Service read ACTIVE | yes | yes | yes | no |
 | User admin | any role | STAFF only | no | no |
-| Intelligence / actions / messages | yes | yes | yes | queue only |
+| Intelligence / actions / messages / return commitments | yes | yes | yes | queue only |
 | VIP salon routes | if entitled | if entitled | if entitled | lists/entitlements/dispatch |
 | Message queue dispatch | no | no | no | yes |
 
@@ -153,6 +153,10 @@ Worker: BALE only. `SENT` = provider accepted.
 
 Daily limit Tehran calendar, shared opportunity+manual. VIP excluded from daily limit.
 
+`ReturnCommitment` **Implemented (API + Flutter customer/recovery UX):** `POST /messages/:messageRequestId/return-commitments` (Idempotency-Key required), `PATCH /return-commitments/:id` (Idempotency-Key + `updatedAt` CAS), `GET /customers/:id/return-commitments`, `GET /return-commitments/upcoming` (14-day default / 31-day max **query window**, not a booking horizon), `POST /return-commitments/:id/arrive` (atomic Visit + link; OWNER/MANAGER optional sale), `POST /return-commitments/:id/link-visit` (API correction; **not** Flutter V1). Message GET/list include `returnCommitment` summary or null. OWNER/MANAGER/STAFF. Not a Visit or appointment. Flutter records agreed return time from SENT customer outreach, edits unfulfilled commitments, arrives via `/arrive` (not generic `POST /visits`), and shows future commitments separately from completed visits. Composer shows upcoming commitments as send-time context only (failure does not block send). No calendar, booking, or capacity.
+
+`GET /customers/:id/observed-returns` **Implemented (API + Flutter):** derived last-touch SENT message → later Visit. Flutter presents OBSERVED only when the same Visit is not already shown as COMMITMENT_BACKED. Copy is evidence-based (associated recorded revenue), not campaign causality.
+
 ---
 
 ## 12. VIP
@@ -201,7 +205,8 @@ Persian-first, RTL, `fa_IR`, Vazirmatn, **dark** charcoal/champagne theme (`AppT
 | Customers list/detail/create/edit/import | Implemented |
 | Customer activity on profile | Implemented |
 | Record visit / sale | Implemented |
-| Manual outreach multi-select + composer | Implemented |
+| Manual outreach multi-select + composer | Implemented (upcoming ReturnCommitment context on composer) |
+| Customer message history + agreed returns + arrival | Implemented (Customer Detail; not a booking surface) |
 | Opportunities + complete/dismiss + message | Implemented |
 | Salon VIP section (from opportunities) | Implemented |
 | Visits list/export/delete | Implemented |
@@ -214,7 +219,7 @@ Android emulator API default `http://10.0.2.2:3000`. Physical device: LAN IP via
 
 ## 15. Tests (presence)
 
-API E2E: auth, salon-user, customer, import, visit, visit-with-sale, export, finance, intelligence, action, messaging, vip, observability, reliability.
+API E2E: auth, salon-user, customer, import, visit, visit-with-sale, export, finance, intelligence, action, messaging, observed-returns, return-commitments, vip, observability, reliability.
 
 Unit: shared intelligence/money/vip, database constraints, many API use-case specs.
 

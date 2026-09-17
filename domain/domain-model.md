@@ -44,6 +44,7 @@ VipSalonEntitlement
 | Financial facts | LedgerTransaction (`transactions`), TransactionItem | Yes (amount header) |
 | Derived intelligence | status, signals, opportunities, segments, revenue metrics | No — computed |
 | Human/operational facts | OpportunityAction | Yes (the salon responded) |
+| Recovery fact | ReturnCommitment | Yes (salon-recorded agreed return after SENT outreach). Not a Visit or appointment |
 | Intent | MessageRequest, VipRequest | Yes (requested) |
 | Execution | MessageDelivery, VipSampleWork object storage | Yes (how it was fulfilled) |
 | Infrastructure | OutboxEvent, AuditLog, IdempotencyRecord | Yes (ops), not business meaning |
@@ -60,7 +61,7 @@ Tenant. Owns users, customers, services, visits, transactions, actions, messages
 
 Salon operator. One salon. Roles `OWNER` | `MANAGER` | `STAFF`. Status `ACTIVE` | `DISABLED`. Email globally unique. Last active OWNER cannot be removed/demoted. MANAGER may create/disable STAFF only. OWNER assigns any role.
 
-`createdBy` on actions/messages points at `users.id` **without** a composite tenant FK (known debt).
+`createdBy` on actions/messages/VIP requests points at `users.id` **without** a composite tenant FK (known debt TD-03). `ReturnCommitment` creator/updater FKs use `(userId, salonId)`.
 
 ### PlatformAdmin
 
@@ -95,6 +96,10 @@ Durable record that staff responded to a derived opportunity. Status `OPEN` | `C
 ### MessageRequest / MessageDelivery
 
 See `docs/messaging-domain.md`. Intent vs fulfillment. Origins: opportunity (both `actionId` and `opportunityType` set), manual (both null), VIP (`vipRequestId` + recipient snapshot).
+
+### ReturnCommitment
+
+Salon-recorded fact that a customer agreed to return after an eligible SENT customer (non-VIP) `MessageRequest`/`MessageDelivery`. Stores `expectedAt` (UTC). Not a Visit, appointment, booking, or slot. At most one row per source request and per source delivery. `actualVisitId` is set only by explicit arrival (`POST .../arrive`) or correction (`POST .../link-visit`). Visit delete unlinks in application code (must not rely on `ON DELETE SET NULL` of composite `(actual_visit_id, salon_id)`). Flutter records/edits `expectedAt` and arrives through the commitment command; it does not invent MISSED/NO_SHOW. COMMITMENT_BACKED evidence (Visit + associated ledger revenue) outranks OBSERVED last-touch association for the same Visit.
 
 ### VIP
 

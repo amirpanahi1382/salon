@@ -8,6 +8,8 @@ import '../../core/theme/app_theme.dart';
 import '../../core/theme/app_tokens.dart';
 import '../../core/widgets/app_widgets.dart';
 import '../../shared/labels.dart';
+import '../../shared/models/models.dart';
+import '../recovery/recovery_presentation.dart';
 import 'manual_outreach_selection.dart';
 import 'outreach_message_template.dart';
 
@@ -59,6 +61,8 @@ class _OutreachMessageComposerState extends ConsumerState<OutreachMessageCompose
   String? _status;
   Object? _error;
   String? _loadError;
+  List<UpcomingReturnCommitment> _upcoming = const [];
+  bool _upcomingFailed = false;
 
   @override
   void initState() {
@@ -112,6 +116,7 @@ class _OutreachMessageComposerState extends ConsumerState<OutreachMessageCompose
       _salonName.text = draft.salonName;
       _salonPhone.text = draft.salonPhone;
       setState(() => _loading = false);
+      _loadUpcoming();
     } catch (error) {
       if (!mounted) {
         return;
@@ -119,6 +124,27 @@ class _OutreachMessageComposerState extends ConsumerState<OutreachMessageCompose
       setState(() {
         _loading = false;
         _loadError = friendlyError(error);
+      });
+    }
+  }
+
+  Future<void> _loadUpcoming() async {
+    try {
+      final page = await ref.read(returnCommitmentRepositoryProvider).listUpcoming();
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _upcoming = page.items;
+        _upcomingFailed = false;
+      });
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _upcoming = const [];
+        _upcomingFailed = true;
       });
     }
   }
@@ -227,6 +253,11 @@ class _OutreachMessageComposerState extends ConsumerState<OutreachMessageCompose
                     Text(
                       AppStrings.outreachComposerTitle,
                       style: theme.textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: AppTokens.space16),
+                    _UpcomingCommitmentsContext(
+                      items: _upcoming,
+                      failed: _upcomingFailed,
                     ),
                     const SizedBox(height: AppTokens.space12),
                     _EditableChipField(
@@ -349,6 +380,65 @@ class _EditableChipField extends StatelessWidget {
         labelText: label,
         filled: true,
         fillColor: AppTokens.accentMuted,
+      ),
+    );
+  }
+}
+
+class _UpcomingCommitmentsContext extends StatelessWidget {
+  const _UpcomingCommitmentsContext({
+    required this.items,
+    required this.failed,
+  });
+
+  final List<UpcomingReturnCommitment> items;
+  final bool failed;
+
+  @override
+  Widget build(BuildContext context) {
+    if (failed) {
+      return const Padding(
+        padding: EdgeInsets.only(bottom: AppTokens.space16),
+        child: Text(AppStrings.upcomingCommitmentsHint),
+      );
+    }
+    if (items.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.only(bottom: AppTokens.space16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(AppStrings.upcomingCommitmentsTitle),
+            SizedBox(height: 4),
+            Text(AppStrings.upcomingCommitmentsEmpty),
+          ],
+        ),
+      );
+    }
+    final groups = <String, List<UpcomingReturnCommitment>>{};
+    for (final item in items) {
+      final heading = upcomingDayHeading(item.expectedAt);
+      groups.putIfAbsent(heading, () => []).add(item);
+    }
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppTokens.space16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            AppStrings.upcomingCommitmentsTitle,
+            style: Theme.of(context).textTheme.titleSmall,
+          ),
+          const SizedBox(height: 4),
+          const Text(AppStrings.upcomingCommitmentsHint),
+          const SizedBox(height: 8),
+          for (final entry in groups.entries) ...[
+            Text(entry.key, style: Theme.of(context).textTheme.labelLarge),
+            for (final item in entry.value)
+              Text('${formatClock(item.expectedAt)} — ${item.customerName}'),
+            const SizedBox(height: 8),
+          ],
+        ],
       ),
     );
   }

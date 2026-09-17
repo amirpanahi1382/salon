@@ -117,8 +117,18 @@ class ApiClient {
     );
   }
 
-  Future<dynamic> patch(String path, {Object? data}) {
-    return _send(() => _dio.patch<dynamic>(path, data: data));
+  Future<dynamic> patch(
+    String path, {
+    Object? data,
+    Map<String, String>? headers,
+  }) {
+    return _send(
+      () => _dio.patch<dynamic>(
+        path,
+        data: data,
+        options: headers == null ? null : Options(headers: headers),
+      ),
+    );
   }
 
   Future<void> delete(String path) async {

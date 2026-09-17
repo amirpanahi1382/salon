@@ -53,6 +53,12 @@ final messageRepositoryProvider = Provider<MessageRepository>((ref) {
   return MessageRepository(ref.watch(apiClientProvider));
 });
 
+final returnCommitmentRepositoryProvider = Provider<ReturnCommitmentRepository>((
+  ref,
+) {
+  return ReturnCommitmentRepository(ref.watch(apiClientProvider));
+});
+
 final adminMessageRepositoryProvider = Provider<AdminMessageRepository>((ref) {
   return AdminMessageRepository(ref.watch(apiClientProvider));
 });

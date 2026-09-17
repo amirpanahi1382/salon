@@ -24,6 +24,7 @@ describe('toMessageResponse', () => {
     expect(dto.destinationHint).toBe(maskCustomerPhone('09121111111'));
     expect(dto.destinationHint).not.toContain('09121111111');
     expect(JSON.stringify(dto)).not.toContain('api-access-key');
+    expect(dto.returnCommitment).toBeNull();
   });
 
   it('maps manual outreach without action or opportunity type', () => {

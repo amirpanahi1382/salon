@@ -481,6 +481,120 @@ class MessageRepository {
   }
 }
 
+class ReturnCommitmentRepository {
+  ReturnCommitmentRepository(this._api);
+
+  final ApiClient _api;
+
+  Future<ItemPage<ReturnCommitment>> listForCustomer(
+    String customerId, {
+    String? cursor,
+  }) async {
+    final data = await _api.get(
+      '/customers/$customerId/return-commitments',
+      query: cursor == null ? null : {'cursor': cursor},
+    );
+    return parseItemPage(data, ReturnCommitment.fromJson);
+  }
+
+  Future<UpcomingReturnCommitmentPage> listUpcoming({String? cursor}) async {
+    final data = await _api.get(
+      '/return-commitments/upcoming',
+      query: cursor == null ? null : {'cursor': cursor},
+    );
+    return UpcomingReturnCommitmentPage.fromJson(data);
+  }
+
+  Future<ItemPage<ObservedReturn>> listObservedReturns(
+    String customerId, {
+    String? cursor,
+  }) async {
+    final data = await _api.get(
+      '/customers/$customerId/observed-returns',
+      query: cursor == null ? null : {'cursor': cursor},
+    );
+    return parseItemPage(data, ObservedReturn.fromJson);
+  }
+
+  Future<ReturnCommitment> create({
+    required String messageRequestId,
+    required DateTime expectedAt,
+    required String idempotencyKey,
+  }) async {
+    Future<ReturnCommitment> send() async {
+      final data = await _api.post(
+        '/messages/$messageRequestId/return-commitments',
+        data: {'expectedAt': expectedAt.toUtc().toIso8601String()},
+        headers: {'Idempotency-Key': idempotencyKey},
+      ) as Map<String, dynamic>;
+      return ReturnCommitment.fromJson(data);
+    }
+
+    try {
+      return await send();
+    } on NetworkException {
+      return send();
+    }
+  }
+
+  Future<ReturnCommitment> update({
+    required String id,
+    required DateTime expectedAt,
+    required DateTime updatedAt,
+    required String idempotencyKey,
+  }) async {
+    Future<ReturnCommitment> send() async {
+      final data = await _api.patch(
+        '/return-commitments/$id',
+        data: {
+          'expectedAt': expectedAt.toUtc().toIso8601String(),
+          'updatedAt': updatedAt.toUtc().toIso8601String(),
+        },
+        headers: {'Idempotency-Key': idempotencyKey},
+      ) as Map<String, dynamic>;
+      return ReturnCommitment.fromJson(data);
+    }
+
+    try {
+      return await send();
+    } on NetworkException {
+      return send();
+    }
+  }
+
+  Future<ReturnCommitment> arrive({
+    required String id,
+    required DateTime visitedAt,
+    required String idempotencyKey,
+    String? serviceId,
+    String? amount,
+  }) async {
+    Future<ReturnCommitment> send() async {
+      final payload = <String, dynamic>{
+        'visitedAt': visitedAt.toUtc().toIso8601String(),
+        if (serviceId != null && amount != null)
+          'sale': {
+            'serviceId': serviceId,
+            'amount': amount,
+            'currency': 'IRR',
+          },
+      };
+      final data = await _api.post(
+        '/return-commitments/$id/arrive',
+        data: payload,
+        headers: {'Idempotency-Key': idempotencyKey},
+      ) as Map<String, dynamic>;
+      return ReturnCommitment.fromJson(data);
+    }
+
+    try {
+      return await send();
+    } on NetworkException {
+      return send();
+    }
+  }
+}
+
 class AdminMessageRepository {
   AdminMessageRepository(this._api);
 

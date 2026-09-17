@@ -113,6 +113,7 @@ model Salon {
   vipEntitlement      VipSalonEntitlement?
   vipRequests         VipRequest[]
   reservedVipLists    VipTargetList[]      @relation("VipListReservedBySalon")
+  returnCommitments   ReturnCommitment[]
 
   @@map("salons")
 }
@@ -131,6 +132,7 @@ model Customer {
   opportunityActions OpportunityAction[]
   messageRequests    MessageRequest[]
   messageDeliveries  MessageDelivery[]
+  returnCommitments  ReturnCommitment[]
 
   @@unique([id, salonId])
   @@unique([salonId, phoneNumber])
@@ -148,7 +150,8 @@ model Visit {
   visitedAt  DateTime @map("visited_at") @db.Timestamptz(3)
   createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt    DateTime             @updatedAt @map("updated_at") @db.Timestamptz(3)
-  transactions LedgerTransaction[]
+  transactions       LedgerTransaction[]
+  returnCommitments  ReturnCommitment[]
 
   @@unique([id, salonId])
   @@index([salonId, visitedAt])
@@ -228,7 +231,10 @@ model User {
   createdMessageRequests    MessageRequest[]
   createdMessageDeliveries  MessageDelivery[]
   createdVipRequests        VipRequest[]
+  createdReturnCommitments  ReturnCommitment[] @relation("ReturnCommitmentCreatedBy")
+  updatedReturnCommitments  ReturnCommitment[] @relation("ReturnCommitmentUpdatedBy")
 
+  @@unique([id, salonId])
   @@index([salonId])
   @@map("users")
 }
@@ -312,6 +318,7 @@ model MessageRequest {
   updatedAt           DateTime               @updatedAt @map("updated_at") @db.Timestamptz(3)
   deliveries          MessageDelivery[]
   vipRequestRecipient VipRequestRecipient?
+  returnCommitment    ReturnCommitment?
 
   @@unique([id, salonId])
   /// SQL CHECKs:
@@ -359,6 +366,7 @@ model MessageDelivery {
   updatedAt           DateTime               @updatedAt @map("updated_at") @db.Timestamptz(3)
   submittedAt         DateTime?              @map("submitted_at") @db.Timestamptz(3)
   failedAt            DateTime?              @map("failed_at") @db.Timestamptz(3)
+  returnCommitment    ReturnCommitment?
 
   @@unique([id, salonId])
   @@unique([messageRequestId])
@@ -369,6 +377,39 @@ model MessageDelivery {
   @@index([mode, status, createdAt])
   @@index([status, createdAt, id])
   @@map("message_deliveries")
+}
+
+/// Product-originated record that a customer agreed to return after SENT outreach.
+/// Not an appointment, booking, reservation, calendar event, or Visit.
+model ReturnCommitment {
+  id                      String   @id @db.Uuid
+  salonId                 String   @map("salon_id") @db.Uuid
+  salon                   Salon    @relation(fields: [salonId], references: [id], onDelete: Restrict)
+  customerId              String   @map("customer_id") @db.Uuid
+  customer                Customer @relation(fields: [customerId, salonId], references: [id, salonId], onDelete: Restrict)
+  sourceMessageRequestId  String   @map("source_message_request_id") @db.Uuid
+  sourceMessageRequest    MessageRequest @relation(fields: [sourceMessageRequestId, salonId], references: [id, salonId], onDelete: Restrict)
+  sourceMessageDeliveryId String   @map("source_message_delivery_id") @db.Uuid
+  sourceMessageDelivery   MessageDelivery @relation(fields: [sourceMessageDeliveryId, salonId], references: [id, salonId], onDelete: Restrict)
+  expectedAt              DateTime @map("expected_at") @db.Timestamptz(3)
+  /// Reserved for Initiative 1C explicit Visit linkage. Null in 1B. Not a booking.
+  actualVisitId           String?  @map("actual_visit_id") @db.Uuid
+  actualVisit             Visit?   @relation(fields: [actualVisitId, salonId], references: [id, salonId], onDelete: Restrict)
+  createdByUserId         String   @map("created_by_user_id") @db.Uuid
+  createdByUser           User     @relation("ReturnCommitmentCreatedBy", fields: [createdByUserId, salonId], references: [id, salonId], onDelete: Restrict)
+  updatedByUserId         String   @map("updated_by_user_id") @db.Uuid
+  updatedByUser           User     @relation("ReturnCommitmentUpdatedBy", fields: [updatedByUserId, salonId], references: [id, salonId], onDelete: Restrict)
+  createdAt               DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt               DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([id, salonId])
+  @@unique([sourceMessageRequestId, salonId], map: "return_commitments_salon_source_request_key")
+  @@unique([sourceMessageDeliveryId, salonId], map: "return_commitments_salon_source_delivery_key")
+  /// Partial unique `return_commitments_salon_actual_visit_key`:
+  /// UNIQUE (salon_id, actual_visit_id) WHERE actual_visit_id IS NOT NULL.
+  @@index([salonId, customerId, expectedAt, id])
+  @@index([salonId, expectedAt, id])
+  @@map("return_commitments")
 }
 
 /// Reliable asynchronous business events. Payload must not include secrets or unnecessary PII.
