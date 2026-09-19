@@ -54,6 +54,7 @@ export class DeleteVisitUseCase {
           data: {
             actualVisitId: null,
             updatedByUserId: principal.userId,
+            updatedByPlatformAdminId: null,
             updatedAt: now,
           },
         });

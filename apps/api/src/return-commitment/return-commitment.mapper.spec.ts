@@ -8,8 +8,10 @@ describe('return commitment read mapper', () => {
     sourceMessageDeliveryId: 'del1',
     expectedAt: new Date('2026-09-16T16:00:00.000Z'),
     actualVisitId: 'v1',
-    createdByUserId: 'u1',
+    createdByUserId: null,
+    createdByPlatformAdminId: 'a1',
     updatedByUserId: 'u1',
+    updatedByPlatformAdminId: null,
     createdAt: new Date('2026-09-10T10:00:00.000Z'),
     updatedAt: new Date('2026-09-16T16:22:00.000Z'),
   };
@@ -24,7 +26,9 @@ describe('return commitment read mapper', () => {
       currency: 'IRR',
       amount: null,
     });
-    expect(toAssociatedRevenue(0n)).toEqual({ recorded: true, currency: 'IRR', amount: '0.00' });
+    expect(none.recordedBySupport).toBe(true);
+    expect(none.createdByUserId).toBeNull();
+    expect(none.operationallyOpen).toBe(false);
     expect(toAssociatedRevenue(123n)).toEqual({ recorded: true, currency: 'IRR', amount: '1.23' });
   });
 });

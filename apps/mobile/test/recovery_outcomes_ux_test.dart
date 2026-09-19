@@ -81,6 +81,11 @@ class FakeRecoveryRepo extends ReturnCommitmentRepository {
     final items = kind == 'COMMITMENT_BACKED' ? backed : observed;
     return ItemPage(items: items, hasMore: false);
   }
+
+  @override
+  Future<ItemPage<OpenAgreedReturn>> listOpen({String? cursor}) async {
+    return const ItemPage(items: [], hasMore: false);
+  }
 }
 
 Widget _app(FakeRecoveryRepo repo) {
@@ -181,17 +186,18 @@ void main() {
     );
     await tester.pumpWidget(_app(repo));
     await tester.pumpAndSettle();
+    expect(find.text(formatOwnerBusinessWeekLabel(weekStart, weekEnd)), findsOneWidget);
     expect(find.text(AppStrings.recoverySentFollowUps), findsOneWidget);
     expect(find.text(AppStrings.recoveryCommitmentsRecorded), findsOneWidget);
     expect(find.text(AppStrings.recoveryCommitmentBackedReturns), findsWidgets);
     expect(find.text(AppStrings.recoveryCommitmentBackedRevenue), findsOneWidget);
+    await tester.scrollUntilVisible(find.text(AppStrings.recoveryObservedWeaker), 300);
     expect(find.text(AppStrings.recoveryObservedReturns), findsWidgets);
     expect(find.text(AppStrings.recoveryObservedWeaker), findsOneWidget);
     expect(find.textContaining('۱۵۰.۵۰'), findsWidgets);
     expect(find.textContaining('۸۰.۰۰'), findsNothing);
     expect(find.textContaining('ROI'), findsNothing);
     expect(find.textContaining('نرخ'), findsNothing);
-    expect(find.text(formatOwnerBusinessWeekLabel(weekStart, weekEnd)), findsOneWidget);
     expect(find.text('سارا احمدی'), findsOneWidget);
     await tester.scrollUntilVisible(find.text('مینا رضایی'), 300);
     expect(find.text('مینا رضایی'), findsOneWidget);

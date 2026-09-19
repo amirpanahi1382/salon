@@ -9,6 +9,7 @@ import '../../shared/jalali.dart';
 import '../../shared/labels.dart';
 import '../../shared/models/models.dart';
 import '../opportunities/opportunity_action_bar.dart';
+import '../recovery/open_agreed_returns_section.dart';
 
 class DashboardScreen extends ConsumerStatefulWidget {
   const DashboardScreen({super.key});
@@ -27,6 +28,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   String? _openActionsCursor;
   bool _openActionsHasMore = false;
   SalonProfile? _salon;
+  List<OpenAgreedReturn> _openReturns = const [];
+  Object? _openReturnsError;
+  bool _openReturnsLoading = true;
   Object? _error;
   bool _loading = true;
 
@@ -50,6 +54,14 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           .read(actionRepositoryProvider)
           .list(status: 'OPEN');
       final salon = await ref.read(salonRepositoryProvider).current();
+      List<OpenAgreedReturn> openReturns = const [];
+      Object? openReturnsError;
+      try {
+        final open = await ref.read(returnCommitmentRepositoryProvider).listOpen();
+        openReturns = open.items;
+      } catch (error) {
+        openReturnsError = error;
+      }
       if (!mounted) {
         return;
       }
@@ -66,6 +78,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         _openActionsCursor = openActions.nextCursor;
         _openActionsHasMore = openActions.hasMore;
         _salon = salon;
+        _openReturns = openReturns;
+        _openReturnsError = openReturnsError;
+        _openReturnsLoading = false;
         _loading = false;
       });
     } catch (error) {
@@ -227,6 +242,13 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                           ),
                         ],
                       ),
+                    ),
+                    const SizedBox(height: AppTokens.space24),
+                    OpenAgreedReturnsSection(
+                      items: _openReturns,
+                      loading: _openReturnsLoading,
+                      error: _openReturnsError,
+                      onRetry: _load,
                     ),
                     const SizedBox(height: AppTokens.space24),
                     if (user?.role == 'OWNER' || user?.role == 'MANAGER')

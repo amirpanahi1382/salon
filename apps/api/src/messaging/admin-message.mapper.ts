@@ -6,6 +6,7 @@ import {
   type OpportunityType,
 } from '@salon/shared';
 import type { AppConfig } from '@salon/config';
+import type { ReturnCommitmentSummaryDto } from '../return-commitment/return-commitment.dto';
 import type { AdminMessageQueueItemDto } from './admin-message.dto';
 
 export const ADMIN_MESSAGE_SELECT = {
@@ -61,7 +62,11 @@ export type AdminMessageRow = {
   }>;
 };
 
-export function toAdminMessageItem(row: AdminMessageRow, config: AppConfig): AdminMessageQueueItemDto {
+export function toAdminMessageItem(
+  row: AdminMessageRow,
+  config: AppConfig,
+  returnCommitment: ReturnCommitmentSummaryDto | null = null,
+): AdminMessageQueueItemDto {
   const delivery = row.deliveries[0];
   return {
     id: row.id,
@@ -86,5 +91,6 @@ export function toAdminMessageItem(row: AdminMessageRow, config: AppConfig): Adm
     failedAt: delivery?.failedAt?.toISOString() ?? null,
     providerReady: getBaleSafirSettings(config) !== null,
     vipRequestId: row.vipRequestId,
+    returnCommitment,
   };
 }

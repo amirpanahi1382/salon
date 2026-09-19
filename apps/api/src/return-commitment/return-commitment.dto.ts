@@ -77,23 +77,43 @@ export class ReturnCommitmentResponseDto {
   @ApiProperty({
     nullable: true,
     type: String,
-    description: 'Explicit actual Visit id after arrival or link. Null while open. Never a future Visit id.',
+    description:
+      'Explicit actual Visit id after arrival or link. Null does not mean the operational queue is open. Never a future Visit id.',
   })
   actualVisitId!: string | null;
+
+  @ApiProperty({
+    description:
+      'Derived follow-up state: actualVisitId is null AND no same-tenant Visit with visitedAt > source MessageDelivery.submittedAt. Not COMMITMENT_BACKED.',
+  })
+  operationallyOpen!: boolean;
 
   @ApiProperty({
     nullable: true,
     type: () => CommitmentBackedReturnDto,
     description:
-      'Derived COMMITMENT_BACKED evidence when actualVisitId is set. Not causal/incremental revenue.',
+      'Derived COMMITMENT_BACKED evidence when actualVisitId is set. Not causal/incremental revenue. Unlinked later Visits do not populate this.',
   })
   commitmentBackedReturn!: CommitmentBackedReturnDto | null;
 
-  @ApiProperty()
-  createdByUserId!: string;
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    description: 'Salon user who recorded the agreement. Null when recorded by platform support.',
+  })
+  createdByUserId!: string | null;
 
-  @ApiProperty()
-  updatedByUserId!: string;
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    description: 'Salon user who last updated the agreement. Null when last updated by platform support.',
+  })
+  updatedByUserId!: string | null;
+
+  @ApiProperty({
+    description: 'True when a platform operator recorded the original agreement. Does not expose admin identity.',
+  })
+  recordedBySupport!: boolean;
 
   @ApiProperty()
   createdAt!: string;
@@ -127,6 +147,53 @@ export class UpcomingReturnCommitmentItemDto {
   expectedAt!: string;
 }
 
+export class ListOpenReturnCommitmentsQueryDto {
+  @ApiPropertyOptional({ description: 'Opaque cursor from the previous page' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(512)
+  cursor?: string;
+}
+
+export class OpenReturnCommitmentItemDto {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty()
+  customerId!: string;
+
+  @ApiProperty()
+  customerName!: string;
+
+  @ApiProperty({ description: 'Canonical Customer.phoneNumber. Not copied onto the commitment.' })
+  customerPhone!: string;
+
+  @ApiProperty({ description: 'Agreed expected return instant. Not a reserved slot.' })
+  expectedAt!: string;
+
+  @ApiProperty({
+    description:
+      'True when expectedAt is earlier than now. Overdue is not a no-show and does not close the commitment.',
+  })
+  overdue!: boolean;
+
+  @ApiProperty({
+    description: 'True when a platform operator recorded the original agreement. No admin identity.',
+  })
+  recordedBySupport!: boolean;
+}
+
+export class OpenReturnCommitmentListPageDto {
+  @ApiProperty({ type: [OpenReturnCommitmentItemDto] })
+  items!: OpenReturnCommitmentItemDto[];
+
+  @ApiProperty()
+  hasMore!: boolean;
+
+  @ApiProperty({ nullable: true, type: String })
+  nextCursor!: string | null;
+}
+
 export class UpcomingReturnCommitmentListPageDto {
   @ApiProperty({ type: [UpcomingReturnCommitmentItemDto] })
   items!: UpcomingReturnCommitmentItemDto[];
@@ -153,6 +220,12 @@ export class ReturnCommitmentSummaryDto {
 
   @ApiProperty({ nullable: true, type: String })
   actualVisitId!: string | null;
+
+  @ApiProperty()
+  recordedBySupport!: boolean;
+
+  @ApiProperty({ description: 'Concurrency token for PATCH' })
+  updatedAt!: string;
 }
 
 export class ArriveReturnCommitmentSaleDto {

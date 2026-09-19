@@ -728,13 +728,11 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
   }
 
   Future<void> _arrive(ReturnCommitment commitment) async {
-    final recorded = await context.push<bool>(
+    await context.push<bool>(
       '/customers/${widget.customerId}/record-visit',
       extra: commitment,
     );
-    if (recorded == true) {
-      await _load();
-    }
+    await _load();
   }
 
   Future<void> _deleteCustomer(Customer customer) async {
@@ -898,10 +896,17 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                 Text(
                   row.isFulfilled
                       ? AppStrings.recoveryCommitmentBackedTitle
-                      : isAgreedTimePast(row)
-                          ? AppStrings.agreedTimePast
-                          : AppStrings.agreedReturnCaption,
+                      : !row.operationallyOpen
+                          ? AppStrings.operationallySettledUnlinked
+                          : isAgreedTimePast(row)
+                              ? AppStrings.agreedTimePast
+                              : AppStrings.agreedReturnCaption,
                 ),
+                if (row.recordedBySupport)
+                  Text(
+                    AppStrings.recordedBySupport,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
                 if (isOpenReturnCommitment(row)) ...[
                   const SizedBox(height: 8),
                   Wrap(

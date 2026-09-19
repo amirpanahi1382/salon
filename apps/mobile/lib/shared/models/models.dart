@@ -748,6 +748,7 @@ class AdminQueueItem {
     this.failureCode,
     this.submittedAt,
     this.failedAt,
+    this.returnCommitment,
   });
 
   final String id;
@@ -769,6 +770,7 @@ class AdminQueueItem {
   final DateTime? failedAt;
   final bool providerReady;
   final String? vipRequestId;
+  final ReturnCommitmentSummary? returnCommitment;
 
   factory AdminQueueItem.fromJson(Map<String, dynamic> json) {
     return AdminQueueItem(
@@ -791,6 +793,9 @@ class AdminQueueItem {
       failedAt: _parseDate(json['failedAt']),
       providerReady: json['providerReady'] as bool? ?? false,
       vipRequestId: json['vipRequestId'] as String?,
+      returnCommitment: json['returnCommitment'] is Map
+          ? ReturnCommitmentSummary.fromJson(asJsonMap(json['returnCommitment']))
+          : null,
     );
   }
 }
@@ -955,11 +960,15 @@ class ReturnCommitmentSummary {
     required this.id,
     required this.expectedAt,
     this.actualVisitId,
+    this.recordedBySupport = false,
+    this.updatedAt,
   });
 
   final String id;
   final DateTime expectedAt;
   final String? actualVisitId;
+  final bool recordedBySupport;
+  final DateTime? updatedAt;
 
   bool get isFulfilled => actualVisitId != null;
 
@@ -968,6 +977,10 @@ class ReturnCommitmentSummary {
       id: json['id'] as String,
       expectedAt: DateTime.parse(json['expectedAt'] as String),
       actualVisitId: json['actualVisitId'] as String?,
+      recordedBySupport: json['recordedBySupport'] as bool? ?? false,
+      updatedAt: json['updatedAt'] is String
+          ? DateTime.parse(json['updatedAt'] as String)
+          : null,
     );
   }
 }
@@ -1019,7 +1032,7 @@ class CommitmentBackedReturn {
 }
 
 class ReturnCommitment {
-  const ReturnCommitment({
+  ReturnCommitment({
     required this.id,
     required this.customerId,
     required this.sourceRequestId,
@@ -1029,7 +1042,9 @@ class ReturnCommitment {
     required this.updatedAt,
     this.actualVisitId,
     this.commitmentBackedReturn,
-  });
+    this.recordedBySupport = false,
+    bool? operationallyOpen,
+  }) : operationallyOpen = operationallyOpen ?? (actualVisitId == null);
 
   final String id;
   final String customerId;
@@ -1040,6 +1055,8 @@ class ReturnCommitment {
   final DateTime createdAt;
   final DateTime updatedAt;
   final CommitmentBackedReturn? commitmentBackedReturn;
+  final bool recordedBySupport;
+  final bool operationallyOpen;
 
   bool get isFulfilled => actualVisitId != null;
 
@@ -1061,6 +1078,9 @@ class ReturnCommitment {
               asJsonMap(json['commitmentBackedReturn']),
             )
           : null,
+      recordedBySupport: json['recordedBySupport'] as bool? ?? false,
+      operationallyOpen: json['operationallyOpen'] as bool? ??
+          json['actualVisitId'] == null,
     );
   }
 }
@@ -1084,6 +1104,38 @@ class UpcomingReturnCommitment {
       customerId: json['customerId'] as String,
       customerName: json['customerName'] as String,
       expectedAt: DateTime.parse(json['expectedAt'] as String),
+    );
+  }
+}
+
+class OpenAgreedReturn {
+  const OpenAgreedReturn({
+    required this.id,
+    required this.customerId,
+    required this.customerName,
+    required this.customerPhone,
+    required this.expectedAt,
+    required this.overdue,
+    this.recordedBySupport = false,
+  });
+
+  final String id;
+  final String customerId;
+  final String customerName;
+  final String customerPhone;
+  final DateTime expectedAt;
+  final bool overdue;
+  final bool recordedBySupport;
+
+  factory OpenAgreedReturn.fromJson(Map<String, dynamic> json) {
+    return OpenAgreedReturn(
+      id: json['id'] as String,
+      customerId: json['customerId'] as String,
+      customerName: json['customerName'] as String,
+      customerPhone: json['customerPhone'] as String,
+      expectedAt: DateTime.parse(json['expectedAt'] as String),
+      overdue: json['overdue'] as bool? ?? false,
+      recordedBySupport: json['recordedBySupport'] as bool? ?? false,
     );
   }
 }

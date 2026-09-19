@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
+import type { ReturnCommitmentSummaryDto } from '../return-commitment/return-commitment.dto';
 import {
   MESSAGE_DELIVERY_MODES,
   MESSAGE_FAILURE_CODES,
@@ -98,6 +99,9 @@ export class AdminMessageQueueItemDto {
 
   @ApiProperty({ nullable: true, type: String })
   vipRequestId!: string | null;
+
+  @ApiProperty({ nullable: true, type: () => Object })
+  returnCommitment!: ReturnCommitmentSummaryDto | null;
 }
 
 export class AdminMessageQueuePageDto {

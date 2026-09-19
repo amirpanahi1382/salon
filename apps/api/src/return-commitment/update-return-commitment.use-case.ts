@@ -21,7 +21,7 @@ import {
   returnCommitmentUpdateRequestHash,
 } from './return-commitment.idempotency';
 import type { UpdateReturnCommitmentDto } from './return-commitment.dto';
-import { toReturnCommitmentResponse, type ReturnCommitmentRow } from './return-commitment.mapper';
+import type { ReturnCommitmentRow } from './return-commitment.mapper';
 import { ReturnCommitmentRepository } from './return-commitment.repository';
 
 @Injectable()
@@ -112,7 +112,7 @@ export class UpdateReturnCommitmentUseCase {
           id,
           expectedAt,
           updatedAt: tokenUpdatedAt,
-          actorId: principal.userId,
+          actor: { kind: 'SALON_USER', userId: principal.userId },
           now,
         });
         if (result.count === 0) {
@@ -143,7 +143,7 @@ export class UpdateReturnCommitmentUseCase {
         return row as ReturnCommitmentRow;
       });
 
-      return toReturnCommitmentResponse(updated);
+      return this.commitments.toReadModel(principal.tenantId, updated);
     } catch (error: unknown) {
       const mapped = mapPrismaError(error);
       if (mapped) {

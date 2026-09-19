@@ -18,6 +18,15 @@ Future<ReturnCommitment?> showReturnCommitmentForm({
   required String customerId,
   String? messageRequestId,
   ReturnCommitment? existing,
+  Future<ReturnCommitment> Function({
+    required DateTime expectedAt,
+    required String idempotencyKey,
+  })? create,
+  Future<ReturnCommitment> Function({
+    required DateTime expectedAt,
+    required DateTime updatedAt,
+    required String idempotencyKey,
+  })? update,
 }) {
   return showModalBottomSheet<ReturnCommitment>(
     context: context,
@@ -37,6 +46,8 @@ Future<ReturnCommitment?> showReturnCommitmentForm({
           customerId: customerId,
           messageRequestId: messageRequestId,
           existing: existing,
+          create: create,
+          update: update,
         ),
       );
     },
@@ -49,11 +60,22 @@ class ReturnCommitmentFormSheet extends ConsumerStatefulWidget {
     required this.customerId,
     this.messageRequestId,
     this.existing,
+    this.create,
+    this.update,
   });
 
   final String customerId;
   final String? messageRequestId;
   final ReturnCommitment? existing;
+  final Future<ReturnCommitment> Function({
+    required DateTime expectedAt,
+    required String idempotencyKey,
+  })? create;
+  final Future<ReturnCommitment> Function({
+    required DateTime expectedAt,
+    required DateTime updatedAt,
+    required String idempotencyKey,
+  })? update;
 
   @override
   ConsumerState<ReturnCommitmentFormSheet> createState() =>
@@ -123,10 +145,23 @@ class _ReturnCommitmentFormSheetState
       final repo = ref.read(returnCommitmentRepositoryProvider);
       final ReturnCommitment saved;
       if (widget.existing != null) {
-        saved = await repo.update(
-          id: widget.existing!.id,
+        if (widget.update != null) {
+          saved = await widget.update!(
+            expectedAt: _expectedAt,
+            updatedAt: widget.existing!.updatedAt,
+            idempotencyKey: _idempotencyKey,
+          );
+        } else {
+          saved = await repo.update(
+            id: widget.existing!.id,
+            expectedAt: _expectedAt,
+            updatedAt: widget.existing!.updatedAt,
+            idempotencyKey: _idempotencyKey,
+          );
+        }
+      } else if (widget.create != null) {
+        saved = await widget.create!(
           expectedAt: _expectedAt,
-          updatedAt: widget.existing!.updatedAt,
           idempotencyKey: _idempotencyKey,
         );
       } else {

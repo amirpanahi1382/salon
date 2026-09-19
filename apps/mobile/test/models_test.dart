@@ -284,6 +284,15 @@ void main() {
       ).userMessage,
       contains('تعداد تلاش'),
     );
+    expect(
+      const ApiException(
+        statusCode: 409,
+        code: 'RETURN_COMMITMENT_VISIT_REVIEW_REQUIRED',
+        message:
+            'A visit after this follow-up is already recorded. Review the existing visit instead of creating another one.',
+      ).userMessage,
+      'برای این مشتری بعد از پیگیری، مراجعه‌ای ثبت شده است. ابتدا مراجعه موجود را بررسی کنید.',
+    );
   });
 
   test('parses platform-admin login JSON even when maps are untyped', () {

@@ -106,7 +106,7 @@ export class LinkReturnCommitmentVisitUseCase {
           tenantId: principal.tenantId,
           id,
           visitId: visit.id,
-          actorId: principal.userId,
+          actor: { kind: 'SALON_USER', userId: principal.userId },
           now,
         });
         if (linked.count === 0) {

@@ -4,10 +4,12 @@ import { CustomerRepository } from '../customer/customer.repository';
 import { decodeCursor, encodeCursor, toListPage } from '../infrastructure/http/list-page';
 import { RETURN_COMMITMENT_LIST_LIMIT, resolveUpcomingWindow } from './upcoming-window';
 import type {
+  ListOpenReturnCommitmentsQueryDto,
   ListReturnCommitmentsQueryDto,
   ListUpcomingReturnCommitmentsQueryDto,
 } from './return-commitment.dto';
 import {
+  toOpenReturnCommitmentItem,
   toUpcomingReturnCommitmentItem,
   type ReturnCommitmentRow,
 } from './return-commitment.mapper';
@@ -61,6 +63,35 @@ export class ListUpcomingReturnCommitmentsUseCase {
       from: window.from.toISOString(),
       to: window.to.toISOString(),
     };
+  }
+}
+
+@Injectable()
+export class ListOpenReturnCommitmentsUseCase {
+  constructor(private readonly commitments: ReturnCommitmentRepository) {}
+
+  async execute(principal: AuthenticatedPrincipal, query: ListOpenReturnCommitmentsQueryDto) {
+    const cursor = parseExpectedAtCursor(query.cursor);
+    const rows = await this.commitments.listOpen(principal.tenantId, cursor);
+    const now = new Date();
+    return toListPage(
+      rows.map((row) =>
+        toOpenReturnCommitmentItem(
+          {
+            id: row.id,
+            customerId: row.customer_id,
+            expectedAt: row.expected_at,
+            createdByPlatformAdminId: row.created_by_platform_admin_id,
+            firstName: row.first_name,
+            lastName: row.last_name,
+            phoneNumber: row.phone_number,
+          },
+          now,
+        ),
+      ),
+      RETURN_COMMITMENT_LIST_LIMIT,
+      (item) => encodeCursor([item.expectedAt, item.id]),
+    );
   }
 }
 

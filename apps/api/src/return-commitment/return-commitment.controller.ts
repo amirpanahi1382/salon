@@ -11,6 +11,7 @@ import { CreateReturnCommitmentUseCase } from './create-return-commitment.use-ca
 import { LinkReturnCommitmentVisitUseCase } from './link-return-commitment-visit.use-case';
 import {
   ListCustomerReturnCommitmentsUseCase,
+  ListOpenReturnCommitmentsUseCase,
   ListUpcomingReturnCommitmentsUseCase,
 } from './list-return-commitments.use-case';
 import { UpdateReturnCommitmentUseCase } from './update-return-commitment.use-case';
@@ -18,6 +19,7 @@ import {
   ArriveReturnCommitmentDto,
   CreateReturnCommitmentDto,
   LinkReturnCommitmentVisitDto,
+  ListOpenReturnCommitmentsQueryDto,
   ListReturnCommitmentsQueryDto,
   ListUpcomingReturnCommitmentsQueryDto,
   UpdateReturnCommitmentDto,
@@ -36,7 +38,20 @@ export class ReturnCommitmentController {
     private readonly linkReturnCommitmentVisit: LinkReturnCommitmentVisitUseCase,
     private readonly listCustomerReturnCommitments: ListCustomerReturnCommitmentsUseCase,
     private readonly listUpcomingReturnCommitments: ListUpcomingReturnCommitmentsUseCase,
+    private readonly listOpenReturnCommitments: ListOpenReturnCommitmentsUseCase,
   ) {}
+
+  @Get('return-commitments/open')
+  @ApiOperation({
+    summary:
+      'List customers with an operationally open agreed return. Open means actualVisitId is null AND no same-salon Visit with visitedAt > source MessageDelivery.submittedAt. One row per customer from remaining open commitments (earliest expectedAt, then id). Overdue included; overdue is not a no-show. Does not write actualVisitId.',
+  })
+  listOpen(
+    @CurrentUser() user: AuthenticatedPrincipal,
+    @Query() query: ListOpenReturnCommitmentsQueryDto,
+  ) {
+    return this.listOpenReturnCommitments.execute(user, query);
+  }
 
   @Get('return-commitments/upcoming')
   @ApiOperation({
@@ -112,7 +127,7 @@ export class ReturnCommitmentController {
   })
   @ApiOperation({
     summary:
-      'Record that the customer actually arrived and create an authoritative completed Visit linked to this ReturnCommitment. Not a booking check-in.',
+      'Record that the customer actually arrived and create an authoritative completed Visit linked to this ReturnCommitment. Not a booking check-in. 409 RETURN_COMMITMENT_VISIT_REVIEW_REQUIRED when actualVisitId is null but a post-outreach Visit already exists; does not infer a link.',
   })
   arrive(
     @CurrentUser() user: AuthenticatedPrincipal,

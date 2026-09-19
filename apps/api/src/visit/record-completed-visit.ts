@@ -200,6 +200,15 @@ export class RecordCompletedVisit {
       now: Date;
     },
   ): Promise<RecordedVisit> {
+    const lockedCustomer = await this.customers.lockByIdForUpdate(
+      tx,
+      input.principal.tenantId,
+      input.customerId,
+    );
+    if (!lockedCustomer) {
+      throw new NotFoundError('Customer not found');
+    }
+
     const visit = await tx.visit.create({
       data: {
         id: input.visitId,

@@ -6,8 +6,10 @@ import 'package:go_router/go_router.dart';
 import '../../core/state/providers.dart';
 import '../../core/theme/app_tokens.dart';
 import '../../core/widgets/app_widgets.dart';
+import '../../shared/jalali.dart';
 import '../../shared/labels.dart';
 import '../../shared/models/models.dart';
+import '../recovery/return_commitment_form.dart';
 
 class AdminMessageQueueScreen extends ConsumerStatefulWidget {
   const AdminMessageQueueScreen({super.key});
@@ -181,6 +183,72 @@ class _AdminMessageDetailSheetState extends ConsumerState<AdminMessageDetailShee
     }
   }
 
+  Future<void> _recordCommitment(AdminQueueItem item) async {
+    final existing = item.returnCommitment;
+    ReturnCommitment? existingFull;
+    if (existing != null && existing.updatedAt != null) {
+      existingFull = ReturnCommitment(
+        id: existing.id,
+        customerId: item.customerId,
+        sourceRequestId: item.id,
+        sourceDeliveryId: '',
+        expectedAt: existing.expectedAt,
+        createdAt: existing.expectedAt,
+        updatedAt: existing.updatedAt!,
+        actualVisitId: existing.actualVisitId,
+        recordedBySupport: existing.recordedBySupport,
+      );
+    }
+    final saved = await showReturnCommitmentForm(
+      context: context,
+      ref: ref,
+      customerId: item.customerId,
+      messageRequestId: item.id,
+      existing: existingFull,
+      create: ({
+        required DateTime expectedAt,
+        required String idempotencyKey,
+      }) {
+        return ref.read(adminMessageRepositoryProvider).createReturnCommitment(
+              messageRequestId: item.id,
+              expectedAt: expectedAt,
+              idempotencyKey: idempotencyKey,
+            );
+      },
+      update: existingFull == null
+          ? null
+          : ({
+              required DateTime expectedAt,
+              required DateTime updatedAt,
+              required String idempotencyKey,
+            }) {
+              return ref.read(adminMessageRepositoryProvider).updateReturnCommitment(
+                    id: existingFull!.id,
+                    expectedAt: expectedAt,
+                    updatedAt: updatedAt,
+                    idempotencyKey: idempotencyKey,
+                  );
+            },
+    );
+    if (saved != null) {
+      await _reload();
+    }
+  }
+
+  bool _canManageCommitment(AdminQueueItem item) {
+    if (item.customerId.isEmpty || item.vipRequestId != null) {
+      return false;
+    }
+    if (item.status != 'SENT' && item.deliveryStatus != 'SENT') {
+      return false;
+    }
+    final existing = item.returnCommitment;
+    if (existing == null) {
+      return true;
+    }
+    return existing.actualVisitId == null && existing.updatedAt != null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final item = _item;
@@ -209,6 +277,12 @@ class _AdminMessageDetailSheetState extends ConsumerState<AdminMessageDetailShee
                   Text(item.messageText),
                   const SizedBox(height: 12),
                   Text(messageStatusLabel(item.status)),
+                  if (item.returnCommitment != null) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      '${AppStrings.agreedAtLabel}: ${formatJalaliDateTime(item.returnCommitment!.expectedAt)}',
+                    ),
+                  ],
                   if (item.mode == 'BALE' && !item.providerReady)
                     const Padding(
                       padding: EdgeInsets.only(top: 8),
@@ -225,6 +299,15 @@ class _AdminMessageDetailSheetState extends ConsumerState<AdminMessageDetailShee
                       Clipboard.setData(ClipboardData(text: item.messageText));
                     },
                   ),
+                  if (_canManageCommitment(item)) ...[
+                    const SizedBox(height: 8),
+                    AppButton(
+                      label: item.returnCommitment == null
+                          ? AppStrings.recordAgreedReturn
+                          : AppStrings.editAgreedReturn,
+                      onPressed: _busy ? null : () => _recordCommitment(item),
+                    ),
+                  ],
                   if (item.mode == null) ...[
                     if (item.vipRequestId == null) ...[
                       const SizedBox(height: 8),

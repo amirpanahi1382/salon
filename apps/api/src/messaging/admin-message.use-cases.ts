@@ -15,6 +15,8 @@ import { encodeCursor, toListPage } from '../infrastructure/http/list-page';
 import { mapPrismaError } from '../infrastructure/http/prisma-error';
 import { AdminMessageQueueQueryDto } from './admin-message.dto';
 import { toAdminMessageItem, type AdminMessageRow } from './admin-message.mapper';
+import { toReturnCommitmentSummary, type ReturnCommitmentRow } from '../return-commitment/return-commitment.mapper';
+import { ReturnCommitmentRepository } from '../return-commitment/return-commitment.repository';
 import {
   ADMIN_MESSAGE_LIST_LIMIT,
   AdminMessageRepository,
@@ -47,7 +49,7 @@ export class ListAdminMessageQueueUseCase {
       encodeCursor([row.requestedAt.toISOString(), row.id]),
     );
     return {
-      items: page.items.map((row) => toAdminMessageItem(row, this.config.values)),
+      items: page.items.map((row) => toAdminMessageItem(row, this.config.values, null)),
       hasMore: page.hasMore,
       nextCursor: page.nextCursor,
     };
@@ -58,6 +60,7 @@ export class ListAdminMessageQueueUseCase {
 export class GetAdminMessageUseCase {
   constructor(
     private readonly messages: AdminMessageRepository,
+    private readonly commitments: ReturnCommitmentRepository,
     private readonly config: AppConfigService,
   ) {}
 
@@ -66,7 +69,12 @@ export class GetAdminMessageUseCase {
     if (!row) {
       throw new NotFoundError('Message not found');
     }
-    return toAdminMessageItem(row as AdminMessageRow, this.config.values);
+    const commitment = await this.commitments.findBySourceRequestId(row.salonId, row.id);
+    return toAdminMessageItem(
+      row as AdminMessageRow,
+      this.config.values,
+      commitment ? toReturnCommitmentSummary(commitment as ReturnCommitmentRow) : null,
+    );
   }
 }
 

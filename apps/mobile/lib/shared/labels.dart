@@ -167,6 +167,15 @@ class AppStrings {
       'فعلاً زمان مراجعه توافق‌شده‌ای برای روزهای نزدیک ثبت نشده.';
   static const upcomingCommitmentsHint =
       'این فهرست فقط برای نوشتن پیام است؛ پر یا خالی بودن ساعت را نشان نمی‌دهد.';
+  static const openAgreedReturnsTitle = 'مشتریان نوبت گرفته بازگشتی';
+  static const openAgreedReturnsHint =
+      'مشتریانی که توافق بازگشت دارند و هنوز مراجعهٔ بعد از پیگیری برای آن‌ها ثبت نشده.';
+  static const openAgreedReturnsEmpty =
+      'الان مشتری در صف پیگیری بازگشت باز ندارید.';
+  static const recordedBySupport = 'ثبت‌شده توسط پشتیبانی';
+  static const operationallySettledUnlinked =
+      'مراجعه‌ای پس از این پیگیری ثبت شده؛ برای اتصال دقیق، مراجعه موجود را بررسی کنید';
+  static const callCustomer = 'تماس';
   static const staleCommitmentEdit =
       'این زمان را کس دیگری تغییر داده. فهرست به‌روز شد؛ دوباره ذخیره کنید.';
   static const commitmentAlreadyExists = 'برای این پیام قبلاً زمان مراجعه ثبت شده.';
@@ -176,6 +185,8 @@ class AppStrings {
       'زمان مراجعه باید بعد از ارسال پیام باشد.';
   static const expectedAtMustBeFuture = 'زمان مراجعه باید در آینده باشد.';
   static const arrivalAlreadyRecorded = 'برای این پیگیری قبلاً مراجعه ثبت شده.';
+  static const arrivalVisitReviewRequired =
+      'برای این مشتری بعد از پیگیری، مراجعه‌ای ثبت شده است. ابتدا مراجعه موجود را بررسی کنید.';
   static const customerActivity = 'فعالیت مشتری';
   static const visitCompletedActivity = 'بازدید انجام شده';
   static const purchaseRecordedActivity = 'خرید ثبت شده';
@@ -462,6 +473,8 @@ String localizeUserFacingMessage(String message) {
         AppStrings.staleCommitmentEdit,
     'Return commitment is already linked to an actual visit':
         AppStrings.arrivalAlreadyRecorded,
+    'A visit after this follow-up is already recorded. Review the existing visit instead of creating another one.':
+        AppStrings.arrivalVisitReviewRequired,
     'Visit does not belong to this customer':
         'این مراجعه مربوط به این مشتری نیست.',
   };

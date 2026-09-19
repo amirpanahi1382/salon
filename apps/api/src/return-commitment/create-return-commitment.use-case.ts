@@ -22,7 +22,7 @@ import {
   returnCommitmentCreateRequestHash,
 } from './return-commitment.idempotency';
 import type { CreateReturnCommitmentDto } from './return-commitment.dto';
-import { toReturnCommitmentResponse, type ReturnCommitmentRow } from './return-commitment.mapper';
+import type { ReturnCommitmentRow } from './return-commitment.mapper';
 import { ReturnCommitmentRepository } from './return-commitment.repository';
 
 @Injectable()
@@ -108,7 +108,7 @@ export class CreateReturnCommitmentUseCase {
           sourceMessageRequestId: source.requestId,
           sourceMessageDeliveryId: source.deliveryId,
           expectedAt,
-          createdByUserId: principal.userId,
+          actor: { kind: 'SALON_USER', userId: principal.userId },
           now,
         });
         if (!inserted) {
@@ -141,7 +141,7 @@ export class CreateReturnCommitmentUseCase {
         return row as ReturnCommitmentRow;
       });
 
-      return toReturnCommitmentResponse(created);
+      return this.commitments.toReadModel(principal.tenantId, created);
     } catch (error: unknown) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2003') {
         throw new NotFoundError('Message not found');

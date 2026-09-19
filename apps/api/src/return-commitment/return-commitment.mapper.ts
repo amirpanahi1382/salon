@@ -18,7 +18,9 @@ export const RETURN_COMMITMENT_SELECT = {
   expectedAt: true,
   actualVisitId: true,
   createdByUserId: true,
+  createdByPlatformAdminId: true,
   updatedByUserId: true,
+  updatedByPlatformAdminId: true,
   createdAt: true,
   updatedAt: true,
 } as const;
@@ -30,8 +32,10 @@ export type ReturnCommitmentRow = {
   sourceMessageDeliveryId: string;
   expectedAt: Date;
   actualVisitId: string | null;
-  createdByUserId: string;
-  updatedByUserId: string;
+  createdByUserId: string | null;
+  createdByPlatformAdminId: string | null;
+  updatedByUserId: string | null;
+  updatedByPlatformAdminId: string | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -65,6 +69,7 @@ export function toCommitmentBackedReturn(
 export function toReturnCommitmentResponse(
   row: ReturnCommitmentRow,
   commitmentBackedReturn: CommitmentBackedReturnDto | null = null,
+  operationallyOpen = row.actualVisitId == null,
 ): ReturnCommitmentResponseDto {
   return {
     id: row.id,
@@ -75,9 +80,11 @@ export function toReturnCommitmentResponse(
     },
     expectedAt: row.expectedAt.toISOString(),
     actualVisitId: row.actualVisitId,
+    operationallyOpen,
     commitmentBackedReturn,
     createdByUserId: row.createdByUserId,
     updatedByUserId: row.updatedByUserId,
+    recordedBySupport: row.createdByPlatformAdminId != null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -88,6 +95,8 @@ export function toReturnCommitmentSummary(row: ReturnCommitmentRow): ReturnCommi
     id: row.id,
     expectedAt: row.expectedAt.toISOString(),
     actualVisitId: row.actualVisitId,
+    recordedBySupport: row.createdByPlatformAdminId != null,
+    updatedAt: row.updatedAt.toISOString(),
   };
 }
 
@@ -102,5 +111,28 @@ export function toUpcomingReturnCommitmentItem(row: {
     customerId: row.customerId,
     customerName: `${row.customer.firstName} ${row.customer.lastName}`.trim(),
     expectedAt: row.expectedAt.toISOString(),
+  };
+}
+
+export function toOpenReturnCommitmentItem(
+  row: {
+    id: string;
+    customerId: string;
+    expectedAt: Date;
+    createdByPlatformAdminId: string | null;
+    firstName: string;
+    lastName: string;
+    phoneNumber: string;
+  },
+  now = new Date(),
+) {
+  return {
+    id: row.id,
+    customerId: row.customerId,
+    customerName: `${row.firstName} ${row.lastName}`.trim(),
+    customerPhone: row.phoneNumber,
+    expectedAt: row.expectedAt.toISOString(),
+    overdue: row.expectedAt.getTime() < now.getTime(),
+    recordedBySupport: row.createdByPlatformAdminId != null,
   };
 }

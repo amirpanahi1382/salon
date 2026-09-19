@@ -284,6 +284,8 @@ model PlatformAdmin {
   createdVipLists      VipTargetList[]   @relation("VipListCreatedByAdmin")
   grantedVipEntitlements VipSalonEntitlement[] @relation("VipEntitlementGrantedBy")
   revokedVipEntitlements VipSalonEntitlement[] @relation("VipEntitlementRevokedBy")
+  createdReturnCommitments ReturnCommitment[] @relation("ReturnCommitmentCreatedByAdmin")
+  updatedReturnCommitments ReturnCommitment[] @relation("ReturnCommitmentUpdatedByAdmin")
 
   @@map("platform_admins")
 }
@@ -381,6 +383,7 @@ model MessageDelivery {
 
 /// Product-originated record that a customer agreed to return after SENT outreach.
 /// Not an appointment, booking, reservation, calendar event, or Visit.
+/// Actor is XOR: salon User XOR PlatformAdmin. CHECK constraints in SQL.
 model ReturnCommitment {
   id                      String   @id @db.Uuid
   salonId                 String   @map("salon_id") @db.Uuid
@@ -392,13 +395,17 @@ model ReturnCommitment {
   sourceMessageDeliveryId String   @map("source_message_delivery_id") @db.Uuid
   sourceMessageDelivery   MessageDelivery @relation(fields: [sourceMessageDeliveryId, salonId], references: [id, salonId], onDelete: Restrict)
   expectedAt              DateTime @map("expected_at") @db.Timestamptz(3)
-  /// Reserved for Initiative 1C explicit Visit linkage. Null in 1B. Not a booking.
+  /// Explicit Visit linkage via arrive or link-visit only. Null while open. Not a booking.
   actualVisitId           String?  @map("actual_visit_id") @db.Uuid
   actualVisit             Visit?   @relation(fields: [actualVisitId, salonId], references: [id, salonId], onDelete: Restrict)
-  createdByUserId         String   @map("created_by_user_id") @db.Uuid
-  createdByUser           User     @relation("ReturnCommitmentCreatedBy", fields: [createdByUserId, salonId], references: [id, salonId], onDelete: Restrict)
-  updatedByUserId         String   @map("updated_by_user_id") @db.Uuid
-  updatedByUser           User     @relation("ReturnCommitmentUpdatedBy", fields: [updatedByUserId, salonId], references: [id, salonId], onDelete: Restrict)
+  createdByUserId         String?  @map("created_by_user_id") @db.Uuid
+  createdByUser           User?    @relation("ReturnCommitmentCreatedBy", fields: [createdByUserId, salonId], references: [id, salonId], onDelete: Restrict)
+  createdByPlatformAdminId String? @map("created_by_platform_admin_id") @db.Uuid
+  createdByPlatformAdmin  PlatformAdmin? @relation("ReturnCommitmentCreatedByAdmin", fields: [createdByPlatformAdminId], references: [id], onDelete: Restrict)
+  updatedByUserId         String?  @map("updated_by_user_id") @db.Uuid
+  updatedByUser           User?    @relation("ReturnCommitmentUpdatedBy", fields: [updatedByUserId, salonId], references: [id, salonId], onDelete: Restrict)
+  updatedByPlatformAdminId String? @map("updated_by_platform_admin_id") @db.Uuid
+  updatedByPlatformAdmin  PlatformAdmin? @relation("ReturnCommitmentUpdatedByAdmin", fields: [updatedByPlatformAdminId], references: [id], onDelete: Restrict)
   createdAt               DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt               DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
@@ -407,6 +414,8 @@ model ReturnCommitment {
   @@unique([sourceMessageDeliveryId, salonId], map: "return_commitments_salon_source_delivery_key")
   /// Partial unique `return_commitments_salon_actual_visit_key`:
   /// UNIQUE (salon_id, actual_visit_id) WHERE actual_visit_id IS NOT NULL.
+  /// Partial `return_commitments_open_salon_expected_id_idx`:
+  /// (salon_id, expected_at, id) WHERE actual_visit_id IS NULL.
   @@index([salonId, customerId, expectedAt, id])
   @@index([salonId, expectedAt, id])
   @@map("return_commitments")

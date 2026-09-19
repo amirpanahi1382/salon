@@ -25,6 +25,6 @@ Severity: **P1** blocks trustworthy production at modest scale or integrity. **P
 | TD-19 | P2 | VIP | `VipRequestRecipient.messageRequestId` FKs `message_requests(id)` only, not composite `(id, salonId)` | Tenant-composite FK if we can add it without rewriting history |
 | TD-16 | P3 | Auth | JWT has no refresh rotation; role claim can lag until next request (DB role wins) | Accept for MVP or add refresh later |
 | TD-17 | P3 | Health | MinIO not in readiness; VIP uploads fail independently | Optional storage probe if VIP is production-critical |
-| TD-18 | P3 | Docs/ops | Compose still ships Redis for an unused dependency | Keep until throttle work, or stop requiring the var (code change) |
+| TD-20 | P2 | Recovery | Synchronous `/arrive` now 409 `RETURN_COMMITMENT_VISIT_REVIEW_REQUIRED` when `actualVisitId` is null and a same-salon Visit already has `visitedAt` > source `submittedAt`. No auto-link. Remaining race: if `/arrive` commits a new linked Visit first, a concurrent or later `POST /visits` can still insert a second Visit (two write APIs; no per-customer/day uniqueness). Customer `FOR UPDATE` serializes the in-flight check vs Visit insert so both cannot observe an empty set and insert. | Do not add one-Visit-per-day uniqueness. Explicit `/link-visit` remains the attribution correction. |
 
 Do not start microservices, sharding, or event sourcing to address TD-01.

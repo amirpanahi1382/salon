@@ -505,6 +505,14 @@ class ReturnCommitmentRepository {
     return UpcomingReturnCommitmentPage.fromJson(data);
   }
 
+  Future<ItemPage<OpenAgreedReturn>> listOpen({String? cursor}) async {
+    final data = await _api.get(
+      '/return-commitments/open',
+      query: cursor == null ? null : {'cursor': cursor},
+    );
+    return parseItemPage(data, OpenAgreedReturn.fromJson);
+  }
+
   Future<ItemPage<ObservedReturn>> listObservedReturns(
     String customerId, {
     String? cursor,
@@ -661,6 +669,52 @@ class AdminMessageRepository {
     final data =
         await _api.post('/admin/message-queue/$id/retry') as Map<String, dynamic>;
     return AdminQueueItem.fromJson(data);
+  }
+
+  Future<ReturnCommitment> createReturnCommitment({
+    required String messageRequestId,
+    required DateTime expectedAt,
+    required String idempotencyKey,
+  }) async {
+    Future<ReturnCommitment> send() async {
+      final data = await _api.post(
+        '/admin/message-queue/$messageRequestId/return-commitments',
+        data: {'expectedAt': expectedAt.toUtc().toIso8601String()},
+        headers: {'Idempotency-Key': idempotencyKey},
+      ) as Map<String, dynamic>;
+      return ReturnCommitment.fromJson(data);
+    }
+
+    try {
+      return await send();
+    } on NetworkException {
+      return send();
+    }
+  }
+
+  Future<ReturnCommitment> updateReturnCommitment({
+    required String id,
+    required DateTime expectedAt,
+    required DateTime updatedAt,
+    required String idempotencyKey,
+  }) async {
+    Future<ReturnCommitment> send() async {
+      final data = await _api.patch(
+        '/admin/return-commitments/$id',
+        data: {
+          'expectedAt': expectedAt.toUtc().toIso8601String(),
+          'updatedAt': updatedAt.toUtc().toIso8601String(),
+        },
+        headers: {'Idempotency-Key': idempotencyKey},
+      ) as Map<String, dynamic>;
+      return ReturnCommitment.fromJson(data);
+    }
+
+    try {
+      return await send();
+    } on NetworkException {
+      return send();
+    }
   }
 }
 

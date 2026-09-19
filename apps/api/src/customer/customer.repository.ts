@@ -50,6 +50,20 @@ export class CustomerRepository {
       where: { id: customerId, salonId: tenantId },
     });
   }
+
+  async lockByIdForUpdate(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    customerId: string,
+  ): Promise<{ id: string } | null> {
+    const rows = await tx.$queryRaw<Array<{ id: string }>>`
+      SELECT id
+      FROM customers
+      WHERE id = ${customerId}::uuid AND salon_id = ${tenantId}::uuid
+      FOR UPDATE
+    `;
+    return rows[0] ?? null;
+  }
 }
 
 /** Tenant is always required. Search and cursor are AND-ed, never overlapping OR keys. */

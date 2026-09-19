@@ -5,6 +5,7 @@ export type AppErrorCode =
   | 'NOT_FOUND'
   | 'CONFLICT'
   | 'MESSAGE_DAILY_LIMIT_REACHED'
+  | 'RETURN_COMMITMENT_VISIT_REVIEW_REQUIRED'
   | 'RATE_LIMITED'
   | 'BUSINESS_RULE'
   | 'INFRASTRUCTURE_ERROR'
@@ -68,6 +69,16 @@ export class MessageDailyLimitError extends AppError {
   constructor(message = 'A message was already requested for this customer today') {
     super('MESSAGE_DAILY_LIMIT_REACHED', message, 409);
     this.name = 'MessageDailyLimitError';
+  }
+}
+
+export const RETURN_COMMITMENT_VISIT_REVIEW_REQUIRED_MESSAGE =
+  'A visit after this follow-up is already recorded. Review the existing visit instead of creating another one.';
+
+export class ReturnCommitmentVisitReviewRequiredError extends AppError {
+  constructor(message = RETURN_COMMITMENT_VISIT_REVIEW_REQUIRED_MESSAGE) {
+    super('RETURN_COMMITMENT_VISIT_REVIEW_REQUIRED', message, 409);
+    this.name = 'ReturnCommitmentVisitReviewRequiredError';
   }
 }
 

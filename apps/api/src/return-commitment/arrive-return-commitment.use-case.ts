@@ -7,8 +7,10 @@ import {
   formatMoneyString,
   NotFoundError,
   parseMoneyString,
+  ReturnCommitmentVisitReviewRequiredError,
   type AuthenticatedPrincipal,
 } from '@salon/shared';
+import { CustomerRepository } from '../customer/customer.repository';
 import { PrismaService } from '../infrastructure/database/prisma.service';
 import {
   assertSameIdempotentRequest,
@@ -32,6 +34,7 @@ export class ArriveReturnCommitmentUseCase {
   constructor(
     private readonly prisma: PrismaService,
     private readonly commitments: ReturnCommitmentRepository,
+    private readonly customers: CustomerRepository,
     private readonly recordVisit: RecordCompletedVisit,
   ) {}
 
@@ -98,6 +101,25 @@ export class ArriveReturnCommitmentUseCase {
           throw new ConflictError('Return commitment is already linked to an actual visit');
         }
 
+        const customer = await this.customers.lockByIdForUpdate(
+          tx,
+          principal.tenantId,
+          locked.customerId,
+        );
+        if (!customer) {
+          throw new NotFoundError('Customer not found');
+        }
+
+        const laterVisitExists = await this.commitments.hasQualifyingPostOutreachVisit(
+          tx,
+          principal.tenantId,
+          locked.customerId,
+          locked.sourceMessageDeliveryId,
+        );
+        if (laterVisitExists) {
+          throw new ReturnCommitmentVisitReviewRequiredError();
+        }
+
         if (input.sale) {
           await this.recordVisit.createWithSale(tx, {
             principal,
@@ -125,7 +147,7 @@ export class ArriveReturnCommitmentUseCase {
           tenantId: principal.tenantId,
           id,
           visitId,
-          actorId: principal.userId,
+          actor: { kind: 'SALON_USER', userId: principal.userId },
           now,
         });
         if (linked.count === 0) {

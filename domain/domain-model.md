@@ -44,7 +44,7 @@ VipSalonEntitlement
 | Financial facts | LedgerTransaction (`transactions`), TransactionItem | Yes (amount header) |
 | Derived intelligence | status, signals, opportunities, segments, revenue metrics | No — computed |
 | Human/operational facts | OpportunityAction | Yes (the salon responded) |
-| Recovery fact | ReturnCommitment | Yes (salon-recorded agreed return after SENT outreach). Not a Visit or appointment |
+| Recovery fact | ReturnCommitment | Yes (agreed return after SENT outreach; salon user or platform admin actor). Not a Visit or appointment |
 | Intent | MessageRequest, VipRequest | Yes (requested) |
 | Execution | MessageDelivery, VipSampleWork object storage | Yes (how it was fulfilled) |
 | Infrastructure | OutboxEvent, AuditLog, IdempotencyRecord | Yes (ops), not business meaning |
@@ -61,7 +61,7 @@ Tenant. Owns users, customers, services, visits, transactions, actions, messages
 
 Salon operator. One salon. Roles `OWNER` | `MANAGER` | `STAFF`. Status `ACTIVE` | `DISABLED`. Email globally unique. Last active OWNER cannot be removed/demoted. MANAGER may create/disable STAFF only. OWNER assigns any role.
 
-`createdBy` on actions/messages/VIP requests points at `users.id` **without** a composite tenant FK (known debt TD-03). `ReturnCommitment` creator/updater FKs use `(userId, salonId)`.
+`createdBy` on actions/messages/VIP requests points at `users.id` **without** a composite tenant FK (known debt TD-03). `ReturnCommitment` creator/updater is XOR: composite salon `(userId, salonId)` **or** `platform_admins.id`, never both, never neither.
 
 ### PlatformAdmin
 
@@ -99,7 +99,7 @@ See `docs/messaging-domain.md`. Intent vs fulfillment. Origins: opportunity (bot
 
 ### ReturnCommitment
 
-Salon-recorded fact that a customer agreed to return after an eligible SENT customer (non-VIP) `MessageRequest`/`MessageDelivery`. Stores `expectedAt` (UTC). Not a Visit, appointment, booking, or slot. At most one row per source request and per source delivery. `actualVisitId` is set only by explicit arrival (`POST .../arrive`) or correction (`POST .../link-visit`). Visit delete unlinks in application code (must not rely on `ON DELETE SET NULL` of composite `(actual_visit_id, salon_id)`). Flutter records/edits `expectedAt` and arrives through the commitment command; it does not invent MISSED/NO_SHOW. COMMITMENT_BACKED evidence (Visit + associated ledger revenue) outranks OBSERVED last-touch association for the same Visit.
+Salon- or platform-admin-recorded fact that a customer agreed to return after an eligible SENT customer (non-VIP) `MessageRequest`/`MessageDelivery`. Stores `expectedAt` (UTC). Not a Visit, appointment, booking, or slot. At most one row per source request and per source delivery. Admin is an actor/provenance source; the row stays tenant-bound to the source message’s salon and customer. `actualVisitId` is **explicit attribution**: set only by arrival (`POST .../arrive`) or correction (`POST .../link-visit`). Independent Visit writes (`POST /visits`, complete-with-sale) do **not** infer a link and do **not** become COMMITMENT_BACKED. `/arrive` refuses to create another Visit (409 `RETURN_COMMITMENT_VISIT_REVIEW_REQUIRED`) when `actualVisitId` is still null and a qualifying later Visit already exists; it does not pick or link that Visit. **Operational openness** is a derived read: `actualVisitId` IS NULL **and** there is no same-salon same-customer Visit with `visitedAt` > source `MessageDelivery.submittedAt` (strict `>`; `createdAt`/`expectedAt` are not the chronology bound). A later Visit can settle follow-up without writing `actualVisitId`. Visit delete unlinks in application code (must not rely on `ON DELETE SET NULL` of composite `(actual_visit_id, salon_id)`). Flutter records/edits `expectedAt` and arrives through the commitment command; it does not invent MISSED/NO_SHOW. Open operational list (`GET /return-commitments/open`) uses that derived predicate, including overdue expected times (overdue ≠ no-show). COMMITMENT_BACKED evidence (explicit `actualVisitId` Visit + associated ledger revenue) outranks OBSERVED last-touch association for the same Visit; an unlinked later Visit remains OBSERVED-eligible.
 
 Owner recovery outcomes (`GET /recovery/outcomes/summary`) are **derived on read** for one Asia/Tehran Saturday business week. Headline money is COMPLETED ledger amounts on chronology-eligible COMMITMENT_BACKED Visits only. OBSERVED remains a separate count. Live derivation; voids and unlinks change later reads. Not a campaign, booking, or incremental-revenue ledger.
 

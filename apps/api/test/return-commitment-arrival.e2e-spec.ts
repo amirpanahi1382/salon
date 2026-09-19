@@ -101,11 +101,12 @@ describeIfDb('Return commitment arrival (e2e)', () => {
     salonId: string;
     userId: string;
     customerId: string;
+    submittedAt?: Date;
   }) {
     const requestId = randomUUID();
     const deliveryId = randomUUID();
-    const requestedAt = new Date(Date.now() - 60 * 60 * 1000);
-    const submittedAt = new Date(Date.now() - 30 * 60 * 1000);
+    const submittedAt = input.submittedAt ?? new Date(Date.now() - 30 * 60 * 1000);
+    const requestedAt = new Date(submittedAt.getTime() - 30 * 60 * 1000);
     await prisma.client.messageRequest.create({
       data: {
         id: requestId,
@@ -308,10 +309,12 @@ describeIfDb('Return commitment arrival (e2e)', () => {
       .expect(201);
     expect(staffArrive.body.commitmentBackedReturn.associatedRevenue.recorded).toBe(false);
 
+    const laterOutreachAt = new Date();
     const mgrMsg = await insertSentMessage({
       salonId: salon.tenantId,
       userId: salon.userId,
       customerId,
+      submittedAt: laterOutreachAt,
     });
     const mgrCommitment = await openCommitment(salon.token, mgrMsg.requestId, futureIso(26));
     const mgrArrive = await request(app.getHttpServer())
@@ -319,7 +322,7 @@ describeIfDb('Return commitment arrival (e2e)', () => {
       .set('Authorization', `Bearer ${managerToken}`)
       .set('Idempotency-Key', `arr-mgr-${randomUUID()}`)
       .send({
-        visitedAt,
+        visitedAt: new Date().toISOString(),
         sale: { serviceId, amount: '1500000.50', currency: 'IRR' },
       })
       .expect(201);
@@ -333,6 +336,7 @@ describeIfDb('Return commitment arrival (e2e)', () => {
       salonId: salon.tenantId,
       userId: salon.userId,
       customerId,
+      submittedAt: new Date(),
     });
     const ownerCommitment = await openCommitment(salon.token, ownerMsg.requestId, futureIso(28));
     const inactive = await createService(salon.token, `Old ${randomUUID().slice(0, 8)}`);
@@ -346,7 +350,7 @@ describeIfDb('Return commitment arrival (e2e)', () => {
       .set('Authorization', `Bearer ${salon.token}`)
       .set('Idempotency-Key', `arr-bad-sale-${randomUUID()}`)
       .send({
-        visitedAt,
+        visitedAt: new Date().toISOString(),
         sale: { serviceId: inactive, amount: '10.00' },
       })
       .expect(400);
@@ -360,7 +364,7 @@ describeIfDb('Return commitment arrival (e2e)', () => {
       .set('Authorization', `Bearer ${salon.token}`)
       .set('Idempotency-Key', `arr-owner-${randomUUID()}`)
       .send({
-        visitedAt,
+        visitedAt: new Date().toISOString(),
         sale: { serviceId, amount: '10.00' },
       })
       .expect(201);

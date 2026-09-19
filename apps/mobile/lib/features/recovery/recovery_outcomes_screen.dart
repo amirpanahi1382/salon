@@ -9,6 +9,7 @@ import '../../shared/jalali.dart';
 import '../../shared/labels.dart';
 import '../../shared/models/models.dart';
 import 'recovery_presentation.dart';
+import 'open_agreed_returns_section.dart';
 
 class RecoveryOutcomesScreen extends ConsumerStatefulWidget {
   const RecoveryOutcomesScreen({super.key});
@@ -22,6 +23,8 @@ class _RecoveryOutcomesScreenState extends ConsumerState<RecoveryOutcomesScreen>
   RecoveryOutcomesSummary? _summary;
   List<RecoveryOutcomeReturnItem> _commitmentBacked = const [];
   List<RecoveryOutcomeReturnItem> _observed = const [];
+  List<OpenAgreedReturn> _openReturns = const [];
+  Object? _openReturnsError;
   Object? _error;
   bool _loading = true;
   DateTime? _weekStart;
@@ -54,6 +57,14 @@ class _RecoveryOutcomesScreenState extends ConsumerState<RecoveryOutcomesScreen>
         kind: 'OBSERVED',
         weekStart: summary.period.start,
       );
+      List<OpenAgreedReturn> openReturns = const [];
+      Object? openReturnsError;
+      try {
+        final open = await repo.listOpen();
+        openReturns = open.items;
+      } catch (error) {
+        openReturnsError = error;
+      }
       if (!mounted) {
         return;
       }
@@ -62,6 +73,8 @@ class _RecoveryOutcomesScreenState extends ConsumerState<RecoveryOutcomesScreen>
         _summary = summary;
         _commitmentBacked = backed.items;
         _observed = observed.items;
+        _openReturns = openReturns;
+        _openReturnsError = openReturnsError;
         _loading = false;
       });
     } catch (error) {
@@ -111,6 +124,13 @@ class _RecoveryOutcomesScreenState extends ConsumerState<RecoveryOutcomesScreen>
             const SizedBox(height: AppTokens.space8),
             Text(AppStrings.recoveryOutcomesHint, style: theme.textTheme.bodySmall),
             const SizedBox(height: AppTokens.space12),
+            OpenAgreedReturnsSection(
+              items: _openReturns,
+              loading: false,
+              error: _openReturnsError,
+              onRetry: () => _load(weekStart: _weekStart),
+            ),
+            const SizedBox(height: AppTokens.space24),
             Row(
               children: [
                 TextButton(

@@ -13,10 +13,10 @@ bool canRecordReturnCommitment(MessageDelivery message) {
 }
 
 bool isOpenReturnCommitment(ReturnCommitment commitment) =>
-    commitment.actualVisitId == null;
+    commitment.operationallyOpen;
 
 bool isAgreedTimePast(ReturnCommitment commitment, [DateTime? now]) {
-  if (commitment.actualVisitId != null) {
+  if (!commitment.operationallyOpen) {
     return false;
   }
   return commitment.expectedAt.isBefore(now ?? DateTime.now());

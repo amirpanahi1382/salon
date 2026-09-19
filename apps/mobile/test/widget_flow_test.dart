@@ -357,6 +357,17 @@ class FakeMessageRepository extends MessageRepository {
   }
 }
 
+class FakeOpenReturnCommitmentRepository extends ReturnCommitmentRepository {
+  FakeOpenReturnCommitmentRepository({this.open = const []}) : super(_client());
+
+  final List<OpenAgreedReturn> open;
+
+  @override
+  Future<ItemPage<OpenAgreedReturn>> listOpen({String? cursor}) async {
+    return ItemPage(items: open, hasMore: false);
+  }
+}
+
 class FakeVipRepository extends VipRepository {
   FakeVipRepository({this.entitled = false}) : super(_client());
 
@@ -813,6 +824,9 @@ void main() {
           ),
           salonRepositoryProvider.overrideWith((ref) => FakeSalonRepository()),
           actionRepositoryProvider.overrideWithValue(FakeActionRepository()),
+          returnCommitmentRepositoryProvider.overrideWithValue(
+            FakeOpenReturnCommitmentRepository(),
+          ),
           authControllerProvider.overrideWith(_SignedInAuth.new),
         ],
         child: const MaterialApp(home: DashboardScreen()),
@@ -846,13 +860,16 @@ void main() {
           salonRepositoryProvider.overrideWith((ref) => FakeSalonRepository()),
           actionRepositoryProvider.overrideWithValue(FakeActionRepository()),
           messageRepositoryProvider.overrideWithValue(messages),
+          returnCommitmentRepositoryProvider.overrideWithValue(
+            FakeOpenReturnCommitmentRepository(),
+          ),
           authControllerProvider.overrideWith(_SignedInAuth.new),
         ],
         child: const MaterialApp(home: DashboardScreen()),
       ),
     );
     await tester.pumpAndSettle();
-    await tester.drag(find.byType(ListView), const Offset(0, -800));
+    await tester.scrollUntilVisible(find.text('ارسال پیام در بله'), 400);
     await tester.pumpAndSettle();
     await tester.tap(find.text('ارسال پیام در بله'));
     await tester.pumpAndSettle();
@@ -874,6 +891,9 @@ void main() {
           ),
           salonRepositoryProvider.overrideWith((ref) => FakeSalonRepository()),
           actionRepositoryProvider.overrideWithValue(FakeActionRepository()),
+          returnCommitmentRepositoryProvider.overrideWithValue(
+            FakeOpenReturnCommitmentRepository(),
+          ),
         ],
         child: const MaterialApp(home: DashboardScreen()),
       ),
@@ -2637,6 +2657,36 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('ارسال با بله'), findsNothing);
     expect(find.text('ارسال دستی'), findsOneWidget);
+  });
+
+  testWidgets('admin SENT customer message can record agreed return', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          adminMessageRepositoryProvider.overrideWithValue(
+            FakeAdminMessageRepository(
+              AdminQueueItem(
+                id: 'q-sent',
+                salonId: 's1',
+                salonName: 'Rose Salon',
+                customerId: 'c1',
+                customerName: 'Sara Ahmadi',
+                customerPhone: '09121111111',
+                messageText: 'سلام',
+                requestedAt: DateTime.utc(2026, 9, 11),
+                status: 'SENT',
+                deliveryStatus: 'SENT',
+                attempts: 1,
+                providerReady: true,
+              ),
+            ),
+          ),
+        ],
+        child: const MaterialApp(home: AdminMessageDetailSheet(itemId: 'q-sent')),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text(AppStrings.recordAgreedReturn), findsOneWidget);
   });
 }
 

@@ -2,6 +2,11 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@salon/database';
 import { PrismaService } from '../infrastructure/database/prisma.service';
 import { completedRevenueByVisitIds } from '../transaction/completed-visit-revenue';
+import type { ReturnCommitmentWriteActor } from './return-commitment-actor';
+import {
+  operationallyOpenReturnCommitmentSql,
+  operationallySettledUnlinkedReturnCommitmentSql,
+} from './operational-open-return-commitment.sql';
 import { RETURN_COMMITMENT_LIST_LIMIT } from './upcoming-window';
 import {
   RETURN_COMMITMENT_SELECT,
@@ -15,6 +20,7 @@ type Db = Prisma.TransactionClient | PrismaService['client'];
 
 export type ReturnCommitmentSource = {
   requestId: string;
+  salonId: string;
   deliveryId: string;
   customerId: string;
   requestCustomerId: string | null;
@@ -48,8 +54,10 @@ export class ReturnCommitmentRepository {
         source_message_delivery_id: string;
         expected_at: Date;
         actual_visit_id: string | null;
-        created_by_user_id: string;
-        updated_by_user_id: string;
+        created_by_user_id: string | null;
+        created_by_platform_admin_id: string | null;
+        updated_by_user_id: string | null;
+        updated_by_platform_admin_id: string | null;
         created_at: Date;
         updated_at: Date;
       }>
@@ -62,7 +70,9 @@ export class ReturnCommitmentRepository {
         expected_at,
         actual_visit_id,
         created_by_user_id,
+        created_by_platform_admin_id,
         updated_by_user_id,
+        updated_by_platform_admin_id,
         created_at,
         updated_at
       FROM return_commitments
@@ -81,7 +91,9 @@ export class ReturnCommitmentRepository {
       expectedAt: row.expected_at,
       actualVisitId: row.actual_visit_id,
       createdByUserId: row.created_by_user_id,
+      createdByPlatformAdminId: row.created_by_platform_admin_id,
       updatedByUserId: row.updated_by_user_id,
+      updatedByPlatformAdminId: row.updated_by_platform_admin_id,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
@@ -94,14 +106,41 @@ export class ReturnCommitmentRepository {
     });
   }
 
+  /** True when a same-salon Visit exists with visitedAt > source delivery submittedAt. Does not pick a Visit. */
+  async hasQualifyingPostOutreachVisit(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    customerId: string,
+    sourceMessageDeliveryId: string,
+  ): Promise<boolean> {
+    const delivery = await tx.messageDelivery.findFirst({
+      where: { id: sourceMessageDeliveryId, salonId: tenantId },
+      select: { submittedAt: true },
+    });
+    if (!delivery?.submittedAt) {
+      return false;
+    }
+    const visit = await tx.visit.findFirst({
+      where: {
+        salonId: tenantId,
+        customerId,
+        visitedAt: { gt: delivery.submittedAt },
+      },
+      select: { id: true },
+    });
+    return Boolean(visit);
+  }
+
   linkActualVisit(input: {
     tx: Prisma.TransactionClient;
     tenantId: string;
     id: string;
     visitId: string;
-    actorId: string;
+    actor: ReturnCommitmentWriteActor;
     now: Date;
   }) {
+    const userId = input.actor.kind === 'SALON_USER' ? input.actor.userId : null;
+    const adminId = input.actor.kind === 'PLATFORM_ADMIN' ? input.actor.adminId : null;
     return input.tx.returnCommitment.updateMany({
       where: {
         id: input.id,
@@ -110,7 +149,8 @@ export class ReturnCommitmentRepository {
       },
       data: {
         actualVisitId: input.visitId,
-        updatedByUserId: input.actorId,
+        updatedByUserId: userId,
+        updatedByPlatformAdminId: adminId,
         updatedAt: input.now,
       },
     });
@@ -144,19 +184,43 @@ export class ReturnCommitmentRepository {
       }
     }
 
+    const settledUnlinkedIds = await this.findSettledUnlinkedIds(
+      tenantId,
+      rows.filter((row) => row.actualVisitId == null).map((row) => row.id),
+      db,
+    );
+
     return rows.map((row) => {
+      const operationallyOpen = row.actualVisitId == null && !settledUnlinkedIds.has(row.id);
       if (!row.actualVisitId) {
-        return toReturnCommitmentResponse(row, null);
+        return toReturnCommitmentResponse(row, null, operationallyOpen);
       }
       const visit = visitById.get(row.actualVisitId);
       if (!visit) {
-        return toReturnCommitmentResponse(row, null);
+        return toReturnCommitmentResponse(row, null, false);
       }
       return toReturnCommitmentResponse(
         row,
         toCommitmentBackedReturn(visit, revenueByVisit.get(visit.id)),
+        false,
       );
     });
+  }
+
+  private async findSettledUnlinkedIds(tenantId: string, ids: string[], db: Db): Promise<Set<string>> {
+    if (ids.length === 0) {
+      return new Set();
+    }
+    const rows = await db.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+      SELECT rc.id
+      FROM return_commitments rc
+      INNER JOIN message_deliveries md
+        ON md.id = rc.source_message_delivery_id AND md.salon_id = rc.salon_id
+      WHERE rc.salon_id = ${tenantId}::uuid
+        AND rc.id IN (${Prisma.join(ids.map((id) => Prisma.sql`${id}::uuid`))})
+        AND ${operationallySettledUnlinkedReturnCommitmentSql}
+    `);
+    return new Set(rows.map((row) => row.id));
   }
 
   async toReadModel(
@@ -185,15 +249,30 @@ export class ReturnCommitmentRepository {
     });
   }
 
-  async findEligibleSource(
+  findEligibleSource(
     tenantId: string,
     messageRequestId: string,
     db: Db = this.prisma.client,
   ): Promise<ReturnCommitmentSource | null> {
+    return this.loadSource({ id: messageRequestId, salonId: tenantId }, db);
+  }
+
+  findEligibleSourceByRequestId(
+    messageRequestId: string,
+    db: Db = this.prisma.client,
+  ): Promise<ReturnCommitmentSource | null> {
+    return this.loadSource({ id: messageRequestId }, db);
+  }
+
+  private async loadSource(
+    where: { id: string; salonId?: string },
+    db: Db,
+  ): Promise<ReturnCommitmentSource | null> {
     const request = await db.messageRequest.findFirst({
-      where: { id: messageRequestId, salonId: tenantId },
+      where,
       select: {
         id: true,
+        salonId: true,
         customerId: true,
         vipRequestId: true,
         deliveries: {
@@ -210,10 +289,26 @@ export class ReturnCommitmentRepository {
     if (!request) {
       return null;
     }
+    return this.mapSource(request);
+  }
+
+  private mapSource(request: {
+    id: string;
+    salonId: string;
+    customerId: string | null;
+    vipRequestId: string | null;
+    deliveries: Array<{
+      id: string;
+      customerId: string | null;
+      status: string;
+      submittedAt: Date | null;
+    }>;
+  }): ReturnCommitmentSource {
     const delivery = request.deliveries[0];
     if (!delivery) {
       return {
         requestId: request.id,
+        salonId: request.salonId,
         deliveryId: '',
         customerId: request.customerId ?? '',
         requestCustomerId: request.customerId,
@@ -225,6 +320,7 @@ export class ReturnCommitmentRepository {
     }
     return {
       requestId: request.id,
+      salonId: request.salonId,
       deliveryId: delivery.id,
       customerId: request.customerId ?? '',
       requestCustomerId: request.customerId,
@@ -293,6 +389,61 @@ export class ReturnCommitmentRepository {
     });
   }
 
+  listOpen(
+    tenantId: string,
+    cursor?: { expectedAt: Date; id: string },
+  ) {
+    const cursorExpectedAt = cursor?.expectedAt ?? new Date(0);
+    const cursorId = cursor?.id ?? '00000000-0000-0000-0000-000000000000';
+    return this.prisma.client.$queryRaw<
+      Array<{
+        id: string;
+        customer_id: string;
+        expected_at: Date;
+        created_by_platform_admin_id: string | null;
+        first_name: string;
+        last_name: string;
+        phone_number: string;
+      }>
+    >(Prisma.sql`
+      SELECT ranked.id,
+             ranked.customer_id,
+             ranked.expected_at,
+             ranked.created_by_platform_admin_id,
+             ranked.first_name,
+             ranked.last_name,
+             ranked.phone_number
+      FROM (
+        SELECT DISTINCT ON (rc.customer_id)
+          rc.id,
+          rc.customer_id,
+          rc.expected_at,
+          rc.created_by_platform_admin_id,
+          c.first_name,
+          c.last_name,
+          c.phone_number
+        FROM return_commitments rc
+        INNER JOIN customers c
+          ON c.id = rc.customer_id AND c.salon_id = rc.salon_id
+        INNER JOIN message_deliveries md
+          ON md.id = rc.source_message_delivery_id AND md.salon_id = rc.salon_id
+        WHERE rc.salon_id = ${tenantId}::uuid
+          AND ${operationallyOpenReturnCommitmentSql}
+        ORDER BY rc.customer_id, rc.expected_at ASC, rc.id ASC
+      ) ranked
+      WHERE (
+        ${cursor == null}
+        OR ranked.expected_at > ${cursorExpectedAt}
+        OR (
+          ranked.expected_at = ${cursorExpectedAt}
+          AND ranked.id > ${cursorId}::uuid
+        )
+      )
+      ORDER BY ranked.expected_at ASC, ranked.id ASC
+      LIMIT ${RETURN_COMMITMENT_LIST_LIMIT + 1}
+    `);
+  }
+
   async insertIfAbsent(
     tx: Prisma.TransactionClient,
     input: {
@@ -302,14 +453,17 @@ export class ReturnCommitmentRepository {
       sourceMessageRequestId: string;
       sourceMessageDeliveryId: string;
       expectedAt: Date;
-      createdByUserId: string;
+      actor: ReturnCommitmentWriteActor;
       now: Date;
     },
   ): Promise<boolean> {
+    const userId = input.actor.kind === 'SALON_USER' ? input.actor.userId : null;
+    const adminId = input.actor.kind === 'PLATFORM_ADMIN' ? input.actor.adminId : null;
     const inserted = await tx.$queryRaw<Array<{ id: string }>>`
       INSERT INTO return_commitments (
         id, salon_id, customer_id, source_message_request_id, source_message_delivery_id,
-        expected_at, actual_visit_id, created_by_user_id, updated_by_user_id, created_at, updated_at
+        expected_at, actual_visit_id, created_by_user_id, created_by_platform_admin_id,
+        updated_by_user_id, updated_by_platform_admin_id, created_at, updated_at
       )
       VALUES (
         ${input.id}::uuid,
@@ -319,8 +473,10 @@ export class ReturnCommitmentRepository {
         ${input.sourceMessageDeliveryId}::uuid,
         ${input.expectedAt},
         NULL,
-        ${input.createdByUserId}::uuid,
-        ${input.createdByUserId}::uuid,
+        ${userId}::uuid,
+        ${adminId}::uuid,
+        ${userId}::uuid,
+        ${adminId}::uuid,
         ${input.now},
         ${input.now}
       )
@@ -336,9 +492,11 @@ export class ReturnCommitmentRepository {
     id: string;
     expectedAt: Date;
     updatedAt: Date;
-    actorId: string;
+    actor: ReturnCommitmentWriteActor;
     now: Date;
   }) {
+    const userId = input.actor.kind === 'SALON_USER' ? input.actor.userId : null;
+    const adminId = input.actor.kind === 'PLATFORM_ADMIN' ? input.actor.adminId : null;
     return input.tx.returnCommitment.updateMany({
       where: {
         id: input.id,
@@ -348,7 +506,8 @@ export class ReturnCommitmentRepository {
       },
       data: {
         expectedAt: input.expectedAt,
-        updatedByUserId: input.actorId,
+        updatedByUserId: userId,
+        updatedByPlatformAdminId: adminId,
         updatedAt: input.now,
       },
     });

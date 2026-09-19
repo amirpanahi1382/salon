@@ -237,4 +237,49 @@ describeIfDb('return commitment constraints', () => {
     ).rejects.toMatchObject({ code: 'P2002' });
     await expect(prisma.visit.delete({ where: { id: visitId } })).rejects.toMatchObject({ code: 'P2003' });
   });
+
+  it('allows platform-admin XOR actor columns and rejects mixed actors', async () => {
+    const salon = await seedSalon('AdminActor');
+    const message = await seedSentMessage(salon);
+    const adminId = randomUUID();
+    await prisma.platformAdmin.create({
+      data: {
+        id: adminId,
+        email: `rc-admin-${randomUUID()}@example.test`,
+        name: 'Ops',
+        passwordHash: 'hash',
+        updatedAt: new Date(),
+      },
+    });
+    await prisma.returnCommitment.create({
+      data: {
+        id: randomUUID(),
+        salonId: salon.salonId,
+        customerId: salon.customerId,
+        sourceMessageRequestId: message.requestId,
+        sourceMessageDeliveryId: message.deliveryId,
+        expectedAt: new Date('2026-09-20T16:00:00.000Z'),
+        createdByPlatformAdminId: adminId,
+        updatedByPlatformAdminId: adminId,
+        updatedAt: new Date(),
+      },
+    });
+    const second = await seedSentMessage(salon);
+    await expect(
+      prisma.returnCommitment.create({
+        data: {
+          id: randomUUID(),
+          salonId: salon.salonId,
+          customerId: salon.customerId,
+          sourceMessageRequestId: second.requestId,
+          sourceMessageDeliveryId: second.deliveryId,
+          expectedAt: new Date('2026-09-21T16:00:00.000Z'),
+          createdByUserId: salon.userId,
+          createdByPlatformAdminId: adminId,
+          updatedByUserId: salon.userId,
+          updatedAt: new Date(),
+        },
+      }),
+    ).rejects.toThrow(/return_commitments_created_actor_chk/);
+  });
 });

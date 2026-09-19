@@ -9,8 +9,10 @@ import 'package:salon_mobile/core/state/providers.dart';
 import 'package:salon_mobile/core/storage/session_store.dart';
 import 'package:salon_mobile/features/customers/customer_screens.dart';
 import 'package:salon_mobile/features/outreach/outreach_message_composer.dart';
+import 'package:salon_mobile/features/recovery/open_agreed_returns_section.dart';
 import 'package:salon_mobile/features/recovery/recovery_presentation.dart';
 import 'package:salon_mobile/features/recovery/return_commitment_form.dart';
+import 'package:salon_mobile/shared/phone_launcher.dart';
 import 'package:salon_mobile/shared/jalali.dart';
 import 'package:salon_mobile/shared/labels.dart';
 import 'package:salon_mobile/shared/models/models.dart';
@@ -61,6 +63,7 @@ ReturnCommitment _commitment({
   String? actualVisitId,
   CommitmentBackedReturn? backed,
   DateTime? updatedAt,
+  bool? operationallyOpen,
 }) {
   return ReturnCommitment(
     id: id,
@@ -72,6 +75,7 @@ ReturnCommitment _commitment({
     createdAt: DateTime.utc(2026, 9, 10),
     updatedAt: updatedAt ?? DateTime.utc(2026, 9, 10),
     commitmentBackedReturn: backed,
+    operationallyOpen: operationallyOpen,
   );
 }
 
@@ -123,15 +127,19 @@ class FakeReturnCommitmentRepo extends ReturnCommitmentRepository {
     this.commitments = const [],
     this.observed = const [],
     this.upcoming = const [],
+    this.open = const [],
     this.upcomingError,
     this.updateError,
+    this.arriveError,
   }) : super(_client());
 
   List<ReturnCommitment> commitments;
   List<ObservedReturn> observed;
   List<UpcomingReturnCommitment> upcoming;
+  List<OpenAgreedReturn> open = const [];
   Object? upcomingError;
   Object? updateError;
+  Object? arriveError;
   int createCalls = 0;
   int updateCalls = 0;
   int arriveCalls = 0;
@@ -162,6 +170,11 @@ class FakeReturnCommitmentRepo extends ReturnCommitmentRepository {
       throw upcomingError!;
     }
     return UpcomingReturnCommitmentPage(items: upcoming, hasMore: false);
+  }
+
+  @override
+  Future<ItemPage<OpenAgreedReturn>> listOpen({String? cursor}) async {
+    return ItemPage(items: open, hasMore: false);
   }
 
   @override
@@ -211,6 +224,9 @@ class FakeReturnCommitmentRepo extends ReturnCommitmentRepository {
     lastArriveId = id;
     lastVisitedAt = visitedAt;
     lastSaleAmount = amount;
+    if (arriveError != null) {
+      throw arriveError!;
+    }
     return _commitment(
       id: id,
       expectedAt: DateTime.utc(2026, 9, 16, 12, 30),
@@ -508,6 +524,35 @@ void main() {
     expect(find.text(AppStrings.recoveryRevenueNone), findsOneWidget);
   });
 
+  testWidgets('operationally settled unlinked commitment stays historical and hides arrive', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 1800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    final settled = _commitment(
+      id: 'rc-settled',
+      expectedAt: DateTime.now().add(const Duration(days: 2)),
+      operationallyOpen: false,
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: _detailOverrides(
+          messages: FakeMessageRepo(const []),
+          commitments: FakeReturnCommitmentRepo(commitments: [settled]),
+          visits: FakeVisitRepo(),
+        ),
+        child: const MaterialApp(home: CustomerDetailScreen(customerId: 'c1')),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text(AppStrings.agreedReturnsTitle), findsOneWidget);
+    expect(find.text(AppStrings.operationallySettledUnlinked), findsOneWidget);
+    expect(find.text(AppStrings.markArrived), findsNothing);
+    expect(find.text(AppStrings.editAgreedReturn), findsNothing);
+    expect(find.text(AppStrings.recoveryCommitmentBackedTitle), findsNothing);
+  });
+
   testWidgets('stale edit 409 keeps the form from claiming success', (tester) async {
     final repo = FakeReturnCommitmentRepo(
       updateError: const ApiException(
@@ -611,6 +656,54 @@ void main() {
     expect(commitments.arriveCalls, 1);
     expect(commitments.lastArriveId, 'rc-arrive');
     expect(commitments.lastVisitedAt, isNotNull);
+  });
+
+  testWidgets('stale arrive 409 shows review copy and does not claim success', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 1800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    final commitments = FakeReturnCommitmentRepo(
+      arriveError: const ApiException(
+        statusCode: 409,
+        code: 'RETURN_COMMITMENT_VISIT_REVIEW_REQUIRED',
+        message:
+            'A visit after this follow-up is already recorded. Review the existing visit instead of creating another one.',
+      ),
+    );
+    final open = _commitment(
+      id: 'rc-stale',
+      expectedAt: DateTime.now().add(const Duration(days: 1)),
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          returnCommitmentRepositoryProvider.overrideWithValue(commitments),
+          serviceRepositoryProvider.overrideWithValue(FakeServiceRepo()),
+          authControllerProvider.overrideWith(_OwnerAuth.new),
+        ],
+        child: MaterialApp.router(
+          routerConfig: GoRouter(
+            routes: [
+              GoRoute(
+                path: '/',
+                builder: (context, _) =>
+                    RecordVisitScreen(customerId: 'c1', commitment: open),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final save = find.byKey(const Key('save-visit'));
+    await tester.ensureVisible(save.first);
+    await tester.tap(save.first);
+    await tester.pumpAndSettle();
+    expect(find.text(AppStrings.arrivalVisitReviewRequired), findsOneWidget);
+    expect(find.byKey(const Key('save-visit')), findsWidgets);
+    expect(commitments.arriveCalls, 1);
   });
 
   testWidgets('staff arrival form has no sale fields', (tester) async {
@@ -722,6 +815,67 @@ void main() {
     expect(find.textContaining('مریم احمدی'), findsOneWidget);
     expect(find.textContaining('پر است'), findsNothing);
     expect(find.textContaining('آزاد'), findsNothing);
+  });
+
+  testWidgets('today open agreed-return list shows name phone and call', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    var called = '';
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          returnCommitmentRepositoryProvider.overrideWithValue(
+            FakeReturnCommitmentRepo(
+              open: [
+                OpenAgreedReturn(
+                  id: 'o1',
+                  customerId: 'c1',
+                  customerName: 'سارا احمدی',
+                  customerPhone: '09121111111',
+                  expectedAt: DateTime.now().subtract(const Duration(hours: 2)),
+                  overdue: true,
+                  recordedBySupport: true,
+                ),
+              ],
+            ),
+          ),
+          phoneLauncherProvider.overrideWithValue((phone) async {
+            called = phone;
+            return true;
+          }),
+        ],
+        child: MaterialApp(
+          home: Scaffold(
+            body: OpenAgreedReturnsSection(
+              items: [
+                OpenAgreedReturn(
+                  id: 'o1',
+                  customerId: 'c1',
+                  customerName: 'سارا احمدی',
+                  customerPhone: '09121111111',
+                  expectedAt: DateTime.utc(2026, 9, 19, 10),
+                  overdue: true,
+                  recordedBySupport: true,
+                ),
+              ],
+              loading: false,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text(AppStrings.openAgreedReturnsTitle), findsOneWidget);
+    expect(find.text('سارا احمدی'), findsOneWidget);
+    expect(find.text('09121111111'), findsOneWidget);
+    expect(find.text(AppStrings.recordedBySupport), findsOneWidget);
+    expect(find.text(AppStrings.agreedTimePast), findsOneWidget);
+    await tester.tap(find.text(AppStrings.callCustomer));
+    await tester.pump();
+    expect(called, '09121111111');
   });
 
   test('error copy stays product language', () {
