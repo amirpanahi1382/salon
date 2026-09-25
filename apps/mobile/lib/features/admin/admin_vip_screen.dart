@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'dart:async';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -6,12 +7,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/networking/api_client.dart';
+import '../../core/state/cursor_page_state.dart';
 import '../../core/state/providers.dart';
 import '../../core/theme/app_tokens.dart';
 import '../../core/widgets/app_widgets.dart';
 import '../../shared/labels.dart';
 import '../../shared/models/models.dart';
 import '../../shared/platform/excel_file_saver.dart';
+import 'admin_messaging_shell.dart';
 
 class AdminVipScreen extends ConsumerStatefulWidget {
   const AdminVipScreen({super.key});
@@ -22,7 +25,13 @@ class AdminVipScreen extends ConsumerStatefulWidget {
 
 class _AdminVipScreenState extends ConsumerState<AdminVipScreen> {
   List<VipTargetList> _lists = [];
-  List<AdminSalonSummary> _salons = [];
+  late final CursorPageState<AdminSalonSummary> _salons = CursorPageState(
+    keyOf: (salon) => salon.id,
+    changed: () { if (mounted) setState(() {}); },
+  );
+  final TextEditingController _salonSearchController = TextEditingController();
+  Timer? _searchDebounce;
+  String _salonSearch = '';
   bool _loading = true;
   Object? _error;
 
@@ -32,22 +41,42 @@ class _AdminVipScreenState extends ConsumerState<AdminVipScreen> {
     _load();
   }
 
+  @override
+  void dispose() {
+    _searchDebounce?.cancel();
+    _salonSearchController.dispose();
+    super.dispose();
+  }
+
+  void _searchSalons(String value) {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 300), () {
+      _salonSearch = value.trim();
+      _salons.reset();
+      _loadMoreSalons();
+    });
+  }
+
+  Future<void> _loadMoreSalons() => _salons.load((cursor) =>
+      ref.read(vipRepositoryProvider).adminSalons(cursor: cursor, q: _salonSearch));
+
   Future<void> _load() async {
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      final page = await ref.read(vipRepositoryProvider).adminLists();
-      final salons = await ref.read(vipRepositoryProvider).adminSalons();
+      final vip = ref.read(vipRepositoryProvider);
+      final page = await vip.adminLists();
       if (!mounted) {
         return;
       }
       setState(() {
         _lists = page.items;
-        _salons = salons;
         _loading = false;
       });
+      _salons.reset();
+      await _loadMoreSalons();
     } catch (error) {
       if (!mounted) {
         return;
@@ -83,63 +112,94 @@ class _AdminVipScreenState extends ConsumerState<AdminVipScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text(AppStrings.vipAdminNav),
-        leading: IconButton(
-          onPressed: () => context.go('/admin/messages'),
-          icon: const Icon(Icons.queue),
-        ),
-        actions: [
-          IconButton(
-            onPressed: () => ref.read(authControllerProvider.notifier).logout(),
-            icon: const Icon(Icons.logout),
+    return AdminMessagingShell(
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text(AppStrings.adminVipLists),
+          leading: IconButton(
+            onPressed: () => context.go('/admin/vip/outreach'),
+            icon: const Icon(Icons.arrow_back),
           ),
-        ],
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _import,
-        icon: const Icon(Icons.upload_file_outlined),
-        label: const Text(AppStrings.vipImportExcel),
-      ),
-      body: _error != null
-          ? ErrorView(message: friendlyError(_error!), onRetry: _load)
-          : _loading
-              ? const LoadingSkeleton(lines: 6)
-              : ListView(
-                  padding: const EdgeInsets.all(AppTokens.space16),
-                  children: [
-                    const SectionHeader(AppStrings.vipGrant),
-                    ..._salons.map(
-                      (salon) => ListTile(
-                        title: Text(salon.name),
-                        subtitle: Text(
-                          salon.entitled ? AppStrings.vipActive : AppStrings.vipInactive,
+          actions: [
+            IconButton(
+              onPressed: () => ref.read(authControllerProvider.notifier).logout(),
+              icon: const Icon(Icons.logout),
+            ),
+          ],
+        ),
+        floatingActionButton: FloatingActionButton.extended(
+          onPressed: _import,
+          icon: const Icon(Icons.upload_file_outlined),
+          label: const Text(AppStrings.vipImportExcel),
+        ),
+        body: _error != null
+            ? ErrorView(message: friendlyError(_error!), onRetry: _load)
+            : _loading && _lists.isEmpty
+                ? const LoadingSkeleton(lines: 6)
+                : ListView(
+                    padding: const EdgeInsets.all(AppTokens.space16),
+                    children: [
+                      const SectionHeader(AppStrings.vipGrant),
+                      TextField(
+                        controller: _salonSearchController,
+                        onChanged: _searchSalons,
+                        decoration: const InputDecoration(
+                          labelText: AppStrings.searchSalons,
+                          prefixIcon: Icon(Icons.search),
                         ),
-                        trailing: salon.entitled
-                            ? null
-                            : TextButton(
-                                onPressed: () async {
-                                  await ref.read(vipRepositoryProvider).grantEntitlement(
-                                        salon.id,
-                                        createRequestId(),
-                                      );
-                                  await _load();
-                                },
-                                child: const Text(AppStrings.activate),
-                              ),
                       ),
-                    ),
-                    const SizedBox(height: AppTokens.space24),
-                    const SectionHeader(AppStrings.vipAdminNav),
-                    if (_lists.isEmpty)
-                      const EmptyStateView(
-                        title: AppStrings.vipNoLists,
-                        body: AppStrings.vipNoLists,
+                      if (_salons.loading && _salons.items.isEmpty)
+                        const LoadingSkeleton(lines: 2),
+                      if (_salons.empty)
+                        const EmptyStateView(title: AppStrings.noSalons, body: AppStrings.noSalons),
+                      ..._salons.items.map(
+                        (salon) => ListTile(
+                          key: ValueKey(salon.id),
+                          title: Text(salon.name),
+                          subtitle: Text(
+                            salon.entitled ? AppStrings.vipActive : AppStrings.vipInactive,
+                          ),
+                          trailing: salon.entitled
+                              ? null
+                              : TextButton(
+                                  onPressed: () async {
+                                    await ref.read(vipRepositoryProvider).grantEntitlement(
+                                          salon.id,
+                                          createRequestId(),
+                                        );
+                                    await _load();
+                                  },
+                                  child: const Text(AppStrings.activate),
+                                ),
+                        ),
                       ),
-                    ..._lists.map((list) => _adminListCard(list)),
-                  ],
-                ),
+                      if (_salons.error != null)
+                        ErrorView(
+                          message: friendlyError(_salons.error!),
+                          onRetry: _loadMoreSalons,
+                        ),
+                      if (_salons.loading && _salons.items.isNotEmpty)
+                        const Center(child: CircularProgressIndicator()),
+                      if (_salons.hasMore && !_salons.loading && _salons.error == null)
+                        TextButton(
+                          onPressed: _loadMoreSalons,
+                          child: const Text(AppStrings.loadMore),
+                        ),
+                      const SizedBox(height: AppTokens.space24),
+                      const SectionHeader(AppStrings.adminVipLists),
+                      const Padding(
+                        padding: EdgeInsets.only(bottom: AppTokens.space8),
+                        child: Text(AppStrings.vipImportHelp),
+                      ),
+                      if (_lists.isEmpty)
+                        const EmptyStateView(
+                          title: AppStrings.vipNoLists,
+                          body: AppStrings.vipNoLists,
+                        ),
+                      ..._lists.map((list) => _adminListCard(list)),
+                    ],
+                  ),
+      ),
     );
   }
 
@@ -383,7 +443,11 @@ class _AdminVipListDetailScreenState extends ConsumerState<AdminVipListDetailScr
                     const SizedBox(height: 16),
                     ...list.contacts.map(
                       (row) => ListTile(
-                        title: Text(row.displayName),
+                        title: Text(
+                          (row.displayName != null && row.displayName!.trim().isNotEmpty)
+                              ? row.displayName!
+                              : AppStrings.vipUnnamedContact,
+                        ),
                         subtitle: LtrText(row.phoneNumber),
                       ),
                     ),

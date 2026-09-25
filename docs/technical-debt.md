@@ -7,7 +7,7 @@ Severity: **P1** blocks trustworthy production at modest scale or integrity. **P
 
 | ID | Severity | Area | Finding | Direction (do not treat as committed work) |
 | --- | --- | --- | --- | --- |
-| TD-01 | P1 | Intelligence | Salon intelligence/opportunity/segment serving scans at most 5,000 newest customers; `hasMore` understates the rest. SQL is better than loading every visit into Node, but this is still the main **scale** risk. | Serving model / indexes / possibly persisted snapshots **without** making snapshots the ledger |
+| TD-01 | P2 | Intelligence scale | The exposed intelligence APIs now cover every eligible customer, but a globally ranked filtered page recomputes tenant visit aggregates for each bounded candidate batch. This is correct and avoids an unbounded transfer; repeated deep pages may become costly on much larger salons. | Benchmark with realistic larger distributions before considering a serving index or persisted derived snapshot; never make a snapshot the ledger. |
 | TD-02 | P2 | Tenancy | No PostgreSQL RLS. Isolation is application filters + composite FKs. | Optional RLS later; do not weaken composite FKs |
 | TD-03 | P2 | Integrity | `users.id` creator FKs (`opportunity_actions.created_by`, `message_requests.created_by_user_id`, `message_deliveries.created_by`, `vip_requests.created_by_user_id`) are not tenant-composite. `return_commitments` creator/updater FKs **are** composite. | Composite creator relations if we can do it without breaking history |
 | TD-04 | P2 | Money | Header `transactions.amount` vs `SUM(transaction_items)` is application-enforced only | DB CHECK or constraint trigger |

@@ -39,6 +39,7 @@ export class GetCustomerIntelligenceUseCase {
     const suppressed = await loadSuppressedOpportunityKeys(
       this.prisma.client,
       principal.tenantId,
+      [customerId],
     );
     const combined = {
       ...result,

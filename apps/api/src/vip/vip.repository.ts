@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@salon/database';
-import { VIP_QUOTA_WINDOW_DAYS, VIP_RESERVATION_TTL_MS } from '@salon/shared';
+import { VIP_QUOTA_WINDOW_DAYS, VIP_REGIONS, VIP_RESERVATION_TTL_MS } from '@salon/shared';
 import { PrismaService } from '../infrastructure/database/prisma.service';
 
 type Db = Prisma.TransactionClient | PrismaService['client'];
@@ -59,6 +59,51 @@ export class VipRepository {
       select: { id: true, name: true, status: true, contactCount: true, createdAt: true },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     });
+  }
+
+  listActiveListsByRegion(regionCode: string) {
+    return this.prisma.client.vipTargetList.findMany({
+      where: { regionCode, status: 'ACTIVE' },
+      select: {
+        id: true,
+        name: true,
+        regionCode: true,
+        status: true,
+        contactCount: true,
+        createdAt: true,
+      },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    });
+  }
+
+  summarizeAvailableRegions() {
+    const catalog = VIP_REGIONS.map(
+      (row, index) => Prisma.sql`(${row.code}::text, ${row.name}::text, ${index}::int)`,
+    );
+    return this.prisma.client.$queryRaw<
+      Array<{
+        regionCode: string;
+        regionName: string;
+        availableListCount: number;
+        availableContactCount: number;
+      }>
+    >`
+      WITH catalog(code, name, sort) AS (
+        VALUES ${Prisma.join(catalog)}
+      )
+      SELECT
+        c.code AS "regionCode",
+        c.name AS "regionName",
+        COUNT(l.id)::int AS "availableListCount",
+        COALESCE(SUM(l.contact_count), 0)::int AS "availableContactCount"
+      FROM catalog c
+      LEFT JOIN vip_target_lists l
+        ON l.region_code = c.code
+       AND l.status = 'ACTIVE'
+       AND l.reserved_by_salon_id IS NULL
+      GROUP BY c.code, c.name, c.sort
+      ORDER BY c.sort
+    `;
   }
 
   listContacts(listId: string, db: Db = this.prisma.client) {

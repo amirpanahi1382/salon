@@ -8,6 +8,7 @@ import {
   VIP_BALE_NOT_AVAILABLE_MESSAGE,
   createId,
   DOMAIN_EVENT_TYPES,
+  isCanonicalMessageSent,
   type PlatformAdminPrincipal,
 } from '@salon/shared';
 import { AppConfigService } from '../infrastructure/config/app-config.service';
@@ -97,6 +98,9 @@ export class SelectMessageDeliveryModeUseCase {
         if (!existing) {
           throw new NotFoundError('Message not found');
         }
+        if (!existing.recipientPhoneNumber) {
+          throw new ConflictError('Message destination cannot be verified');
+        }
         if (mode === 'BALE' && existing.vipRequestId) {
           throw new ConflictError(VIP_BALE_NOT_AVAILABLE_MESSAGE);
         }
@@ -140,10 +144,12 @@ export class SelectMessageDeliveryModeUseCase {
               id: createId(),
               tenantId: request.salonId,
               eventType: DOMAIN_EVENT_TYPES.MessageDeliveryActivated,
+              dedupeKey: `message-delivery:${deliveryId}:0`,
               payload: {
                 messageDeliveryId: deliveryId,
                 messageRequestId: request.id,
                 salonId: request.salonId,
+                executionGeneration: 0,
               },
             },
           });
@@ -200,6 +206,7 @@ export class MarkManualMessageSentUseCase {
     const now = new Date();
     try {
       await this.prisma.client.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT id FROM message_requests WHERE id = ${id}::uuid FOR UPDATE`;
         const request = await tx.messageRequest.findFirst({ where: { id } });
         if (!request) {
           throw new NotFoundError('Message not found');
@@ -207,7 +214,99 @@ export class MarkManualMessageSentUseCase {
         const delivery = await tx.messageDelivery.findFirst({
           where: { messageRequestId: id, salonId: request.salonId },
         });
+        if (isCanonicalMessageSent(delivery?.status, delivery?.submittedAt)) {
+          return;
+        }
+        if (!request.recipientPhoneNumber) {
+          throw new ConflictError('Message destination cannot be verified');
+        }
+        if (request.status === 'CANCELLED') {
+          throw new ConflictError('Message is not in a state that allows this action');
+        }
+
+        if (request.status === 'QUEUED' && !delivery) {
+          const claimed = await tx.messageRequest.updateMany({
+            where: { id, salonId: request.salonId, status: 'QUEUED' },
+            data: { status: 'DISPATCHED', updatedAt: now },
+          });
+          if (claimed.count === 0) {
+            throw new ConflictError('Message is not in a state that allows this action');
+          }
+          const deliveryId = createId();
+          await tx.messageDelivery.create({
+            data: {
+              id: deliveryId,
+              salonId: request.salonId,
+              messageRequestId: request.id,
+              customerId: request.customerId,
+              actionId: request.actionId,
+              mode: 'MANUAL',
+              provider: null,
+              channel: 'TEXT',
+              status: 'SENT',
+              submittedAt: now,
+              providerRequestId: deliveryId,
+              createdBy: request.createdByUserId,
+              dispatchedByAdminId: admin.adminId,
+              fulfilledByAdminId: admin.adminId,
+              updatedAt: now,
+            },
+          });
+          const sent = await tx.messageRequest.updateMany({
+            where: { id, salonId: request.salonId, status: 'DISPATCHED' },
+            data: { status: 'SENT', updatedAt: now },
+          });
+          if (sent.count === 0) {
+            throw new ConflictError('Message is not in a state that allows this action');
+          }
+          await tx.outboxEvent.create({
+            data: {
+              id: createId(),
+              tenantId: request.salonId,
+              eventType: DOMAIN_EVENT_TYPES.MessageSent,
+              payload: {
+                messageRequestId: id,
+                messageDeliveryId: deliveryId,
+                salonId: request.salonId,
+                mode: 'MANUAL',
+              },
+            },
+          });
+          await tx.auditLog.create({
+            data: {
+              id: createId(),
+              tenantId: request.salonId,
+              actorId: admin.adminId,
+              action: 'MESSAGE_DELIVERY_MODE_SELECTED',
+              resource: 'message_request',
+              resourceId: request.id,
+              result: 'SUCCESS',
+              metadata: { mode: 'MANUAL', deliveryId },
+            },
+          });
+          await tx.auditLog.create({
+            data: {
+              id: createId(),
+              tenantId: request.salonId,
+              actorId: admin.adminId,
+              action: 'MESSAGE_MANUALLY_SENT',
+              resource: 'message_delivery',
+              resourceId: deliveryId,
+              result: 'SUCCESS',
+              metadata: { messageRequestId: id, mode: 'MANUAL', status: 'SENT' },
+            },
+          });
+          return;
+        }
+
         if (!delivery || delivery.mode !== 'MANUAL') {
+          throw new ConflictError('Message is not in a state that allows this action');
+        }
+        const movedRequest = await tx.messageRequest.updateMany({
+          where: { id, salonId: request.salonId, status: 'DISPATCHED' },
+          data: { status: 'SENT', updatedAt: now },
+        });
+        if (movedRequest.count === 0) {
           throw new ConflictError('Message is not in a state that allows this action');
         }
         const moved = await tx.messageDelivery.updateMany({
@@ -229,10 +328,6 @@ export class MarkManualMessageSentUseCase {
         if (moved.count === 0) {
           throw new ConflictError('Message is not in a state that allows this action');
         }
-        await tx.messageRequest.updateMany({
-          where: { id, salonId: request.salonId, status: { in: ['QUEUED', 'DISPATCHED'] } },
-          data: { status: 'SENT', updatedAt: now },
-        });
         await tx.outboxEvent.create({
           data: {
             id: createId(),
@@ -256,6 +351,89 @@ export class MarkManualMessageSentUseCase {
             resourceId: delivery.id,
             result: 'SUCCESS',
             metadata: { messageRequestId: id, mode: 'MANUAL', status: 'SENT' },
+          },
+        });
+      });
+    } catch (error: unknown) {
+      if (error instanceof NotFoundError || error instanceof ConflictError) {
+        throw error;
+      }
+      const mapped = mapPrismaError(error);
+      if (mapped) {
+        throw mapped;
+      }
+      throw error;
+    }
+
+    const row = await this.messages.findById(id);
+    if (!row) {
+      throw new NotFoundError('Message not found');
+    }
+    return toAdminMessageItem(row as AdminMessageRow, this.config.values);
+  }
+}
+
+@Injectable()
+export class CancelAdminMessageUseCase {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly messages: AdminMessageRepository,
+    private readonly config: AppConfigService,
+  ) {}
+
+  async execute(admin: PlatformAdminPrincipal, id: string) {
+    const now = new Date();
+    try {
+      await this.prisma.client.$transaction(async (tx) => {
+        const request = await tx.messageRequest.findFirst({ where: { id } });
+        if (!request) {
+          throw new NotFoundError('Message not found');
+        }
+        if (request.status === 'CANCELLED') {
+          return;
+        }
+        const delivery = await tx.messageDelivery.findFirst({
+          where: { messageRequestId: id, salonId: request.salonId },
+        });
+        if (isCanonicalMessageSent(delivery?.status, delivery?.submittedAt)) {
+          throw new ConflictError('Message is not in a state that allows this action');
+        }
+        if (request.status === 'QUEUED' && !delivery) {
+          const cancelled = await tx.messageRequest.updateMany({
+            where: { id, salonId: request.salonId, status: 'QUEUED' },
+            data: { status: 'CANCELLED', updatedAt: now },
+          });
+          if (cancelled.count === 0) {
+            throw new ConflictError('Message is not in a state that allows this action');
+          }
+        } else if (
+          request.status === 'DISPATCHED' &&
+          delivery?.mode === 'MANUAL' &&
+          delivery.status === 'PENDING'
+        ) {
+          const cancelled = await tx.messageRequest.updateMany({
+            where: { id, salonId: request.salonId, status: 'DISPATCHED' },
+            data: { status: 'CANCELLED', updatedAt: now },
+          });
+          if (cancelled.count === 0) {
+            throw new ConflictError('Message is not in a state that allows this action');
+          }
+        } else {
+          throw new ConflictError('Message is not in a state that allows this action');
+        }
+        await tx.auditLog.create({
+          data: {
+            id: createId(),
+            tenantId: request.salonId,
+            actorId: admin.adminId,
+            action: 'MESSAGE_REQUEST_CANCELLED',
+            resource: 'message_request',
+            resourceId: request.id,
+            result: 'SUCCESS',
+            metadata: {
+              previousStatus: request.status,
+              vipRequestId: request.vipRequestId,
+            },
           },
         });
       });
@@ -308,6 +486,9 @@ export class RetryBaleMessageUseCase {
         if (request.vipRequestId) {
           throw new ConflictError(VIP_BALE_NOT_AVAILABLE_MESSAGE);
         }
+        if (!request.recipientPhoneNumber) {
+          throw new ConflictError('Message destination cannot be verified');
+        }
         const delivery = await tx.messageDelivery.findFirst({
           where: { messageRequestId: id, salonId: request.salonId },
         });
@@ -317,34 +498,54 @@ export class RetryBaleMessageUseCase {
         if (delivery.status === 'SENT' || delivery.status === 'PROCESSING') {
           throw new ConflictError('Message is not in a state that allows this action');
         }
-
-        await tx.messageDelivery.updateMany({
+        const nextGeneration = delivery.executionGeneration + 1;
+        const activeKey = `message-delivery:${delivery.id}:${delivery.executionGeneration}`;
+        const alreadyActivated = await tx.outboxEvent.findUnique({ where: { dedupeKey: activeKey } });
+        if (delivery.status === 'PENDING' && alreadyActivated) {
+          throw new ConflictError('Message execution is already active');
+        }
+        if (!['PENDING', 'FAILED'].includes(delivery.status)) {
+          throw new ConflictError('Message is not in a state that allows this action');
+        }
+        const requestClaim = await tx.messageRequest.updateMany({
+          where: { id, salonId: request.salonId, status: { in: ['DISPATCHED', 'FAILED'] } },
+          data: { status: 'DISPATCHED', updatedAt: now },
+        });
+        if (requestClaim.count === 0) {
+          throw new ConflictError('Message is not in a state that allows this action');
+        }
+        const deliveryClaim = await tx.messageDelivery.updateMany({
           where: {
             id: delivery.id,
             salonId: delivery.salonId,
             status: { in: ['PENDING', 'FAILED'] },
+            executionGeneration: delivery.executionGeneration,
           },
           data: {
             status: 'PENDING',
+            executionGeneration: nextGeneration,
+            executionToken: null,
+            executionLockedUntil: null,
             failureCode: null,
             failedAt: null,
             submittedAt: null,
             updatedAt: now,
           },
         });
-        await tx.messageRequest.updateMany({
-          where: { id, salonId: request.salonId, status: { in: ['DISPATCHED', 'FAILED'] } },
-          data: { status: 'DISPATCHED', updatedAt: now },
-        });
+        if (deliveryClaim.count === 0) {
+          throw new ConflictError('Message is not in a state that allows this action');
+        }
         await tx.outboxEvent.create({
           data: {
             id: createId(),
             tenantId: request.salonId,
             eventType: DOMAIN_EVENT_TYPES.MessageDeliveryActivated,
+            dedupeKey: `message-delivery:${delivery.id}:${nextGeneration}`,
             payload: {
               messageDeliveryId: delivery.id,
               messageRequestId: request.id,
               salonId: request.salonId,
+              executionGeneration: nextGeneration,
             },
           },
         });

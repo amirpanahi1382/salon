@@ -50,13 +50,17 @@ class SalonVipSection extends ConsumerStatefulWidget {
 }
 
 class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
-  List<VipTargetList> _lists = [];
+  List<VipRegion> _regions = const [];
+  List<VipTargetList> _lists = const [];
   VipCapability? _capability;
+  String? _regionCode;
   String? _listId;
   final _geo = TextEditingController();
   bool _loading = true;
+  bool _listsLoading = false;
   bool _busy = false;
   Object? _error;
+  Object? _listsError;
 
   @override
   void initState() {
@@ -68,6 +72,19 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
   void dispose() {
     _geo.dispose();
     super.dispose();
+  }
+
+  VipRegion? get _selectedRegion {
+    final code = _regionCode;
+    if (code == null) {
+      return null;
+    }
+    for (final region in _regions) {
+      if (region.regionCode == code) {
+        return region;
+      }
+    }
+    return null;
   }
 
   void _snack(String message) {
@@ -84,17 +101,20 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
     });
     try {
       final capability = await ref.read(vipRepositoryProvider).capability();
-      final lists = capability.entitled
-          ? await ref.read(vipRepositoryProvider).activeLists()
-          : <VipTargetList>[];
+      final regions = capability.entitled
+          ? await ref.read(vipRepositoryProvider).regions()
+          : <VipRegion>[];
       if (!mounted) {
         return;
       }
       setState(() {
         _capability = capability;
-        _lists = lists;
+        _regions = regions;
         _loading = false;
       });
+      if (_regionCode != null) {
+        await _loadLists();
+      }
     } catch (error) {
       if (!mounted) {
         return;
@@ -104,6 +124,52 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
         _loading = false;
       });
     }
+  }
+
+  Future<void> _loadLists() async {
+    final code = _regionCode;
+    if (code == null) {
+      return;
+    }
+    setState(() {
+      _listsLoading = true;
+      _listsError = null;
+    });
+    try {
+      final lists = await ref.read(vipRepositoryProvider).listsByRegion(code);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _lists = lists;
+        _listsLoading = false;
+        if (_listId != null && !lists.any((row) => row.id == _listId)) {
+          _listId = null;
+        }
+      });
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _listsError = error;
+        _listsLoading = false;
+        _lists = const [];
+      });
+    }
+  }
+
+  Future<void> _selectRegion(VipRegion region) async {
+    setState(() {
+      _regionCode = region.regionCode;
+      _listId = null;
+      _lists = const [];
+      if (_geo.text.trim().isEmpty ||
+          _regions.any((row) => row.regionName == _geo.text.trim())) {
+        _geo.text = region.regionName;
+      }
+    });
+    await _loadLists();
   }
 
   Future<void> _submit() async {
@@ -127,6 +193,7 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
       await _addSample(created);
     } catch (error) {
       _snack(friendlyError(error));
+      await _loadLists();
     } finally {
       if (mounted) {
         setState(() => _busy = false);
@@ -187,6 +254,49 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
     }
   }
 
+  Future<void> _openRegionPicker() async {
+    final selected = await showModalBottomSheet<VipRegion>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) {
+        return SafeArea(
+          child: SizedBox(
+            height: 480,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(AppTokens.space16),
+                  child: Text(
+                    AppStrings.vipSelectRegion,
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
+                Expanded(
+                  child: SingleChildScrollView(
+                    child: Column(
+                      children: [
+                        for (final region in _regions)
+                          ListTile(
+                            title: Text('${region.regionCode} — ${region.regionName}'),
+                            selected: region.regionCode == _regionCode,
+                            onTap: () => Navigator.of(context).pop(region),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    if (selected != null) {
+      await _selectRegion(selected);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading) {
@@ -212,10 +322,35 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
       );
     }
     final count = ref.watch(vipSelectedCountProvider);
+    VipTargetList? selectedList;
+    for (final list in _lists) {
+      if (list.id == _listId) {
+        selectedList = list;
+        break;
+      }
+    }
+    final visibleLists = _lists.where((list) {
+      return count == null || list.contactCount >= count;
+    }).toList();
+    final region = _selectedRegion;
+
     return ListView(
       padding: const EdgeInsets.all(AppTokens.space16),
       children: [
-        Text('${capability.remainingQuota} / 100'),
+        Text(AppStrings.vipRemainingQuota(capability.remainingQuota)),
+        const SizedBox(height: 12),
+        const SectionHeader(AppStrings.vipDesiredRegion),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          title: Text(
+            region == null
+                ? AppStrings.vipSelectRegion
+                : '${region.regionCode} — ${region.regionName}',
+          ),
+          trailing: const Icon(Icons.keyboard_arrow_down),
+          onTap: _busy ? null : _openRegionPicker,
+        ),
+        const SizedBox(height: 12),
         Wrap(
           spacing: 8,
           children: [
@@ -223,20 +358,53 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
               ChoiceChip(
                 label: Text('$value'),
                 selected: count == value,
-                onSelected: (_) =>
-                    ref.read(vipSelectedCountProvider.notifier).setValue(value),
+                onSelected: selectedList != null && selectedList.contactCount < value
+                    ? null
+                    : (_) {
+                        ref.read(vipSelectedCountProvider.notifier).setValue(value);
+                        if (selectedList != null && selectedList.contactCount < value) {
+                          setState(() => _listId = null);
+                        }
+                      },
               ),
           ],
         ),
         const SizedBox(height: 12),
-        ..._lists.map(
-          (list) => ListTile(
-            title: Text(list.name),
-            subtitle: Text('${list.contactCount}'),
-            selected: _listId == list.id,
-            onTap: () => setState(() => _listId = list.id),
-          ),
-        ),
+        if (_regionCode == null)
+          const SizedBox.shrink()
+        else if (_listsLoading)
+          const LoadingSkeleton(lines: 3)
+        else if (_listsError != null)
+          ErrorView(message: friendlyError(_listsError!), onRetry: _loadLists)
+        else if (visibleLists.isEmpty)
+          const EmptyStateView(
+            title: AppStrings.vipNoActiveListsInRegion,
+            body: AppStrings.vipNoActiveListsInRegion,
+            compact: true,
+          )
+        else
+          ...[
+            for (final list in visibleLists) ...[
+              AppSurface(
+                tone: _listId == list.id ? AppSurfaceTone.hero : AppSurfaceTone.base,
+                onTap: () => setState(() => _listId = list.id),
+                padding: const EdgeInsets.all(AppTokens.space12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      AppStrings.vipListCardTitle(list.name),
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 4),
+                    Text('${AppStrings.vipContactCountLabel}: ${list.contactCount}'),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ],
+        const SizedBox(height: 12),
         TextField(
           controller: _geo,
           decoration: const InputDecoration(labelText: AppStrings.vipSalonRange),

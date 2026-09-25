@@ -24,21 +24,48 @@ void main() {
 
   test('Bale message copy stays human-controlled', () {
     expect(AppStrings.sendBaleMessage, 'ارسال پیام در بله');
-    expect(AppStrings.selectMultipleCustomers, 'انتخاب چند مشتری');
+    expect(
+      AppStrings.selectMultipleCustomers,
+      'انتخاب چند مشتری برای ارسال پیام',
+    );
     expect(AppStrings.sendMessageAction, 'ارسال پیام');
     expect(AppStrings.vipSendMessage, 'ارسال پیام vip');
-    expect(AppStrings.vipAdminNav, 'ارسال VIP');
+    expect(AppStrings.vipAdminNav, 'ارسال پیام VIP');
+    expect(AppStrings.adminQueueTitle, 'ارسال پیام عادی');
+    expect(AppStrings.adminVipMessagingTitle, 'ارسال پیام VIP');
+    expect(AppStrings.adminRemoveFromQueue, 'حذف از صف');
+    expect(AppStrings.adminMarkRecipientSent, 'ارسال دستی شد');
+    expect(AppStrings.adminCancelled, 'لغو شده');
+    expect(AppStrings.sentOfTotal(24, 37), 'ارسال شده 24 از 37');
+    expect(vipOutreachExecutionLabel('CANCELLED'), AppStrings.adminCancelled);
+    expect(workspaceMessageStateLabel('CANCELLED'), AppStrings.adminCancelled);
+    expect(AppStrings.vipOutreachFolders, 'پوشه ارسال VIP سالن‌ها');
+    expect(AppStrings.vipOutreachEmptyTitle, 'هنوز درخواست VIP ثبت نشده.');
+    expect(vipOutreachExecutionLabel('NOT_YET_QUEUED'), AppStrings.vipOutreachNotQueued);
+    expect(vipOutreachExecutionLabel('QUEUED'), AppStrings.outreachStatusQueued);
+    expect(vipOutreachExecutionLabel('IN_PIPELINE'), AppStrings.outreachStatusDispatched);
+    expect(vipOutreachExecutionLabel('SENT'), AppStrings.outreachStatusSent);
+    expect(vipOutreachExecutionLabel('FAILED'), AppStrings.outreachStatusFailed);
     expect(AppStrings.vipSalonRange, 'محدوده سالن');
+    expect(AppStrings.vipDesiredRegion, 'محدوده موردنظر');
+    expect(
+      AppStrings.vipNoActiveListsInRegion,
+      'در حال حاضر لیست فعالی برای این محدوده وجود ندارد.',
+    );
+    expect(AppStrings.vipListCardTitle('VIP-01-03'), 'لیست 3');
+    expect(AppStrings.vipListCardTitle('لیست ونک'), 'لیست ونک');
     expect(AppStrings.vipExcelExport, 'خروجی اکسل');
     expect(AppStrings.vipSendManual, 'ارسال دستی');
     expect(AppStrings.vipSendBale, 'ارسال با بله');
     expect(AppStrings.vipRename, 'تغییر نام');
+    expect(AppStrings.vipImportHelp, 'ستون شماره تلفن الزامی است. ستون نام اختیاری است.');
+    expect(AppStrings.vipUnnamedContact, 'بدون نام');
     expect(AppStrings.vipAddSample, 'افزودن نمونه کار');
     expect(AppStrings.vipNeedsReview, 'نیازمند بررسی');
     expect(AppStrings.vipMaxSamples, 'حداکثر ۳ نمونه کار مجاز است.');
     expect(
       AppStrings.vipQuotaExhausted,
-      contains('سهمیه ۱۴روزه'),
+      contains('سهمیه این هفته'),
     );
     expect(AppStrings.vipSampleProgress(1), 'نمونه کارها: 1 از 3');
     expect(
@@ -46,12 +73,16 @@ void main() {
       AppStrings.vipQuotaExhausted,
     );
     expect(
+      localizeUserFacingMessage('VIP rolling-window quota would be exceeded'),
+      AppStrings.vipQuotaExhausted,
+    );
+    expect(
       localizeUserFacingMessage('At most 3 sample-work images are allowed'),
       AppStrings.vipMaxSamples,
     );
     expect(
-      localizeUserFacingMessage('Bale is not available for VIP outreach'),
-      AppStrings.vipBaleNotImplemented,
+      localizeUserFacingMessage('This VIP list is not available'),
+      AppStrings.vipListUnavailable,
     );
     expect(AppStrings.createSuitableMessage, 'ایجاد پیام مناسب');
     expect(messageStatusLabel('SENT'), 'پیام با موفقیت ارسال شد.');
@@ -61,12 +92,28 @@ void main() {
     expect(outreachLifecycleLabel('DISPATCHED'), AppStrings.outreachStatusDispatched);
     expect(outreachLifecycleLabel('SENT'), AppStrings.outreachStatusSent);
     expect(outreachLifecycleLabel('FAILED'), AppStrings.outreachStatusFailed);
+    expect(workspaceMessageStateLabel('QUEUED'), AppStrings.outreachStatusQueued);
+    expect(workspaceMessageStateLabel('IN_PIPELINE'), AppStrings.outreachStatusDispatched);
+    expect(workspaceMessageStateLabel('SENT'), AppStrings.workspaceMessageSent);
+    expect(
+      workspaceMessageStateLabel('SENT_WITH_RETURN_COMMITMENT'),
+      AppStrings.workspaceMessageAgreed,
+    );
+    expect(
+      workspaceMessageStateLabel('SENT_WITH_RETURN_EVIDENCE'),
+      AppStrings.workspaceMessageReturned,
+    );
+    expect(workspaceMessageStateLabel('FAILED'), AppStrings.outreachStatusFailed);
+    expect(AppStrings.workspaceMessageSent, 'ارسال شده');
+    expect(AppStrings.workspaceMessageAgreed, 'ارسال شده — زمان مراجعه توافق شده');
+    expect(AppStrings.workspaceMessageReturned, 'ارسال شده — مراجعه ثبت شده');
     expect(messageFailureLabel('NOT_CONFIGURED'), contains('بله'));
     expect(maskCustomerPhone('09121111111'), '0912****111');
   });
 
   test('owner-required dashboard and navigation copy is exact', () {
-    expect(AppStrings.attentionQuestion, 'توجه سالن باید کدام سمت بره؟');
+    expect(AppStrings.recoveryOutcomesTitle, 'نتیجه ارسال پیام‌ها');
+    expect(AppStrings.overallPerformanceTitle, 'عملکرد کلی');
     expect(AppStrings.customers, 'مشتریان');
     expect(AppStrings.visits, 'نوبت انجام شده');
   });

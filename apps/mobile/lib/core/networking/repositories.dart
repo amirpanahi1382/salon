@@ -481,6 +481,26 @@ class MessageRepository {
   }
 }
 
+class OpportunitiesRepository {
+  OpportunitiesRepository(this._api);
+
+  final ApiClient _api;
+
+  Future<ItemPage<OpportunityWorkspaceRow>> workspace({
+    required String filter,
+    String? cursor,
+  }) async {
+    final data = await _api.get(
+      '/opportunities/workspace',
+      query: {
+        'filter': filter,
+        if (cursor != null && cursor.isNotEmpty) 'cursor': cursor,
+      },
+    );
+    return parseItemPage(data, OpportunityWorkspaceRow.fromJson);
+  }
+}
+
 class ReturnCommitmentRepository {
   ReturnCommitmentRepository(this._api);
 
@@ -665,6 +685,37 @@ class AdminMessageRepository {
     return AdminQueueItem.fromJson(data);
   }
 
+  Future<AdminQueueItem> cancel(String id) async {
+    final data =
+        await _api.post('/admin/message-queue/$id/cancel') as Map<String, dynamic>;
+    return AdminQueueItem.fromJson(data);
+  }
+
+  Future<ItemPage<AdminNormalSalonFolder>> listNormalSalons({
+    String? cursor,
+    String? query,
+  }) async {
+    final data = await _api.get(
+      '/admin/messages/normal/salons',
+      query: {
+        'cursor': ?cursor,
+        if (query != null && query.trim().isNotEmpty) 'q': query.trim(),
+      },
+    );
+    return parseItemPage(data, AdminNormalSalonFolder.fromJson);
+  }
+
+  Future<AdminNormalSalonFolderDetail> getNormalSalon(
+    String salonId, {
+    String? cursor,
+  }) async {
+    final data = await _api.get(
+      '/admin/messages/normal/salons/$salonId',
+      query: cursor == null ? null : {'cursor': cursor},
+    );
+    return AdminNormalSalonFolderDetail.fromJson(data);
+  }
+
   Future<AdminQueueItem> retry(String id) async {
     final data =
         await _api.post('/admin/message-queue/$id/retry') as Map<String, dynamic>;
@@ -726,6 +777,12 @@ class SalonRepository {
   Future<SalonProfile> current() async {
     final data = await _api.get('/salon') as Map<String, dynamic>;
     return SalonProfile.fromJson(data);
+  }
+
+  Future<SalonOverallPerformance> overallPerformance() async {
+    final data =
+        await _api.get('/salon/overall-performance') as Map<String, dynamic>;
+    return SalonOverallPerformance.fromJson(data);
   }
 }
 
@@ -832,8 +889,22 @@ class VipRepository {
     return VipCapability.fromJson(asJsonMap(await _api.get('/vip/capability')));
   }
 
-  Future<List<VipTargetList>> activeLists() async {
-    final data = asJsonMap(await _api.get('/vip/lists'));
+  Future<List<VipRegion>> regions() async {
+    final data = asJsonMap(await _api.get('/vip/regions'));
+    final items = data['items'];
+    if (items is! List) {
+      return const [];
+    }
+    return items
+        .whereType<Map>()
+        .map((row) => VipRegion.fromJson(asJsonMap(row)))
+        .toList();
+  }
+
+  Future<List<VipTargetList>> listsByRegion(String regionCode) async {
+    final data = asJsonMap(
+      await _api.get('/vip/lists', query: {'regionCode': regionCode}),
+    );
     final items = data['items'];
     if (items is! List) {
       return const [];
@@ -943,16 +1014,12 @@ class VipRepository {
     );
   }
 
-  Future<List<AdminSalonSummary>> adminSalons() async {
-    final data = asJsonMap(await _api.get('/admin/vip/salons'));
-    final items = data['items'];
-    if (items is! List) {
-      return const [];
-    }
-    return items
-        .whereType<Map>()
-        .map((row) => AdminSalonSummary.fromJson(asJsonMap(row)))
-        .toList();
+  Future<ItemPage<AdminSalonSummary>> adminSalons({String? cursor, String? q}) async {
+    final data = await _api.get('/admin/vip/salons', query: {
+      'cursor': ?cursor,
+      if (q != null && q.trim().isNotEmpty) 'q': q.trim(),
+    });
+    return parseItemPage(data, AdminSalonSummary.fromJson);
   }
 
   Future<void> grantEntitlement(String salonId, String key) async {
@@ -991,5 +1058,41 @@ class VipRepository {
         ),
       ),
     );
+  }
+
+  Future<ItemPage<AdminVipOutreachFolder>> adminOutreachSalons({
+    String? cursor,
+    String? query,
+  }) async {
+    final data = await _api.get(
+      '/admin/vip/outreach/salons',
+      query: {
+        'cursor': ?cursor,
+        if (query != null && query.trim().isNotEmpty) 'q': query.trim(),
+      },
+    );
+    return parseItemPage(data, AdminVipOutreachFolder.fromJson);
+  }
+
+  Future<AdminVipOutreachSalonPage> adminOutreachSalon(
+    String salonId, {
+    String? cursor,
+  }) async {
+    final data = await _api.get(
+      '/admin/vip/outreach/salons/$salonId',
+      query: cursor == null ? null : {'cursor': cursor},
+    );
+    return AdminVipOutreachSalonPage.fromJson(data);
+  }
+
+  Future<AdminVipOutreachRequestPage> adminOutreachRequest(
+    String requestId, {
+    String? cursor,
+  }) async {
+    final data = await _api.get(
+      '/admin/vip/outreach/requests/$requestId',
+      query: cursor == null ? null : {'cursor': cursor},
+    );
+    return AdminVipOutreachRequestPage.fromJson(data);
   }
 }

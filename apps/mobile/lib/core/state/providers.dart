@@ -53,6 +53,10 @@ final messageRepositoryProvider = Provider<MessageRepository>((ref) {
   return MessageRepository(ref.watch(apiClientProvider));
 });
 
+final opportunitiesRepositoryProvider = Provider<OpportunitiesRepository>((ref) {
+  return OpportunitiesRepository(ref.watch(apiClientProvider));
+});
+
 final returnCommitmentRepositoryProvider = Provider<ReturnCommitmentRepository>((
   ref,
 ) {

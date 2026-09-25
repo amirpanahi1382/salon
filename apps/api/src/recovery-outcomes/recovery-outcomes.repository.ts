@@ -14,6 +14,11 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../infrastructure/database/prisma.service';
 import { toAssociatedRevenue } from '../return-commitment/return-commitment.mapper';
 import type { AssociatedRevenueDto } from '../observed-outcome/observed-outcome.dto';
+import {
+  eligibleCustomerSentDeliverySql,
+  observedReturnCtes,
+  validCommitmentSourceSql,
+} from './eligible-message-evidence.sql';
 import type { RecoveryOutcomeReturnItemDto } from './recovery-outcomes.dto';
 
 export const RECOVERY_OUTCOME_RETURN_LIST_LIMIT = 50;
@@ -43,84 +48,8 @@ type OutcomeVisitRow = {
   completedCount: number;
 };
 
-const eligibleDeliverySql = (tenantId: string) => Prisma.sql`
-  SELECT
-    d.id AS delivery_id,
-    d.created_at AS delivery_created_at,
-    d.submitted_at,
-    d.customer_id,
-    r.id AS request_id,
-    r.requested_at,
-    r.action_id,
-    r.opportunity_type,
-    a.source_visit_id
-  FROM message_deliveries d
-  INNER JOIN message_requests r
-    ON r.id = d.message_request_id AND r.salon_id = d.salon_id
-  LEFT JOIN opportunity_actions a
-    ON a.id = r.action_id AND a.salon_id = r.salon_id
-  WHERE d.salon_id = ${tenantId}::uuid
-    AND d.status = 'SENT'::"MessageDeliveryStatus"
-    AND d.submitted_at IS NOT NULL
-    AND r.vip_request_id IS NULL
-    AND r.customer_id IS NOT NULL
-    AND d.customer_id IS NOT NULL
-    AND d.customer_id = r.customer_id
-`;
-
-const observedCtes = (tenantId: string) => Prisma.sql`
-  eligible AS (
-    ${eligibleDeliverySql(tenantId)}
-  ),
-  last_touch AS (
-    SELECT DISTINCT ON (v.id)
-      v.id AS visit_id,
-      v.created_at AS visit_created_at,
-      v.visited_at,
-      v.customer_id,
-      e.delivery_id,
-      e.request_id,
-      e.submitted_at,
-      e.action_id,
-      e.opportunity_type
-    FROM visits v
-    INNER JOIN eligible e
-      ON e.customer_id = v.customer_id
-     AND e.submitted_at < v.visited_at
-     AND (e.source_visit_id IS NULL OR e.source_visit_id <> v.id)
-    WHERE v.salon_id = ${tenantId}::uuid
-      AND NOT EXISTS (
-        SELECT 1
-        FROM return_commitments claimed_visit
-        WHERE claimed_visit.salon_id = ${tenantId}::uuid
-          AND claimed_visit.actual_visit_id = v.id
-      )
-    ORDER BY v.id, e.submitted_at DESC, e.delivery_created_at DESC, e.delivery_id DESC
-  ),
-  claimed AS (
-    SELECT
-      last_touch.*,
-      ROW_NUMBER() OVER (
-        PARTITION BY delivery_id
-        ORDER BY visited_at ASC, visit_created_at ASC, visit_id ASC
-      ) AS claim_rank
-    FROM last_touch
-  ),
-  observed AS (
-    SELECT
-      visit_id,
-      visit_created_at,
-      visited_at,
-      customer_id,
-      delivery_id,
-      request_id,
-      submitted_at,
-      action_id,
-      opportunity_type
-    FROM claimed
-    WHERE claim_rank = 1
-  )
-`
+const eligibleDeliverySql = eligibleCustomerSentDeliverySql;
+const observedCtes = observedReturnCtes;
 
 @Injectable()
 export class RecoveryOutcomesRepository {
@@ -169,9 +98,12 @@ export class RecoveryOutcomesRepository {
           ON v.id = c.actual_visit_id AND v.salon_id = c.salon_id
         INNER JOIN message_deliveries d
           ON d.id = c.source_message_delivery_id AND d.salon_id = c.salon_id
+        INNER JOIN message_requests r
+          ON r.id = c.source_message_request_id AND r.salon_id = c.salon_id
         WHERE c.salon_id = ${tenantId}::uuid
           AND c.actual_visit_id IS NOT NULL
-          AND d.submitted_at IS NOT NULL
+          AND c.customer_id = v.customer_id
+          AND ${validCommitmentSourceSql}
           AND v.visited_at >= ${week.start}
           AND v.visited_at < ${week.end}
           AND v.visited_at > d.submitted_at
@@ -208,12 +140,6 @@ export class RecoveryOutcomesRepository {
       FROM observed o
       WHERE o.visited_at >= ${week.start}
         AND o.visited_at < ${week.end}
-        AND NOT EXISTS (
-          SELECT 1
-          FROM return_commitments c
-          WHERE c.salon_id = ${tenantId}::uuid
-            AND c.actual_visit_id = o.visit_id
-        )
     `);
     return Number(rows[0]?.count ?? 0);
   }
@@ -261,7 +187,8 @@ export class RecoveryOutcomesRepository {
        AND t.customer_id = v.customer_id
       WHERE c.salon_id = ${tenantId}::uuid
         AND c.actual_visit_id IS NOT NULL
-        AND d.submitted_at IS NOT NULL
+        AND c.customer_id = v.customer_id
+        AND ${validCommitmentSourceSql}
         AND v.visited_at >= ${week.start}
         AND v.visited_at < ${week.end}
         AND v.visited_at > d.submitted_at
@@ -314,12 +241,6 @@ export class RecoveryOutcomesRepository {
        AND t.customer_id = o.customer_id
       WHERE o.visited_at >= ${week.start}
         AND o.visited_at < ${week.end}
-        AND NOT EXISTS (
-          SELECT 1
-          FROM return_commitments c
-          WHERE c.salon_id = ${tenantId}::uuid
-            AND c.actual_visit_id = o.visit_id
-        )
         ${cursorFilter}
       GROUP BY
         o.visit_id, o.visited_at, o.visit_created_at, o.customer_id, cust.first_name, cust.last_name,

@@ -12,9 +12,13 @@ import {
   VIP_MAX_SAMPLE_WORKS,
   VIP_MIN_SAMPLE_WORKS,
   VIP_QUOTA_MAX,
+  VIP_QUOTA_EXCEEDED_MESSAGE,
+  VIP_QUOTA_WINDOW_DAYS,
   createId,
   isUsableCustomerPhone,
+  isVipRegionCode,
   renderVipMessageTemplate,
+  vipRegionName,
   type AuthenticatedPrincipal,
   type PlatformAdminPrincipal,
 } from '@salon/shared';
@@ -25,7 +29,8 @@ import {
   claimIdempotencyKey,
   findIdempotencyRecord,
 } from '../infrastructure/http/idempotency';
-import { encodeCursor, toListPage } from '../infrastructure/http/list-page';
+import { decodeCursor, encodeCursor, parseCursorInstant, parseCursorUuid, toListPage } from '../infrastructure/http/list-page';
+import type { ListAdminSalonsQueryDto } from './vip.dto';
 import { mapPrismaError } from '../infrastructure/http/prisma-error';
 import { OBJECT_STORAGE, type ObjectStorage } from '../infrastructure/storage/object-storage';
 import { Inject } from '@nestjs/common';
@@ -69,7 +74,7 @@ function mapImportError(error: unknown): ValidationError {
     case 'ROW_LIMIT':
       return new ValidationError(`VIP lists cannot contain more than ${VIP_LIST_MAX_CONTACTS} contacts`);
     case 'MISSING_HEADERS':
-      return new ValidationError('Excel must include نام and شماره تلفن columns');
+      return new ValidationError('Excel must include a شماره تلفن column');
     case 'EMPTY':
       return new ValidationError('Excel has no valid VIP contacts');
     case 'INVALID_PHONE':
@@ -95,11 +100,12 @@ function sanitizeGeo(raw: string): string {
   return value;
 }
 
-function excelSafeText(value: string): string {
-  if (/^[=+\-@\t\r]/.test(value)) {
-    return `'${value}`;
+function excelSafeText(value: string | null | undefined): string {
+  const text = value ?? '';
+  if (/^[=+\-@\t\r]/.test(text)) {
+    return `'${text}`;
   }
-  return value;
+  return text;
 }
 
 async function replayOrClaim(
@@ -166,7 +172,7 @@ export class ImportVipListUseCase {
       throw mapImportError(error);
     }
     const fingerprint = createHash('sha256')
-      .update(contacts.map((row) => `${row.phoneNumber}:${row.displayName}`).join('|'))
+      .update(contacts.map((row) => `${row.phoneNumber}:${row.displayName ?? ''}`).join('|'))
       .digest('hex');
     const requestHash = vipListImportHash(contacts.length, fingerprint);
     const listId = createId();
@@ -256,16 +262,8 @@ export class ListVipListsUseCase {
 
   async execute(cursor?: string) {
     let parsed: { createdAt: Date; id: string } | undefined;
-    if (cursor) {
-      const decoded = Buffer.from(cursor, 'base64url').toString('utf8').split('\n');
-      if (decoded.length !== 2 || !decoded[0] || !decoded[1]) {
-        throw new ValidationError('Invalid cursor');
-      }
-      parsed = { createdAt: new Date(decoded[0]), id: decoded[1] };
-      if (Number.isNaN(parsed.createdAt.getTime())) {
-        throw new ValidationError('Invalid cursor');
-      }
-    }
+    const decoded = decodeCursor(cursor, 2);
+    if (decoded) parsed = { createdAt: parseCursorInstant(decoded[0]!), id: parseCursorUuid(decoded[1]!) };
     const rows = await this.vip.listLists(parsed);
     const page = toListPage(rows, 50, (row) => encodeCursor([row.createdAt.toISOString(), row.id]));
     return {
@@ -529,22 +527,38 @@ export class RevokeVipEntitlementUseCase {
 export class ListAdminSalonsUseCase {
   constructor(private readonly prisma: PrismaService) {}
 
-  async execute() {
+  async execute(query: ListAdminSalonsQueryDto) {
+    const parts = decodeCursor(query.cursor, 2);
+    const cursor = parts ? { createdAt: parseCursorInstant(parts[0]!), id: parseCursorUuid(parts[1]!) } : undefined;
+    const q = query.q?.trim();
     const salons = await this.prisma.client.salon.findMany({
+      where: {
+        ...(q ? { name: { contains: q, mode: 'insensitive' as const } } : {}),
+        ...(cursor ? { OR: [
+          { createdAt: { lt: cursor.createdAt } },
+          { createdAt: cursor.createdAt, id: { lt: cursor.id } },
+        ] } : {}),
+      },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-      take: 200,
+      take: 51,
       select: {
         id: true,
         name: true,
+        createdAt: true,
         vipEntitlement: { select: { revokedAt: true } },
       },
     });
+    const page = toListPage(salons, 50, (salon) =>
+      encodeCursor([salon.createdAt.toISOString(), salon.id]),
+    );
     return {
-      items: salons.map((salon) => ({
+      items: page.items.map((salon) => ({
         id: salon.id,
         name: salon.name,
         entitled: salon.vipEntitlement != null && salon.vipEntitlement.revokedAt === null,
       })),
+      hasMore: page.hasMore,
+      nextCursor: page.nextCursor,
     };
   }
 }
@@ -566,13 +580,15 @@ export class GetVipCapabilityUseCase {
       entitled,
       usedQuota: used,
       remainingQuota: Math.max(0, VIP_QUOTA_MAX - used),
+      quotaMax: VIP_QUOTA_MAX,
+      quotaWindowDays: VIP_QUOTA_WINDOW_DAYS,
       currentRequest: current ? toVipRequest(current) : null,
     };
   }
 }
 
 @Injectable()
-export class ListActiveVipListsUseCase {
+export class ListVipRegionsUseCase {
   constructor(private readonly vip: VipRepository) {}
 
   async execute(principal: AuthenticatedPrincipal) {
@@ -580,11 +596,30 @@ export class ListActiveVipListsUseCase {
       throw new ForbiddenError('VIP outreach is not enabled for this salon');
     }
     await this.vip.expireStaleReservations(new Date(), this.vip.client);
-    const items = await this.vip.listActiveLists();
+    const items = await this.vip.summarizeAvailableRegions();
+    return { items };
+  }
+}
+
+@Injectable()
+export class ListActiveVipListsUseCase {
+  constructor(private readonly vip: VipRepository) {}
+
+  async execute(principal: AuthenticatedPrincipal, regionCode?: string) {
+    if (!(await this.vip.findActiveEntitlement(principal.tenantId))) {
+      throw new ForbiddenError('VIP outreach is not enabled for this salon');
+    }
+    if (!regionCode || !isVipRegionCode(regionCode)) {
+      throw new ValidationError('regionCode must be a canonical VIP region');
+    }
+    await this.vip.expireStaleReservations(new Date(), this.vip.client);
+    const items = await this.vip.listActiveListsByRegion(regionCode);
     return {
       items: items.map((row) => ({
         id: row.id,
         name: row.name,
+        regionCode: row.regionCode,
+        regionName: vipRegionName(regionCode),
         status: row.status,
         contactCount: row.contactCount,
         createdAt: row.createdAt.toISOString(),
@@ -636,7 +671,7 @@ export class CreateVipRequestUseCase {
             this.vip.quotaWindowStart(now),
           );
           if (used + body.requestedCount > VIP_QUOTA_MAX) {
-            throw new ConflictError('VIP 14-day quota would be exceeded');
+            throw new ConflictError(VIP_QUOTA_EXCEEDED_MESSAGE);
           }
           const reserved = await this.vip.tryReserveList(tx, body.listId, principal.tenantId, now);
           if (!reserved) {
@@ -1031,7 +1066,7 @@ export class DispatchVipRequestUseCase {
     const now = new Date();
     await this.prisma.client.$transaction(
       async (tx) => {
-        const claimed = await replayOrClaim(tx, {
+        const dispatchIdempotencyClaim = await replayOrClaim(tx, {
           tenantId: admin.adminId,
           actorId: admin.adminId,
           operation: mode === 'MANUAL' ? VIP_DISPATCH_MANUAL_OPERATION : VIP_DISPATCH_BALE_OPERATION,
@@ -1040,9 +1075,11 @@ export class DispatchVipRequestUseCase {
           resourceType: 'vip_request',
           resourceId: requestId,
         });
-        if (claimed !== 'inserted') {
+        if (dispatchIdempotencyClaim !== 'inserted') {
           return;
         }
+        // Serialize every dispatch mode on the request row before reading its state.
+        await tx.$queryRaw`SELECT id FROM vip_requests WHERE id = ${requestId}::uuid FOR UPDATE`;
         const request = await tx.vipRequest.findUnique({
           where: { id: requestId },
           include: { recipients: { orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }] } },
@@ -1060,10 +1097,11 @@ export class DispatchVipRequestUseCase {
           throw new ConflictError('This VIP request cannot be dispatched');
         }
         if (mode === 'BALE') {
-          await tx.vipRequest.update({
-            where: { id: requestId },
+          const baleClaim = await tx.vipRequest.updateMany({
+            where: { id: requestId, status: 'SUBMITTED' },
             data: { status: 'BALE_NOT_IMPLEMENTED', updatedAt: now },
           });
+          if (baleClaim.count === 0) return;
           await tx.auditLog.create({
             data: {
               id: createId(),
@@ -1077,6 +1115,14 @@ export class DispatchVipRequestUseCase {
             },
           });
           return;
+        }
+
+        const manualClaim = await tx.vipRequest.updateMany({
+          where: { id: requestId, status: { in: ['SUBMITTED', 'BALE_NOT_IMPLEMENTED'] } },
+          data: { status: 'MANUAL_QUEUED', updatedAt: now },
+        });
+        if (manualClaim.count === 0) {
+          throw new ConflictError('This VIP request cannot be dispatched');
         }
 
         for (const recipient of request.recipients) {
@@ -1123,10 +1169,6 @@ export class DispatchVipRequestUseCase {
             },
           });
         }
-        await tx.vipRequest.update({
-          where: { id: requestId },
-          data: { status: 'MANUAL_QUEUED', updatedAt: now },
-        });
         await tx.auditLog.create({
           data: {
             id: createId(),

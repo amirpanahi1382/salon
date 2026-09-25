@@ -26,17 +26,25 @@ const deadLetter = markOutboxDeadLetter as jest.MockedFunction<typeof markOutbox
 const processed = markOutboxProcessed as jest.MockedFunction<typeof markOutboxProcessed>;
 const retry = markOutboxRetry as jest.MockedFunction<typeof markOutboxRetry>;
 
+beforeEach(() => {
+  deadLetter.mockResolvedValue(true);
+  processed.mockResolvedValue(true);
+  retry.mockResolvedValue(true);
+});
+
 function event(overrides: Partial<OutboxEvent> = {}): OutboxEvent {
   return {
     id: '11111111-1111-4111-8111-111111111111',
     tenantId: '22222222-2222-4222-8222-222222222222',
     eventType: DOMAIN_EVENT_TYPES.VisitCompleted,
+    dedupeKey: null,
     payload: { visitId: 'v1' },
     status: 'PROCESSING',
     attemptCount: 1,
+    claimGeneration: 1n,
     availableAt: new Date(),
     lockedAt: new Date(),
-    lockedUntil: new Date(),
+    lockedUntil: new Date(Date.now() + 30_000),
     processedAt: null,
     lastError: null,
     createdAt: new Date(),
@@ -62,12 +70,16 @@ describe('OutboxProcessor', () => {
 
   let processor: OutboxProcessor;
   const sendCustomerMessage = {
-    handle: jest.fn().mockResolvedValue(undefined),
+    handle: jest.fn().mockResolvedValue({ outcome: 'completed' }),
     abandonIfInFlight: jest.fn().mockResolvedValue(undefined),
   };
 
   beforeEach(() => {
     jest.clearAllMocks();
+    deadLetter.mockResolvedValue(true);
+    processed.mockResolvedValue(true);
+    retry.mockResolvedValue(true);
+    sendCustomerMessage.handle.mockReset().mockResolvedValue({ outcome: 'completed' });
     processor = new OutboxProcessor(
       prisma,
       config,
@@ -78,14 +90,14 @@ describe('OutboxProcessor', () => {
 
   it('dead-letters unknown event types instead of marking them processed', async () => {
     await processor.processOne(event({ eventType: 'NotARealEvent' }));
-    expect(deadLetter).toHaveBeenCalledWith(prisma.client, event().id, 'UNKNOWN_EVENT_TYPE');
+    expect(deadLetter).toHaveBeenCalledWith(prisma.client, event().id, 1n, 'UNKNOWN_EVENT_TYPE');
     expect(processed).not.toHaveBeenCalled();
     expect(retry).not.toHaveBeenCalled();
   });
 
   it('marks known events processed', async () => {
     await processor.processOne(event());
-    expect(processed).toHaveBeenCalled();
+    expect(processed).toHaveBeenCalledWith(prisma.client, event().id, 1n);
     expect(deadLetter).not.toHaveBeenCalled();
     expect(sendCustomerMessage.handle).not.toHaveBeenCalled();
   });
@@ -108,6 +120,29 @@ describe('OutboxProcessor', () => {
     expect(sendCustomerMessage.handle).toHaveBeenCalled();
     expect(processed).toHaveBeenCalled();
   });
+
+  it.each(['success', 'retry', 'destination_rejected'] as const)(
+    'does not log destination PII for %s execution', async (outcome) => {
+      const logs: string[] = [];
+      const capturedLogger = pino({ level: 'trace' }, { write: (line: string) => { logs.push(line); } } as never);
+      const captured = new OutboxProcessor(prisma, config, sendCustomerMessage as never, capturedLogger);
+      if (outcome === 'retry') {
+        sendCustomerMessage.handle.mockRejectedValueOnce(new RetryableMessageSendError('PROVIDER_TEMPORARY'));
+      } else {
+        sendCustomerMessage.handle.mockResolvedValueOnce({
+          outcome: outcome === 'success' ? 'completed' : 'terminal_failure',
+        });
+      }
+      await captured.processOne(event({ eventType: DOMAIN_EVENT_TYPES.MessageDeliveryActivated,
+        payload: { messageDeliveryId: 'm1', executionGeneration: 0, recipientPhoneNumber: '09121111111', messageText: 'private message body' },
+      }));
+      const serialized = logs.join('');
+      expect(serialized).not.toContain('09121111111');
+      expect(serialized).not.toContain('private message body');
+      expect(serialized).toContain('outbox.consume');
+      if (outcome === 'retry') expect(retry).toHaveBeenCalled();
+    },
+  );
 
   it('retries handler failures below max attempts', async () => {
     jest.spyOn(processor as never, 'consume').mockRejectedValue(new Error('boom') as never);
@@ -133,6 +168,84 @@ describe('OutboxProcessor', () => {
     expect(handlerTimeoutMs(30_000)).toBe(24_000);
     expect(handlerTimeoutMs(30_000)).toBeLessThan(30_000);
   });
+
+  it('leaves an unfinished stale delivery event reclaimable, even on the last attempt', async () => {
+    sendCustomerMessage.handle.mockResolvedValue({ outcome: 'stale' });
+    await processor.processOne(event({ eventType: DOMAIN_EVENT_TYPES.MessageDeliveryActivated, attemptCount: 2 }));
+    expect(processed).not.toHaveBeenCalled();
+    expect(retry).not.toHaveBeenCalled();
+    expect(deadLetter).not.toHaveBeenCalled();
+    expect(sendCustomerMessage.abandonIfInFlight).not.toHaveBeenCalled();
+  });
+
+  it('cannot acknowledge a late stale handler after the new owner completes', async () => {
+    let finishOld!: (value: { outcome: string }) => void;
+    sendCustomerMessage.handle.mockImplementationOnce(() => new Promise((resolve) => { finishOld = resolve; }));
+    const old = processor.processOne(event({ eventType: DOMAIN_EVENT_TYPES.MessageDeliveryActivated }));
+    const newProcessor = new OutboxProcessor(prisma, config, sendCustomerMessage as never, logger);
+    await newProcessor.processOne(event({ eventType: DOMAIN_EVENT_TYPES.MessageDeliveryActivated, claimGeneration: 2n }));
+    finishOld({ outcome: 'stale' });
+    await old;
+    expect(processed).toHaveBeenCalledTimes(1);
+    expect(processed).toHaveBeenCalledWith(prisma.client, event().id, 2n);
+    expect(deadLetter).not.toHaveBeenCalled();
+  });
+
+  it('drains every sibling after one fails before another claim or provider execution', async () => {
+    const first = event({ eventType: DOMAIN_EVENT_TYPES.MessageDeliveryActivated });
+    const second = event({ id: 'second', eventType: DOMAIN_EVENT_TYPES.MessageDeliveryActivated });
+    claim.mockResolvedValueOnce([first, second]).mockResolvedValue([]);
+    let finishSibling!: () => void;
+    const providerCall = jest.fn();
+    const evidence = jest.fn();
+    sendCustomerMessage.handle.mockImplementation(async (item: OutboxEvent) => {
+      providerCall(item.id);
+      if (item.id === first.id) throw new Error('handler failed');
+      await new Promise<void>((resolve) => { finishSibling = resolve; });
+      evidence(item.id);
+      return { outcome: 'completed' };
+    });
+    retry.mockRejectedValueOnce(new Error('retry persistence failed'));
+    const batch = processor.tick();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    await processor.tick();
+    expect(claim).toHaveBeenCalledTimes(1);
+    expect(providerCall).toHaveBeenCalledTimes(2);
+    expect(evidence).not.toHaveBeenCalled();
+    finishSibling();
+    await batch;
+    await processor.tick();
+    expect(claim).toHaveBeenCalledTimes(2);
+    expect(providerCall).toHaveBeenCalledTimes(2);
+    expect(evidence).toHaveBeenCalledTimes(1);
+    expect(processed).toHaveBeenCalledTimes(1);
+  });
+
+  it('waits for a timed-out handler to settle after abort before another batch', async () => {
+    jest.useFakeTimers();
+    let finish!: (value: { outcome: string }) => void;
+    let observedSignal: AbortSignal | undefined;
+    claim.mockResolvedValueOnce([event({ eventType: DOMAIN_EVENT_TYPES.MessageDeliveryActivated })]).mockResolvedValue([]);
+    sendCustomerMessage.handle.mockImplementation((_event, _max, signal) => {
+      observedSignal = signal;
+      return new Promise((resolve) => { finish = resolve; });
+    });
+    try {
+      const batch = processor.tick();
+      await jest.advanceTimersByTimeAsync(handlerTimeoutMs(config.values.OUTBOX_LEASE_MS));
+      expect(observedSignal?.aborted).toBe(true);
+      await processor.tick();
+      expect(claim).toHaveBeenCalledTimes(1);
+      finish({ outcome: 'stale' });
+      await batch;
+      expect(processed).not.toHaveBeenCalled();
+      expect(deadLetter).not.toHaveBeenCalled();
+      await processor.tick();
+      expect(claim).toHaveBeenCalledTimes(2);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
 });
 
 type DeliveryRow = {
@@ -141,6 +254,9 @@ type DeliveryRow = {
   mode: 'BALE' | 'MANUAL';
   messageRequestId: string;
   status: 'PENDING' | 'PROCESSING' | 'SENT' | 'FAILED';
+  executionGeneration: number;
+  executionToken: string | null;
+  executionLockedUntil: Date | null;
   failedAt: Date | null;
   failureCode: string | null;
   submittedAt: Date | null;
@@ -148,7 +264,7 @@ type DeliveryRow = {
   providerRequestId: string;
   createdBy: string;
   customer: { phoneNumber: string };
-  messageRequest: { id: string; messageText: string };
+  messageRequest: { id: string; messageText: string; recipientPhoneNumber: string };
 };
 
 function deliveryRow(overrides: Partial<DeliveryRow> = {}): DeliveryRow {
@@ -158,6 +274,9 @@ function deliveryRow(overrides: Partial<DeliveryRow> = {}): DeliveryRow {
     mode: 'BALE',
     messageRequestId: 'r1',
     status: 'PENDING',
+    executionGeneration: 0,
+    executionToken: null,
+    executionLockedUntil: null,
     failedAt: null,
     failureCode: null,
     submittedAt: null,
@@ -165,7 +284,7 @@ function deliveryRow(overrides: Partial<DeliveryRow> = {}): DeliveryRow {
     providerRequestId: 'req-1',
     createdBy: '33333333-3333-4333-8333-333333333333',
     customer: { phoneNumber: '09123456789' },
-    messageRequest: { id: 'r1', messageText: 'hello' },
+    messageRequest: { id: 'r1', messageText: 'hello', recipientPhoneNumber: '09123456789' },
     ...overrides,
   };
 }
@@ -181,6 +300,11 @@ type FakePrismaClient = {
   messageRequest: {
     updateMany: () => Promise<{ count: number }>;
   };
+  outboxEvent: {
+    findFirst: () => Promise<{ id: string }>;
+    create: () => Promise<unknown>;
+  };
+  auditLog: { create: () => Promise<unknown> };
   $transaction: (fn: (tx: FakePrismaClient) => Promise<unknown>) => Promise<unknown>;
 };
 
@@ -216,6 +340,11 @@ function fakePrisma(rows: DeliveryRow[]) {
     messageRequest: {
       updateMany: async () => ({ count: 1 }),
     },
+    outboxEvent: {
+      findFirst: async () => ({ id: 'event' }),
+      create: async () => ({}),
+    },
+    auditLog: { create: async () => ({}) },
     $transaction: async (fn: (tx: FakePrismaClient) => Promise<unknown>) => {
       const snapshot = rows.map((row) => ({ ...row }));
       try {
@@ -236,6 +365,9 @@ describe('OutboxProcessor MessageSendRequested dead-letter', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    deadLetter.mockResolvedValue(true);
+    processed.mockResolvedValue(true);
+    retry.mockResolvedValue(true);
   });
 
   const baseConfig = {
@@ -264,7 +396,9 @@ describe('OutboxProcessor MessageSendRequested dead-letter', () => {
     jest.useFakeTimers();
     const row = deliveryRow({ status: 'PENDING' });
     const prisma = fakePrisma([row]);
-    const sender = { sendText: jest.fn(() => new Promise(() => undefined)) };
+    const sender = { sendText: jest.fn(({ signal }: { signal: AbortSignal }) => new Promise((_, reject) => {
+      signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
+    })) };
     const handler = new SendCustomerMessageHandler(prisma as never, sender as never);
     const processor = new OutboxProcessor(prisma as never, baseConfig, handler, logger);
 
@@ -382,7 +516,7 @@ describe('OutboxProcessor MessageSendRequested dead-letter', () => {
 
     expect(retry).toHaveBeenCalled();
     expect(deadLetter).not.toHaveBeenCalled();
-    expect(row.status).toBe('PROCESSING');
+    expect(row.status).toBe('PENDING');
     expect(row.failedAt).toBeNull();
   });
 
@@ -408,6 +542,7 @@ describe('OutboxProcessor MessageSendRequested dead-letter', () => {
     let outboxStatus: 'PROCESSING' | 'DEAD_LETTER' = 'PROCESSING';
     deadLetter.mockImplementation(async () => {
       outboxStatus = 'DEAD_LETTER';
+      return true;
     });
     const originalTx = prisma.client.$transaction;
     prisma.client.$transaction = (async (fn: (tx: unknown) => Promise<unknown>) => {
@@ -423,6 +558,7 @@ describe('OutboxProcessor MessageSendRequested dead-letter', () => {
           messageRequest: {
             updateMany: async () => ({ count: 1 }),
           },
+          auditLog: { create: async () => ({}) },
         });
       } catch (error) {
         outboxStatus = snapshot.outboxStatus;

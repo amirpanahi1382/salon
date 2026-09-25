@@ -64,13 +64,61 @@ describe('parseVipTargetExcel', () => {
     expect(parsed).toHaveLength(100);
   });
 
-  it('rejects a formula-only name cell instead of evaluating it', async () => {
+  it('does not evaluate a formula in the name cell and stores a null name', async () => {
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet('VIP');
     sheet.addRow(['نام', 'شماره تلفن']);
     const row = sheet.addRow(['', '09121111111']);
     row.getCell(1).value = { formula: 'HYPERLINK("http://evil")' };
     const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
-    await expect(parseVipTargetExcel(buffer)).rejects.toThrow('INVALID_ROW');
+    await expect(parseVipTargetExcel(buffer)).resolves.toEqual([
+      { row: 2, displayName: null, phoneNumber: '09121111111' },
+    ]);
+  });
+
+  it('parses a phone-only workbook with null displayName', async () => {
+    const rows = await parseVipTargetExcel(
+      await workbookBuffer([
+        ['شماره تلفن'],
+        ['09121111111'],
+        ['09121111112'],
+      ]),
+    );
+    expect(rows).toEqual([
+      { row: 2, displayName: null, phoneNumber: '09121111111' },
+      { row: 3, displayName: null, phoneNumber: '09121111112' },
+    ]);
+  });
+
+  it('treats an empty name cell as null when the name column is present', async () => {
+    const rows = await parseVipTargetExcel(
+      await workbookBuffer([
+        ['نام', 'شماره تلفن'],
+        ['', '09121111111'],
+        ['مریم', '09121111112'],
+      ]),
+    );
+    expect(rows).toEqual([
+      { row: 2, displayName: null, phoneNumber: '09121111111' },
+      { row: 3, displayName: 'مریم', phoneNumber: '09121111112' },
+    ]);
+  });
+
+  it('rejects a missing phone column', async () => {
+    await expect(parseVipTargetExcel(await workbookBuffer([['نام'], ['مریم']]))).rejects.toThrow(
+      'MISSING_HEADERS',
+    );
+  });
+
+  it('rejects a numeric Excel phone that lost the leading zero', async () => {
+    await expect(
+      parseVipTargetExcel(await workbookBuffer([['شماره تلفن'], [9121111111]])),
+    ).rejects.toThrow('INVALID_PHONE');
+  });
+
+  it('does not trim phone whitespace into validity', async () => {
+    await expect(
+      parseVipTargetExcel(await workbookBuffer([['شماره تلفن'], [' 09121111111']])),
+    ).rejects.toThrow('INVALID_PHONE');
   });
 });

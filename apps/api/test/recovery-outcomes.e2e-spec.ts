@@ -117,7 +117,9 @@ describeIfDb('Owner recovery outcomes (e2e)', () => {
         status: input.status === 'PROCESSING' ? 'DISPATCHED' : input.status === 'QUEUED' ? 'QUEUED' : input.status,
         vipRequestId: input.vipRequestId ?? null,
         recipientDisplayName: input.vipRequestId ? 'VIP' : null,
-        recipientPhoneNumber: input.recipientPhoneNumber ?? null,
+        recipientPhoneNumber: input.customerId
+          ? (await prisma.client.customer.findUniqueOrThrow({ where: { id: input.customerId } })).phoneNumber
+          : input.recipientPhoneNumber ?? '09120000000',
         createdAt: input.requestedAt,
         updatedAt: now,
       },
@@ -220,6 +222,7 @@ describeIfDb('Owner recovery outcomes (e2e)', () => {
     const other = await registerOwner('ro-week-x');
     const customerId = await createCustomer(salon.token, 'Week');
     const secondCustomer = await createCustomer(salon.token, 'Two');
+    const observedCustomer = await createCustomer(salon.token, 'Observed');
     const otherCustomer = await createCustomer(other.token, 'Other');
     const service = await request(app.getHttpServer())
       .post('/services')
@@ -452,7 +455,7 @@ describeIfDb('Owner recovery outcomes (e2e)', () => {
     const observedSent = await insertCustomerMessage({
       salonId: salon.tenantId,
       userId: salon.userId,
-      customerId: secondCustomer,
+      customerId: observedCustomer,
       requestedAt: new Date('2026-05-01T10:00:00.000Z'),
       submittedAt: new Date('2026-05-01T10:00:00.000Z'),
       status: 'SENT',
@@ -460,7 +463,7 @@ describeIfDb('Owner recovery outcomes (e2e)', () => {
     await request(app.getHttpServer())
       .post('/visits')
       .set('Authorization', `Bearer ${salon.token}`)
-      .send({ customerId: secondCustomer, visitedAt: '2026-09-17T10:00:00.000Z' })
+      .send({ customerId: observedCustomer, visitedAt: '2026-09-17T10:00:00.000Z' })
       .expect(201);
 
     const adminId = randomUUID();
@@ -580,7 +583,7 @@ describeIfDb('Owner recovery outcomes (e2e)', () => {
     );
     expect(observedPage.items).toHaveLength(1);
     expect(observedPage.items[0]?.associationKind).toBe('OBSERVED');
-    expect(observedPage.items[0]?.customer.id).toBe(secondCustomer);
+    expect(observedPage.items[0]?.customer.id).toBe(observedCustomer);
     expect(observedPage.items.some((row) => row.visitId === firstVisitId)).toBe(false);
 
     const voided = await prisma.client.ledgerTransaction.findFirstOrThrow({
@@ -609,6 +612,71 @@ describeIfDb('Owner recovery outcomes (e2e)', () => {
     expect(observedSent.deliveryId).toBeTruthy();
   });
 
+  it('traverses both evidence kinds beyond 50 without changing associations or aggregate totals', async () => {
+    const salon = await registerOwner('ro-phase6-pages');
+    const sentAt = new Date('2026-09-13T09:00:00.000Z');
+    const visitAt = new Date('2026-09-14T09:00:00.000Z');
+    const customers = Array.from({ length: 102 }, (_, index) => ({
+      id: randomUUID(), salonId: salon.tenantId, firstName: 'Page',
+      lastName: String(index), phoneNumber: `0912${String(index).padStart(7, '0')}`,
+    }));
+    const rows = customers.map((customer) => ({
+      customer, requestId: randomUUID(), deliveryId: randomUUID(), visitId: randomUUID(),
+    }));
+    await prisma.client.customer.createMany({ data: customers });
+    await prisma.client.messageRequest.createMany({ data: rows.map(({ customer, requestId }) => ({
+      id: requestId, salonId: salon.tenantId, customerId: customer.id,
+      createdByUserId: salon.userId, messageText: 'controlled fixture',
+      recipientPhoneNumber: customer.phoneNumber, messageBusinessDate: new Date('2026-09-13'),
+      countsTowardDailyLimit: false, status: 'SENT' as const, requestedAt: sentAt,
+      createdAt: sentAt, updatedAt: sentAt,
+    })) });
+    await prisma.client.messageDelivery.createMany({ data: rows.map(({ customer, requestId, deliveryId }) => ({
+      id: deliveryId, salonId: salon.tenantId, customerId: customer.id,
+      messageRequestId: requestId, createdBy: salon.userId, mode: 'MANUAL' as const,
+      channel: 'TEXT' as const, status: 'SENT' as const, providerRequestId: randomUUID(),
+      submittedAt: sentAt, createdAt: sentAt, updatedAt: sentAt,
+    })) });
+    await prisma.client.visit.createMany({ data: rows.map(({ customer, visitId }) => ({
+      id: visitId, salonId: salon.tenantId, customerId: customer.id,
+      visitedAt: visitAt, createdAt: visitAt, updatedAt: visitAt,
+    })) });
+    await prisma.client.returnCommitment.createMany({ data: rows.slice(0, 51).map((row) => ({
+      id: randomUUID(), salonId: salon.tenantId, customerId: row.customer.id,
+      sourceMessageRequestId: row.requestId, sourceMessageDeliveryId: row.deliveryId,
+      actualVisitId: row.visitId, expectedAt: new Date('2026-09-15T09:00:00.000Z'),
+      createdByUserId: salon.userId, updatedByUserId: salon.userId,
+      createdAt: sentAt, updatedAt: sentAt,
+    })) });
+
+    const totalsBefore = (await summary(salon.token).expect(200)).body as Summary;
+    expect(totalsBefore.commitmentBackedReturns).toBe(51);
+    expect(totalsBefore.observedReturns).toBe(51);
+    for (const [kind, expected] of [
+      ['COMMITMENT_BACKED', rows.slice(0, 51).map((row) => row.visitId)],
+      ['OBSERVED', rows.slice(51).map((row) => row.visitId)],
+    ] as const) {
+      const found: string[] = [];
+      let cursor: string | undefined;
+      for (let pageNo = 0; pageNo < 3; pageNo++) {
+        const response = await request(app.getHttpServer()).get('/recovery/outcomes/returns')
+          .set('Authorization', `Bearer ${salon.token}`)
+          .query({ kind, weekStart: WEEK_START, ...(cursor ? { cursor } : {}) }).expect(200);
+        const page = listPage<ReturnItem>(response.body);
+        found.push(...page.items.map((item) => item.visitId));
+        if (!page.hasMore) { expect(page.nextCursor).toBeNull(); break; }
+        expect(page.nextCursor).toBeTruthy();
+        expect(page.nextCursor).not.toBe(cursor);
+        cursor = page.nextCursor!;
+      }
+      expect(found).toHaveLength(51);
+      expect(new Set(found)).toEqual(new Set(expected));
+      expect(new Set(found).size).toBe(51);
+    }
+    const totalsAfter = (await summary(salon.token).expect(200)).body as Summary;
+    expect(totalsAfter).toEqual(totalsBefore);
+  });
+
   it('rejects a weekStart that is not Saturday 00:00 Tehran', async () => {
     const salon = await registerOwner('ro-bad-week');
     await request(app.getHttpServer())
@@ -616,5 +684,240 @@ describeIfDb('Owner recovery outcomes (e2e)', () => {
       .query({ weekStart: '2026-09-12T00:00:00.000Z' })
       .set('Authorization', `Bearer ${salon.token}`)
       .expect(400);
+  });
+
+  it('does not reassign a delivery to a later visit after its first return is commitment-backed', async () => {
+    const salon = await registerOwner('ro-first-claim');
+    const customerId = await createCustomer(salon.token, 'FirstClaim');
+    const sent = await insertCustomerMessage({
+      salonId: salon.tenantId,
+      userId: salon.userId,
+      customerId,
+      requestedAt: new Date('2026-09-09T08:00:00.000Z'),
+      submittedAt: new Date('2026-09-09T09:00:00.000Z'),
+      status: 'SENT',
+    });
+    await prisma.client.customer.update({
+      where: { id: customerId },
+      data: { phoneNumber: `0912${Math.floor(1000000 + Math.random() * 9000000)}` },
+    });
+    const firstVisitId = (
+      await request(app.getHttpServer())
+        .post('/visits')
+        .set('Authorization', `Bearer ${salon.token}`)
+        .send({ customerId, visitedAt: '2026-09-10T10:00:00.000Z' })
+        .expect(201)
+    ).body.id as string;
+    const laterVisitId = (
+      await request(app.getHttpServer())
+        .post('/visits')
+        .set('Authorization', `Bearer ${salon.token}`)
+        .send({ customerId, visitedAt: '2026-09-15T10:00:00.000Z' })
+        .expect(201)
+    ).body.id as string;
+    await insertCommitment({
+      salonId: salon.tenantId,
+      userId: salon.userId,
+      customerId,
+      requestId: sent.requestId,
+      deliveryId: sent.deliveryId!,
+      createdAt: new Date('2026-09-09T10:00:00.000Z'),
+      expectedAt: new Date('2026-09-10T10:00:00.000Z'),
+      visitId: firstVisitId,
+    });
+
+    const raw = listPage<{ observedReturn: { visitId: string }; intervention: { message: { deliveryId: string } } }>(
+      (await request(app.getHttpServer())
+        .get(`/customers/${customerId}/observed-returns`)
+        .set('Authorization', `Bearer ${salon.token}`)
+        .expect(200)).body,
+    );
+    expect(raw.items.map((row) => [row.observedReturn.visitId, row.intervention.message.deliveryId]))
+      .toEqual([[firstVisitId, sent.deliveryId]]);
+
+    const customerCommitments = listPage<{ actualVisitId: string; commitmentBackedReturn: { associationKind: string } | null }>(
+      (await request(app.getHttpServer())
+        .get(`/customers/${customerId}/return-commitments`)
+        .set('Authorization', `Bearer ${salon.token}`)
+        .expect(200)).body,
+    );
+    expect(customerCommitments.items).toEqual([
+      expect.objectContaining({
+        actualVisitId: firstVisitId,
+        commitmentBackedReturn: expect.objectContaining({ associationKind: 'COMMITMENT_BACKED' }),
+      }),
+    ]);
+
+    const currentWeek = (await summary(salon.token).expect(200)).body as Summary;
+    expect(currentWeek.observedReturns).toBe(0);
+    const currentObserved = listPage<ReturnItem>(
+      (await request(app.getHttpServer())
+        .get('/recovery/outcomes/returns')
+        .query({ kind: 'OBSERVED', weekStart: WEEK_START })
+        .set('Authorization', `Bearer ${salon.token}`)
+        .expect(200)).body,
+    );
+    expect(currentObserved.items.some((row) => row.visitId === laterVisitId)).toBe(false);
+    const beforeWorkspace = listPage<{ customerId: string; returnEvidenceKind: string | null }>(
+      (await request(app.getHttpServer())
+        .get('/opportunities/workspace')
+        .query({ filter: 'SALON_MESSAGES' })
+        .set('Authorization', `Bearer ${salon.token}`)
+        .expect(200)).body,
+    );
+    expect(beforeWorkspace.items.find((row) => row.customerId === customerId)?.returnEvidenceKind)
+      .toBe('COMMITMENT_BACKED');
+    expect((await request(app.getHttpServer())
+      .get('/salon/overall-performance')
+      .set('Authorization', `Bearer ${salon.token}`)
+      .expect(200)).body.messageAssociatedReturnedCustomerCount).toBe(1);
+
+    const laterSent = await insertCustomerMessage({
+      salonId: salon.tenantId,
+      userId: salon.userId,
+      customerId,
+      requestedAt: new Date('2026-09-14T08:00:00.000Z'),
+      submittedAt: new Date('2026-09-14T09:00:00.000Z'),
+      status: 'SENT',
+    });
+    const afterRaw = listPage<{ observedReturn: { visitId: string }; intervention: { message: { deliveryId: string } } }>(
+      (await request(app.getHttpServer())
+        .get(`/customers/${customerId}/observed-returns`)
+        .set('Authorization', `Bearer ${salon.token}`)
+        .expect(200)).body,
+    );
+    expect(afterRaw.items.map((row) => [row.observedReturn.visitId, row.intervention.message.deliveryId]))
+      .toEqual([[laterVisitId, laterSent.deliveryId], [firstVisitId, sent.deliveryId]]);
+    expect((await summary(salon.token).expect(200)).body.observedReturns).toBe(1);
+    const afterObserved = listPage<ReturnItem>(
+      (await request(app.getHttpServer())
+        .get('/recovery/outcomes/returns')
+        .query({ kind: 'OBSERVED', weekStart: WEEK_START })
+        .set('Authorization', `Bearer ${salon.token}`)
+        .expect(200)).body,
+    );
+    expect(afterObserved.items.map((row) => row.visitId)).toEqual([laterVisitId]);
+    const afterWorkspace = listPage<{ customerId: string; returnEvidenceKind: string | null }>(
+      (await request(app.getHttpServer())
+        .get('/opportunities/workspace')
+        .query({ filter: 'SALON_MESSAGES' })
+        .set('Authorization', `Bearer ${salon.token}`)
+        .expect(200)).body,
+    );
+    expect(afterWorkspace.items.find((row) => row.customerId === customerId)?.returnEvidenceKind)
+      .toBe('OBSERVED');
+  });
+
+  it('does not turn a legacy cross-customer commitment link into return evidence', async () => {
+    const salon = await registerOwner('ro-legacy-link');
+    const sourceCustomer = await createCustomer(salon.token, 'Source');
+    const returnedCustomer = await createCustomer(salon.token, 'Returned');
+    const source = await insertCustomerMessage({
+      salonId: salon.tenantId,
+      userId: salon.userId,
+      customerId: sourceCustomer,
+      requestedAt: new Date('2026-09-12T08:00:00.000Z'),
+      submittedAt: new Date('2026-09-12T09:00:00.000Z'),
+      status: 'SENT',
+    });
+    const returned = await insertCustomerMessage({
+      salonId: salon.tenantId,
+      userId: salon.userId,
+      customerId: returnedCustomer,
+      requestedAt: new Date('2026-09-12T08:00:00.000Z'),
+      submittedAt: new Date('2026-09-12T09:00:00.000Z'),
+      status: 'SENT',
+    });
+    const visitId = (
+      await request(app.getHttpServer())
+        .post('/visits')
+        .set('Authorization', `Bearer ${salon.token}`)
+        .send({ customerId: returnedCustomer, visitedAt: '2026-09-15T10:00:00.000Z' })
+        .expect(201)
+    ).body.id as string;
+    const serviceId = (
+      await request(app.getHttpServer())
+        .post('/services')
+        .set('Authorization', `Bearer ${salon.token}`)
+        .send({ name: `Legacy evidence service ${randomUUID().slice(0, 8)}` })
+        .expect(201)
+    ).body.id as string;
+    await request(app.getHttpServer())
+      .post('/transactions')
+      .set('Authorization', `Bearer ${salon.token}`)
+      .set('Idempotency-Key', `ro-legacy-sale-${randomUUID()}`)
+      .send({
+        customerId: returnedCustomer,
+        visitId,
+        occurredAt: '2026-09-15T10:00:00.000Z',
+        amount: '25.00',
+        currency: 'IRR',
+        items: [{ serviceId, quantity: 1, unitPrice: '25.00' }],
+      })
+      .expect(201);
+    // Valid tenant FKs permit this historical mismatch; the normal link command rejects it.
+    await insertCommitment({
+      salonId: salon.tenantId,
+      userId: salon.userId,
+      customerId: sourceCustomer,
+      requestId: source.requestId,
+      deliveryId: source.deliveryId!,
+      createdAt: new Date('2026-09-12T10:00:00.000Z'),
+      expectedAt: new Date('2026-09-16T10:00:00.000Z'),
+      visitId,
+    });
+
+    const raw = listPage<{ observedReturn: { visitId: string }; intervention: { message: { deliveryId: string } } }>(
+      (await request(app.getHttpServer())
+        .get(`/customers/${returnedCustomer}/observed-returns`)
+        .set('Authorization', `Bearer ${salon.token}`)
+        .expect(200)).body,
+    );
+    expect(raw.items.map((row) => [row.observedReturn.visitId, row.intervention.message.deliveryId]))
+      .toEqual([[visitId, returned.deliveryId]]);
+    const week = (await summary(salon.token).expect(200)).body as Summary;
+    expect(week.commitmentBackedReturns).toBe(0);
+    expect(week.commitmentBackedRecordedRevenue).toEqual({
+      recorded: false,
+      currency: 'IRR',
+      amount: null,
+    });
+    expect(week.observedReturns).toBe(1);
+    const sourceCommitments = listPage<{ actualVisitId: string; commitmentBackedReturn: object | null }>(
+      (await request(app.getHttpServer())
+        .get(`/customers/${sourceCustomer}/return-commitments`)
+        .set('Authorization', `Bearer ${salon.token}`)
+        .expect(200)).body,
+    );
+    expect(sourceCommitments.items[0]?.actualVisitId).toBe(visitId);
+    expect(sourceCommitments.items[0]?.commitmentBackedReturn).toBeNull();
+    const observed = listPage<ReturnItem>(
+      (await request(app.getHttpServer())
+        .get('/recovery/outcomes/returns')
+        .query({ kind: 'OBSERVED', weekStart: WEEK_START })
+        .set('Authorization', `Bearer ${salon.token}`)
+        .expect(200)).body,
+    );
+    expect(observed.items.map((row) => row.visitId)).toEqual([visitId]);
+    expect(observed.items[0]?.associatedRevenue).toEqual({
+      recorded: true,
+      currency: 'IRR',
+      amount: '25.00',
+    });
+    const workspace = listPage<{ customerId: string; returnEvidenceKind: string | null }>(
+      (await request(app.getHttpServer())
+        .get('/opportunities/workspace')
+        .query({ filter: 'SALON_MESSAGES' })
+        .set('Authorization', `Bearer ${salon.token}`)
+        .expect(200)).body,
+    );
+    expect(workspace.items.find((row) => row.customerId === sourceCustomer)?.returnEvidenceKind)
+      .toBeNull();
+    expect(workspace.items.find((row) => row.customerId === returnedCustomer)?.returnEvidenceKind)
+      .toBe('OBSERVED');
+    expect((await request(app.getHttpServer())
+      .get('/salon/overall-performance')
+      .set('Authorization', `Bearer ${salon.token}`)
+      .expect(200)).body.messageAssociatedReturnedCustomerCount).toBe(1);
   });
 });

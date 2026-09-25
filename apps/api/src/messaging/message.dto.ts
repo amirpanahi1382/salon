@@ -47,8 +47,8 @@ export class MessageRequestResponseDto {
   @ApiProperty({ enum: MESSAGE_CHANNELS })
   channel!: MessageChannel;
 
-  @ApiProperty({ enum: ['QUEUED', 'SENT', 'FAILED'] })
-  status!: 'QUEUED' | 'SENT' | 'FAILED';
+  @ApiProperty({ enum: ['QUEUED', 'SENT', 'FAILED', 'CANCELLED'] })
+  status!: 'QUEUED' | 'SENT' | 'FAILED' | 'CANCELLED';
 
   @ApiProperty({ nullable: true, enum: MESSAGE_DELIVERY_MODES, type: String })
   mode!: MessageDeliveryMode | null;
@@ -110,8 +110,8 @@ export class ManualOutreachItemDto {
   @ApiProperty()
   messageRequestId!: string;
 
-  @ApiProperty({ enum: ['QUEUED', 'DISPATCHED', 'SENT', 'FAILED'] })
-  status!: 'QUEUED' | 'DISPATCHED' | 'SENT' | 'FAILED';
+  @ApiProperty({ enum: ['QUEUED', 'DISPATCHED', 'SENT', 'FAILED', 'CANCELLED'] })
+  status!: 'QUEUED' | 'DISPATCHED' | 'SENT' | 'FAILED' | 'CANCELLED';
 
   @ApiProperty()
   requestedAt!: string;

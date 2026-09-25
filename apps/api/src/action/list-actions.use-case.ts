@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import { NotFoundError, ValidationError, type AuthenticatedPrincipal } from '@salon/shared';
+import { NotFoundError, type AuthenticatedPrincipal } from '@salon/shared';
 import { CustomerRepository } from '../customer/customer.repository';
-import { decodeCursor, encodeCursor, toListPage } from '../infrastructure/http/list-page';
+import { decodeCursor, encodeCursor, parseCursorInstant, parseCursorUuid, toListPage } from '../infrastructure/http/list-page';
 import { ActionRepository, ACTION_LIST_LIMIT } from './action.repository';
 import { toActionResponse } from './action.mapper';
 import type { ListActionsQueryDto } from './action.dto';
@@ -66,9 +66,5 @@ function parseActionCursor(cursor?: string) {
   if (!parts) {
     return undefined;
   }
-  const createdAt = new Date(parts[0]!);
-  if (Number.isNaN(createdAt.getTime())) {
-    throw new ValidationError('Invalid cursor');
-  }
-  return { createdAt, id: parts[1]! };
+  return { createdAt: parseCursorInstant(parts[0]!), id: parseCursorUuid(parts[1]!) };
 }

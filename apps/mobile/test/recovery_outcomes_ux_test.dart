@@ -55,12 +55,18 @@ class FakeRecoveryRepo extends ReturnCommitmentRepository {
     this.error,
     this.backed = const [],
     this.observed = const [],
+    this.open = const [],
+    this.backedPages,
   }) : super(_client());
 
   RecoveryOutcomesSummary? summary;
   Object? error;
   List<RecoveryOutcomeReturnItem> backed;
   List<RecoveryOutcomeReturnItem> observed;
+  List<OpenAgreedReturn> open;
+  Map<String?, ItemPage<RecoveryOutcomeReturnItem>>? backedPages;
+  bool failBackedNextOnce = false;
+  final List<String?> backedCursors = [];
   DateTime? lastRequestedWeekStart;
 
   @override
@@ -78,13 +84,22 @@ class FakeRecoveryRepo extends ReturnCommitmentRepository {
     DateTime? weekStart,
     String? cursor,
   }) async {
+    if (kind == 'COMMITMENT_BACKED') {
+      backedCursors.add(cursor);
+      if (cursor != null && failBackedNextOnce) {
+        failBackedNextOnce = false;
+        throw const ApiException(statusCode: 503, code: 'UNAVAILABLE', message: 'retry');
+      }
+      final page = backedPages?[cursor];
+      if (page != null) return page;
+    }
     final items = kind == 'COMMITMENT_BACKED' ? backed : observed;
     return ItemPage(items: items, hasMore: false);
   }
 
   @override
   Future<ItemPage<OpenAgreedReturn>> listOpen({String? cursor}) async {
-    return const ItemPage(items: [], hasMore: false);
+    return ItemPage(items: open, hasMore: false);
   }
 }
 
@@ -220,5 +235,68 @@ void main() {
     await tester.pumpAndSettle();
     expect(repo.lastRequestedWeekStart, previous);
     expect(find.text(AppStrings.recoveryCurrentWeek), findsOneWidget);
+  });
+
+  testWidgets('recovery outcomes expose open agreed-return customers', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    final repo = FakeRecoveryRepo(
+      summary: _summary(start: weekStart, end: weekEnd, current: true),
+      open: [
+        OpenAgreedReturn(
+          id: 'o1',
+          customerId: 'c1',
+          customerName: 'عرفان صابری',
+          customerPhone: '09125222222',
+          expectedAt: DateTime.utc(2026, 9, 20, 10),
+          overdue: true,
+          recordedBySupport: true,
+        ),
+      ],
+    );
+    await tester.pumpWidget(_app(repo));
+    await tester.pumpAndSettle();
+    expect(find.text(AppStrings.openAgreedReturnsTitle), findsOneWidget);
+    expect(find.text('عرفان صابری'), findsOneWidget);
+    expect(find.text('09125222222'), findsOneWidget);
+    expect(find.text(AppStrings.recordedBySupport), findsOneWidget);
+    expect(find.text(AppStrings.agreedTimePast), findsOneWidget);
+    expect(find.text(AppStrings.callCustomer), findsOneWidget);
+  });
+
+  testWidgets('later evidence page retries without losing first-page rows', (tester) async {
+    tester.view.physicalSize = const Size(800, 1900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    RecoveryOutcomeReturnItem item(String id, String name) => RecoveryOutcomeReturnItem(
+      associationKind: 'COMMITMENT_BACKED', customerId: id, customerName: name,
+      visitId: id, visitedAt: DateTime.parse('2026-09-13T10:00:00.000Z'),
+      associatedRevenue: const AssociatedRevenue(recorded: false, currency: 'IRR'),
+    );
+    final repo = FakeRecoveryRepo(
+      summary: _summary(start: weekStart, end: weekEnd, current: true, backed: 2),
+      backedPages: {
+        null: ItemPage(items: [item('v1', 'First page customer')], hasMore: true, nextCursor: 'next'),
+        'next': ItemPage(items: [item('v2', 'Second page customer')], hasMore: false),
+      },
+    )..failBackedNextOnce = true;
+    await tester.pumpWidget(_app(repo));
+    await tester.pumpAndSettle();
+    expect(find.text('First page customer'), findsOneWidget);
+    expect(find.text('Second page customer'), findsNothing);
+    await tester.ensureVisible(find.text(AppStrings.loadMore));
+    await tester.tap(find.text(AppStrings.loadMore));
+    await tester.pumpAndSettle();
+    expect(find.text('First page customer'), findsOneWidget);
+    expect(find.byType(ErrorView), findsOneWidget);
+    await tester.tap(find.text(AppStrings.retry));
+    await tester.pumpAndSettle();
+    expect(find.text('First page customer'), findsOneWidget);
+    expect(find.text('Second page customer'), findsOneWidget);
+    expect(repo.backedCursors, [null, 'next', 'next']);
+    expect(find.text(AppStrings.loadMore), findsNothing);
   });
 }

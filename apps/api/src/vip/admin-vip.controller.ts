@@ -29,8 +29,13 @@ import {
   VIP_IMPORT_MAX_FILE_BYTES,
   XLSX_CONTENT_TYPE,
 } from './vip.constants';
-import { GrantVipEntitlementDto, ListCursorQueryDto, PatchVipListDto } from './vip.dto';
+import { GrantVipEntitlementDto, ListCursorQueryDto, PatchVipListDto, AdminVipOutreachSalonsQueryDto, ListAdminSalonsQueryDto } from './vip.dto';
 import { buildVipImportTemplate } from './parse-vip-excel';
+import {
+  GetAdminVipOutreachRequestUseCase,
+  GetAdminVipOutreachSalonUseCase,
+  ListAdminVipOutreachSalonsUseCase,
+} from './admin-vip-outreach.use-cases';
 import {
   DeleteVipListUseCase,
   DispatchVipRequestUseCase,
@@ -62,7 +67,37 @@ export class AdminVipController {
     private readonly exportRequest: ExportVipRequestExcelUseCase,
     private readonly downloadImage: DownloadVipSampleWorkUseCase,
     private readonly dispatchRequest: DispatchVipRequestUseCase,
+    private readonly outreachSalons: ListAdminVipOutreachSalonsUseCase,
+    private readonly outreachSalon: GetAdminVipOutreachSalonUseCase,
+    private readonly outreachRequest: GetAdminVipOutreachRequestUseCase,
   ) {}
+
+  @Get('outreach/salons')
+  @ApiOperation({
+    summary:
+      'Derived admin VIP folders grouped by salonId. Not a persisted folder entity. Cursor is latestActivityAt DESC, salonId DESC.',
+  })
+  listOutreachSalons(@Query() query: AdminVipOutreachSalonsQueryDto) {
+    return this.outreachSalons.execute(query);
+  }
+
+  @Get('outreach/salons/:salonId')
+  @ApiOperation({ summary: 'VIP requests for one salon folder, newest first, cursor paginated' })
+  getOutreachSalon(
+    @Param('salonId', UuidParam) salonId: string,
+    @Query() query: ListCursorQueryDto,
+  ) {
+    return this.outreachSalon.execute(salonId, query.cursor);
+  }
+
+  @Get('outreach/requests/:id')
+  @ApiOperation({ summary: 'One VIP request with paginated recipient execution state' })
+  getOutreachRequest(
+    @Param('id', UuidParam) id: string,
+    @Query() query: ListCursorQueryDto,
+  ) {
+    return this.outreachRequest.execute(id, query.cursor);
+  }
 
   @Get('lists/import/template')
   @Header('Content-Type', XLSX_CONTENT_TYPE)
@@ -86,7 +121,7 @@ export class AdminVipController {
   @ApiConsumes('multipart/form-data')
   @ApiHeader({ name: 'Idempotency-Key', required: true })
   @ApiBody({ schema: { type: 'object', properties: { file: { type: 'string', format: 'binary' } } } })
-  @ApiOperation({ summary: 'Import a VIP target list from Excel. Rejects more than 100 rows.' })
+  @ApiOperation({ summary: 'Import a VIP target list from Excel. Phone required; name optional. Rejects more than 100 rows.' })
   import(
     @CurrentPlatformAdmin() admin: PlatformAdminPrincipal,
     @UploadedFile() file: Express.Multer.File,
@@ -133,8 +168,8 @@ export class AdminVipController {
 
   @Get('salons')
   @ApiOperation({ summary: 'List salons and VIP entitlement state' })
-  salons() {
-    return this.listSalons.execute();
+  salons(@Query() query: ListAdminSalonsQueryDto) {
+    return this.listSalons.execute(query);
   }
 
   @Post('entitlements')

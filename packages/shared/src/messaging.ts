@@ -1,10 +1,32 @@
 import { CUSTOMER_PHONE_PATTERN, isUsableCustomerPhone } from './customer-identity.js';
+import { isCanonicalMessageSent } from './opportunity-workspace.js';
 
 export const MESSAGE_DELIVERY_STATUSES = ['PENDING', 'PROCESSING', 'SENT', 'FAILED'] as const;
 export type MessageDeliveryStatus = (typeof MESSAGE_DELIVERY_STATUSES)[number];
 
-export const MESSAGE_REQUEST_STATUSES = ['QUEUED', 'DISPATCHED', 'SENT', 'FAILED'] as const;
+export const MESSAGE_REQUEST_STATUSES = [
+  'QUEUED',
+  'DISPATCHED',
+  'SENT',
+  'FAILED',
+  'CANCELLED',
+] as const;
 export type MessageRequestStatus = (typeof MESSAGE_REQUEST_STATUSES)[number];
+
+/**
+ * Shared admin/execution read model for one MessageRequest (+ optional delivery).
+ * SENT is canonical MessageDelivery SENT with submittedAt, never request existence.
+ * CANCELLED is a durable queue-removal fact, not a delete.
+ */
+export const MESSAGE_EXECUTION_STATES = [
+  'NOT_YET_QUEUED',
+  'QUEUED',
+  'IN_PIPELINE',
+  'SENT',
+  'FAILED',
+  'CANCELLED',
+] as const;
+export type MessageExecutionState = (typeof MESSAGE_EXECUTION_STATES)[number];
 
 export const MESSAGE_DELIVERY_MODES = ['BALE', 'MANUAL'] as const;
 export type MessageDeliveryMode = (typeof MESSAGE_DELIVERY_MODES)[number];
@@ -19,6 +41,7 @@ export const MESSAGE_CHANNELS = ['TEXT'] as const;
 export type MessageChannel = (typeof MESSAGE_CHANNELS)[number];
 
 export const MESSAGE_FAILURE_CODES = [
+  'DESTINATION_UNVERIFIED',
   'PROVIDER_TEMPORARY',
   'PROVIDER_RATE_LIMITED',
   'PROVIDER_AUTH',
@@ -80,14 +103,70 @@ export function messageBusinessDateValue(instant: Date): Date {
 
 export function salonMessageStatus(
   requestStatus: MessageRequestStatus,
-): 'QUEUED' | 'SENT' | 'FAILED' {
+): 'QUEUED' | 'SENT' | 'FAILED' | 'CANCELLED' {
   if (requestStatus === 'SENT') {
     return 'SENT';
   }
   if (requestStatus === 'FAILED') {
     return 'FAILED';
   }
+  if (requestStatus === 'CANCELLED') {
+    return 'CANCELLED';
+  }
   return 'QUEUED';
+}
+
+export function deriveMessageExecutionState(input: {
+  messageRequestStatus: string | null | undefined;
+  deliveryStatus: string | null | undefined;
+  submittedAt: Date | string | null | undefined;
+}): MessageExecutionState {
+  if (!input.messageRequestStatus) {
+    return 'NOT_YET_QUEUED';
+  }
+  if (isCanonicalMessageSent(input.deliveryStatus, input.submittedAt)) {
+    return 'SENT';
+  }
+  if (input.messageRequestStatus === 'CANCELLED') {
+    return 'CANCELLED';
+  }
+  if (input.messageRequestStatus === 'FAILED' || input.deliveryStatus === 'FAILED') {
+    return 'FAILED';
+  }
+  if (
+    input.messageRequestStatus === 'DISPATCHED' ||
+    input.deliveryStatus === 'PENDING' ||
+    input.deliveryStatus === 'PROCESSING'
+  ) {
+    return 'IN_PIPELINE';
+  }
+  return 'QUEUED';
+}
+
+/**
+ * Server-owned queue actions. Bale PENDING/PROCESSING cannot cancel: there is no
+ * provider cancellation protocol. Manual PENDING may cancel because the worker
+ * never claims MANUAL deliveries.
+ */
+export function messageAdminCapabilities(input: {
+  messageRequestStatus: string | null | undefined;
+  deliveryStatus: string | null | undefined;
+  deliveryMode: string | null | undefined;
+  submittedAt: Date | string | null | undefined;
+}): { executionState: MessageExecutionState; canCancel: boolean; canMarkManualSent: boolean } {
+  const executionState = deriveMessageExecutionState(input);
+  const queuedWithoutDelivery =
+    input.messageRequestStatus === 'QUEUED' &&
+    (input.deliveryStatus == null || input.deliveryStatus === '');
+  const manualPending =
+    input.messageRequestStatus === 'DISPATCHED' &&
+    input.deliveryMode === 'MANUAL' &&
+    input.deliveryStatus === 'PENDING';
+  return {
+    executionState,
+    canCancel: queuedWithoutDelivery || manualPending,
+    canMarkManualSent: queuedWithoutDelivery || manualPending,
+  };
 }
 
 export function normalizeMessageBody(raw: string): string | null {

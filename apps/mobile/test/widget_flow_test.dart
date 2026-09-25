@@ -9,13 +9,17 @@ import 'package:salon_mobile/core/networking/api_client.dart';
 import 'package:salon_mobile/core/networking/repositories.dart';
 import 'package:salon_mobile/core/state/providers.dart';
 import 'package:salon_mobile/core/storage/session_store.dart';
+import 'package:salon_mobile/core/widgets/app_widgets.dart';
 import 'package:salon_mobile/features/admin/admin_message_queue_screen.dart';
 import 'package:salon_mobile/features/auth/auth_screens.dart';
+import 'package:salon_mobile/features/customers/customer_import_screen.dart';
 import 'package:salon_mobile/features/customers/customer_screens.dart';
 import 'package:salon_mobile/features/dashboard/dashboard_screen.dart';
 import 'package:salon_mobile/features/opportunities/opportunities_screen.dart';
 import 'package:salon_mobile/features/outreach/outreach_message_composer.dart';
 import 'package:salon_mobile/features/profile/profile_screen.dart';
+import 'package:salon_mobile/features/recovery/open_agreed_returns_screen.dart';
+import 'package:salon_mobile/features/recovery/recovery_outcomes_screen.dart';
 import 'package:salon_mobile/features/services/service_screens.dart';
 import 'package:salon_mobile/features/shell/app_shell.dart';
 import 'package:salon_mobile/features/visits/visits_screen.dart';
@@ -95,8 +99,54 @@ class FakeIntelligenceRepository extends IntelligenceRepository {
   }
 }
 
+class FakeOpportunitiesRepository extends OpportunitiesRepository {
+  FakeOpportunitiesRepository({
+    Map<String, List<OpportunityWorkspaceRow>>? pages,
+    this.resolve,
+  }) : pages = pages ?? const {},
+       super(_client());
+
+  Map<String, List<OpportunityWorkspaceRow>> pages;
+  List<OpportunityWorkspaceRow> Function(String filter)? resolve;
+  Object? error;
+  int listCalls = 0;
+  final List<String> filters = [];
+
+  @override
+  Future<ItemPage<OpportunityWorkspaceRow>> workspace({
+    required String filter,
+    String? cursor,
+  }) async {
+    listCalls += 1;
+    filters.add(filter);
+    if (error != null) {
+      throw error!;
+    }
+    return ItemPage(
+      items: resolve?.call(filter) ?? pages[filter] ?? const [],
+      hasMore: false,
+    );
+  }
+}
+
 class FakeSalonRepository extends SalonRepository {
-  FakeSalonRepository() : super(_client());
+  FakeSalonRepository({
+    this.performance = const SalonOverallPerformance(
+      customerCount: 0,
+      salonCustomerSentMessageCount: 0,
+      vipSentMessageCount: 0,
+      agreedReturnCount: 0,
+      messageAssociatedReturnedCustomerCount: 0,
+      returningSalonCustomerCount: 0,
+    ),
+    this.performanceError,
+    this.delayPerformance = false,
+  }) : super(_client());
+
+  SalonOverallPerformance performance;
+  Object? performanceError;
+  bool delayPerformance;
+  Completer<SalonOverallPerformance>? performanceGate;
 
   @override
   Future<SalonProfile> current() async {
@@ -106,6 +156,18 @@ class FakeSalonRepository extends SalonRepository {
       status: 'ACTIVE',
       phone: '09120000000',
     );
+  }
+
+  @override
+  Future<SalonOverallPerformance> overallPerformance() async {
+    if (delayPerformance) {
+      performanceGate = Completer<SalonOverallPerformance>();
+      return performanceGate!.future;
+    }
+    if (performanceError != null) {
+      throw performanceError!;
+    }
+    return performance;
   }
 }
 
@@ -133,8 +195,9 @@ class FakeActionRepository extends ActionRepository {
       filtered = filtered.where((item) => item.status == status).toList();
     }
     if (customerId != null) {
-      filtered =
-          filtered.where((item) => item.customerId == customerId).toList();
+      filtered = filtered
+          .where((item) => item.customerId == customerId)
+          .toList();
     }
     return ItemPage(items: filtered, hasMore: false);
   }
@@ -238,7 +301,8 @@ class FakeActionRepository extends ActionRepository {
 }
 
 class FakeMessageRepository extends MessageRepository {
-  FakeMessageRepository({this.next, this.manualOutreach = const []}) : super(_client());
+  FakeMessageRepository({this.next, this.manualOutreach = const []})
+    : super(_client());
 
   MessageDelivery? next;
   List<ManualOutreachRequest> manualOutreach;
@@ -287,7 +351,8 @@ class FakeMessageRepository extends MessageRepository {
     if (error != null) {
       throw error!;
     }
-    final created = next ??
+    final created =
+        next ??
         MessageDelivery(
           id: 'm-manual',
           customerId: customerId,
@@ -314,7 +379,9 @@ class FakeMessageRepository extends MessageRepository {
   }
 
   @override
-  Future<ItemPage<ManualOutreachRequest>> listManualOutreach({String? cursor}) async {
+  Future<ItemPage<ManualOutreachRequest>> listManualOutreach({
+    String? cursor,
+  }) async {
     listManualCalls += 1;
     if (error != null) {
       throw error!;
@@ -366,34 +433,176 @@ class FakeOpenReturnCommitmentRepository extends ReturnCommitmentRepository {
   Future<ItemPage<OpenAgreedReturn>> listOpen({String? cursor}) async {
     return ItemPage(items: open, hasMore: false);
   }
+
+  @override
+  Future<ItemPage<ReturnCommitment>> listForCustomer(
+    String customerId, {
+    String? cursor,
+  }) async => const ItemPage(items: [], hasMore: false);
+
+  @override
+  Future<ItemPage<ObservedReturn>> listObservedReturns(
+    String customerId, {
+    String? cursor,
+  }) async => const ItemPage(items: [], hasMore: false);
 }
 
 class FakeVipRepository extends VipRepository {
-  FakeVipRepository({this.entitled = false}) : super(_client());
+  FakeVipRepository({
+    this.entitled = false,
+    this.regionItems = const [],
+    this.listsByCode = const {},
+    this.listsError,
+    this.createError,
+  }) : super(_client());
 
   final bool entitled;
+  final List<VipRegion> regionItems;
+  final Map<String, List<VipTargetList>> listsByCode;
+  final Object? listsError;
+  final Object? createError;
+  final List<String> regionRequests = [];
+  final List<String> listRequests = [];
 
   @override
   Future<VipCapability> capability() async {
-    return VipCapability(
-      entitled: entitled,
-      remainingQuota: 100,
-      usedQuota: 0,
+    return VipCapability(entitled: entitled, remainingQuota: 100, usedQuota: 0);
+  }
+
+  @override
+  Future<List<VipRegion>> regions() async {
+    regionRequests.add('regions');
+    return regionItems;
+  }
+
+  @override
+  Future<List<VipTargetList>> listsByRegion(String regionCode) async {
+    listRequests.add(regionCode);
+    if (listsError != null) {
+      throw listsError!;
+    }
+    return listsByCode[regionCode] ?? const [];
+  }
+
+  @override
+  Future<ItemPage<VipTargetList>> adminLists({String? cursor}) async {
+    return const ItemPage(items: [], hasMore: false);
+  }
+
+  @override
+  Future<ItemPage<AdminSalonSummary>> adminSalons({
+    String? cursor,
+    String? q,
+  }) async {
+    return const ItemPage(items: [], hasMore: false);
+  }
+
+  @override
+  Future<ItemPage<AdminVipOutreachFolder>> adminOutreachSalons({
+    String? cursor,
+    String? query,
+  }) async {
+    return const ItemPage(items: [], hasMore: false);
+  }
+
+  @override
+  Future<VipRequest> createRequest({
+    required String listId,
+    required int requestedCount,
+    required String geographicRange,
+    required String idempotencyKey,
+  }) async {
+    if (createError != null) {
+      throw createError!;
+    }
+    return VipRequest(
+      id: 'req-1',
+      salonId: 's1',
+      salonName: 'Salon',
+      listId: listId,
+      listName: 'VIP-01-01',
+      requestedCount: requestedCount,
+      geographicRange: geographicRange,
+      status: 'AWAITING_SAMPLE_WORK',
     );
   }
 }
 
 class FakeAdminMessageRepository extends AdminMessageRepository {
-  FakeAdminMessageRepository(this.item) : super(_client());
+  FakeAdminMessageRepository(this.item, {List<AdminQueueItem> extra = const []})
+    : items = [item, ...extra],
+      super(_client());
 
   final AdminQueueItem item;
+  final List<AdminQueueItem> items;
+  final List<String> getByIdCalls = [];
 
   @override
-  Future<AdminQueueItem> getById(String id) async => item;
+  Future<ItemPage<AdminQueueItem>> list({String? cursor}) async {
+    return ItemPage(items: items, hasMore: false);
+  }
+
+  @override
+  Future<ItemPage<AdminNormalSalonFolder>> listNormalSalons({
+    String? cursor,
+    String? query,
+  }) async {
+    final names = {for (final row in items) row.salonId: row.salonName};
+    final folders = names.entries
+        .map(
+          (entry) => AdminNormalSalonFolder(
+            salonId: entry.key,
+            salonName: entry.value,
+            totalMessageCount: items
+                .where((row) => row.salonId == entry.key)
+                .length,
+            sentMessageCount: items
+                .where(
+                  (row) => row.salonId == entry.key && row.status == 'SENT',
+                )
+                .length,
+            pendingMessageCount: items
+                .where(
+                  (row) => row.salonId == entry.key && row.status != 'SENT',
+                )
+                .length,
+            failedMessageCount: 0,
+          ),
+        )
+        .toList();
+    return ItemPage(items: folders, hasMore: false);
+  }
+
+  @override
+  Future<AdminNormalSalonFolderDetail> getNormalSalon(
+    String salonId, {
+    String? cursor,
+  }) async {
+    final filtered = items
+        .where((row) => row.salonId == salonId && row.vipRequestId == null)
+        .toList();
+    return AdminNormalSalonFolderDetail(
+      salonId: salonId,
+      salonName: filtered.isEmpty ? '' : filtered.first.salonName,
+      totalMessageCount: filtered.length,
+      sentMessageCount: filtered.where((row) => row.status == 'SENT').length,
+      pendingMessageCount: filtered.where((row) => row.status != 'SENT').length,
+      failedMessageCount: 0,
+      cancelledMessageCount: 0,
+      page: ItemPage(items: filtered, hasMore: false),
+    );
+  }
+
+  @override
+  Future<AdminQueueItem> getById(String id) async {
+    getByIdCalls.add(id);
+    return items.firstWhere((row) => row.id == id, orElse: () => item);
+  }
 }
 
 class FakeCustomerRepository extends CustomerRepository {
-  FakeCustomerRepository({this.items = const [], this.pageSize}) : super(_client());
+  FakeCustomerRepository({this.items = const [], this.pageSize})
+    : super(_client());
 
   List<Customer> items;
   Object? error;
@@ -473,12 +682,15 @@ class FakeCustomerRepository extends CustomerRepository {
     return getById(id);
   }
 
+  int createCalls = 0;
+
   @override
   Future<Customer> create({
     required String firstName,
     required String lastName,
     required String phoneNumber,
   }) async {
+    createCalls += 1;
     if (error != null) {
       throw error!;
     }
@@ -732,6 +944,26 @@ Customer _customer() {
   );
 }
 
+OpportunityWorkspaceRow _workspaceRow({
+  String rowKind = 'SALON_CUSTOMER',
+  String stableId = 'SALON_CUSTOMER:c1',
+  String displayName = 'Sara Ahmadi',
+  String? customerId = 'c1',
+  String? messageState = 'QUEUED',
+  String? messageRequestId = 'm1',
+  DateTime? previousVisitAt,
+}) {
+  return OpportunityWorkspaceRow(
+    rowKind: rowKind,
+    stableId: stableId,
+    displayName: displayName,
+    customerId: customerId,
+    messageState: messageState,
+    messageRequestId: messageRequestId,
+    previousVisitAt: previousVisitAt,
+  );
+}
+
 Opportunity _opportunity() {
   return const Opportunity(
     type: 'REACTIVATION',
@@ -741,20 +973,6 @@ Opportunity _opportunity() {
     status: 'AT_RISK',
     reason: 'Usually returns every 35 days. Last visit was 52 days ago.',
     recommendedAction: 'Send a reactivation message.',
-  );
-}
-
-IntelligenceSummary _summary() {
-  return const IntelligenceSummary(
-    customers: 5,
-    newCustomers: 1,
-    active: 1,
-    returning: 1,
-    atRisk: 1,
-    inactive: 1,
-    reactivationOpportunities: 1,
-    customerReturnOpportunities: 0,
-    frequent: 0,
   );
 }
 
@@ -811,21 +1029,27 @@ void main() {
     expect(find.textContaining('ایمیل یا رمز عبور درست نیست.'), findsOneWidget);
   });
 
-  testWidgets('dashboard renders summary and opportunities', (tester) async {
+  testWidgets('dashboard renders overall performance before message results', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
           sessionStoreProvider.overrideWithValue(MemorySessionStore()),
-          intelligenceRepositoryProvider.overrideWith(
-            (ref) => FakeIntelligenceRepository(
-              summaryData: _summary(),
-              opportunitiesData: [_opportunity()],
+          salonRepositoryProvider.overrideWith(
+            (ref) => FakeSalonRepository(
+              performance: const SalonOverallPerformance(
+                customerCount: 3,
+                salonCustomerSentMessageCount: 4,
+                vipSentMessageCount: 1,
+                agreedReturnCount: 2,
+                messageAssociatedReturnedCustomerCount: 1,
+                returningSalonCustomerCount: 1,
+              ),
             ),
-          ),
-          salonRepositoryProvider.overrideWith((ref) => FakeSalonRepository()),
-          actionRepositoryProvider.overrideWithValue(FakeActionRepository()),
-          returnCommitmentRepositoryProvider.overrideWithValue(
-            FakeOpenReturnCommitmentRepository(),
           ),
           authControllerProvider.overrideWith(_SignedInAuth.new),
         ],
@@ -834,38 +1058,59 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('Rose Salon'), findsOneWidget);
-    await tester.drag(find.byType(ListView), const Offset(0, -800));
-    await tester.pumpAndSettle();
-    expect(find.text('Sara Ahmadi'), findsOneWidget);
-    expect(find.textContaining('۵۲'), findsOneWidget);
+    expect(find.text(AppStrings.overallPerformanceTitle), findsOneWidget);
+    expect(find.text(AppStrings.metricSalonCustomers), findsOneWidget);
     expect(
-      find.textContaining('یک پیام یادآوری بفرستید'),
+      find.text(AppStrings.metricSalonCustomerSentMessages),
       findsOneWidget,
     );
-    expect(find.text('ارسال پیام در بله'), findsOneWidget);
+    expect(find.text(AppStrings.metricVipSentMessages), findsOneWidget);
+    expect(find.text(AppStrings.metricAgreedReturns), findsOneWidget);
+    expect(
+      find.text(AppStrings.metricMessageAssociatedReturns),
+      findsOneWidget,
+    );
+    expect(find.text(AppStrings.metricReturningSalonCustomers), findsOneWidget);
+    expect(find.text(toPersianDigits('3')), findsOneWidget);
+    expect(find.text(toPersianDigits('4')), findsOneWidget);
+    expect(find.text(AppStrings.recoveryOutcomesTitle), findsOneWidget);
+    expect(find.text('نتیجه پیگیری‌ها'), findsNothing);
+    final overallY = tester
+        .getTopLeft(find.text(AppStrings.overallPerformanceTitle))
+        .dy;
+    final resultsY = tester
+        .getTopLeft(find.text(AppStrings.recoveryOutcomesTitle))
+        .dy;
+    expect(overallY, lessThan(resultsY));
+    expect(find.byType(MetricRow), findsNWidgets(3));
   });
 
-  testWidgets('opportunity composer sends a Bale message after confirmation', (tester) async {
+  testWidgets('opportunity composer sends a Bale message after confirmation', (
+    tester,
+  ) async {
     final messages = FakeMessageRepository();
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
           sessionStoreProvider.overrideWithValue(MemorySessionStore()),
+          customerRepositoryProvider.overrideWithValue(
+            FakeCustomerRepository(items: [_customer()]),
+          ),
           intelligenceRepositoryProvider.overrideWith(
             (ref) => FakeIntelligenceRepository(
-              summaryData: _summary(),
-              opportunitiesData: [_opportunity()],
+              customerIntelligence: _intelligence(),
             ),
           ),
-          salonRepositoryProvider.overrideWith((ref) => FakeSalonRepository()),
           actionRepositoryProvider.overrideWithValue(FakeActionRepository()),
+          visitRepositoryProvider.overrideWithValue(FakeVisitListRepository()),
           messageRepositoryProvider.overrideWithValue(messages),
+          vipRepositoryProvider.overrideWithValue(FakeVipRepository()),
+          authControllerProvider.overrideWith(_SignedInAuth.new),
           returnCommitmentRepositoryProvider.overrideWithValue(
             FakeOpenReturnCommitmentRepository(),
           ),
-          authControllerProvider.overrideWith(_SignedInAuth.new),
         ],
-        child: const MaterialApp(home: DashboardScreen()),
+        child: const MaterialApp(home: CustomerDetailScreen(customerId: 'c1')),
       ),
     );
     await tester.pumpAndSettle();
@@ -882,26 +1127,112 @@ void main() {
     expect(find.text('پیام در صف ارسال قرار گرفت.'), findsOneWidget);
   });
 
-  testWidgets('dashboard empty state', (tester) async {
+  testWidgets('today overall performance loading is not a zero success', (
+    tester,
+  ) async {
+    final salon = FakeSalonRepository(delayPerformance: true);
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
-          intelligenceRepositoryProvider.overrideWith(
-            (ref) => FakeIntelligenceRepository(summaryData: _summary()),
+          salonRepositoryProvider.overrideWithValue(salon),
+          authControllerProvider.overrideWith(_SignedInAuth.new),
+        ],
+        child: const MaterialApp(home: DashboardScreen()),
+      ),
+    );
+    await tester.pump();
+    expect(find.byType(LoadingSkeleton), findsOneWidget);
+    expect(find.text(AppStrings.overallPerformanceTitle), findsNothing);
+    expect(find.text(AppStrings.metricSalonCustomers), findsNothing);
+    salon.performanceGate!.complete(salon.performance);
+    await tester.pumpAndSettle();
+    expect(find.text(AppStrings.overallPerformanceTitle), findsOneWidget);
+    expect(find.text(toPersianDigits('0')), findsWidgets);
+  });
+
+  testWidgets('today overall performance error is not six zeros', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          salonRepositoryProvider.overrideWithValue(
+            FakeSalonRepository(
+              performanceError: const ApiException(
+                statusCode: 500,
+                code: 'INTERNAL',
+                message: 'boom',
+              ),
+            ),
           ),
-          salonRepositoryProvider.overrideWith((ref) => FakeSalonRepository()),
-          actionRepositoryProvider.overrideWithValue(FakeActionRepository()),
-          returnCommitmentRepositoryProvider.overrideWithValue(
-            FakeOpenReturnCommitmentRepository(),
-          ),
+          authControllerProvider.overrideWith(_SignedInAuth.new),
         ],
         child: const MaterialApp(home: DashboardScreen()),
       ),
     );
     await tester.pumpAndSettle();
-    await tester.drag(find.byType(ListView), const Offset(0, -800));
+    expect(find.byType(ErrorView), findsOneWidget);
+    expect(find.text(AppStrings.overallPerformanceTitle), findsNothing);
+    expect(find.text(AppStrings.metricSalonCustomers), findsNothing);
+  });
+
+  testWidgets('today no longer shows retired dashboard sections', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          salonRepositoryProvider.overrideWith((ref) => FakeSalonRepository()),
+          returnCommitmentRepositoryProvider.overrideWithValue(
+            FakeOpenReturnCommitmentRepository(
+              open: [
+                OpenAgreedReturn(
+                  id: 'o1',
+                  customerId: 'c-open',
+                  customerName: 'عرفان صابری',
+                  customerPhone: '09125222222',
+                  expectedAt: DateTime.utc(2026, 9, 20, 10),
+                  overdue: false,
+                  recordedBySupport: true,
+                ),
+              ],
+            ),
+          ),
+          authControllerProvider.overrideWith(_SignedInAuth.new),
+        ],
+        child: const MaterialApp(home: DashboardScreen()),
+      ),
+    );
     await tester.pumpAndSettle();
-    expect(find.text('الان مورد فوری ندارید.'), findsOneWidget);
+    expect(find.text(AppStrings.attentionQuestion), findsNothing);
+    expect(find.text(AppStrings.customersNeedingAttention), findsNothing);
+    expect(find.text(AppStrings.customerStatusHeading), findsNothing);
+    expect(find.text(AppStrings.openAgreedReturnsTitle), findsNothing);
+    expect(find.text('عرفان صابری'), findsNothing);
+    expect(find.text(AppStrings.metricRevenueThisMonth), findsNothing);
+    expect(find.text(AppStrings.overallPerformanceTitle), findsOneWidget);
+    expect(find.text(AppStrings.recoveryOutcomesTitle), findsOneWidget);
+  });
+
+  testWidgets('account no longer shows attention or overall performance', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          authControllerProvider.overrideWith(_SignedInAuth.new),
+          salonRepositoryProvider.overrideWithValue(FakeSalonRepository()),
+        ],
+        child: const MaterialApp(home: ProfileScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('مدیریت خدمات'), findsOneWidget);
+    expect(find.text(AppStrings.attentionQuestion), findsNothing);
+    expect(find.text(AppStrings.overallPerformanceTitle), findsNothing);
   });
 
   testWidgets('customer list empty and list states', (tester) async {
@@ -966,6 +1297,91 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('Sara Ahmadi'), findsOneWidget);
+    expect(find.byIcon(Icons.upload_file_outlined), findsNothing);
+    expect(find.text('افزودن مشتری'), findsOneWidget);
+    expect(find.text('انتخاب چند مشتری برای ارسال پیام'), findsOneWidget);
+  });
+
+  testWidgets(
+    'add customer exposes Excel import as a bottom navigation action',
+    (tester) async {
+      tester.view.physicalSize = const Size(800, 1600);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      final repo = FakeCustomerRepository(items: [_customer()]);
+      final router = GoRouter(
+        initialLocation: '/customers',
+        routes: [
+          GoRoute(
+            path: '/customers',
+            builder: (context, state) => const CustomersScreen(),
+          ),
+          GoRoute(
+            path: '/customers/new',
+            builder: (context, state) => const CustomerFormScreen(),
+          ),
+          GoRoute(
+            path: '/customers/import',
+            builder: (context, state) => const CustomerImportScreen(),
+          ),
+        ],
+      );
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            customerRepositoryProvider.overrideWithValue(repo),
+            vipRepositoryProvider.overrideWithValue(FakeVipRepository()),
+          ],
+          child: MaterialApp.router(routerConfig: router),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byIcon(Icons.upload_file_outlined), findsNothing);
+      expect(find.text('ورود مشتریان از طریق اکسل'), findsNothing);
+
+      await tester.tap(find.text('افزودن مشتری'));
+      await tester.pumpAndSettle();
+      expect(find.text('ورود مشتریان از طریق اکسل'), findsOneWidget);
+      expect(find.text('ذخیره'), findsOneWidget);
+
+      final excelButton = tester.getRect(
+        find.byKey(const Key('import-customers-from-excel')),
+      );
+      final saveButton = tester.getRect(
+        find.widgetWithText(FilledButton, 'ذخیره'),
+      );
+      expect(excelButton.top, greaterThan(saveButton.bottom - 1));
+      expect((excelButton.width - saveButton.width).abs(), lessThan(1));
+
+      await tester.enterText(find.byType(TextField).at(0), 'نیمه');
+      await tester.tap(find.text('ورود مشتریان از طریق اکسل'));
+      await tester.pumpAndSettle();
+      expect(find.text('ورود مشتریان از اکسل'), findsOneWidget);
+      expect(find.text(AppStrings.importCustomersBody), findsOneWidget);
+      expect(find.text('دانلود قالب اکسل'), findsOneWidget);
+      expect(repo.createCalls, 0);
+      expect(repo.items, hasLength(1));
+    },
+  );
+
+  testWidgets('add customer save is unchanged when Excel import is present', (
+    tester,
+  ) async {
+    final repo = FakeCustomerRepository();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [customerRepositoryProvider.overrideWithValue(repo)],
+        child: const MaterialApp(home: CustomerFormScreen()),
+      ),
+    );
+    await tester.enterText(find.byType(TextField).at(0), 'سارا');
+    await tester.enterText(find.byType(TextField).at(1), 'احمدی');
+    await tester.enterText(find.byType(TextField).at(2), '09121111111');
+    await tester.tap(find.text('ذخیره'));
+    await tester.pumpAndSettle();
+    expect(find.text('مشتری با موفقیت اضافه شد'), findsOneWidget);
+    expect(repo.createCalls, 1);
+    expect(repo.items.single.firstName, 'سارا');
   });
 
   testWidgets('customer list error state', (tester) async {
@@ -985,130 +1401,107 @@ void main() {
     expect(find.text('تلاش مجدد'), findsOneWidget);
   });
 
-  testWidgets('opportunities render reason and action', (tester) async {
+  testWidgets('opportunities v2 shows four filters and factual message rows', (
+    tester,
+  ) async {
+    final workspace = FakeOpportunitiesRepository(
+      pages: {
+        'ALL': [
+          _workspaceRow(),
+          _workspaceRow(
+            rowKind: 'VIP_RECIPIENT',
+            stableId: 'VIP_RECIPIENT:m-vip',
+            displayName: 'VIP Guest',
+            customerId: null,
+            messageState: 'SENT',
+            messageRequestId: 'm-vip',
+          ),
+        ],
+        'SALON_MESSAGES': [_workspaceRow(messageState: 'FAILED')],
+        'VIP': [
+          _workspaceRow(
+            rowKind: 'VIP_RECIPIENT',
+            stableId: 'VIP_RECIPIENT:m-vip',
+            displayName: 'VIP Guest',
+            customerId: null,
+            messageState: 'SENT',
+            messageRequestId: 'm-vip',
+          ),
+        ],
+        'REVENUE_DROP': [
+          _workspaceRow(
+            stableId: 'SALON_CUSTOMER:c-drop',
+            displayName: 'Lapse Customer',
+            customerId: 'c-drop',
+            messageState: null,
+            messageRequestId: null,
+            previousVisitAt: DateTime.utc(2026, 8, 1),
+          ),
+        ],
+      },
+    );
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
-          intelligenceRepositoryProvider.overrideWithValue(
-            FakeIntelligenceRepository(opportunitiesData: [_opportunity()]),
+          opportunitiesRepositoryProvider.overrideWithValue(workspace),
+          vipRepositoryProvider.overrideWithValue(
+            FakeVipRepository(entitled: true),
           ),
-          actionRepositoryProvider.overrideWithValue(FakeActionRepository()),
-          vipRepositoryProvider.overrideWithValue(FakeVipRepository()),
         ],
         child: const MaterialApp(home: OpportunitiesScreen()),
       ),
     );
     await tester.pumpAndSettle();
+    expect(find.widgetWithText(ChoiceChip, 'همه'), findsOneWidget);
+    expect(find.widgetWithText(ChoiceChip, 'ارسال پیام'), findsOneWidget);
+    expect(find.widgetWithText(ChoiceChip, 'ارسال پیام vip'), findsOneWidget);
+    expect(find.widgetWithText(ChoiceChip, 'افت درآمد'), findsOneWidget);
+    expect(find.text('برگشت مشتری قدیمی'), findsNothing);
+    expect(find.text('دعوت دوباره'), findsNothing);
     expect(find.text('Sara Ahmadi'), findsOneWidget);
-    expect(find.textContaining('۵۲'), findsOneWidget);
-  });
+    expect(find.textContaining('VIP'), findsWidgets);
+    expect(find.text('در آستانه از دست رفتن'), findsNothing);
 
-  testWidgets('opportunity action buttons complete and dismiss', (tester) async {
-    final actions = FakeActionRepository();
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          intelligenceRepositoryProvider.overrideWithValue(
-            FakeIntelligenceRepository(opportunitiesData: [_opportunity()]),
-          ),
-          actionRepositoryProvider.overrideWithValue(actions),
-          vipRepositoryProvider.overrideWithValue(FakeVipRepository()),
-        ],
-        child: const MaterialApp(home: OpportunitiesScreen()),
-      ),
-    );
+    await tester.tap(find.widgetWithText(ChoiceChip, 'ارسال پیام'));
     await tester.pumpAndSettle();
-    expect(find.text('اقدام انجام شد'), findsWidgets);
-    await tester.tap(find.text('اقدام انجام شد').first);
-    await tester.pumpAndSettle();
-    expect(actions.createCalls, 1);
-    expect(actions.completeCalls, 1);
-  });
+    expect(find.text('ارسال ناموفق'), findsOneWidget);
+    expect(find.text('در صف ارسال'), findsNothing);
 
-  testWidgets('complete hides opportunity card and shows one recent action', (
-    tester,
-  ) async {
-    final intel = FakeIntelligenceRepository(
-      opportunitiesData: [_opportunity()],
-    );
-    final actions = FakeActionRepository()
-      ..onTerminal = () {
-        intel.opportunitiesData = const [];
-      };
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          intelligenceRepositoryProvider.overrideWithValue(intel),
-          actionRepositoryProvider.overrideWithValue(actions),
-          vipRepositoryProvider.overrideWithValue(FakeVipRepository()),
-        ],
-        child: const MaterialApp(home: OpportunitiesScreen()),
-      ),
-    );
+    await tester.tap(find.widgetWithText(ChoiceChip, 'ارسال پیام vip'));
     await tester.pumpAndSettle();
-    expect(find.text('اقدام انجام شد'), findsWidgets);
-    await tester.tap(find.text('اقدام انجام شد').first);
-    await tester.pump();
-    await tester.tap(find.text('اقدام انجام شد').first);
+    expect(find.text('VIP Guest'), findsOneWidget);
+    expect(find.textContaining('ارسال شده'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(ChoiceChip, 'افت درآمد'));
     await tester.pumpAndSettle();
-    expect(actions.completeCalls, 1);
+    expect(find.text('Lapse Customer'), findsOneWidget);
+    expect(find.text('انتخاب چند مشتری برای ارسال پیام'), findsOneWidget);
     expect(
-      find.widgetWithText(FilledButton, AppStrings.markActionDone),
-      findsNothing,
+      workspace.filters,
+      containsAll(['ALL', 'SALON_MESSAGES', 'VIP', 'REVENUE_DROP']),
     );
-    expect(find.text(AppStrings.actionHistory), findsOneWidget);
-    expect(find.text('Sara Ahmadi'), findsWidgets);
   });
 
-  testWidgets('ignore hides opportunity card and does not show recent action', (
+  testWidgets('opportunities v2 distinguishes loading error and empty', (
     tester,
   ) async {
-    final intel = FakeIntelligenceRepository(
-      opportunitiesData: [_opportunity()],
-    );
-    final actions = FakeActionRepository()
-      ..onTerminal = () {
-        intel.opportunitiesData = const [];
-      };
+    final workspace = FakeOpportunitiesRepository()
+      ..error = const NetworkException();
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
-          intelligenceRepositoryProvider.overrideWithValue(intel),
-          actionRepositoryProvider.overrideWithValue(actions),
+          opportunitiesRepositoryProvider.overrideWithValue(workspace),
           vipRepositoryProvider.overrideWithValue(FakeVipRepository()),
         ],
         child: const MaterialApp(home: OpportunitiesScreen()),
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('نادیده گرفتن').first);
+    expect(find.text('ارتباط با سامانه سالن برقرار نشد.'), findsOneWidget);
+    workspace.error = null;
+    await tester.tap(find.text('تلاش مجدد'));
     await tester.pumpAndSettle();
-    expect(actions.dismissCalls, 1);
-    expect(find.text('اقدام انجام شد'), findsNothing);
-    expect(find.text(AppStrings.actionHistory), findsNothing);
-    expect(find.text(AppStrings.dismissAction), findsNothing);
-  });
-
-  testWidgets('failed complete keeps the opportunity card', (tester) async {
-    final actions = FakeActionRepository();
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          intelligenceRepositoryProvider.overrideWithValue(
-            FakeIntelligenceRepository(opportunitiesData: [_opportunity()]),
-          ),
-          actionRepositoryProvider.overrideWithValue(actions),
-          vipRepositoryProvider.overrideWithValue(FakeVipRepository()),
-        ],
-        child: const MaterialApp(home: OpportunitiesScreen()),
-      ),
-    );
-    await tester.pumpAndSettle();
-    actions.error = const NetworkException();
-    await tester.tap(find.text('اقدام انجام شد').first);
-    await tester.pumpAndSettle();
-    expect(find.widgetWithText(FilledButton, AppStrings.markActionDone), findsWidgets);
-    expect(find.text(AppStrings.actionHistory), findsNothing);
+    expect(find.text('هنوز پیام ارسالی ثبت نشده.'), findsOneWidget);
   });
 
   testWidgets('customer detail renders status reason action and visits', (
@@ -1139,6 +1532,10 @@ void main() {
                 ),
               ],
             ),
+          ),
+          messageRepositoryProvider.overrideWithValue(FakeMessageRepository()),
+          returnCommitmentRepositoryProvider.overrideWithValue(
+            FakeOpenReturnCommitmentRepository(),
           ),
         ],
         child: const MaterialApp(home: CustomerDetailScreen(customerId: 'c1')),
@@ -1451,14 +1848,8 @@ void main() {
     expect(find.text('8000000.00 ریال'), findsOneWidget);
     expect(find.text('5000000.00 ریال'), findsOneWidget);
     expect(find.text('—'), findsNWidgets(2));
-    expect(
-      find.text(formatJalaliDateTime(hairAt)),
-      findsOneWidget,
-    );
-    expect(
-      find.text(formatJalaliDateTime(nailAt)),
-      findsOneWidget,
-    );
+    expect(find.text(formatJalaliDateTime(hairAt)), findsOneWidget);
+    expect(find.text(formatJalaliDateTime(nailAt)), findsOneWidget);
     expect(find.text('خروجی اکسل'), findsOneWidget);
   });
 
@@ -1610,6 +2001,10 @@ void main() {
             (ref) => FakeVisitListRepository(),
           ),
           authControllerProvider.overrideWith(_StaffAuth.new),
+          messageRepositoryProvider.overrideWithValue(FakeMessageRepository()),
+          returnCommitmentRepositoryProvider.overrideWithValue(
+            FakeOpenReturnCommitmentRepository(),
+          ),
         ],
         child: const MaterialApp(home: CustomerDetailScreen(customerId: 'c1')),
       ),
@@ -1661,6 +2056,10 @@ void main() {
             ),
           ),
           authControllerProvider.overrideWith(_SignedInAuth.new),
+          messageRepositoryProvider.overrideWithValue(FakeMessageRepository()),
+          returnCommitmentRepositoryProvider.overrideWithValue(
+            FakeOpenReturnCommitmentRepository(),
+          ),
         ],
         child: MaterialApp.router(routerConfig: router),
       ),
@@ -1668,10 +2067,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('حذف مشتری'));
     await tester.pumpAndSettle();
-    expect(
-      find.textContaining('سابقه مالی'),
-      findsOneWidget,
-    );
+    expect(find.textContaining('سابقه مالی'), findsOneWidget);
     expect(find.textContaining('تاریخچه'), findsOneWidget);
     await tester.tap(find.text('حذف').last);
     await tester.pumpAndSettle();
@@ -1706,6 +2102,10 @@ void main() {
           actionRepositoryProvider.overrideWithValue(FakeActionRepository()),
           visitRepositoryProvider.overrideWith((ref) => visits),
           authControllerProvider.overrideWith(_SignedInAuth.new),
+          messageRepositoryProvider.overrideWithValue(FakeMessageRepository()),
+          returnCommitmentRepositoryProvider.overrideWithValue(
+            FakeOpenReturnCommitmentRepository(),
+          ),
         ],
         child: const MaterialApp(home: CustomerDetailScreen(customerId: 'c1')),
       ),
@@ -1728,150 +2128,165 @@ void main() {
     expect(visits.items, isEmpty);
   });
 
-  testWidgets('customer detail uses Record completed visit and not Record sale', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          customerRepositoryProvider.overrideWith(
-            (ref) => FakeCustomerRepository(items: [_customer()]),
-          ),
-          intelligenceRepositoryProvider.overrideWith(
-            (ref) => FakeIntelligenceRepository(
-              customerIntelligence: _intelligence(),
+  testWidgets(
+    'customer detail uses Record completed visit and not Record sale',
+    (tester) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            customerRepositoryProvider.overrideWith(
+              (ref) => FakeCustomerRepository(items: [_customer()]),
             ),
+            intelligenceRepositoryProvider.overrideWith(
+              (ref) => FakeIntelligenceRepository(
+                customerIntelligence: _intelligence(),
+              ),
+            ),
+            actionRepositoryProvider.overrideWithValue(FakeActionRepository()),
+            visitRepositoryProvider.overrideWith(
+              (ref) => FakeVisitListRepository(),
+            ),
+            authControllerProvider.overrideWith(_SignedInAuth.new),
+            messageRepositoryProvider.overrideWithValue(FakeMessageRepository()),
+            returnCommitmentRepositoryProvider.overrideWithValue(
+              FakeOpenReturnCommitmentRepository(),
+            ),
+          ],
+          child: const MaterialApp(
+            home: CustomerDetailScreen(customerId: 'c1'),
           ),
-          actionRepositoryProvider.overrideWithValue(FakeActionRepository()),
-          visitRepositoryProvider.overrideWith(
-            (ref) => FakeVisitListRepository(),
-          ),
-          authControllerProvider.overrideWith(_SignedInAuth.new),
-        ],
-        child: const MaterialApp(home: CustomerDetailScreen(customerId: 'c1')),
-      ),
-    );
-    await tester.pumpAndSettle();
-    expect(find.text('ثبت مراجعه انجام‌شده'), findsOneWidget);
-    expect(find.text('Record sale'), findsNothing);
-    await tester.scrollUntilVisible(find.textContaining('درآمد ثبت‌شده'), 400);
-    expect(find.textContaining('درآمد ثبت‌شده'), findsOneWidget);
-  });
-
-  testWidgets('record completed visit lists backend services and submits the selected one', (
-    tester,
-  ) async {
-    final visits = FakeVisitListRepository();
-    final router = GoRouter(
-      initialLocation: '/',
-      routes: [
-        GoRoute(path: '/', builder: (context, state) => const Text('home')),
-        GoRoute(
-          path: '/visit',
-          builder: (context, state) =>
-              const RecordVisitScreen(customerId: 'c1'),
         ),
-      ],
-    );
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          authControllerProvider.overrideWith(_SignedInAuth.new),
-          serviceRepositoryProvider.overrideWithValue(
-            FakeServiceRepository(
-              items: const [
-                SalonService(
-                  id: 'svc-hair',
-                  name: 'Hair Service',
-                  status: 'ACTIVE',
-                ),
-                SalonService(
-                  id: 'svc-nail',
-                  name: 'Nail Service',
-                  status: 'ACTIVE',
-                ),
-                SalonService(
-                  id: 'svc-old',
-                  name: 'Retired',
-                  status: 'INACTIVE',
-                ),
-              ],
-            ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('ثبت مراجعه انجام‌شده'), findsOneWidget);
+      expect(find.text('Record sale'), findsNothing);
+      await tester.scrollUntilVisible(
+        find.textContaining('درآمد ثبت‌شده'),
+        400,
+      );
+      expect(find.textContaining('درآمد ثبت‌شده'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'record completed visit lists backend services and submits the selected one',
+    (tester) async {
+      final visits = FakeVisitListRepository();
+      final router = GoRouter(
+        initialLocation: '/',
+        routes: [
+          GoRoute(path: '/', builder: (context, state) => const Text('home')),
+          GoRoute(
+            path: '/visit',
+            builder: (context, state) =>
+                const RecordVisitScreen(customerId: 'c1'),
           ),
-          visitRepositoryProvider.overrideWithValue(visits),
         ],
-        child: MaterialApp.router(routerConfig: router),
-      ),
-    );
-    await tester.pumpAndSettle();
-    router.push('/visit');
-    await tester.pumpAndSettle();
-    expect(find.text('Hair Service'), findsOneWidget);
-    expect(find.text('Retired'), findsNothing);
+      );
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            authControllerProvider.overrideWith(_SignedInAuth.new),
+            serviceRepositoryProvider.overrideWithValue(
+              FakeServiceRepository(
+                items: const [
+                  SalonService(
+                    id: 'svc-hair',
+                    name: 'Hair Service',
+                    status: 'ACTIVE',
+                  ),
+                  SalonService(
+                    id: 'svc-nail',
+                    name: 'Nail Service',
+                    status: 'ACTIVE',
+                  ),
+                  SalonService(
+                    id: 'svc-old',
+                    name: 'Retired',
+                    status: 'INACTIVE',
+                  ),
+                ],
+              ),
+            ),
+            visitRepositoryProvider.overrideWithValue(visits),
+          ],
+          child: MaterialApp.router(routerConfig: router),
+        ),
+      );
+      await tester.pumpAndSettle();
+      router.push('/visit');
+      await tester.pumpAndSettle();
+      expect(find.text('Hair Service'), findsOneWidget);
+      expect(find.text('Retired'), findsNothing);
 
-    await tester.tap(find.byType(DropdownButton<String>));
-    await tester.pumpAndSettle();
-    expect(find.text('Nail Service'), findsWidgets);
-    await tester.tap(find.text('Nail Service').last);
-    await tester.pumpAndSettle();
-    expect(find.text('Nail Service'), findsOneWidget);
+      await tester.tap(find.byType(DropdownButton<String>));
+      await tester.pumpAndSettle();
+      expect(find.text('Nail Service'), findsWidgets);
+      await tester.tap(find.text('Nail Service').last);
+      await tester.pumpAndSettle();
+      expect(find.text('Nail Service'), findsOneWidget);
 
-    await tester.tap(find.byType(DropdownButton<String>));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Hair Service').last);
-    await tester.pumpAndSettle();
-    expect(find.text('Hair Service'), findsOneWidget);
+      await tester.tap(find.byType(DropdownButton<String>));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Hair Service').last);
+      await tester.pumpAndSettle();
+      expect(find.text('Hair Service'), findsOneWidget);
 
-    await tester.enterText(find.byType(TextField), '8000000');
-    await tester.tap(find.text('ثبت این مراجعه'));
-    await tester.pumpAndSettle();
-    expect(visits.lastServiceId, 'svc-hair');
-    expect(visits.lastAmount, '8000000');
-    expect(visits.saveCalls, 1);
-  });
+      await tester.enterText(find.byType(TextField), '8000000');
+      await tester.tap(find.text('ثبت این مراجعه'));
+      await tester.pumpAndSettle();
+      expect(visits.lastServiceId, 'svc-hair');
+      expect(visits.lastAmount, '8000000');
+      expect(visits.saveCalls, 1);
+    },
+  );
 
-  testWidgets('record completed visit shows an empty state when the salon has no services', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          authControllerProvider.overrideWith(_SignedInAuth.new),
-          serviceRepositoryProvider.overrideWithValue(FakeServiceRepository()),
+  testWidgets(
+    'record completed visit shows an empty state when the salon has no services',
+    (tester) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            authControllerProvider.overrideWith(_SignedInAuth.new),
+            serviceRepositoryProvider.overrideWithValue(
+              FakeServiceRepository(),
+            ),
+          ],
+          child: const MaterialApp(home: RecordVisitScreen(customerId: 'c1')),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('هیچ خدمت فعالی وجود ندارد.'), findsOneWidget);
+      expect(find.text('مدیریت خدمات'), findsOneWidget);
+      expect(find.byType(DropdownButton<String>), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'record completed visit shows a loading state before services arrive',
+    (tester) async {
+      final repo = FakeServiceRepository(
+        items: const [
+          SalonService(id: 'svc-hair', name: 'Hair Service', status: 'ACTIVE'),
         ],
-        child: const MaterialApp(home: RecordVisitScreen(customerId: 'c1')),
-      ),
-    );
-    await tester.pumpAndSettle();
-    expect(find.text('هیچ خدمت فعالی وجود ندارد.'), findsOneWidget);
-    expect(find.text('مدیریت خدمات'), findsOneWidget);
-    expect(find.byType(DropdownButton<String>), findsNothing);
-  });
-
-  testWidgets('record completed visit shows a loading state before services arrive', (
-    tester,
-  ) async {
-    final repo = FakeServiceRepository(
-      items: const [
-        SalonService(id: 'svc-hair', name: 'Hair Service', status: 'ACTIVE'),
-      ],
-    )..gate = Completer<void>();
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          authControllerProvider.overrideWith(_SignedInAuth.new),
-          serviceRepositoryProvider.overrideWithValue(repo),
-        ],
-        child: const MaterialApp(home: RecordVisitScreen(customerId: 'c1')),
-      ),
-    );
-    await tester.pump();
-    expect(find.byType(CircularProgressIndicator), findsWidgets);
-    expect(find.text('Hair Service'), findsNothing);
-    repo.gate!.complete();
-    await tester.pumpAndSettle();
-    expect(find.text('Hair Service'), findsOneWidget);
-  });
+      )..gate = Completer<void>();
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            authControllerProvider.overrideWith(_SignedInAuth.new),
+            serviceRepositoryProvider.overrideWithValue(repo),
+          ],
+          child: const MaterialApp(home: RecordVisitScreen(customerId: 'c1')),
+        ),
+      );
+      await tester.pump();
+      expect(find.byType(CircularProgressIndicator), findsWidgets);
+      expect(find.text('Hair Service'), findsNothing);
+      repo.gate!.complete();
+      await tester.pumpAndSettle();
+      expect(find.text('Hair Service'), findsOneWidget);
+    },
+  );
 
   testWidgets('record completed visit shows retry when services fail to load', (
     tester,
@@ -2028,6 +2443,10 @@ void main() {
             (ref) => FakeVisitListRepository(),
           ),
           authControllerProvider.overrideWith(_SignedInAuth.new),
+          messageRepositoryProvider.overrideWithValue(FakeMessageRepository()),
+          returnCommitmentRepositoryProvider.overrideWithValue(
+            FakeOpenReturnCommitmentRepository(),
+          ),
         ],
         child: MaterialApp.router(routerConfig: router),
       ),
@@ -2052,6 +2471,66 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('مدیریت خدمات'), findsOneWidget);
+  });
+
+  testWidgets('staff today opens operational returns without recovery KPIs', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    final router = GoRouter(
+      initialLocation: '/',
+      routes: [
+        GoRoute(
+          path: '/',
+          builder: (context, state) => const DashboardScreen(),
+        ),
+        GoRoute(
+          path: '/open-returns',
+          builder: (context, state) => const OpenAgreedReturnsScreen(),
+        ),
+        GoRoute(
+          path: '/recovery',
+          builder: (context, state) => const RecoveryOutcomesScreen(),
+        ),
+      ],
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          salonRepositoryProvider.overrideWithValue(FakeSalonRepository()),
+          returnCommitmentRepositoryProvider.overrideWithValue(
+            FakeOpenReturnCommitmentRepository(
+              open: [
+                OpenAgreedReturn(
+                  id: 'o1',
+                  customerId: 'c-open',
+                  customerName: 'عرفان صابری',
+                  customerPhone: '09125222222',
+                  expectedAt: DateTime.utc(2026, 9, 20, 10),
+                  overdue: false,
+                  recordedBySupport: true,
+                ),
+              ],
+            ),
+          ),
+          authControllerProvider.overrideWith(_StaffAuth.new),
+        ],
+        child: MaterialApp.router(routerConfig: router),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text(AppStrings.recoveryOutcomesTitle), findsNothing);
+    expect(find.text(AppStrings.recoverySentFollowUps), findsNothing);
+    expect(find.text(AppStrings.openAgreedReturnsTitle), findsOneWidget);
+    await tester.tap(find.text(AppStrings.openAgreedReturnsTitle));
+    await tester.pumpAndSettle();
+    expect(find.text('عرفان صابری'), findsOneWidget);
+    expect(find.text(AppStrings.callCustomer), findsOneWidget);
+    expect(find.text(AppStrings.openAgreedReturnsTitle), findsWidgets);
+    expect(find.text(AppStrings.recoverySentFollowUps), findsNothing);
+    expect(find.text(AppStrings.recoveryCommitmentBackedReturns), findsNothing);
   });
 
   testWidgets('customer detail keeps an inactive historical service name', (
@@ -2084,6 +2563,10 @@ void main() {
             ),
           ),
           authControllerProvider.overrideWith(_SignedInAuth.new),
+          messageRepositoryProvider.overrideWithValue(FakeMessageRepository()),
+          returnCommitmentRepositoryProvider.overrideWithValue(
+            FakeOpenReturnCommitmentRepository(),
+          ),
         ],
         child: const MaterialApp(home: CustomerDetailScreen(customerId: 'c1')),
       ),
@@ -2168,7 +2651,9 @@ void main() {
     expect(repo.items.first.status, 'INACTIVE');
   });
 
-  testWidgets('create service shows duplicate and empty errors', (tester) async {
+  testWidgets('create service shows duplicate and empty errors', (
+    tester,
+  ) async {
     final repo = FakeServiceRepository(
       items: const [
         SalonService(id: 'svc-hair', name: 'Hair Service', status: 'ACTIVE'),
@@ -2259,6 +2744,9 @@ void main() {
             ),
           ),
           vipRepositoryProvider.overrideWithValue(FakeVipRepository()),
+          opportunitiesRepositoryProvider.overrideWithValue(
+            FakeOpportunitiesRepository(),
+          ),
           intelligenceRepositoryProvider.overrideWithValue(
             FakeIntelligenceRepository(opportunitiesData: [_opportunity()]),
           ),
@@ -2269,7 +2757,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('انتخاب چند مشتری'));
+    await tester.tap(find.text('انتخاب چند مشتری برای ارسال پیام'));
     await tester.pumpAndSettle();
     expect(find.text('انتخاب مشتری 0 / 30'), findsOneWidget);
     await tester.tap(find.byType(CheckboxListTile).at(0));
@@ -2362,170 +2850,186 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, 'ارسال پیام').last);
     await tester.pumpAndSettle();
-    expect(find.text('برای این مشتری امروز قبلاً پیام ثبت شده است.'), findsOneWidget);
+    expect(
+      find.text('برای این مشتری امروز قبلاً پیام ثبت شده است.'),
+      findsOneWidget,
+    );
   });
 
-  testWidgets('submitted outreach stays visible, disabled, and shows server status', (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(800, 1800);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    final messages = FakeMessageRepository();
-    final router = GoRouter(
-      initialLocation: '/customers',
-      routes: [
-        GoRoute(
-          path: '/customers',
-          builder: (context, state) => const CustomersScreen(),
-        ),
-        GoRoute(
-          path: '/opportunities',
-          builder: (context, state) => const OpportunitiesScreen(),
-        ),
-      ],
-    );
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          customerRepositoryProvider.overrideWithValue(
-            FakeCustomerRepository(
-              items: [
-                _customer(),
-                Customer(
-                  id: 'c2',
-                  firstName: 'Maryam',
-                  lastName: 'Karimi',
-                  phoneNumber: '09121111111',
-                  createdAt: DateTime.utc(2026, 1, 2),
-                  updatedAt: DateTime.utc(2026, 1, 2),
-                ),
-              ],
+  testWidgets(
+    'submitted outreach stays visible, disabled, and shows server status',
+    (tester) async {
+      tester.view.physicalSize = const Size(800, 1800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      final messages = FakeMessageRepository();
+      final workspace = FakeOpportunitiesRepository(
+        resolve: (filter) {
+          if (filter == 'VIP' || filter == 'REVENUE_DROP') {
+            return const [];
+          }
+          return [
+            for (final item in messages.manualOutreach)
+              _workspaceRow(
+                stableId: 'SALON_CUSTOMER:${item.customerId}',
+                displayName: item.customerName,
+                customerId: item.customerId,
+                messageState: item.status == 'DISPATCHED'
+                    ? 'IN_PIPELINE'
+                    : item.status == 'SENT'
+                    ? 'SENT'
+                    : 'QUEUED',
+                messageRequestId: item.messageRequestId,
+              ),
+          ];
+        },
+      );
+      final router = GoRouter(
+        initialLocation: '/customers',
+        routes: [
+          GoRoute(
+            path: '/customers',
+            builder: (context, state) => const CustomersScreen(),
+          ),
+          GoRoute(
+            path: '/opportunities',
+            builder: (context, state) => const OpportunitiesScreen(),
+          ),
+        ],
+      );
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            customerRepositoryProvider.overrideWithValue(
+              FakeCustomerRepository(
+                items: [
+                  _customer(),
+                  Customer(
+                    id: 'c2',
+                    firstName: 'Maryam',
+                    lastName: 'Karimi',
+                    phoneNumber: '09121111111',
+                    createdAt: DateTime.utc(2026, 1, 2),
+                    updatedAt: DateTime.utc(2026, 1, 2),
+                  ),
+                ],
+              ),
             ),
-          ),
-          vipRepositoryProvider.overrideWithValue(FakeVipRepository()),
-          salonRepositoryProvider.overrideWithValue(FakeSalonRepository()),
-          intelligenceRepositoryProvider.overrideWithValue(
-            FakeIntelligenceRepository(opportunitiesData: [_opportunity()]),
-          ),
-          actionRepositoryProvider.overrideWithValue(FakeActionRepository()),
-          messageRepositoryProvider.overrideWithValue(messages),
-        ],
-        child: MaterialApp.router(routerConfig: router),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('انتخاب چند مشتری'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byType(CheckboxListTile).at(0));
-    await tester.tap(find.byType(CheckboxListTile).at(1));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('ارسال پیام'));
-    await tester.pumpAndSettle();
-    expect(find.text('ایجاد پیام مناسب'), findsNWidgets(2));
+            vipRepositoryProvider.overrideWithValue(FakeVipRepository()),
+            salonRepositoryProvider.overrideWithValue(FakeSalonRepository()),
+            opportunitiesRepositoryProvider.overrideWithValue(workspace),
+            intelligenceRepositoryProvider.overrideWithValue(
+              FakeIntelligenceRepository(opportunitiesData: [_opportunity()]),
+            ),
+            actionRepositoryProvider.overrideWithValue(FakeActionRepository()),
+            messageRepositoryProvider.overrideWithValue(messages),
+          ],
+          child: MaterialApp.router(routerConfig: router),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('انتخاب چند مشتری برای ارسال پیام'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(CheckboxListTile).at(0));
+      await tester.tap(find.byType(CheckboxListTile).at(1));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('ارسال پیام'));
+      await tester.pumpAndSettle();
+      expect(find.text('ایجاد پیام مناسب'), findsNWidgets(2));
 
-    await tester.tap(find.text('ایجاد پیام مناسب').first);
-    await tester.pumpAndSettle();
-    await tester.enterText(find.widgetWithText(TextField, 'ساعت'), '18:00');
-    await tester.enterText(
-      find.widgetWithText(TextField, 'تخفیف (هزار تومان)'),
-      '200',
-    );
-    await tester.tap(
-      find.descendant(
-        of: find.byType(OutreachMessageComposer),
-        matching: find.widgetWithText(FilledButton, 'ارسال پیام'),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(FilledButton, 'ارسال پیام').last);
-    await tester.pumpAndSettle();
-    expect(find.text('پیام در صف ارسال قرار گرفت.'), findsOneWidget);
-    Navigator.of(tester.element(find.text('پیام در صف ارسال قرار گرفت.'))).pop();
-    await tester.pumpAndSettle();
+      await tester.tap(find.text('ایجاد پیام مناسب').first);
+      await tester.pumpAndSettle();
+      await tester.enterText(find.widgetWithText(TextField, 'ساعت'), '18:00');
+      await tester.enterText(
+        find.widgetWithText(TextField, 'تخفیف (هزار تومان)'),
+        '200',
+      );
+      await tester.tap(
+        find.descendant(
+          of: find.byType(OutreachMessageComposer),
+          matching: find.widgetWithText(FilledButton, 'ارسال پیام'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, 'ارسال پیام').last);
+      await tester.pumpAndSettle();
+      expect(find.text('پیام در صف ارسال قرار گرفت.'), findsOneWidget);
+      Navigator.of(tester.element(find.text('پیام در صف ارسال قرار گرفت.')))
+          .pop();
+      await tester.pumpAndSettle();
 
-    expect(find.text('Sara Ahmadi'), findsOneWidget);
-    expect(find.text('Maryam Karimi'), findsOneWidget);
-    expect(find.text('در صف ارسال'), findsOneWidget);
-    expect(find.text('ایجاد پیام مناسب'), findsOneWidget);
+      expect(find.text('Sara Ahmadi'), findsWidgets);
+      expect(find.text('Maryam Karimi'), findsOneWidget);
+      expect(find.text('در صف ارسال'), findsOneWidget);
+      expect(find.text('ایجاد پیام مناسب'), findsOneWidget);
 
-    await tester.tap(find.text('Sara Ahmadi'), warnIfMissed: false);
-    await tester.pumpAndSettle();
-    expect(find.byType(OutreachMessageComposer), findsNothing);
+      final callsBeforeReload = workspace.listCalls;
+      await tester.tap(find.widgetWithText(ChoiceChip, 'همه'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(ChoiceChip, 'ارسال پیام'));
+      await tester.pumpAndSettle();
+      expect(find.text('Sara Ahmadi'), findsWidgets);
+      expect(find.text('Maryam Karimi'), findsOneWidget);
+      expect(find.text('در صف ارسال'), findsOneWidget);
+      expect(find.text('ایجاد پیام مناسب'), findsOneWidget);
+      expect(workspace.listCalls, greaterThan(callsBeforeReload));
+    },
+  );
 
-    final callsBeforeReload = messages.listManualCalls;
-    await tester.tap(find.widgetWithText(ChoiceChip, 'همه'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(ChoiceChip, 'ارسال پیام'));
-    await tester.pumpAndSettle();
-    expect(find.text('Sara Ahmadi'), findsOneWidget);
-    expect(find.text('Maryam Karimi'), findsOneWidget);
-    expect(find.text('در صف ارسال'), findsOneWidget);
-    expect(find.text('ایجاد پیام مناسب'), findsOneWidget);
-    expect(messages.listManualCalls, greaterThan(callsBeforeReload));
-  });
+  testWidgets(
+    'outreach list shows dispatched status from the server after reload',
+    (tester) async {
+      tester.view.physicalSize = const Size(800, 1400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      final workspace = FakeOpportunitiesRepository(
+        pages: {
+          'ALL': const [],
+          'SALON_MESSAGES': [
+            _workspaceRow(messageState: 'IN_PIPELINE'),
+            _workspaceRow(
+              stableId: 'SALON_CUSTOMER:c2',
+              displayName: 'Maryam Karimi',
+              customerId: 'c2',
+              messageState: 'QUEUED',
+              messageRequestId: 'm2',
+            ),
+            _workspaceRow(
+              stableId: 'SALON_CUSTOMER:c3',
+              displayName: 'Neda Rezaei',
+              customerId: 'c3',
+              messageState: 'SENT',
+              messageRequestId: 'm3',
+            ),
+          ],
+        },
+      );
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            opportunitiesRepositoryProvider.overrideWithValue(workspace),
+            vipRepositoryProvider.overrideWithValue(FakeVipRepository()),
+          ],
+          child: const MaterialApp(home: OpportunitiesScreen()),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(ChoiceChip, 'ارسال پیام'));
+      await tester.pumpAndSettle();
+      expect(find.text('Sara Ahmadi'), findsOneWidget);
+      expect(find.text('Maryam Karimi'), findsOneWidget);
+      expect(find.text('Neda Rezaei'), findsOneWidget);
+      expect(find.text('ارسال به اجرا'), findsOneWidget);
+      expect(find.text('در صف ارسال'), findsOneWidget);
+      expect(find.text('ارسال شده'), findsOneWidget);
+      expect(find.text('ایجاد پیام مناسب'), findsNothing);
+      expect(workspace.filters, contains('SALON_MESSAGES'));
+    },
+  );
 
-  testWidgets('outreach list shows dispatched status from the server after reload', (
+  testWidgets('customer profile shows manual outreach activity status', (
     tester,
   ) async {
-    tester.view.physicalSize = const Size(800, 1400);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    final messages = FakeMessageRepository(
-      manualOutreach: [
-        ManualOutreachRequest(
-          customerId: 'c1',
-          customerName: 'Sara Ahmadi',
-          messageRequestId: 'm1',
-          status: 'DISPATCHED',
-          requestedAt: DateTime.utc(2026, 9, 11),
-          updatedAt: DateTime.utc(2026, 9, 11),
-        ),
-        ManualOutreachRequest(
-          customerId: 'c2',
-          customerName: 'Maryam Karimi',
-          messageRequestId: 'm2',
-          status: 'QUEUED',
-          requestedAt: DateTime.utc(2026, 9, 11),
-          updatedAt: DateTime.utc(2026, 9, 11),
-        ),
-        ManualOutreachRequest(
-          customerId: 'c3',
-          customerName: 'Neda Rezaei',
-          messageRequestId: 'm3',
-          status: 'SENT',
-          requestedAt: DateTime.utc(2026, 9, 11),
-          updatedAt: DateTime.utc(2026, 9, 11),
-        ),
-      ],
-    );
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          intelligenceRepositoryProvider.overrideWithValue(
-            FakeIntelligenceRepository(opportunitiesData: [_opportunity()]),
-          ),
-          actionRepositoryProvider.overrideWithValue(FakeActionRepository()),
-          messageRepositoryProvider.overrideWithValue(messages),
-          vipRepositoryProvider.overrideWithValue(FakeVipRepository()),
-        ],
-        child: const MaterialApp(home: OpportunitiesScreen()),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(ChoiceChip, 'ارسال پیام'));
-    await tester.pumpAndSettle();
-    expect(find.text('Sara Ahmadi'), findsOneWidget);
-    expect(find.text('Maryam Karimi'), findsOneWidget);
-    expect(find.text('Neda Rezaei'), findsOneWidget);
-    expect(find.text('ارسال به اجرا'), findsOneWidget);
-    expect(find.text('در صف ارسال'), findsOneWidget);
-    expect(find.text('ارسال شد'), findsOneWidget);
-    expect(find.text('ایجاد پیام مناسب'), findsNothing);
-    expect(messages.listManualCalls, greaterThan(0));
-  });
-
-  testWidgets('customer profile shows manual outreach activity status', (tester) async {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
@@ -2546,6 +3050,10 @@ void main() {
           ),
           actionRepositoryProvider.overrideWithValue(FakeActionRepository()),
           visitRepositoryProvider.overrideWithValue(FakeVisitListRepository()),
+          messageRepositoryProvider.overrideWithValue(FakeMessageRepository()),
+          returnCommitmentRepositoryProvider.overrideWithValue(
+            FakeOpenReturnCommitmentRepository(),
+          ),
         ],
         child: const MaterialApp(home: CustomerDetailScreen(customerId: 'c1')),
       ),
@@ -2585,7 +3093,9 @@ void main() {
           customerRepositoryProvider.overrideWithValue(
             FakeCustomerRepository(items: [_customer()]),
           ),
-          vipRepositoryProvider.overrideWithValue(FakeVipRepository(entitled: true)),
+          vipRepositoryProvider.overrideWithValue(
+            FakeVipRepository(entitled: true),
+          ),
         ],
         child: const MaterialApp(home: CustomersScreen()),
       ),
@@ -2598,10 +3108,9 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
-          intelligenceRepositoryProvider.overrideWithValue(
-            FakeIntelligenceRepository(opportunitiesData: [_opportunity()]),
+          opportunitiesRepositoryProvider.overrideWithValue(
+            FakeOpportunitiesRepository(),
           ),
-          actionRepositoryProvider.overrideWithValue(FakeActionRepository()),
           vipRepositoryProvider.overrideWithValue(FakeVipRepository()),
         ],
         child: const MaterialApp(home: OpportunitiesScreen()),
@@ -2615,11 +3124,12 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
-          intelligenceRepositoryProvider.overrideWithValue(
-            FakeIntelligenceRepository(opportunitiesData: [_opportunity()]),
+          opportunitiesRepositoryProvider.overrideWithValue(
+            FakeOpportunitiesRepository(),
           ),
-          actionRepositoryProvider.overrideWithValue(FakeActionRepository()),
-          vipRepositoryProvider.overrideWithValue(FakeVipRepository(entitled: true)),
+          vipRepositoryProvider.overrideWithValue(
+            FakeVipRepository(entitled: true),
+          ),
         ],
         child: const MaterialApp(home: OpportunitiesScreen()),
       ),
@@ -2647,6 +3157,8 @@ void main() {
                 attempts: 0,
                 providerReady: true,
                 vipRequestId: 'vip-1',
+                canMarkManualSent: true,
+                canCancel: true,
               ),
             ),
           ),
@@ -2656,10 +3168,13 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('ارسال با بله'), findsNothing);
-    expect(find.text('ارسال دستی'), findsOneWidget);
+    expect(find.text(AppStrings.adminMarkRecipientSent), findsOneWidget);
+    expect(find.text(AppStrings.adminRemoveFromQueue), findsOneWidget);
   });
 
-  testWidgets('admin SENT customer message can record agreed return', (tester) async {
+  testWidgets('admin SENT customer message can record agreed return', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
@@ -2682,12 +3197,134 @@ void main() {
             ),
           ),
         ],
-        child: const MaterialApp(home: AdminMessageDetailSheet(itemId: 'q-sent')),
+        child: const MaterialApp(
+          home: AdminMessageDetailSheet(itemId: 'q-sent'),
+        ),
       ),
     );
     await tester.pumpAndSettle();
     expect(find.text(AppStrings.recordAgreedReturn), findsOneWidget);
   });
+
+  testWidgets(
+    'admin queue tap opens detail and shows agreed return for SENT non-VIP',
+    (tester) async {
+      tester.view.physicalSize = const Size(800, 1800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+
+      final eligible = AdminQueueItem(
+        id: '01a0ba0b-3d06-77ba-b704-f8e416d93d84',
+        salonId: 's-vip-a',
+        salonName: 'Runtime VIP A',
+        customerId: '01a0ba09-f3ae-70bd-83b9-422e2ca25361',
+        customerName: 'علیرضا صابری',
+        customerPhone: '09125233652',
+        messageText: 'سلام',
+        requestedAt: DateTime.utc(2026, 9, 19, 14, 21, 33),
+        status: 'SENT',
+        deliveryStatus: 'SENT',
+        submittedAt: DateTime.utc(2026, 9, 19, 14, 22, 31),
+        attempts: 1,
+        providerReady: true,
+      );
+      final vip = AdminQueueItem(
+        id: 'vip-q',
+        salonId: 's-vip',
+        salonName: 'rc-vip Salon',
+        customerId: '',
+        customerName: 'VIP recipient',
+        customerPhone: '09121112233',
+        messageText: 'سلام',
+        requestedAt: DateTime.utc(2026, 9, 19, 13, 36, 29),
+        status: 'SENT',
+        deliveryStatus: 'SENT',
+        submittedAt: DateTime.utc(2026, 9, 19, 13, 36, 29),
+        attempts: 1,
+        providerReady: true,
+        vipRequestId: 'vip-1',
+      );
+      final repo = FakeAdminMessageRepository(eligible, extra: [vip]);
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [adminMessageRepositoryProvider.overrideWithValue(repo)],
+          child: const MaterialApp(
+            home: AdminNormalSalonFolderScreen(salonId: 's-vip-a'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byType(AdminNormalSalonFolderScreen), findsOneWidget);
+      expect(find.text('علیرضا صابری'), findsOneWidget);
+
+      await tester.tap(find.text('علیرضا صابری'));
+      await tester.pumpAndSettle();
+
+      expect(repo.getByIdCalls, ['01a0ba0b-3d06-77ba-b704-f8e416d93d84']);
+      expect(find.byType(AdminMessageDetailSheet), findsOneWidget);
+      await tester.ensureVisible(find.text(AppStrings.copyMessage));
+      await tester.ensureVisible(find.text(AppStrings.recordAgreedReturn));
+      expect(find.text(AppStrings.recordAgreedReturn), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'admin queue tap hides agreed return for VIP-origin SENT message',
+    (tester) async {
+      tester.view.physicalSize = const Size(800, 1800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+
+      final eligible = AdminQueueItem(
+        id: 'cust-q',
+        salonId: 's-vip-a',
+        salonName: 'Runtime VIP A',
+        customerId: 'c1',
+        customerName: 'علیرضا صابری',
+        customerPhone: '09125233652',
+        messageText: 'سلام',
+        requestedAt: DateTime.utc(2026, 9, 19, 14, 21, 33),
+        status: 'SENT',
+        deliveryStatus: 'SENT',
+        submittedAt: DateTime.utc(2026, 9, 19, 14, 22, 31),
+        attempts: 1,
+        providerReady: true,
+      );
+      final vip = AdminQueueItem(
+        id: 'vip-q',
+        salonId: 's-vip',
+        salonName: 'rc-vip Salon',
+        customerId: '',
+        customerName: 'VIP recipient',
+        customerPhone: '09121112233',
+        messageText: 'سلام',
+        requestedAt: DateTime.utc(2026, 9, 19, 13, 36, 29),
+        status: 'SENT',
+        deliveryStatus: 'SENT',
+        submittedAt: DateTime.utc(2026, 9, 19, 13, 36, 29),
+        attempts: 1,
+        providerReady: true,
+        vipRequestId: 'vip-1',
+      );
+      final repo = FakeAdminMessageRepository(eligible, extra: [vip]);
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [adminMessageRepositoryProvider.overrideWithValue(repo)],
+          child: const MaterialApp(
+            home: AdminMessageDetailSheet(itemId: 'vip-q'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byType(AdminMessageDetailSheet), findsOneWidget);
+      await tester.ensureVisible(find.text(AppStrings.copyMessage));
+      expect(find.text(AppStrings.recordAgreedReturn), findsNothing);
+    },
+  );
 }
 
 class _StaffAuth extends AuthController {

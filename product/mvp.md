@@ -46,7 +46,7 @@ These capabilities exist in the repository (API + schema + tests; Flutter unless
 - Statuses: `NEW`, `ACTIVE`, `RETURNING`, `AT_RISK`, `INACTIVE`
 - Opportunities: `REACTIVATION`, `CUSTOMER_RETURN`, `REVENUE_DECLINE`
 - Signals including `OVERDUE`, `FREQUENT`, `REVENUE_DECLINING`
-- Summary + opportunities + segments + per-customer (cap 5,000 newest customers per salon)
+- Complete salon-wide summary + cursor-paginated, globally ranked opportunities and segments + per-customer intelligence
 
 ### Actions
 

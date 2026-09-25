@@ -5,6 +5,7 @@ import {
   DOMAIN_EVENT_TYPES,
   ForbiddenError,
   NotFoundError,
+  ValidationError,
   type AuthenticatedPrincipal,
 } from '@salon/shared';
 import { PrismaService } from '../infrastructure/database/prisma.service';
@@ -24,6 +25,11 @@ export class UpdateSalonProfileUseCase {
       throw new BusinessRuleError('No salon profile fields to update');
     }
 
+    const name = input.name === undefined ? undefined : input.name.trim();
+    if (name !== undefined && (!name || name.length > 120)) {
+      throw new ValidationError('name must be 1 to 120 characters');
+    }
+
     const updated = await this.prisma.client.$transaction(async (tx) => {
       const salon = await tx.salon.findFirst({
         where: { id: principal.tenantId },
@@ -36,7 +42,7 @@ export class UpdateSalonProfileUseCase {
       const next = await tx.salon.update({
         where: { id: principal.tenantId },
         data: {
-          ...(input.name !== undefined ? { name: input.name.trim() } : {}),
+          ...(name !== undefined ? { name } : {}),
           ...(input.phone !== undefined ? { phone: normalizeOptionalText(input.phone) } : {}),
           ...(input.address !== undefined ? { address: normalizeOptionalText(input.address) } : {}),
           updatedAt: new Date(),
@@ -83,7 +89,8 @@ export class UpdateSalonProfileUseCase {
   }
 }
 
-function normalizeOptionalText(value: string): string | null {
+function normalizeOptionalText(value: string | null): string | null {
+  if (value === null) return null;
   const trimmed = value.trim();
   return trimmed.length === 0 ? null : trimmed;
 }

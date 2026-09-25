@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsIn, IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
+import { IsIn, IsOptional, IsString, Matches, MaxLength, MinLength, ValidateIf } from 'class-validator';
 
 export const SERVICE_STATUSES = ['ACTIVE', 'INACTIVE'] as const;
 export type ServiceStatusDto = (typeof SERVICE_STATUSES)[number];
@@ -15,7 +15,7 @@ export class CreateServiceDto {
 
 export class UpdateServiceDto {
   @ApiPropertyOptional()
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined)
   @IsString()
   @MinLength(1)
   @MaxLength(80)
@@ -23,7 +23,7 @@ export class UpdateServiceDto {
   name?: string;
 
   @ApiPropertyOptional({ enum: SERVICE_STATUSES })
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined)
   @IsIn(SERVICE_STATUSES)
   status?: ServiceStatusDto;
 }

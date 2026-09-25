@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/state/providers.dart';
+import '../../core/state/cursor_page_state.dart';
 import '../../core/theme/app_tokens.dart';
 import '../../core/widgets/app_widgets.dart';
 import '../../shared/jalali.dart';
@@ -21,13 +22,19 @@ class RecoveryOutcomesScreen extends ConsumerStatefulWidget {
 
 class _RecoveryOutcomesScreenState extends ConsumerState<RecoveryOutcomesScreen> {
   RecoveryOutcomesSummary? _summary;
-  List<RecoveryOutcomeReturnItem> _commitmentBacked = const [];
-  List<RecoveryOutcomeReturnItem> _observed = const [];
-  List<OpenAgreedReturn> _openReturns = const [];
-  Object? _openReturnsError;
+  late final CursorPageState<RecoveryOutcomeReturnItem> _commitmentBacked = CursorPageState(
+    keyOf: (item) => item.visitId, changed: () { if (mounted) setState(() {}); },
+  );
+  late final CursorPageState<RecoveryOutcomeReturnItem> _observed = CursorPageState(
+    keyOf: (item) => item.visitId, changed: () { if (mounted) setState(() {}); },
+  );
+  late final CursorPageState<OpenAgreedReturn> _openReturns = CursorPageState(
+    keyOf: (item) => item.id, changed: () { if (mounted) setState(() {}); },
+  );
   Object? _error;
   bool _loading = true;
   DateTime? _weekStart;
+  int _generation = 0;
 
   @override
   void initState() {
@@ -36,10 +43,15 @@ class _RecoveryOutcomesScreenState extends ConsumerState<RecoveryOutcomesScreen>
   }
 
   Future<void> _load({DateTime? weekStart}) async {
+    final generation = ++_generation;
     setState(() {
       _loading = true;
       _error = null;
+      _summary = null;
     });
+    _commitmentBacked.reset();
+    _observed.reset();
+    _openReturns.reset();
     try {
       final repo = ref.read(returnCommitmentRepositoryProvider);
       final summary = await repo.outcomesSummary(weekStart: weekStart);
@@ -49,36 +61,17 @@ class _RecoveryOutcomesScreenState extends ConsumerState<RecoveryOutcomesScreen>
               requestedStart.millisecondsSinceEpoch) {
         throw StateError('week mismatch');
       }
-      final backed = await repo.outcomeReturns(
-        kind: 'COMMITMENT_BACKED',
-        weekStart: summary.period.start,
-      );
-      final observed = await repo.outcomeReturns(
-        kind: 'OBSERVED',
-        weekStart: summary.period.start,
-      );
-      List<OpenAgreedReturn> openReturns = const [];
-      Object? openReturnsError;
-      try {
-        final open = await repo.listOpen();
-        openReturns = open.items;
-      } catch (error) {
-        openReturnsError = error;
-      }
-      if (!mounted) {
+      if (!mounted || generation != _generation) {
         return;
       }
       setState(() {
         _weekStart = summary.period.start;
         _summary = summary;
-        _commitmentBacked = backed.items;
-        _observed = observed.items;
-        _openReturns = openReturns;
-        _openReturnsError = openReturnsError;
         _loading = false;
       });
+      await Future.wait([_loadMoreBacked(), _loadMoreObserved(), _loadMoreOpen()]);
     } catch (error) {
-      if (!mounted) {
+      if (!mounted || generation != _generation) {
         return;
       }
       setState(() {
@@ -86,6 +79,28 @@ class _RecoveryOutcomesScreenState extends ConsumerState<RecoveryOutcomesScreen>
         _loading = false;
       });
     }
+  }
+
+  Future<void> _loadMoreBacked() => _commitmentBacked.load((cursor) =>
+      ref.read(returnCommitmentRepositoryProvider).outcomeReturns(
+        kind: 'COMMITMENT_BACKED', weekStart: _weekStart, cursor: cursor));
+
+  Future<void> _loadMoreObserved() => _observed.load((cursor) =>
+      ref.read(returnCommitmentRepositoryProvider).outcomeReturns(
+        kind: 'OBSERVED', weekStart: _weekStart, cursor: cursor));
+
+  Future<void> _loadMoreOpen() => _openReturns.load((cursor) =>
+      ref.read(returnCommitmentRepositoryProvider).listOpen(cursor: cursor));
+
+  Widget _pageAction<T>(CursorPageState<T> page, VoidCallback retry) {
+    if (page.error != null) {
+      return ErrorView(message: friendlyError(page.error!), onRetry: retry);
+    }
+    if (page.loading) return const Center(child: CircularProgressIndicator());
+    if (page.hasMore) {
+      return TextButton(onPressed: retry, child: const Text(AppStrings.loadMore));
+    }
+    return const SizedBox.shrink();
   }
 
   @override
@@ -125,11 +140,12 @@ class _RecoveryOutcomesScreenState extends ConsumerState<RecoveryOutcomesScreen>
             Text(AppStrings.recoveryOutcomesHint, style: theme.textTheme.bodySmall),
             const SizedBox(height: AppTokens.space12),
             OpenAgreedReturnsSection(
-              items: _openReturns,
-              loading: false,
-              error: _openReturnsError,
-              onRetry: () => _load(weekStart: _weekStart),
+              items: _openReturns.items,
+              loading: _openReturns.loading,
+              error: _openReturns.error,
+              onRetry: _loadMoreOpen,
             ),
+            if (_openReturns.error == null) _pageAction(_openReturns, _loadMoreOpen),
             const SizedBox(height: AppTokens.space24),
             Row(
               children: [
@@ -184,11 +200,15 @@ class _RecoveryOutcomesScreenState extends ConsumerState<RecoveryOutcomesScreen>
               ),
               const SizedBox(height: AppTokens.space24),
               const SectionHeader(AppStrings.recoveryCommitmentBackedReturns),
-              ..._commitmentBacked.map(_backedTile),
+              Text('${AppStrings.loadedCount}: ${toPersianDigits(_commitmentBacked.items.length.toString())}'),
+              ..._commitmentBacked.items.map(_backedTile),
+              _pageAction(_commitmentBacked, _loadMoreBacked),
               const SizedBox(height: AppTokens.space16),
               const SectionHeader(AppStrings.recoveryObservedReturns),
+              Text('${AppStrings.loadedCount}: ${toPersianDigits(_observed.items.length.toString())}'),
               const SizedBox(height: AppTokens.space8),
-              ..._observed.map(_observedTile),
+              ..._observed.items.map(_observedTile),
+              _pageAction(_observed, _loadMoreObserved),
             ],
           ],
         ),

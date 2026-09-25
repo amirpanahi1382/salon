@@ -1,6 +1,5 @@
 import ExcelJS from 'exceljs';
 import {
-  CUSTOMER_PHONE_RULE_MESSAGE,
   isUsableCustomerPhone,
   sanitizeCustomerNamePart,
   VIP_DISPLAY_NAME_MAX_LENGTH,
@@ -14,7 +13,7 @@ import { assertSafeXlsxZip } from '../customer/parse-customer-excel';
 
 export type ParsedVipExcelRow = {
   row: number;
-  displayName: string;
+  displayName: string | null;
   phoneNumber: string;
 };
 
@@ -119,7 +118,7 @@ export async function parseVipTargetExcel(buffer: Buffer): Promise<ParsedVipExce
       phoneCol = colNumber;
     }
   });
-  if (nameCol === undefined || phoneCol === undefined) {
+  if (phoneCol === undefined) {
     throw new Error('MISSING_HEADERS');
   }
 
@@ -131,7 +130,7 @@ export async function parseVipTargetExcel(buffer: Buffer): Promise<ParsedVipExce
     if (rowNumber === 1) {
       return;
     }
-    const name = cellText(row.getCell(nameCol!).value);
+    const name = nameCol === undefined ? '' : cellText(row.getCell(nameCol).value);
     const phone = cellPhoneText(row.getCell(phoneCol!).value);
     if (!name && !phone) {
       return;
@@ -140,8 +139,14 @@ export async function parseVipTargetExcel(buffer: Buffer): Promise<ParsedVipExce
     if (dataRows > VIP_LIST_MAX_CONTACTS) {
       throw new Error('ROW_LIMIT');
     }
-    const displayName = name ? sanitizeVipDisplayName(name) : null;
-    if (!displayName || !phone || !isUsableCustomerPhone(phone)) {
+    let displayName: string | null = null;
+    if (name) {
+      displayName = sanitizeVipDisplayName(name);
+      if (!displayName) {
+        throw new Error('INVALID_ROW');
+      }
+    }
+    if (!phone || !isUsableCustomerPhone(phone)) {
       throw new Error(phone && !isUsableCustomerPhone(phone) ? 'INVALID_PHONE' : 'INVALID_ROW');
     }
     if (seenPhones.has(phone)) {
@@ -166,6 +171,7 @@ export async function buildVipImportTemplate(): Promise<Buffer> {
   const sheet = workbook.addWorksheet('VIP');
   sheet.addRow(['نام', 'شماره تلفن']);
   sheet.addRow(['مریم احمدی', '09121234567']);
+  sheet.addRow(['', '09121234568']);
   sheet.getRow(1).font = { bold: true };
   return Buffer.from(await workbook.xlsx.writeBuffer());
 }

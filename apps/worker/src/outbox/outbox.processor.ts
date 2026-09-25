@@ -19,7 +19,7 @@ import { AppConfigService } from '../infrastructure/config/app-config.service';
 import { PrismaService } from '../infrastructure/database/prisma.service';
 import { createWorkerLogger } from '../infrastructure/logging/worker-logger';
 import { RetryableMessageSendError } from '../messaging/message-sender';
-import { SendCustomerMessageHandler } from '../messaging/send-customer-message.handler';
+import { SendCustomerMessageHandler, type DeliveryExecutionResult } from '../messaging/send-customer-message.handler';
 
 /**
  * At-least-once outbox consumer. Handlers must be idempotent.
@@ -90,9 +90,10 @@ export class OutboxProcessor implements OnModuleInit, OnModuleDestroy {
         this.config.values.OUTBOX_BATCH_SIZE,
         this.config.values.OUTBOX_LEASE_MS,
       );
-      for (const event of claimed) {
-        await this.processOne(event);
-      }
+      // Start the bounded claimed batch together so later rows do not spend their lease waiting.
+      const results = await Promise.allSettled(claimed.map((event) => this.processOne(event)));
+      const failed = results.find((result) => result.status === 'rejected');
+      if (failed?.status === 'rejected') throw failed.reason;
     } catch (error: unknown) {
       this.logger.error(
         {
@@ -114,12 +115,17 @@ export class OutboxProcessor implements OnModuleInit, OnModuleDestroy {
       eventId: event.id,
       eventType: event.eventType,
       attempt: event.attemptCount,
+      claimGeneration: event.claimGeneration.toString(),
       tenantId: event.tenantId,
       operation: 'outbox.consume',
     };
 
     if (!isDomainEventType(event.eventType)) {
-      await markOutboxDeadLetter(this.prisma.client, event.id, 'UNKNOWN_EVENT_TYPE');
+      const applied = await markOutboxDeadLetter(this.prisma.client, event.id, event.claimGeneration, 'UNKNOWN_EVENT_TYPE');
+      if (!applied) {
+        this.logger.warn({ ...base, outcome: 'stale_owner' }, 'Stale outbox owner rejected');
+        return;
+      }
       this.logger.error(
         {
           ...base,
@@ -135,17 +141,33 @@ export class OutboxProcessor implements OnModuleInit, OnModuleDestroy {
 
     const abort = new AbortController();
     try {
+      const work = this.consume(event, abort.signal);
+      let result: DeliveryExecutionResult;
       try {
-        await withTimeout(
-          this.consume(event, abort.signal),
+        result = await withTimeout(
+          work,
           handlerTimeoutMs(this.config.values.OUTBOX_LEASE_MS),
           'Outbox handler timed out',
         );
       } catch (error: unknown) {
         abort.abort();
+        // Cancellation is a request: keep observing the handler until it actually settles.
+        const settled = await work.catch(() => undefined);
+        if (settled?.outcome === 'stale') {
+          this.logger.warn({ ...base, outcome: 'stale_owner' }, 'Stale delivery owner left for reclaim');
+          return;
+        }
         throw error;
       }
-      await markOutboxProcessed(this.prisma.client, event.id);
+      if (result.outcome === 'stale') {
+        this.logger.warn({ ...base, outcome: 'stale_owner' }, 'Stale delivery owner left for reclaim');
+        return;
+      }
+      const applied = await markOutboxProcessed(this.prisma.client, event.id, event.claimGeneration);
+      if (!applied) {
+        this.logger.warn({ ...base, outcome: 'stale_owner' }, 'Stale outbox owner rejected');
+        return;
+      }
       this.logger.info(
         {
           ...base,
@@ -165,7 +187,11 @@ export class OutboxProcessor implements OnModuleInit, OnModuleDestroy {
             ? error.code
             : 'CONSUMER_FAILED';
       if (event.attemptCount >= maxAttempts) {
-        await this.deadLetterEvent(event, message, error);
+        const applied = await this.deadLetterEvent(event, message, error);
+        if (!applied) {
+          this.logger.warn({ ...base, outcome: 'stale_owner' }, 'Stale outbox owner rejected');
+          return;
+        }
         this.logger.error(
           {
             ...base,
@@ -189,7 +215,11 @@ export class OutboxProcessor implements OnModuleInit, OnModuleDestroy {
               this.config.values.OUTBOX_BACKOFF_BASE_MS,
               this.config.values.OUTBOX_BACKOFF_CAP_MS,
             );
-      await markOutboxRetry(this.prisma.client, event.id, message, delayMs);
+      const applied = await markOutboxRetry(this.prisma.client, event.id, event.claimGeneration, message, delayMs);
+      if (!applied) {
+        this.logger.warn({ ...base, outcome: 'stale_owner' }, 'Stale outbox owner rejected');
+        return;
+      }
       this.logger.warn(
         {
           ...base,
@@ -210,36 +240,37 @@ export class OutboxProcessor implements OnModuleInit, OnModuleDestroy {
     event: OutboxEvent,
     lastError: string,
     cause: unknown,
-  ): Promise<void> {
+  ): Promise<boolean> {
     if (
       event.eventType !== DOMAIN_EVENT_TYPES.MessageSendRequested &&
       event.eventType !== DOMAIN_EVENT_TYPES.MessageDeliveryActivated
     ) {
-      await markOutboxDeadLetter(this.prisma.client, event.id, lastError);
-      return;
+      return markOutboxDeadLetter(this.prisma.client, event.id, event.claimGeneration, lastError);
     }
     const code = deadLetterFailureCode(cause);
-    await this.prisma.client.$transaction(async (tx) => {
-      await markOutboxDeadLetter(tx, event.id, lastError);
+    return this.prisma.client.$transaction(async (tx) => {
+      const applied = await markOutboxDeadLetter(tx, event.id, event.claimGeneration, lastError);
+      if (!applied) return false;
       await this.sendCustomerMessage.abandonIfInFlight(event, code, tx);
+      return true;
     });
   }
 
-  private async consume(event: OutboxEvent, signal: AbortSignal): Promise<void> {
+  private async consume(event: OutboxEvent, signal: AbortSignal): Promise<DeliveryExecutionResult> {
     if (
       event.eventType === DOMAIN_EVENT_TYPES.MessageSendRequested ||
       event.eventType === DOMAIN_EVENT_TYPES.MessageDeliveryActivated
     ) {
-      await this.sendCustomerMessage.handle(
+      return this.sendCustomerMessage.handle(
         event,
         this.config.values.OUTBOX_MAX_ATTEMPTS,
         signal,
       );
-      return;
     }
     if (!event.eventType) {
       throw new Error('Missing event type');
     }
+    return { outcome: 'completed' };
   }
 }
 

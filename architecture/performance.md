@@ -8,7 +8,7 @@ List endpoints remain bounded (max 200). They now return `nextCursor` when `hasM
 
 - Customers: `(created_at DESC, id DESC)`
 - Visits: `(visited_at DESC, created_at DESC, id DESC)`
-- Opportunities / segments: in-memory page after tenant-scoped SQL aggregates (max 200)
+- Intelligence opportunities / segments: global SQL rank over tenant-scoped visit aggregates; bounded 500-candidate transfers, with an eligible-result lookahead (max 200 response items)
 
 Offset `skip` at 0 / 100 / 1,000 / 2,950 was ~2–4ms on this dataset (no material difference vs cursor). Cursor is still the supported way to read past the first page so we never `OFFSET` at 10k+ later.
 
@@ -16,7 +16,7 @@ Offset `skip` at 0 / 100 / 1,000 / 2,950 was ~2–4ms on this dataset (no materi
 
 Visit timestamps are **not** loaded into Node for salon-wide intelligence. PostgreSQL computes visit count, first/last visit, and average positive whole-day gaps. Classification rules in `@salon/shared` are unchanged.
 
-Cap remains 5,000 newest customers per salon (`hasMore` on summary when truncated).
+The former 5,000-customer truncation is removed. Summary scans the indexed customer creation order in 500-customer batches and aggregates only those customers' visits, revenue, and suppression state per batch. It performs one salon revenue-total query plus up to three queries per batch and one terminal customer probe. Ranked list queries compute global days-since-last-visit order in PostgreSQL and transfer at most 500 candidate rows per batch; filtered lists may scan several batches before finding 201 eligible results. Each ranked batch recomputes tenant visit aggregates, so repeated pages on very large salons remain a scale cost. The Phase 6B disposable fixture of 5,201 customers and 2,201 Visits completed a summary in about 0.13s, a sparse filtered opportunity traversal in about 1.8s, and an unfiltered 5,201-segment traversal in about 5.5s locally. These are diagnostics, not production guarantees. No customer/visit fetch-all, cache, snapshot, or new index was added.
 
 ## Search
 

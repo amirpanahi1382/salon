@@ -1,12 +1,15 @@
 import { randomUUID } from 'node:crypto';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
 import * as argon2 from 'argon2';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/infrastructure/database/prisma.service';
+import { AppConfigService } from '../src/infrastructure/config/app-config.service';
 import { HttpExceptionFilter } from '../src/infrastructure/http/http-exception.filter';
 import { messageBusinessDateValue } from '@salon/shared';
+import { SendCustomerMessageHandler } from '../../worker/src/messaging/send-customer-message.handler';
 import { listPage } from './list-page';
 
 const describeIfDb = process.env.DATABASE_URL ? describe : describe.skip;
@@ -76,34 +79,12 @@ describeIfDb('Opportunity messages (e2e)', () => {
         updatedAt: now,
       },
     });
-    const login = await request(app.getHttpServer())
-      .post('/auth/login')
-      .send({ email, password })
-      .expect(201);
+    const token = await app.get(JwtService).signAsync({ sub: userId, tid: salonId, role: 'OWNER' });
     return {
       email,
-      token: login.body.accessToken as string,
-      userId: login.body.user.id as string,
-      tenantId: login.body.user.tenantId as string,
-    };
-  }
-
-  async function registerOwner(label: string) {
-    const email = `${label}-${Date.now()}-${Math.random().toString(16).slice(2)}@example.test`;
-    const response = await request(app.getHttpServer())
-      .post('/auth/register')
-      .send({
-        salonName: `${label} Salon`,
-        ownerName: `${label} Owner`,
-        email,
-        password,
-      })
-      .expect(201);
-    return {
-      email,
-      token: response.body.accessToken as string,
-      userId: response.body.user.id as string,
-      tenantId: response.body.user.tenantId as string,
+      token,
+      userId,
+      tenantId: salonId,
     };
   }
 
@@ -170,6 +151,102 @@ describeIfDb('Opportunity messages (e2e)', () => {
     return `/intelligence/opportunities/${type}/customers/${customerId}/messages`;
   }
 
+  it.each(['manual', 'opportunity'] as const)(
+    'keeps the %s destination through phone change, replay, and worker execution',
+    async (origin) => {
+      const salon = await createOwnerBypassingRegisterThrottle(`destination-${origin}`);
+      const customerId = origin === 'manual'
+        ? await createCustomer(salon.token, 'Snapshot')
+        : await seedRevenueDecline(salon.token, 'Snapshot');
+      const originalPhone = (await prisma.client.customer.findUniqueOrThrow({ where: { id: customerId } })).phoneNumber;
+      const nextPhone = originalPhone === '09129999999' ? '09128888888' : '09129999999';
+      const path = origin === 'manual' ? `/customers/${customerId}/messages` : sendPath('REVENUE_DECLINE', customerId);
+      const key = `destination-${origin}-${randomUUID()}`;
+      const text = `Destination snapshot ${origin}`;
+      const send = (token: string, idempotencyKey: string, body = text) => request(app.getHttpServer())
+        .post(path).set('Authorization', `Bearer ${token}`)
+        .set('Idempotency-Key', idempotencyKey).send({ text: body });
+
+      const first = await send(salon.token, key).expect(201);
+      const requestId = first.body.id as string;
+      expect((await prisma.client.messageRequest.findUniqueOrThrow({ where: { id: requestId } })).recipientPhoneNumber).toBe(originalPhone);
+      await request(app.getHttpServer()).patch(`/customers/${customerId}`)
+        .set('Authorization', `Bearer ${salon.token}`).send({ phoneNumber: nextPhone }).expect(200);
+      expect((await prisma.client.messageRequest.findUniqueOrThrow({ where: { id: requestId } })).recipientPhoneNumber).toBe(originalPhone);
+      expect((await request(app.getHttpServer()).get(`/customers/${customerId}`)
+        .set('Authorization', `Bearer ${salon.token}`).expect(200)).body.phoneNumber).toBe(nextPhone);
+
+      const replay = await send(salon.token, key).expect(201);
+      expect(replay.body.id).toBe(requestId);
+      expect(replay.body.destinationHint).toBe(first.body.destinationHint);
+      await send(salon.token, key, `${text} changed`).expect(409);
+      expect(await prisma.client.messageRequest.count({ where: { salonId: salon.tenantId, customerId } })).toBe(1);
+      expect(await prisma.client.auditLog.count({ where: { tenantId: salon.tenantId, action: 'MESSAGE_REQUESTED', resourceId: requestId } })).toBe(1);
+      expect(await prisma.client.outboxEvent.count({ where: { tenantId: salon.tenantId, eventType: 'MessageRequested', payload: { path: ['messageRequestId'], equals: requestId } } })).toBe(1);
+      const requestedAudit = await prisma.client.auditLog.findFirstOrThrow({ where: { tenantId: salon.tenantId, action: 'MESSAGE_REQUESTED', resourceId: requestId } });
+      const requestedEvent = await prisma.client.outboxEvent.findFirstOrThrow({ where: { tenantId: salon.tenantId, eventType: 'MessageRequested', payload: { path: ['messageRequestId'], equals: requestId } } });
+      for (const evidence of [requestedAudit.metadata, requestedEvent.payload]) {
+        expect(JSON.stringify(evidence)).not.toContain(originalPhone);
+        expect(JSON.stringify(evidence)).not.toContain(text);
+      }
+      const adminBefore = await request(app.getHttpServer()).get(`/admin/message-queue/${requestId}`)
+        .set('Authorization', `Bearer ${adminToken}`).expect(200);
+      expect(adminBefore.body.customerPhone).toBe(originalPhone);
+      const salonBefore = await request(app.getHttpServer()).get(`/messages/${requestId}`)
+        .set('Authorization', `Bearer ${salon.token}`).expect(200);
+      expect(salonBefore.body.destinationHint).toBe(first.body.destinationHint);
+      expect(JSON.stringify(salonBefore.body)).not.toContain(originalPhone);
+
+      const config = app.get(AppConfigService).values;
+      const previousKey = config.BALE_SAFIR_API_ACCESS_KEY;
+      const previousBot = config.BALE_SAFIR_BOT_ID;
+      config.BALE_SAFIR_API_ACCESS_KEY = 'isolated-fake-provider';
+      config.BALE_SAFIR_BOT_ID = 1;
+      try {
+        await request(app.getHttpServer()).post(`/admin/message-queue/${requestId}/select-bale`)
+          .set('Authorization', `Bearer ${adminToken}`).expect(201);
+      } finally {
+        config.BALE_SAFIR_API_ACCESS_KEY = previousKey;
+        config.BALE_SAFIR_BOT_ID = previousBot;
+      }
+      const delivery = await prisma.client.messageDelivery.findUniqueOrThrow({ where: { messageRequestId: requestId } });
+      const activation = await prisma.client.outboxEvent.findFirstOrThrow({
+        where: { tenantId: salon.tenantId, eventType: 'MessageDeliveryActivated', payload: { path: ['messageDeliveryId'], equals: delivery.id } },
+      });
+      const now = new Date();
+      const claimed = await prisma.client.outboxEvent.update({ where: { id: activation.id }, data: {
+        status: 'PROCESSING', claimGeneration: { increment: 1 }, lockedAt: now,
+        lockedUntil: new Date(now.getTime() + 30_000), attemptCount: { increment: 1 },
+      } });
+      const sendText = jest.fn(async () => ({ outcome: 'sent' as const, providerMessageId: `fake-${origin}` }));
+      const handler = new SendCustomerMessageHandler({ client: prisma.client } as never, { sendText } as never);
+      expect(await handler.handle(claimed, 8)).toEqual({ outcome: 'completed' });
+      expect(sendText).toHaveBeenCalledWith(expect.objectContaining({
+        phoneNumber: originalPhone, requestId: delivery.providerRequestId, text,
+      }));
+      expect((await prisma.client.messageDelivery.findUniqueOrThrow({ where: { id: delivery.id } })).status).toBe('SENT');
+      expect((await prisma.client.messageRequest.findUniqueOrThrow({ where: { id: requestId } })).status).toBe('SENT');
+      const terminalAudit = await prisma.client.auditLog.findFirstOrThrow({ where: { tenantId: salon.tenantId, action: 'MESSAGE_SENT', resourceId: delivery.id } });
+      const terminalEvent = await prisma.client.outboxEvent.findFirstOrThrow({ where: { tenantId: salon.tenantId, eventType: 'MessageSent', payload: { path: ['messageRequestId'], equals: requestId } } });
+      for (const evidence of [terminalAudit.metadata, terminalEvent.payload]) {
+        expect(JSON.stringify(evidence)).not.toContain(originalPhone);
+        expect(JSON.stringify(evidence)).not.toContain(text);
+      }
+
+      // A controlled next Tehran day permits a genuinely new intent without changing the daily-limit fixture.
+      jest.useFakeTimers({ doNotFake: ['setTimeout', 'setInterval', 'setImmediate', 'nextTick', 'queueMicrotask', 'performance'] });
+      try {
+        jest.setSystemTime(new Date(Date.now() + 2 * 86_400_000));
+        const laterToken = await app.get(JwtService).signAsync({ sub: salon.userId, tid: salon.tenantId, role: 'OWNER' });
+        const later = await send(laterToken, `later-${randomUUID()}`).expect(201);
+        expect(later.body.id).not.toBe(requestId);
+        expect((await prisma.client.messageRequest.findUniqueOrThrow({ where: { id: later.body.id } })).recipientPhoneNumber).toBe(nextPhone);
+      } finally {
+        jest.useRealTimers();
+      }
+    },
+  );
+
   it('rejects unauthenticated message access', async () => {
     await request(app.getHttpServer()).get(`/messages/${randomUUID()}`).expect(401);
     await request(app.getHttpServer()).get('/messages/manual-outreach').expect(401);
@@ -181,8 +258,8 @@ describeIfDb('Opportunity messages (e2e)', () => {
   });
 
   it('queues a durable message without Bale credentials and enforces daily limit and idempotency', async () => {
-    const salonA = await registerOwner('msg-a');
-    const salonB = await registerOwner('msg-b');
+    const salonA = await createOwnerBypassingRegisterThrottle('msg-a');
+    const salonB = await createOwnerBypassingRegisterThrottle('msg-b');
     const customerA = await seedRevenueDecline(salonA.token, 'Decline');
     const customerB = await seedRevenueDecline(salonB.token, 'Other');
     const otherCustomer = await seedRevenueDecline(salonA.token, 'Second');
@@ -247,7 +324,7 @@ describeIfDb('Opportunity messages (e2e)', () => {
       where: { tenantId: salonA.tenantId, eventType: 'MessageRequested' },
     });
     expect(outbox.length).toBeGreaterThanOrEqual(2);
-    expect(JSON.stringify(outbox)).not.toContain('test-safir-access-key');
+    expect(JSON.stringify(outbox, (_key, value) => typeof value === 'bigint' ? value.toString() : value)).not.toContain('test-safir-access-key');
     expect(JSON.stringify(outbox[0]?.payload)).not.toContain('سلام سارا جان');
 
     const sendRequested = await prisma.client.outboxEvent.count({
@@ -326,11 +403,15 @@ describeIfDb('Opportunity messages (e2e)', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(201);
     expect(sent.body.status).toBe('SENT');
+    expect(sent.body.canMarkManualSent).toBe(false);
+    expect(sent.body.canCancel).toBe(false);
 
-    await request(app.getHttpServer())
+    const sentReplay = await request(app.getHttpServer())
       .post(`/admin/message-queue/${created.body.id}/mark-manual-sent`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .expect(409);
+      .expect(201);
+    expect(sentReplay.body.status).toBe('SENT');
+    expect(sentReplay.body.submittedAt).toBe(sent.body.submittedAt);
 
     const salonView = await request(app.getHttpServer())
       .get(`/messages/${created.body.id}`)
@@ -341,7 +422,7 @@ describeIfDb('Opportunity messages (e2e)', () => {
   });
 
   it('selects Bale without credentials without losing the queued request', async () => {
-    const salon = await registerOwner('msg-bale');
+    const salon = await createOwnerBypassingRegisterThrottle('msg-bale');
     const customerId = await seedRevenueDecline(salon.token, 'Bale');
     const created = await request(app.getHttpServer())
       .post(sendPath('REVENUE_DECLINE', customerId))
@@ -368,8 +449,92 @@ describeIfDb('Opportunity messages (e2e)', () => {
     }
   });
 
+  it('serializes different-admin Bale retries to one activation generation', async () => {
+    const config = app.get(AppConfigService).values;
+    const previousKey = config.BALE_SAFIR_API_ACCESS_KEY;
+    const previousBot = config.BALE_SAFIR_BOT_ID;
+    config.BALE_SAFIR_API_ACCESS_KEY = 'phase2-test-key';
+    config.BALE_SAFIR_BOT_ID = 1;
+    try {
+    const otherEmail = `retry-admin-${randomUUID()}@example.test`;
+    await prisma.client.platformAdmin.create({ data: {
+      id: randomUUID(), email: otherEmail, name: 'Retry race admin',
+      passwordHash: await argon2.hash(adminPassword, { type: argon2.argon2id }), updatedAt: new Date(),
+    } });
+    const otherLogin = await request(app.getHttpServer()).post('/admin/auth/login')
+      .send({ email: otherEmail, password: adminPassword }).expect(201);
+    const salon = await createOwnerBypassingRegisterThrottle('msg-retry-race');
+    const customerId = await seedRevenueDecline(salon.token, 'RetryRace');
+    const created = await request(app.getHttpServer())
+      .post(sendPath('REVENUE_DECLINE', customerId))
+      .set('Authorization', `Bearer ${salon.token}`)
+      .set('Idempotency-Key', `retry-create-${randomUUID()}`)
+      .send({ text: 'فقط برای تست retry' })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post(`/admin/message-queue/${created.body.id}/select-bale`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(201);
+    const delivery = await prisma.client.messageDelivery.findUniqueOrThrow({
+      where: { messageRequestId: created.body.id },
+    });
+    const failedAt = new Date();
+    await prisma.client.$transaction([
+      prisma.client.messageDelivery.update({
+        where: { id: delivery.id },
+        data: { status: 'FAILED', failureCode: 'PROVIDER_TEMPORARY', failedAt },
+      }),
+      prisma.client.messageRequest.update({
+        where: { id: created.body.id },
+        data: { status: 'FAILED' },
+      }),
+      prisma.client.outboxEvent.updateMany({
+        where: { eventType: 'MessageDeliveryActivated', payload: { path: ['messageDeliveryId'], equals: delivery.id } },
+        data: { status: 'PROCESSED', processedAt: new Date(), lockedAt: null, lockedUntil: null },
+      }),
+    ]);
+
+    const retries = await Promise.all([
+      request(app.getHttpServer())
+        .post(`/admin/message-queue/${created.body.id}/retry`)
+        .set('Authorization', `Bearer ${otherLogin.body.accessToken}`),
+      request(app.getHttpServer())
+        .post(`/admin/message-queue/${created.body.id}/retry`)
+        .set('Authorization', `Bearer ${adminToken}`),
+    ]);
+    expect(retries.map((response) => response.status).sort()).toEqual([201, 409]);
+    const finalDelivery = await prisma.client.messageDelivery.findUniqueOrThrow({
+      where: { messageRequestId: created.body.id },
+    });
+    expect(finalDelivery.executionGeneration).toBe(1);
+    expect(finalDelivery.status).toBe('PENDING');
+    const activationEvents = await prisma.client.outboxEvent.findMany({
+      where: { tenantId: salon.tenantId, eventType: 'MessageDeliveryActivated' },
+    });
+    const forDelivery = activationEvents.filter(
+      (item) => (item.payload as { messageDeliveryId?: string }).messageDeliveryId === delivery.id,
+    );
+    expect(forDelivery).toHaveLength(2);
+    expect(forDelivery.filter((item) => item.dedupeKey === `message-delivery:${delivery.id}:1`)).toHaveLength(1);
+    for (const operation of ['cancel', 'mark-manual-sent']) {
+      await request(app.getHttpServer()).post(`/admin/message-queue/${created.body.id}/${operation}`)
+        .set('Authorization', `Bearer ${adminToken}`).expect(409);
+    }
+    await prisma.client.$transaction([
+      prisma.client.messageDelivery.update({ where: { id: delivery.id }, data: { status: 'SENT', submittedAt: new Date() } }),
+      prisma.client.messageRequest.update({ where: { id: created.body.id }, data: { status: 'SENT' } }),
+    ]);
+    await request(app.getHttpServer()).post(`/admin/message-queue/${created.body.id}/retry`)
+      .set('Authorization', `Bearer ${adminToken}`).expect(409);
+    expect(await prisma.client.outboxEvent.count({ where: { dedupeKey: { startsWith: `message-delivery:${delivery.id}:` } } })).toBe(2);
+    } finally {
+      config.BALE_SAFIR_API_ACCESS_KEY = previousKey;
+      config.BALE_SAFIR_BOT_ID = previousBot;
+    }
+  });
+
   it('does not let historical same-day backfill consume the new daily limit', async () => {
-    const salon = await registerOwner('msg-hist');
+    const salon = await createOwnerBypassingRegisterThrottle('msg-hist');
     const customerId = await seedRevenueDecline(salon.token, 'Hist');
     const now = new Date();
     const actionId = randomUUID();
@@ -393,6 +558,7 @@ describeIfDb('Opportunity messages (e2e)', () => {
         actionId,
         createdByUserId: salon.userId,
         opportunityType: 'REVENUE_DECLINE' as const,
+        recipientPhoneNumber: '09121111111',
         messageText,
         requestedAt: now,
         messageBusinessDate: day,
@@ -435,7 +601,7 @@ describeIfDb('Opportunity messages (e2e)', () => {
   });
 
   it('returns 409 MESSAGE_DAILY_LIMIT_REACHED for concurrent same-day sends and never 500', async () => {
-    const salon = await registerOwner('msg-race');
+    const salon = await createOwnerBypassingRegisterThrottle('msg-race');
     const customerId = await seedRevenueDecline(salon.token, 'Race');
     const results = await Promise.all(
       Array.from({ length: 10 }, (_, index) =>
@@ -561,7 +727,7 @@ describeIfDb('Opportunity messages (e2e)', () => {
           (event.payload as { messageRequestId?: string }).messageRequestId === created.body.id,
       ),
     ).toBe(true);
-    expect(JSON.stringify(outbox)).not.toContain(text);
+    expect(JSON.stringify(outbox, (_key, value) => typeof value === 'bigint' ? value.toString() : value)).not.toContain(text);
 
     const audit = await prisma.client.auditLog.findFirst({
       where: {
@@ -925,5 +1091,201 @@ describeIfDb('Opportunity messages (e2e)', () => {
       status: 'SENT',
     });
     expect(afterSent.items.find((item) => item.customerId === customerB)?.status).toBe('QUEUED');
+  });
+
+  it('groups ordinary messages by salon and excludes VIP provenance', async () => {
+    const salonA = await createOwnerBypassingRegisterThrottle('fold-a');
+    const salonB = await createOwnerBypassingRegisterThrottle('fold-b');
+    const customerA = await createCustomer(salonA.token, 'FolderA');
+    const customerB = await createCustomer(salonB.token, 'FolderB');
+    const first = await request(app.getHttpServer())
+      .post(`/customers/${customerA}/messages`)
+      .set('Authorization', `Bearer ${salonA.token}`)
+      .set('Idempotency-Key', `fold-a-${randomUUID()}`)
+      .send({ text: 'سلام سالن آ' })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post(`/customers/${customerB}/messages`)
+      .set('Authorization', `Bearer ${salonB.token}`)
+      .set('Idempotency-Key', `fold-b-${randomUUID()}`)
+      .send({ text: 'سلام سالن ب' })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .get('/admin/messages/normal/salons')
+      .set('Authorization', `Bearer ${salonA.token}`)
+      .expect(403);
+
+    const folders = await request(app.getHttpServer())
+      .get('/admin/messages/normal/salons')
+      .query({ q: 'fold-a' })
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    expect(folders.body.items.some((row: { salonId: string }) => row.salonId === salonA.tenantId)).toBe(
+      true,
+    );
+    expect(folders.body.items.some((row: { salonId: string }) => row.salonId === salonB.tenantId)).toBe(
+      false,
+    );
+    const folderA = folders.body.items.find((row: { salonId: string }) => row.salonId === salonA.tenantId);
+    expect(folderA.totalMessageCount).toBeGreaterThanOrEqual(1);
+    expect(folderA.sentMessageCount).toBe(0);
+    expect(folderA.pendingMessageCount).toBeGreaterThanOrEqual(1);
+
+    const renamed = await prisma.client.salon.update({
+      where: { id: salonA.tenantId },
+      data: { name: `FolderA-renamed ${Date.now()}` },
+    });
+    const afterRename = await request(app.getHttpServer())
+      .get('/admin/messages/normal/salons')
+      .query({ q: renamed.name })
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    expect(afterRename.body.items[0].salonName).toBe(renamed.name);
+
+    const detail = await request(app.getHttpServer())
+      .get(`/admin/messages/normal/salons/${salonA.tenantId}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    expect(detail.body.salonId).toBe(salonA.tenantId);
+    expect(detail.body.items.some((row: { id: string }) => row.id === first.body.id)).toBe(true);
+    expect(detail.body.items.every((row: { salonId: string }) => row.salonId === salonA.tenantId)).toBe(
+      true,
+    );
+    expect(detail.body.items.every((row: { vipRequestId: string | null }) => row.vipRequestId == null)).toBe(
+      true,
+    );
+    expect(detail.body.items[0].canCancel).toBeDefined();
+    expect(detail.body.items[0].canMarkManualSent).toBeDefined();
+  });
+
+  it('cancels queued ordinary messages without deleting history and races with claim/manual-sent', async () => {
+    const salon = await createOwnerBypassingRegisterThrottle('cancel-q');
+    const customer = await createCustomer(salon.token, 'Cancel');
+    const created = await request(app.getHttpServer())
+      .post(`/customers/${customer}/messages`)
+      .set('Authorization', `Bearer ${salon.token}`)
+      .set('Idempotency-Key', `cancel-${randomUUID()}`)
+      .send({ text: 'حذف از صف' })
+      .expect(201);
+
+    const cancelled = await request(app.getHttpServer())
+      .post(`/admin/message-queue/${created.body.id}/cancel`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(201);
+    expect(cancelled.body.status).toBe('CANCELLED');
+    expect(cancelled.body.canCancel).toBe(false);
+    expect(cancelled.body.executionState).toBe('CANCELLED');
+
+    const replay = await request(app.getHttpServer())
+      .post(`/admin/message-queue/${created.body.id}/cancel`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(201);
+    expect(replay.body.status).toBe('CANCELLED');
+
+    const persisted = await prisma.client.messageRequest.findFirst({
+      where: { id: created.body.id },
+    });
+    expect(persisted?.status).toBe('CANCELLED');
+    expect(persisted?.messageText).toBe('حذف از صف');
+
+    const salonView = await request(app.getHttpServer())
+      .get(`/messages/${created.body.id}`)
+      .set('Authorization', `Bearer ${salon.token}`)
+      .expect(200);
+    expect(salonView.body.status).toBe('CANCELLED');
+
+    await request(app.getHttpServer())
+      .post(`/admin/message-queue/${created.body.id}/select-manual`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(409);
+    await request(app.getHttpServer())
+      .post(`/admin/message-queue/${created.body.id}/mark-manual-sent`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(409);
+
+    const sentCustomer = await createCustomer(salon.token, 'SentCancel');
+    const toSend = await request(app.getHttpServer())
+      .post(`/customers/${sentCustomer}/messages`)
+      .set('Authorization', `Bearer ${salon.token}`)
+      .set('Idempotency-Key', `sent-cancel-${randomUUID()}`)
+      .send({ text: 'ارسال شده' })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post(`/admin/message-queue/${toSend.body.id}/mark-manual-sent`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(201);
+    await request(app.getHttpServer())
+      .post(`/admin/message-queue/${toSend.body.id}/cancel`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(409);
+
+    const raceCustomer = await createCustomer(salon.token, 'Race');
+    const raced = await request(app.getHttpServer())
+      .post(`/customers/${raceCustomer}/messages`)
+      .set('Authorization', `Bearer ${salon.token}`)
+      .set('Idempotency-Key', `race-${randomUUID()}`)
+      .send({ text: 'مسابقه' })
+      .expect(201);
+    const racedResults = await Promise.all([
+      request(app.getHttpServer())
+        .post(`/admin/message-queue/${raced.body.id}/cancel`)
+        .set('Authorization', `Bearer ${adminToken}`),
+      request(app.getHttpServer())
+        .post(`/admin/message-queue/${raced.body.id}/select-manual`)
+        .set('Authorization', `Bearer ${adminToken}`),
+    ]);
+    const racedStatuses = racedResults.map((res) => res.status).sort();
+    expect(racedStatuses).toEqual([201, 409]);
+    const afterRace = await prisma.client.messageRequest.findFirstOrThrow({
+      where: { id: raced.body.id },
+    });
+    expect(['CANCELLED', 'DISPATCHED']).toContain(afterRace.status);
+    if (afterRace.status === 'CANCELLED') {
+      expect(
+        await prisma.client.messageDelivery.count({ where: { messageRequestId: raced.body.id } }),
+      ).toBe(0);
+    }
+
+    const manualCustomer = await createCustomer(salon.token, 'ManualRace');
+    const manual = await request(app.getHttpServer())
+      .post(`/customers/${manualCustomer}/messages`)
+      .set('Authorization', `Bearer ${salon.token}`)
+      .set('Idempotency-Key', `manual-race-${randomUUID()}`)
+      .send({ text: 'دستی' })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post(`/admin/message-queue/${manual.body.id}/select-manual`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(201);
+    const manualRace = await Promise.all([
+      request(app.getHttpServer())
+        .post(`/admin/message-queue/${manual.body.id}/cancel`)
+        .set('Authorization', `Bearer ${adminToken}`),
+      request(app.getHttpServer())
+        .post(`/admin/message-queue/${manual.body.id}/mark-manual-sent`)
+        .set('Authorization', `Bearer ${adminToken}`),
+    ]);
+    expect(manualRace.map((res) => res.status).sort()).toEqual([201, 409]);
+    const afterManual = await prisma.client.messageRequest.findFirstOrThrow({
+      where: { id: manual.body.id },
+    });
+    expect(['CANCELLED', 'SENT']).toContain(afterManual.status);
+    const delivery = await prisma.client.messageDelivery.findFirst({
+      where: { messageRequestId: manual.body.id },
+    });
+    if (afterManual.status === 'SENT') {
+      expect(delivery?.status).toBe('SENT');
+      expect(delivery?.submittedAt).toBeTruthy();
+    } else {
+      expect(delivery?.status).not.toBe('SENT');
+    }
+
+    const folder = await request(app.getHttpServer())
+      .get(`/admin/messages/normal/salons/${salon.tenantId}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    expect(folder.body.cancelledMessageCount).toBeGreaterThanOrEqual(1);
+    expect(folder.body.totalMessageCount).toBeGreaterThanOrEqual(folder.body.sentMessageCount);
   });
 });

@@ -1,4 +1,4 @@
-import { parseMoneyString, formatMoneyString, multiplyMoney, addMoney } from './money';
+import { parseMoneyString, formatMoneyString, multiplyMoney, addMoney, assertStoredMoneyRange } from './money';
 
 describe('money strings', () => {
   it('parses and formats two-decimal IRR amounts without floating point', () => {
@@ -16,5 +16,19 @@ describe('money strings', () => {
     expect(() => parseMoneyString('1.001')).toThrow();
     expect(() => parseMoneyString('01.00')).toThrow();
     expect(() => parseMoneyString('')).toThrow();
+    for (const value of [' 1.00', '1.00 ', '1e3', 'NaN', 'Infinity', '1,000.00', '+1.00', '1.001']) {
+      expect(() => parseMoneyString(value)).toThrow();
+    }
+    expect(() => parseMoneyString(1 as unknown as string)).toThrow();
+  });
+
+  it('accepts the NUMERIC(19,2) maximum and rejects one cent more or aggregate overflow', () => {
+    expect(parseMoneyString('99999999999999999.99')).toBe(9_999_999_999_999_999_999n);
+    expect(() => parseMoneyString('100000000000000000.00')).toThrow();
+    expect(() => multiplyMoney(parseMoneyString('50000000000000000.00'), 2)).toThrow();
+    expect(() => assertStoredMoneyRange(addMoney([
+      parseMoneyString('50000000000000000.00'),
+      parseMoneyString('50000000000000000.00'),
+    ]))).toThrow();
   });
 });

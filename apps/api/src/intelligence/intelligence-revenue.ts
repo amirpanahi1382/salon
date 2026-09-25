@@ -53,7 +53,7 @@ export async function loadCustomerRevenue(
   customerId: string,
   asOf: Date,
 ): Promise<CustomerRevenueMetrics> {
-  const map = await loadCustomerRevenueMap(prisma, tenantId, asOf, customerId);
+  const map = await loadCustomerRevenueMap(prisma, tenantId, asOf, [customerId]);
   return map.get(customerId) ?? emptyRevenueMetrics();
 }
 
@@ -61,8 +61,9 @@ export async function loadCustomerRevenueMap(
   prisma: PrismaClient,
   tenantId: string,
   asOf: Date,
-  customerId?: string,
+  customerIds?: readonly string[],
 ): Promise<Map<string, CustomerRevenueMetrics>> {
+  if (customerIds?.length === 0) return new Map();
   const monthStart = utcMonthStart(asOf);
   const nextMonth = utcNextMonth(monthStart);
   const previousStart = utcMonthStart(new Date(Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth() - 1, 1)));
@@ -86,7 +87,7 @@ export async function loadCustomerRevenueMap(
       )::int AS "previousUtcMonthTransactionCount"
     FROM transactions
     WHERE salon_id = ${tenantId}::uuid
-      ${customerId ? Prisma.sql`AND customer_id = ${customerId}::uuid` : Prisma.sql``}
+      ${customerIds ? Prisma.sql`AND customer_id = ANY(ARRAY[${Prisma.join(customerIds)}]::uuid[])` : Prisma.empty}
     GROUP BY customer_id
   `);
 

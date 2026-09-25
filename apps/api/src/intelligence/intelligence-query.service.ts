@@ -9,7 +9,8 @@ import {
 import { PrismaService } from '../infrastructure/database/prisma.service';
 import {
   loadCustomerBehaviorRow,
-  loadSalonBehaviorRows,
+  loadSalonBehaviorChunk,
+  loadRankedSalonBehaviorChunk,
   type SalonBehaviorRow,
 } from './intelligence-aggregates';
 
@@ -27,8 +28,17 @@ export class IntelligenceQueryService {
     return loadCustomerBehaviorRow(this.prisma.client, tenantId, customerId, asOf);
   }
 
-  loadSalon(tenantId: string, asOf = utcNow()) {
-    return loadSalonBehaviorRows(this.prisma.client, tenantId, asOf);
+  loadSalonChunk(tenantId: string, asOf: Date, after?: { createdAt: Date; id: string }) {
+    return loadSalonBehaviorChunk(this.prisma.client, tenantId, asOf, after);
+  }
+
+  loadRankedChunk(
+    tenantId: string,
+    asOf: Date,
+    noVisitRank: -1 | 0,
+    after?: { days: number; id: string; inclusive?: boolean },
+  ) {
+    return loadRankedSalonBehaviorChunk(this.prisma.client, tenantId, asOf, noVisitRank, after);
   }
 
   filterByStatus(status: CustomerStatus | undefined, current: CustomerStatus): boolean {

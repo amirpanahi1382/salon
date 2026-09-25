@@ -34,11 +34,9 @@ class OpenAgreedReturnsSection extends ConsumerWidget {
         const SizedBox(height: AppTokens.space8),
         Text(AppStrings.openAgreedReturnsHint, style: theme.textTheme.bodySmall),
         const SizedBox(height: AppTokens.space12),
-        if (error != null)
-          ErrorView(message: friendlyError(error!), onRetry: onRetry)
-        else if (loading && items.isEmpty)
+        if (loading && items.isEmpty)
           const LoadingSkeleton(lines: 2)
-        else if (items.isEmpty)
+        else if (items.isEmpty && error == null)
           const EmptyStateView(
             title: AppStrings.openAgreedReturnsEmpty,
             body: AppStrings.openAgreedReturnsEmpty,
@@ -82,6 +80,8 @@ class OpenAgreedReturnsSection extends ConsumerWidget {
                 ),
               ),
             ),
+        if (error != null)
+          ErrorView(message: friendlyError(error!), onRetry: onRetry),
       ],
     );
   }

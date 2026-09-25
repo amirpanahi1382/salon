@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsOptional, IsString, MaxLength, MinLength, ValidateIf } from 'class-validator';
 
 export class CreateCustomerDto {
   @ApiProperty()
@@ -25,14 +25,14 @@ export class CreateCustomerDto {
 
 export class UpdateCustomerDto {
   @ApiPropertyOptional()
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined)
   @IsString()
   @MinLength(1)
   @MaxLength(80)
   firstName?: string;
 
   @ApiPropertyOptional()
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined)
   @IsString()
   @MaxLength(80)
   lastName?: string;
@@ -41,7 +41,7 @@ export class UpdateCustomerDto {
     example: '09121111111',
     description: 'Exactly 11 digits starting with 09. Alternative formats are rejected.',
   })
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined)
   @IsString()
   @MinLength(1)
   @MaxLength(32)

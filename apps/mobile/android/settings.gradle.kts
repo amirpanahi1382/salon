@@ -11,9 +11,22 @@ pluginManagement {
     includeBuild("$flutterSdkPath/packages/flutter_tools/gradle")
 
     repositories {
+        mavenLocal()
+        maven { url = uri("https://maven.aliyun.com/repository/google") }
         google()
         mavenCentral()
         gradlePluginPortal()
+    }
+
+    // Flutter 3.47 templates AGP 9.1.0. Google Maven is unreachable here, so
+    // plugin markers resolve from mavenLocal. Plugin subprojects that request
+    // older AGP (e.g. 8.5.2) must use the same cached 9.1.0 artifact.
+    resolutionStrategy {
+        eachPlugin {
+            if (requested.id.id.startsWith("com.android.")) {
+                useModule("com.android.tools.build:gradle:9.1.0")
+            }
+        }
     }
 }
 
@@ -24,3 +37,25 @@ plugins {
 }
 
 include(":app")
+
+gradle.beforeProject {
+    buildscript.repositories.apply {
+        mavenLocal()
+        maven { url = uri("https://maven.aliyun.com/repository/google") }
+        google()
+        mavenCentral()
+    }
+    buildscript.configurations.configureEach {
+        resolutionStrategy.eachDependency {
+            if (requested.group == "com.android.tools.build" && requested.name == "gradle") {
+                useVersion("9.1.0")
+            }
+        }
+    }
+    repositories {
+        mavenLocal()
+        maven { url = uri("https://maven.aliyun.com/repository/google") }
+        google()
+        mavenCentral()
+    }
+}

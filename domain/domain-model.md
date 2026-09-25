@@ -103,16 +103,18 @@ Salon- or platform-admin-recorded fact that a customer agreed to return after an
 
 Owner recovery outcomes (`GET /recovery/outcomes/summary`) are **derived on read** for one Asia/Tehran Saturday business week. Headline money is COMPLETED ledger amounts on chronology-eligible COMMITMENT_BACKED Visits only. OBSERVED remains a separate count. Live derivation; voids and unlinks change later reads. Not a campaign, booking, or incremental-revenue ledger.
 
+Return evidence is selected across the full tenant/customer history before a reporting week or cursor is applied. For example, a customer message submitted September 9 and Visits on September 10 and 15 select the September 10 Visit as that delivery's **first** OBSERVED return. If the September 10 Visit is explicitly linked to a valid ReturnCommitment, it is shown as COMMITMENT_BACKED in effective evidence; the delivery is not reassigned to September 15. A different eligible message submitted September 14 can select the September 15 Visit. Each Visit first chooses its last-touch eligible SENT non-VIP delivery by `submittedAt` (strictly before `visitedAt`), then delivery `createdAt` and id; visits compete for that delivery by `visitedAt`, then Visit `createdAt` and id. An unlinked later Visit is still a candidate, but cannot reuse a delivery already claimed by an earlier Visit. Effective evidence validates same-salon request/delivery/commitment/Visit customer provenance; an inconsistent historical link remains a stored fact without creating COMMITMENT_BACKED evidence or suppressing another customer's OBSERVED evidence. A provenance-valid explicit link whose Visit predates its own source submission is not COMMITMENT_BACKED, but still suppresses OBSERVED classification of that same Visit under the existing visit-level precedence rule. A later unlinked Visit can settle operational follow-up, but does not fill `actualVisitId`. Completed Visit transactions supply associated revenue once per selected Visit; VOIDED transactions do not. This is association, not causation, and does not rewrite Visit, Transaction, MessageRequest, or MessageDelivery history.
+
 ### VIP
 
-- **VipTargetList** — platform list; `PENDING` → `ACTIVE`/`INACTIVE`; `IN_USE` while reserved.
-- **VipTargetContact** — name+phone on a list; not a Customer.
+- **VipTargetList** — platform list; `PENDING` → `ACTIVE`/`INACTIVE`; `IN_USE` while reserved. Optional canonical `regionCode` (`01`–`14`); null means not regional inventory.
+- **VipTargetContact** — phone on a list (optional display name); not a Customer. Phone is the identity.
 - **VipSalonEntitlement** — admin-granted product flag; revoke is a timestamp, not a delete of history.
-- **VipRequest** — salon request: count 30/50/100, geographic range **text** (template only), statuses `AWAITING_SAMPLE_WORK` | `SUBMITTED` | `MANUAL_QUEUED` | `BALE_NOT_IMPLEMENTED` | `CANCELLED`. Reservation TTL 30 minutes.
+- **VipRequest** — salon request: count 30/50/100, geographic range **text** (template only), statuses `AWAITING_SAMPLE_WORK` | `SUBMITTED` | `MANUAL_QUEUED` | `BALE_NOT_IMPLEMENTED` | `CANCELLED`. Reservation TTL 30 minutes. Admin outreach folders group existing VipRequests by `salonId` on read; they are not a new persisted entity.
 - **VipRequestRecipient** — immutable snapshot including generated Persian template.
 - **VipSampleWork** — metadata; bytes in MinIO.
 
-Quota: 100 contacts per salon per rolling 14 days, excluding `CANCELLED`.
+Quota: 500 contacts per salon per rolling 7 days (temporary product limit), excluding `CANCELLED`.
 
 ### OutboxEvent / AuditLog / IdempotencyRecord
 
@@ -131,7 +133,7 @@ Defined in `@salon/shared` (`thresholds.ts`, `retention.ts`, `revenue.ts`):
 - Revenue from `COMPLETED` transactions only; `REVENUE_DECLINE` when UTC-month trend is `DECREASING` (previous month must have ≥ 1 completed tx).
 - `HIGH_VALUE` not implemented.
 
-Salon-wide intelligence scans at most **5,000** newest customers (`INTELLIGENCE_CUSTOMER_CAP`).
+Salon-wide intelligence summary covers every tenant Customer through bounded internal batches. Derived segment and opportunity lists globally rank the eligible tenant population before returning cursor pages; an older customer remains eligible regardless of creation order. Results are live derivations, not stored Customer attributes or a snapshot across concurrent writes.
 
 ---
 

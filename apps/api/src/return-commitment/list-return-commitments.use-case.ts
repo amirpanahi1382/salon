@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import { NotFoundError, ValidationError, type AuthenticatedPrincipal } from '@salon/shared';
+import { NotFoundError, type AuthenticatedPrincipal } from '@salon/shared';
 import { CustomerRepository } from '../customer/customer.repository';
-import { decodeCursor, encodeCursor, toListPage } from '../infrastructure/http/list-page';
+import { decodeCursor, encodeCursor, parseCursorInstant, parseCursorUuid, toListPage } from '../infrastructure/http/list-page';
 import { RETURN_COMMITMENT_LIST_LIMIT, resolveUpcomingWindow } from './upcoming-window';
 import type {
   ListOpenReturnCommitmentsQueryDto,
@@ -100,9 +100,5 @@ function parseExpectedAtCursor(cursor?: string) {
   if (!parts) {
     return undefined;
   }
-  const expectedAt = new Date(parts[0]!);
-  if (Number.isNaN(expectedAt.getTime())) {
-    throw new ValidationError('Invalid cursor');
-  }
-  return { expectedAt, id: parts[1]! };
+  return { expectedAt: parseCursorInstant(parts[0]!), id: parseCursorUuid(parts[1]!) };
 }

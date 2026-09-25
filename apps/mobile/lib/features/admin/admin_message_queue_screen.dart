@@ -10,6 +10,7 @@ import '../../shared/jalali.dart';
 import '../../shared/labels.dart';
 import '../../shared/models/models.dart';
 import '../recovery/return_commitment_form.dart';
+import 'admin_messaging_shell.dart';
 
 class AdminMessageQueueScreen extends ConsumerStatefulWidget {
   const AdminMessageQueueScreen({super.key});
@@ -20,6 +21,141 @@ class AdminMessageQueueScreen extends ConsumerStatefulWidget {
 }
 
 class _AdminMessageQueueScreenState extends ConsumerState<AdminMessageQueueScreen> {
+  List<AdminNormalSalonFolder> _items = [];
+  String? _cursor;
+  bool _loading = true;
+  Object? _error;
+  final _search = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load({bool more = false}) async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final page = await ref.read(adminMessageRepositoryProvider).listNormalSalons(
+            cursor: more ? _cursor : null,
+            query: _search.text,
+          );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _items = more ? [..._items, ...page.items] : page.items;
+        _cursor = page.nextCursor;
+        _loading = false;
+      });
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _error = error;
+        _loading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AdminMessagingShell(
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text(AppStrings.adminQueueTitle),
+          actions: [
+            IconButton(
+              onPressed: () => ref.read(authControllerProvider.notifier).logout(),
+              icon: const Icon(Icons.logout),
+            ),
+          ],
+        ),
+        body: _error != null
+            ? ErrorView(message: friendlyError(_error!), onRetry: _load)
+            : _loading && _items.isEmpty
+                ? const LoadingSkeleton(lines: 6)
+                : ListView(
+                    padding: const EdgeInsets.all(AppTokens.space16),
+                    children: [
+                      TextField(
+                        controller: _search,
+                        textInputAction: TextInputAction.search,
+                        decoration: const InputDecoration(
+                          labelText: AppStrings.adminFolderSearch,
+                        ),
+                        onSubmitted: (_) => _load(),
+                      ),
+                      const SizedBox(height: AppTokens.space16),
+                      if (_items.isEmpty)
+                        const EmptyStateView(
+                          title: AppStrings.adminNormalFoldersEmpty,
+                          body: AppStrings.adminNormalFoldersEmpty,
+                        )
+                      else
+                        for (final folder in _items) ...[
+                          AppSurface(
+                            onTap: () => context.push(
+                              '/admin/messages/salons/${folder.salonId}',
+                            ),
+                            padding: const EdgeInsets.all(AppTokens.space12),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Text(
+                                  folder.salonName,
+                                  style: Theme.of(context).textTheme.titleMedium,
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  AppStrings.sentOfTotal(
+                                    folder.sentMessageCount,
+                                    folder.totalMessageCount,
+                                  ),
+                                ),
+                                Text(
+                                  '${AppStrings.vipOutreachPending} ${folder.pendingMessageCount} · ${AppStrings.vipOutreachFailed} ${folder.failedMessageCount}',
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: AppTokens.space8),
+                        ],
+                      if (_cursor != null)
+                        TextButton(
+                          onPressed: _loading ? null : () => _load(more: true),
+                          child: const Text(AppStrings.vipOutreachLoadMore),
+                        ),
+                    ],
+                  ),
+      ),
+    );
+  }
+}
+
+class AdminNormalSalonFolderScreen extends ConsumerStatefulWidget {
+  const AdminNormalSalonFolderScreen({super.key, required this.salonId});
+
+  final String salonId;
+
+  @override
+  ConsumerState<AdminNormalSalonFolderScreen> createState() =>
+      _AdminNormalSalonFolderScreenState();
+}
+
+class _AdminNormalSalonFolderScreenState
+    extends ConsumerState<AdminNormalSalonFolderScreen> {
+  AdminNormalSalonFolderDetail? _folder;
   List<AdminQueueItem> _items = [];
   String? _cursor;
   bool _loading = true;
@@ -37,15 +173,17 @@ class _AdminMessageQueueScreenState extends ConsumerState<AdminMessageQueueScree
       _error = null;
     });
     try {
-      final page = await ref.read(adminMessageRepositoryProvider).list(
+      final page = await ref.read(adminMessageRepositoryProvider).getNormalSalon(
+            widget.salonId,
             cursor: more ? _cursor : null,
           );
       if (!mounted) {
         return;
       }
       setState(() {
-        _items = more ? [..._items, ...page.items] : page.items;
-        _cursor = page.nextCursor;
+        _folder = page;
+        _items = more ? [..._items, ...page.page.items] : page.page.items;
+        _cursor = page.page.nextCursor;
         _loading = false;
       });
     } catch (error) {
@@ -71,50 +209,68 @@ class _AdminMessageQueueScreenState extends ConsumerState<AdminMessageQueueScree
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text(AppStrings.adminQueueTitle),
-        actions: [
-          TextButton(
-            onPressed: () => context.go('/admin/vip'),
-            child: const Text(AppStrings.vipAdminNav),
-          ),
-          IconButton(
-            onPressed: () => ref.read(authControllerProvider.notifier).logout(),
-            icon: const Icon(Icons.logout),
-          ),
-        ],
-      ),
-      body: _error != null
-          ? ErrorView(message: friendlyError(_error!), onRetry: _load)
-          : _items.isEmpty && !_loading
-              ? const EmptyStateView(
-                  title: AppStrings.adminQueueEmpty,
-                  body: AppStrings.adminQueueEmpty,
-                )
-              : ListView.separated(
-                  padding: const EdgeInsets.all(AppTokens.space16),
-                  itemCount: _items.length + (_cursor != null ? 1 : 0),
-                  separatorBuilder: (_, _) => const SizedBox(height: 12),
-                  itemBuilder: (context, index) {
-                    if (index >= _items.length) {
-                      return TextButton(
-                        onPressed: _loading ? null : () => _load(more: true),
-                        child: const Text('موارد بیشتر'),
-                      );
-                    }
-                    final item = _items[index];
-                    return ListTile(
-                      tileColor: AppTokens.surface,
-                      title: Text(item.customerName),
-                      subtitle: Text(
-                        '${item.salonName}\n${messageStatusLabel(item.status)}',
+    final folder = _folder;
+    return AdminMessagingShell(
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text(folder?.salonName ?? AppStrings.adminQueueTitle),
+        ),
+        body: _error != null
+            ? ErrorView(message: friendlyError(_error!), onRetry: _load)
+            : _loading && folder == null
+                ? const LoadingSkeleton(lines: 6)
+                : _items.isEmpty
+                    ? const EmptyStateView(
+                        title: AppStrings.adminNormalFolderEmpty,
+                        body: AppStrings.adminNormalFolderEmpty,
+                      )
+                    : ListView(
+                        padding: const EdgeInsets.all(AppTokens.space16),
+                        children: [
+                          if (folder != null) ...[
+                            Text(
+                              AppStrings.sentOfTotal(
+                                folder.sentMessageCount,
+                                folder.totalMessageCount,
+                              ),
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                            const SizedBox(height: AppTokens.space12),
+                          ],
+                          for (final item in _items) ...[
+                            AppSurface(
+                              onTap: () => _open(item),
+                              padding: const EdgeInsets.all(AppTokens.space12),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  Text(
+                                    item.customerName,
+                                    style: Theme.of(context).textTheme.titleMedium,
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(messageStatusLabel(item.status)),
+                                  if (item.canCancel)
+                                    Align(
+                                      alignment: Alignment.centerLeft,
+                                      child: Text(
+                                        AppStrings.adminRemoveFromQueue,
+                                        style: TextStyle(color: AppTokens.accent),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: AppTokens.space8),
+                          ],
+                          if (_cursor != null)
+                            TextButton(
+                              onPressed: _loading ? null : () => _load(more: true),
+                              child: const Text(AppStrings.vipOutreachLoadMore),
+                            ),
+                        ],
                       ),
-                      isThreeLine: true,
-                      onTap: () => _open(item),
-                    );
-                  },
-                ),
+      ),
     );
   }
 }
@@ -181,6 +337,30 @@ class _AdminMessageDetailSheetState extends ConsumerState<AdminMessageDetailShee
         _busy = false;
       });
     }
+  }
+
+  Future<void> _cancel(AdminQueueItem item) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text(AppStrings.adminRemoveFromQueue),
+        content: const Text(AppStrings.adminRemoveFromQueueBody),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text(AppStrings.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text(AppStrings.adminRemoveFromQueue),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) {
+      return;
+    }
+    await _run(() => ref.read(adminMessageRepositoryProvider).cancel(item.id));
   }
 
   Future<void> _recordCommitment(AdminQueueItem item) async {
@@ -308,31 +488,23 @@ class _AdminMessageDetailSheetState extends ConsumerState<AdminMessageDetailShee
                       onPressed: _busy ? null : () => _recordCommitment(item),
                     ),
                   ],
-                  if (item.mode == null) ...[
-                    if (item.vipRequestId == null) ...[
-                      const SizedBox(height: 8),
-                      AppButton(
-                        label: AppStrings.selectBale,
-                        loading: _busy,
-                        onPressed: () => _run(
-                          () =>
-                              ref.read(adminMessageRepositoryProvider).selectBale(item.id),
-                        ),
-                      ),
-                    ],
+                  if (item.mode == null &&
+                      item.vipRequestId == null &&
+                      item.status == 'QUEUED') ...[
                     const SizedBox(height: 8),
                     AppButton(
-                      label: AppStrings.selectManual,
+                      label: AppStrings.selectBale,
                       loading: _busy,
                       onPressed: () => _run(
-                        () => ref.read(adminMessageRepositoryProvider).selectManual(item.id),
+                        () =>
+                            ref.read(adminMessageRepositoryProvider).selectBale(item.id),
                       ),
                     ),
                   ],
-                  if (item.mode == 'MANUAL' && item.status != 'SENT') ...[
+                  if (item.canMarkManualSent) ...[
                     const SizedBox(height: 8),
                     AppButton(
-                      label: AppStrings.markManualSent,
+                      label: AppStrings.adminMarkRecipientSent,
                       loading: _busy,
                       onPressed: () => _run(
                         () =>
@@ -340,8 +512,17 @@ class _AdminMessageDetailSheetState extends ConsumerState<AdminMessageDetailShee
                       ),
                     ),
                   ],
+                  if (item.canCancel) ...[
+                    const SizedBox(height: 8),
+                    AppButton(
+                      label: AppStrings.adminRemoveFromQueue,
+                      loading: _busy,
+                      onPressed: _busy ? null : () => _cancel(item),
+                    ),
+                  ],
                   if (item.mode == 'BALE' &&
                       item.status != 'SENT' &&
+                      item.status != 'CANCELLED' &&
                       item.vipRequestId == null) ...[
                     const SizedBox(height: 8),
                     AppButton(

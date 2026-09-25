@@ -22,7 +22,6 @@ export const MESSAGE_REQUEST_SELECT = {
   createdAt: true,
   updatedAt: true,
   recipientPhoneNumber: true,
-  customer: { select: { phoneNumber: true } },
   deliveries: {
     select: {
       id: true,
@@ -49,7 +48,6 @@ export type MessageRequestRow = {
   createdAt: Date;
   updatedAt: Date;
   recipientPhoneNumber: string | null;
-  customer: { phoneNumber: string } | null;
   deliveries: Array<{
     id: string;
     mode: MessageDeliveryMode;
@@ -76,9 +74,7 @@ export function toMessageResponse(
     mode: delivery?.mode ?? null,
     provider: delivery?.provider ?? null,
     body: row.messageText,
-    destinationHint: maskCustomerPhone(
-      row.customer?.phoneNumber ?? row.recipientPhoneNumber ?? '',
-    ),
+    destinationHint: maskCustomerPhone(row.recipientPhoneNumber ?? ''),
     failureCode: (delivery?.failureCode as MessageFailureCode | null) ?? null,
     createdBy: row.createdByUserId,
     createdAt: row.createdAt.toISOString(),

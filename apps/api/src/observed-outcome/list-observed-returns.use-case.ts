@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { NotFoundError, ValidationError, type AuthenticatedPrincipal } from '@salon/shared';
 import { CustomerRepository } from '../customer/customer.repository';
-import { decodeCursor, encodeCursor, toListPage } from '../infrastructure/http/list-page';
+import { decodeCursor, encodeCursor, parseCursorInstant, parseCursorUuid, toListPage } from '../infrastructure/http/list-page';
 import { toObservedReturnResponse } from './observed-outcome.mapper';
 import { ObservedOutcomeRepository } from './observed-outcome.repository';
 import type { ListObservedReturnsQueryDto } from './observed-outcome.dto';
@@ -65,10 +65,9 @@ export function parseObservedReturnCursor(cursor?: string) {
   if (!parts) {
     return undefined;
   }
-  const visitedAt = new Date(parts[0]!);
-  const createdAt = new Date(parts[1]!);
-  if (Number.isNaN(visitedAt.getTime()) || Number.isNaN(createdAt.getTime())) {
-    throw new ValidationError('Invalid cursor');
-  }
-  return { id: parts[2]!, visitedAt, createdAt };
+  return {
+    id: parseCursorUuid(parts[2]!),
+    visitedAt: parseCursorInstant(parts[0]!),
+    createdAt: parseCursorInstant(parts[1]!),
+  };
 }

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { createPrismaClient } from './client';
-import { claimOutboxEvents } from './outbox';
+import { claimOutboxEvents, markOutboxDeadLetter, markOutboxProcessed, markOutboxRetry } from './outbox';
 
 const databaseUrl = process.env.DATABASE_URL;
 
@@ -62,6 +62,20 @@ describeIfDb('claimOutboxEvents', () => {
     expect(claimed.some((row) => row.id === id)).toBe(true);
     const row = claimed.find((item) => item.id === id);
     expect(row?.attemptCount).toBe(2);
+    expect(row?.claimGeneration).toBe(1n);
+
+    await prisma.outboxEvent.update({
+      where: { id },
+      data: { lockedUntil: new Date(Date.now() - 1_000) },
+    });
+    const reclaimed = await claimOutboxEvents(prisma, 1, 30_000);
+    const newOwner = reclaimed.find((item) => item.id === id);
+    expect(newOwner?.claimGeneration).toBe(2n);
+    expect(await markOutboxProcessed(prisma, id, row!.claimGeneration)).toBe(false);
+    expect(await markOutboxRetry(prisma, id, row!.claimGeneration, 'stale', 0)).toBe(false);
+    expect(await markOutboxDeadLetter(prisma, id, row!.claimGeneration, 'stale')).toBe(false);
+    expect(await markOutboxProcessed(prisma, id, newOwner!.claimGeneration)).toBe(true);
+    expect((await claimOutboxEvents(prisma, 1, 30_000)).some((item) => item.id === id)).toBe(false);
 
     await prisma.outboxEvent.delete({ where: { id } });
   });

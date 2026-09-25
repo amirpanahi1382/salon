@@ -4,8 +4,9 @@ import {
   wholeDaysBetween,
   type CustomerBehavior,
 } from '@salon/shared';
-import { INTELLIGENCE_CUSTOMER_CAP } from '../customer/customer.repository';
 import type { CustomerIdentity } from './intelligence.mapper';
+
+export const INTELLIGENCE_SCAN_BATCH_SIZE = 500;
 
 export type SalonBehaviorRow = {
   customer: CustomerIdentity;
@@ -42,27 +43,38 @@ export function behaviorFromAggregate(
   };
 }
 
-export async function loadSalonBehaviorRows(
+type CreatedCursor = { createdAt: Date; id: string };
+type RankCursor = { days: number; id: string; inclusive?: boolean };
+
+type MetricRow = {
+  customerId: string;
+  visitCount: number;
+  firstVisitAt: Date | null;
+  lastVisitAt: Date | null;
+  averageReturnIntervalDays: number | null;
+};
+
+/** Summary traversal follows the indexed customer creation order, not a result rank. */
+export async function loadSalonBehaviorChunk(
   prisma: PrismaClient,
   tenantId: string,
   asOf: Date,
-): Promise<{ truncated: boolean; rows: SalonBehaviorRow[] }> {
+  after?: CreatedCursor,
+): Promise<{ rows: SalonBehaviorRow[]; next: CreatedCursor | undefined }> {
   const customers = await prisma.customer.findMany({
-    where: { salonId: tenantId },
-    select: { id: true, firstName: true, lastName: true },
+    where: {
+      salonId: tenantId,
+      ...(after ? { OR: [
+        { createdAt: { lt: after.createdAt } },
+        { createdAt: after.createdAt, id: { lt: after.id } },
+      ] } : {}),
+    },
+    select: { id: true, firstName: true, lastName: true, createdAt: true },
     orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-    take: INTELLIGENCE_CUSTOMER_CAP + 1,
+    take: INTELLIGENCE_SCAN_BATCH_SIZE,
   });
-  const truncated = customers.length > INTELLIGENCE_CUSTOMER_CAP;
-  const selected = truncated ? customers.slice(0, INTELLIGENCE_CUSTOMER_CAP) : customers;
-
-  type MetricRow = {
-    customerId: string;
-    visitCount: number;
-    firstVisitAt: Date | null;
-    lastVisitAt: Date | null;
-    averageReturnIntervalDays: number | null;
-  };
+  if (customers.length === 0) return { rows: [], next: undefined };
+  const ids = customers.map((customer) => customer.id);
 
   const metrics = await prisma.$queryRaw<MetricRow[]>(Prisma.sql`
     SELECT
@@ -88,14 +100,15 @@ export async function loadSalonBehaviorRows(
         ) AS gap_days
       FROM visits
       WHERE salon_id = ${tenantId}::uuid
+        AND customer_id = ANY(ARRAY[${Prisma.join(ids)}]::uuid[])
     ) gaps
     GROUP BY customer_id
   `);
 
   const byCustomer = new Map(metrics.map((row) => [row.customerId, row]));
   return {
-    truncated,
-    rows: selected.map((customer) => {
+    next: { createdAt: customers.at(-1)!.createdAt, id: customers.at(-1)!.id },
+    rows: customers.map((customer) => {
       const metric = byCustomer.get(customer.id);
       return {
         customer,
@@ -111,6 +124,63 @@ export async function loadSalonBehaviorRows(
       };
     }),
   };
+}
+
+type RankedAggregateRow = AggregateRow & { rankDays: number };
+
+/** SQL ranks the full tenant population; only one bounded batch crosses into Node. */
+export async function loadRankedSalonBehaviorChunk(
+  prisma: PrismaClient,
+  tenantId: string,
+  asOf: Date,
+  noVisitRank: -1 | 0,
+  after?: RankCursor,
+): Promise<Array<SalonBehaviorRow & { rankDays: number }>> {
+  const rows = await prisma.$queryRaw<RankedAggregateRow[]>(Prisma.sql`
+    WITH gaps AS (
+      SELECT customer_id, visited_at,
+        FLOOR(EXTRACT(EPOCH FROM (
+          visited_at - LAG(visited_at) OVER (
+            PARTITION BY customer_id ORDER BY visited_at ASC, id ASC
+          )
+        )) / 86400) AS gap_days
+      FROM visits
+      WHERE salon_id = ${tenantId}::uuid
+    ), metrics AS (
+      SELECT customer_id, COUNT(*)::int AS visit_count,
+        MIN(visited_at) AS first_visit_at,
+        MAX(visited_at) AS last_visit_at,
+        CASE WHEN COUNT(*) FILTER (WHERE gap_days > 0) = 0 THEN NULL
+          ELSE GREATEST(1, ROUND((AVG(gap_days) FILTER (WHERE gap_days > 0))::numeric))::int
+        END AS average_return_interval_days
+      FROM gaps GROUP BY customer_id
+    ), ranked AS (
+      SELECT c.id, c.first_name AS "firstName", c.last_name AS "lastName",
+        COALESCE(m.visit_count, 0)::int AS "visitCount",
+        m.first_visit_at AS "firstVisitAt", m.last_visit_at AS "lastVisitAt",
+        m.average_return_interval_days AS "averageReturnIntervalDays",
+        CASE WHEN m.last_visit_at IS NULL THEN ${noVisitRank}::int
+          ELSE GREATEST(0, FLOOR(EXTRACT(EPOCH FROM (
+            ${asOf}::timestamptz - m.last_visit_at
+          )) / 86400))::int END AS "rankDays"
+      FROM customers c
+      LEFT JOIN metrics m ON m.customer_id = c.id
+      WHERE c.salon_id = ${tenantId}::uuid
+    )
+    SELECT * FROM ranked
+    WHERE true
+      ${after ? Prisma.sql`AND (
+        "rankDays" < ${after.days}::int OR
+        ("rankDays" = ${after.days}::int AND id ${after.inclusive ? Prisma.sql`<=` : Prisma.sql`<`} ${after.id}::uuid)
+      )` : Prisma.empty}
+    ORDER BY "rankDays" DESC, id DESC
+    LIMIT ${INTELLIGENCE_SCAN_BATCH_SIZE}
+  `);
+  return rows.map((row) => ({
+    customer: { id: row.id, firstName: row.firstName, lastName: row.lastName },
+    behavior: behaviorFromAggregate(row, asOf),
+    rankDays: Number(row.rankDays),
+  }));
 }
 
 export async function loadCustomerBehaviorRow(

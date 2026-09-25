@@ -59,6 +59,10 @@ class ManualOutreachController extends Notifier<ManualOutreachState> {
     );
   }
 
+  void confirmSelection() {
+    state = state.copyWith(selecting: false, clearLimitMessage: true);
+  }
+
   void consumeFocus() {
     if (state.focusOutreachTab) {
       state = state.copyWith(focusOutreachTab: false);

@@ -11,7 +11,11 @@ import '../outreach/manual_outreach_selection.dart';
 import '../outreach/manual_outreach_state.dart';
 import '../outreach/outreach_message_composer.dart';
 import '../vip/salon_vip_section.dart';
-import 'opportunity_action_bar.dart';
+
+const _filterAll = 'ALL';
+const _filterSalon = 'SALON_MESSAGES';
+const _filterVip = 'VIP';
+const _filterRevenueDrop = 'REVENUE_DROP';
 
 class OpportunitiesScreen extends ConsumerStatefulWidget {
   const OpportunitiesScreen({super.key});
@@ -22,19 +26,11 @@ class OpportunitiesScreen extends ConsumerStatefulWidget {
 }
 
 class _OpportunitiesScreenState extends ConsumerState<OpportunitiesScreen> {
-  String? _type;
-  bool _outreach = false;
-  bool _vip = false;
-  List<Opportunity> _items = const [];
+  String _filter = _filterAll;
+  List<OpportunityWorkspaceRow> _items = const [];
   String? _nextCursor;
   bool _hasMore = false;
   bool _loadingMore = false;
-  List<OpportunityAction> _history = const [];
-  String? _historyCursor;
-  bool _historyHasMore = false;
-  Map<String, OpportunityAction> _openActions = const {};
-  String? _openActionsCursor;
-  bool _openActionsHasMore = false;
   Object? _error;
   bool _loading = true;
   bool _vipEntitled = false;
@@ -51,19 +47,11 @@ class _OpportunitiesScreenState extends ConsumerState<OpportunitiesScreen> {
       _error = null;
       _nextCursor = null;
       _hasMore = false;
-      _historyCursor = null;
-      _historyHasMore = false;
-      _openActionsCursor = null;
-      _openActionsHasMore = false;
     });
     try {
-      final page = await ref
-          .read(intelligenceRepositoryProvider)
-          .opportunities(type: _type);
-      final history = await ref.read(actionRepositoryProvider).list(status: 'COMPLETED');
-      final openActions = await ref
-          .read(actionRepositoryProvider)
-          .list(status: 'OPEN');
+      final page = await ref.read(opportunitiesRepositoryProvider).workspace(
+            filter: _filter,
+          );
       var entitled = false;
       try {
         entitled = (await ref.read(vipRepositoryProvider).capability()).entitled;
@@ -75,371 +63,10 @@ class _OpportunitiesScreenState extends ConsumerState<OpportunitiesScreen> {
         _items = page.items;
         _nextCursor = page.nextCursor;
         _hasMore = page.hasMore;
-        _history = history.items;
-        _historyCursor = history.nextCursor;
-        _historyHasMore = history.hasMore;
-        _openActions = {
-          for (final action in openActions.items)
-            opportunityActionKey(action.customerId, action.opportunityType):
-                action,
-        };
-        _openActionsCursor = openActions.nextCursor;
-        _openActionsHasMore = openActions.hasMore;
         _vipEntitled = entitled;
-        if (!entitled && _vip) {
-          _vip = false;
+        if (!entitled && _filter == _filterVip) {
+          _filter = _filterAll;
         }
-        _loading = false;
-      });
-    } catch (error) {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _error = error;
-        _loading = false;
-      });
-    }
-  }
-
-  Future<void> _loadMore() async {
-    if (_loading || _loadingMore) {
-      return;
-    }
-    if (_hasMore && _nextCursor != null) {
-      setState(() => _loadingMore = true);
-      try {
-        final page = await ref
-            .read(intelligenceRepositoryProvider)
-            .opportunities(type: _type, cursor: _nextCursor);
-        if (_openActionsHasMore && _openActionsCursor != null) {
-          final open = await ref
-              .read(actionRepositoryProvider)
-              .list(status: 'OPEN', cursor: _openActionsCursor);
-          _openActions = {
-            ..._openActions,
-            for (final action in open.items)
-              opportunityActionKey(action.customerId, action.opportunityType):
-                  action,
-          };
-          _openActionsCursor = open.nextCursor;
-          _openActionsHasMore = open.hasMore;
-        }
-        if (!mounted) {
-          return;
-        }
-        setState(() {
-          _items = [..._items, ...page.items];
-          _nextCursor = page.nextCursor;
-          _hasMore = page.hasMore;
-          _loadingMore = false;
-        });
-      } catch (_) {
-        if (!mounted) {
-          return;
-        }
-        setState(() => _loadingMore = false);
-      }
-      return;
-    }
-    if (_historyHasMore && _historyCursor != null) {
-      setState(() => _loadingMore = true);
-      try {
-        final history = await ref
-            .read(actionRepositoryProvider)
-            .list(status: 'COMPLETED', cursor: _historyCursor);
-        if (!mounted) {
-          return;
-        }
-        setState(() {
-          _history = [..._history, ...history.items];
-          _historyCursor = history.nextCursor;
-          _historyHasMore = history.hasMore;
-          _loadingMore = false;
-        });
-      } catch (_) {
-        if (!mounted) {
-          return;
-        }
-        setState(() => _loadingMore = false);
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final outreach = ref.watch(manualOutreachSelectionProvider);
-    final openVip = ref.watch(vipSectionOpenProvider);
-    if (outreach.focusOutreachTab && !_outreach) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) {
-          return;
-        }
-        ref.read(manualOutreachSelectionProvider.notifier).consumeFocus();
-        setState(() {
-          _outreach = true;
-          _vip = false;
-          _type = null;
-        });
-      });
-    }
-    if (openVip && !_vip) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) {
-          return;
-        }
-        ref.read(vipSectionOpenProvider.notifier).setOpen(false);
-        setState(() {
-          _vip = true;
-          _outreach = false;
-          _type = null;
-        });
-      });
-    }
-    return OpportunityActionsScope(
-      onChanged: _load,
-      child: Scaffold(
-        appBar: AppBar(title: const Text(AppStrings.opportunities)),
-        body: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(
-                AppTokens.space16,
-                AppTokens.space8,
-                AppTokens.space16,
-                AppTokens.space4,
-              ),
-              child: Wrap(
-                spacing: AppTokens.space8,
-                runSpacing: AppTokens.space8,
-                children: [
-                  _TypeFilterChip(
-                    label: AppStrings.all,
-                    selected: !_outreach && !_vip && _type == null,
-                    onSelected: () {
-                      _outreach = false;
-                      _vip = false;
-                      _type = null;
-                      _load();
-                    },
-                  ),
-                  _TypeFilterChip(
-                    label: AppStrings.sendMessageAction,
-                    selected: _outreach,
-                    onSelected: () {
-                      setState(() {
-                        _outreach = true;
-                        _vip = false;
-                        _type = null;
-                      });
-                    },
-                  ),
-                  if (_vipEntitled)
-                    _TypeFilterChip(
-                      label: AppStrings.vipSendMessage,
-                      selected: _vip,
-                      onSelected: () {
-                        setState(() {
-                          _vip = true;
-                          _outreach = false;
-                          _type = null;
-                        });
-                      },
-                    ),
-                  _TypeFilterChip(
-                    label: AppStrings.reactivation,
-                    selected: !_outreach && !_vip && _type == 'REACTIVATION',
-                    onSelected: () {
-                      _outreach = false;
-                      _vip = false;
-                      _type = 'REACTIVATION';
-                      _load();
-                    },
-                  ),
-                  _TypeFilterChip(
-                    label: AppStrings.customerReturn,
-                    selected: !_outreach && !_vip && _type == 'CUSTOMER_RETURN',
-                    onSelected: () {
-                      _outreach = false;
-                      _vip = false;
-                      _type = 'CUSTOMER_RETURN';
-                      _load();
-                    },
-                  ),
-                  _TypeFilterChip(
-                    label: AppStrings.revenueDecline,
-                    selected: !_outreach && !_vip && _type == 'REVENUE_DECLINE',
-                    onSelected: () {
-                      _outreach = false;
-                      _vip = false;
-                      _type = 'REVENUE_DECLINE';
-                      _load();
-                    },
-                  ),
-                ],
-              ),
-            ),
-            Expanded(
-              child: _vip
-                  ? const SalonVipSection()
-                  : _outreach
-                  ? const _OutreachList()
-                  : _loading
-                  ? const LoadingSkeleton(lines: 5)
-                  : _error != null
-                  ? ErrorView(message: friendlyError(_error!), onRetry: _load)
-                  : RefreshIndicator(
-                      onRefresh: _load,
-                      child: PagedNotificationListener(
-                        hasMore: _hasMore || _historyHasMore,
-                        loading: _loading || _loadingMore,
-                        onLoadMore: _loadMore,
-                        child: LayoutBuilder(
-                          builder: (context, constraints) {
-                            final extra =
-                                constraints.maxWidth > AppTokens.contentMaxWidth
-                                    ? (constraints.maxWidth -
-                                            AppTokens.contentMaxWidth) /
-                                        2
-                                    : AppTokens.space16;
-                            final pad = extra.clamp(AppTokens.space16, 80.0);
-                            return ListView.builder(
-                              primary: true,
-                              padding: EdgeInsets.fromLTRB(
-                                pad,
-                                AppTokens.space8,
-                                pad,
-                                AppTokens.space32,
-                              ),
-                              itemCount: (_items.isEmpty ? 1 : _items.length) +
-                                  (_history.isEmpty ? 0 : _history.length + 1) +
-                                  ((_hasMore || _historyHasMore) ? 1 : 0),
-                              itemBuilder: (context, index) {
-                                if (_items.isEmpty && index == 0) {
-                                  return const Padding(
-                                    padding: EdgeInsets.only(
-                                      bottom: AppTokens.space24,
-                                    ),
-                                    child: EmptyStateView(
-                                      title: AppStrings.caughtUpTitle,
-                                      body: AppStrings.caughtUpBody,
-                                      icon: Icons.check_circle_outline,
-                                      compact: true,
-                                    ),
-                                  );
-                                }
-                                if (index < _items.length) {
-                                  final item = _items[index];
-                                  return OpportunityCard(
-                                    emphasize: index == 0,
-                                    name: item.fullName,
-                                    status: item.status,
-                                    type: item.type,
-                                    reason: item.reason,
-                                    action: item.recommendedAction,
-                                    footer: OpportunityActionBar(
-                                      layout: OpportunityActionLayout.stacked,
-                                      customerId: item.customerId,
-                                      opportunityType: item.type,
-                                      customerName: item.fullName,
-                                      openAction: _openActions[
-                                          opportunityActionKey(
-                                        item.customerId,
-                                        item.type,
-                                      )],
-                                    ),
-                                    onTap: () => context.push(
-                                      '/customers/${item.customerId}',
-                                    ),
-                                  );
-                                }
-                                final historyStart =
-                                    _items.isEmpty ? 1 : _items.length;
-                                if (index == historyStart &&
-                                    _history.isNotEmpty) {
-                                  return const Padding(
-                                    padding: EdgeInsets.only(
-                                      top: AppTokens.space8,
-                                      bottom: AppTokens.space8,
-                                    ),
-                                    child: SectionHeader(
-                                      AppStrings.actionHistory,
-                                    ),
-                                  );
-                                }
-                                if (_history.isNotEmpty &&
-                                    index > historyStart &&
-                                    index <= historyStart + _history.length) {
-                                  final action =
-                                      _history[index - historyStart - 1];
-                                  return Column(
-                                    children: [
-                                      ActionHistoryTile(action: action),
-                                      const Divider(),
-                                    ],
-                                  );
-                                }
-                                return PagedFooter(loading: _loadingMore);
-                              },
-                            );
-                          },
-                        ),
-                      ),
-                    ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _OutreachList extends ConsumerStatefulWidget {
-  const _OutreachList();
-
-  @override
-  ConsumerState<_OutreachList> createState() => _OutreachListState();
-}
-
-class _OutreachListState extends ConsumerState<_OutreachList> {
-  bool _loading = true;
-  bool _loadingMore = false;
-  Object? _error;
-  String? _nextCursor;
-  bool _hasMore = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _refresh();
-  }
-
-  Future<void> _refresh() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-      _nextCursor = null;
-      _hasMore = false;
-    });
-    try {
-      final page = await ref.read(messageRepositoryProvider).listManualOutreach();
-      if (!mounted) {
-        return;
-      }
-      ref.read(manualOutreachSelectionProvider.notifier).ingestRequested([
-        for (final item in page.items)
-          OutreachCustomerRef(
-            id: item.customerId,
-            fullName: item.customerName,
-            messageRequestId: item.messageRequestId,
-            status: item.status,
-            requestedAt: item.requestedAt,
-          ),
-      ]);
-      setState(() {
-        _nextCursor = page.nextCursor;
-        _hasMore = page.hasMore;
         _loading = false;
       });
     } catch (error) {
@@ -459,27 +86,15 @@ class _OutreachListState extends ConsumerState<_OutreachList> {
     }
     setState(() => _loadingMore = true);
     try {
-      final page = await ref
-          .read(messageRepositoryProvider)
-          .listManualOutreach(cursor: _nextCursor);
+      final page = await ref.read(opportunitiesRepositoryProvider).workspace(
+            filter: _filter,
+            cursor: _nextCursor,
+          );
       if (!mounted) {
         return;
       }
-      final existing = ref.read(manualOutreachSelectionProvider).requested;
-      final seen = {for (final item in existing) item.id};
-      ref.read(manualOutreachSelectionProvider.notifier).ingestRequested([
-        ...existing,
-        for (final item in page.items)
-          if (!seen.contains(item.customerId))
-            OutreachCustomerRef(
-              id: item.customerId,
-              fullName: item.customerName,
-              messageRequestId: item.messageRequestId,
-              status: item.status,
-              requestedAt: item.requestedAt,
-            ),
-      ]);
       setState(() {
+        _items = [..._items, ...page.items];
         _nextCursor = page.nextCursor;
         _hasMore = page.hasMore;
         _loadingMore = false;
@@ -492,84 +107,307 @@ class _OutreachListState extends ConsumerState<_OutreachList> {
     }
   }
 
+  void _selectFilter(String filter) {
+    if (_filter == filter) {
+      return;
+    }
+    setState(() => _filter = filter);
+    _load();
+  }
+
+  Future<void> _openComposer(String customerId) async {
+    await openOutreachMessageComposer(
+      context: context,
+      ref: ref,
+      customerId: customerId,
+    );
+    if (mounted) {
+      await _load();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final items = ref.watch(manualOutreachSelectionProvider).inbox;
-    if (_loading && items.isEmpty) {
-      return const LoadingSkeleton(lines: 4);
+    final outreach = ref.watch(manualOutreachSelectionProvider);
+    final openVip = ref.watch(vipSectionOpenProvider);
+    if (outreach.focusOutreachTab) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) {
+          return;
+        }
+        ref.read(manualOutreachSelectionProvider.notifier).consumeFocus();
+      });
     }
-    if (_error != null && items.isEmpty) {
-      return ErrorView(message: friendlyError(_error!), onRetry: _refresh);
-    }
-    if (items.isEmpty) {
-      return const EmptyStateView(
-        title: AppStrings.outreachEmptyTitle,
-        body: AppStrings.outreachEmptyBody,
-        icon: Icons.chat_bubble_outline,
-        compact: true,
+    if (openVip) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text(AppStrings.vipSendMessage),
+          leading: IconButton(
+            icon: const Icon(Icons.close),
+            onPressed: () {
+              ref.read(vipSectionOpenProvider.notifier).setOpen(false);
+            },
+          ),
+        ),
+        body: const SalonVipSection(),
       );
     }
-    return RefreshIndicator(
-      onRefresh: _refresh,
-      child: PagedNotificationListener(
-        hasMore: _hasMore,
-        loading: _loading || _loadingMore,
-        onLoadMore: _loadMore,
-        child: ListView.separated(
-          padding: const EdgeInsets.fromLTRB(
-            AppTokens.space16,
-            AppTokens.space8,
-            AppTokens.space16,
-            AppTokens.space32,
-          ),
-          itemCount: items.length + (_hasMore ? 1 : 0),
-          separatorBuilder: (_, _) => const Divider(height: 1),
-          itemBuilder: (context, index) {
-            if (index >= items.length) {
-              return PagedFooter(loading: _loadingMore);
-            }
-            final customer = items[index];
-            final submitted = customer.submitted;
-            return IgnorePointer(
-              ignoring: submitted,
-              child: Opacity(
-                opacity: submitted ? 0.72 : 1,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: AppTokens.space8),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Text(
-                        customer.fullName,
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                              color: submitted ? AppTokens.textSecondary : null,
-                            ),
-                      ),
-                      const SizedBox(height: AppTokens.space8),
-                      if (submitted)
-                        Text(
-                          outreachLifecycleLabel(customer.status ?? 'QUEUED'),
-                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                color: AppTokens.textSecondary,
-                              ),
-                        )
-                      else
-                        FilledButton(
-                          onPressed: () => openOutreachMessageComposer(
-                            context: context,
-                            ref: ref,
-                            customerId: customer.id,
-                          ),
-                          child: const Text(AppStrings.createSuitableMessage),
-                        ),
-                    ],
-                  ),
+
+    final pending = [
+      for (final item in outreach.inbox)
+        if (!item.submitted) item,
+    ];
+    final selecting = outreach.selecting && _filter == _filterRevenueDrop;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: selecting
+            ? Text(
+                '${AppStrings.customerSelectionTitle} ${outreach.selectedCount} / ${ManualOutreachState.maxSelection}',
+              )
+            : const Text(AppStrings.opportunities),
+        actions: [
+          if (selecting)
+            TextButton(
+              onPressed: () =>
+                  ref.read(manualOutreachSelectionProvider.notifier).exitSelection(),
+              child: const Text(AppStrings.cancelSelection),
+            )
+          else if (_filter == _filterRevenueDrop)
+            TextButton(
+              onPressed: _items.isEmpty
+                  ? null
+                  : () => ref
+                      .read(manualOutreachSelectionProvider.notifier)
+                      .enterSelection(),
+              child: const Text(AppStrings.selectMultipleCustomers),
+            ),
+        ],
+      ),
+      bottomNavigationBar: selecting
+          ? SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                child: FilledButton(
+                  onPressed: outreach.selectedCount == 0
+                      ? null
+                      : () {
+                          ref
+                              .read(manualOutreachSelectionProvider.notifier)
+                              .confirmSelection();
+                        },
+                  child: const Text(AppStrings.sendMessageAction),
                 ),
               ),
-            );
-          },
-        ),
+            )
+          : null,
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppTokens.space16,
+              AppTokens.space8,
+              AppTokens.space16,
+              AppTokens.space4,
+            ),
+            child: Wrap(
+              spacing: AppTokens.space8,
+              runSpacing: AppTokens.space8,
+              children: [
+                _TypeFilterChip(
+                  label: AppStrings.all,
+                  selected: _filter == _filterAll,
+                  onSelected: () => _selectFilter(_filterAll),
+                ),
+                _TypeFilterChip(
+                  label: AppStrings.sendMessageAction,
+                  selected: _filter == _filterSalon,
+                  onSelected: () => _selectFilter(_filterSalon),
+                ),
+                if (_vipEntitled)
+                  _TypeFilterChip(
+                    label: AppStrings.vipSendMessage,
+                    selected: _filter == _filterVip,
+                    onSelected: () => _selectFilter(_filterVip),
+                  ),
+                _TypeFilterChip(
+                  label: AppStrings.revenueDecline,
+                  selected: _filter == _filterRevenueDrop,
+                  onSelected: () => _selectFilter(_filterRevenueDrop),
+                ),
+              ],
+            ),
+          ),
+          if (outreach.limitMessage != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Text(
+                outreach.limitMessage!,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+          Expanded(
+            child: _loading
+                ? const LoadingSkeleton(lines: 5)
+                : _error != null
+                ? ErrorView(message: friendlyError(_error!), onRetry: _load)
+                : RefreshIndicator(
+                    onRefresh: _load,
+                    child: PagedNotificationListener(
+                      hasMore: _hasMore,
+                      loading: _loading || _loadingMore,
+                      onLoadMore: _loadMore,
+                      child: ListView(
+                        padding: const EdgeInsets.fromLTRB(
+                          AppTokens.space16,
+                          AppTokens.space8,
+                          AppTokens.space16,
+                          AppTokens.space32,
+                        ),
+                        children: [
+                          if (pending.isNotEmpty) ...[
+                            const SectionHeader(
+                              AppStrings.workspacePendingSelectionTitle,
+                            ),
+                            for (final customer in pending)
+                              _PendingComposerTile(
+                                name: customer.fullName,
+                                onCompose: () => _openComposer(customer.id),
+                              ),
+                            const SizedBox(height: AppTokens.space16),
+                          ],
+                          if (_items.isEmpty)
+                            EmptyStateView(
+                              title: switch (_filter) {
+                                _filterSalon => AppStrings.workspaceEmptySalonTitle,
+                                _filterVip => AppStrings.workspaceEmptyVipTitle,
+                                _filterRevenueDrop =>
+                                  AppStrings.workspaceEmptyRevenueDropTitle,
+                                _ => AppStrings.workspaceEmptyAllTitle,
+                              },
+                              body: switch (_filter) {
+                                _filterSalon => AppStrings.workspaceEmptySalonBody,
+                                _filterVip => AppStrings.workspaceEmptyVipBody,
+                                _filterRevenueDrop =>
+                                  AppStrings.workspaceEmptyRevenueDropBody,
+                                _ => AppStrings.workspaceEmptyAllBody,
+                              },
+                              icon: Icons.chat_bubble_outline,
+                              compact: true,
+                            )
+                          else
+                            for (final row in _items)
+                              _WorkspaceRowTile(
+                                row: row,
+                                selecting: selecting,
+                                selected: row.customerId != null &&
+                                    outreach.isSelected(row.customerId!),
+                                onToggle: () {
+                                  if (row.customerId == null) {
+                                    return;
+                                  }
+                                  final parts = row.displayName.split(' ');
+                                  ref
+                                      .read(manualOutreachSelectionProvider.notifier)
+                                      .toggle(
+                                        Customer(
+                                          id: row.customerId!,
+                                          firstName: parts.isEmpty
+                                              ? row.displayName
+                                              : parts.first,
+                                          lastName: parts.length < 2
+                                              ? ''
+                                              : parts.sublist(1).join(' '),
+                                          phoneNumber: row.phoneNumber ?? '',
+                                          createdAt: DateTime.fromMillisecondsSinceEpoch(0),
+                                          updatedAt: DateTime.fromMillisecondsSinceEpoch(0),
+                                        ),
+                                      );
+                                },
+                                onOpenCustomer: row.customerId == null
+                                    ? null
+                                    : () => context.push(
+                                          '/customers/${row.customerId}',
+                                        ),
+                              ),
+                          if (_hasMore) PagedFooter(loading: _loadingMore),
+                        ],
+                      ),
+                    ),
+                  ),
+          ),
+        ],
       ),
+    );
+  }
+}
+
+class _PendingComposerTile extends StatelessWidget {
+  const _PendingComposerTile({
+    required this.name,
+    required this.onCompose,
+  });
+
+  final String name;
+  final VoidCallback onCompose;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppTokens.space8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(name, style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: AppTokens.space8),
+          FilledButton(
+            onPressed: onCompose,
+            child: const Text(AppStrings.createSuitableMessage),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _WorkspaceRowTile extends StatelessWidget {
+  const _WorkspaceRowTile({
+    required this.row,
+    required this.selecting,
+    required this.selected,
+    required this.onToggle,
+    this.onOpenCustomer,
+  });
+
+  final OpportunityWorkspaceRow row;
+  final bool selecting;
+  final bool selected;
+  final VoidCallback onToggle;
+  final VoidCallback? onOpenCustomer;
+
+  @override
+  Widget build(BuildContext context) {
+    final status = workspaceMessageStateLabel(row.messageState);
+    final subtitle = [
+      if (row.isVip) AppStrings.workspaceVipBadge,
+      if (status.isNotEmpty) status,
+    ].join(' · ');
+
+    if (selecting && row.customerId != null) {
+      return CheckboxListTile(
+        value: selected,
+        onChanged: (_) => onToggle(),
+        title: Text(row.displayName),
+        contentPadding: EdgeInsets.zero,
+      );
+    }
+
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      title: Text(row.displayName),
+      subtitle: subtitle.isEmpty ? null : Text(subtitle),
+      onTap: onOpenCustomer,
     );
   }
 }

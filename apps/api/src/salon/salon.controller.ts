@@ -6,6 +6,7 @@ import { Roles } from '../infrastructure/auth/roles.decorator';
 import { RolesGuard } from '../infrastructure/auth/roles.guard';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { UpdateSalonProfileDto } from './salon.dto';
+import { GetSalonOverallPerformanceUseCase } from './get-salon-overall-performance.use-case';
 import { GetSalonProfileUseCase } from './get-salon-profile.use-case';
 import { UpdateSalonProfileUseCase } from './update-salon-profile.use-case';
 
@@ -16,6 +17,7 @@ import { UpdateSalonProfileUseCase } from './update-salon-profile.use-case';
 export class SalonController {
   constructor(
     private readonly getSalonProfile: GetSalonProfileUseCase,
+    private readonly getSalonOverallPerformance: GetSalonOverallPerformanceUseCase,
     private readonly updateSalonProfile: UpdateSalonProfileUseCase,
   ) {}
 
@@ -24,6 +26,16 @@ export class SalonController {
   @ApiOperation({ summary: 'Get the authenticated salon profile' })
   getProfile(@CurrentUser() user: AuthenticatedPrincipal) {
     return this.getSalonProfile.execute(user);
+  }
+
+  @Get('overall-performance')
+  @Roles('OWNER', 'MANAGER', 'STAFF')
+  @ApiOperation({
+    summary:
+      'All-time factual salon counts: customers, SENT customer messages, SENT VIP messages, ReturnCommitments, unique message-associated returned customers, unique customers with two or more Visits. Derived on read. Not causal.',
+  })
+  overallPerformance(@CurrentUser() user: AuthenticatedPrincipal) {
+    return this.getSalonOverallPerformance.execute(user);
   }
 
   @Patch()

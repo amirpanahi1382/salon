@@ -1,5 +1,5 @@
 import { ValidationError } from '@salon/shared';
-import { decodeCursor } from '../infrastructure/http/list-page';
+import { decodeCursor, parseCursorInstant, parseCursorUuid } from '../infrastructure/http/list-page';
 
 export const CUSTOMER_ACTIVITY_TYPES = [
   'VISIT',
@@ -37,11 +37,11 @@ export function parseCustomerActivityCursor(cursor?: string): CustomerActivityCu
   if (!parts) {
     return undefined;
   }
-  const occurredAt = new Date(parts[0] ?? '');
-  const createdAt = new Date(parts[1] ?? '');
+  const occurredAt = parseCursorInstant(parts[0]!);
+  const createdAt = parseCursorInstant(parts[1]!);
   const type = parts[2] ?? '';
-  const id = parts[3] ?? '';
-  if (Number.isNaN(occurredAt.getTime()) || Number.isNaN(createdAt.getTime()) || !isCustomerActivityType(type)) {
+  const id = parseCursorUuid(parts[3]!);
+  if (!isCustomerActivityType(type)) {
     throw new ValidationError('Invalid cursor');
   }
   return { occurredAt, createdAt, type, id };

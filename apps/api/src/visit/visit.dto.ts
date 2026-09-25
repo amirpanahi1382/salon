@@ -1,7 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsISO8601, IsInt, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min } from 'class-validator';
+import { IsInt, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min, ValidateIf } from 'class-validator';
 import { TransactionResponseDto } from '../transaction/transaction.dto';
+import { IsAbsoluteInstant, IsUtcDate } from '../infrastructure/http/date-input';
 
 export class CreateVisitDto {
   @ApiProperty()
@@ -11,7 +12,7 @@ export class CreateVisitDto {
   @ApiProperty({
     description: 'When the completed visit happened (UTC ISO-8601). Must not be a future booking time.',
   })
-  @IsISO8601()
+  @IsAbsoluteInstant()
   visitedAt!: string;
 }
 
@@ -23,7 +24,7 @@ export class CompleteVisitWithSaleDto {
   @ApiProperty({
     description: 'When the completed visit happened (UTC ISO-8601). Must not be a future booking time.',
   })
-  @IsISO8601()
+  @IsAbsoluteInstant()
   visitedAt!: string;
 
   @ApiProperty()
@@ -36,7 +37,7 @@ export class CompleteVisitWithSaleDto {
   amount!: string;
 
   @ApiPropertyOptional({ example: 'IRR' })
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined)
   @IsString()
   currency?: string;
 }
@@ -71,17 +72,17 @@ export class ListVisitsQueryDto {
 
   @ApiPropertyOptional({ description: 'Calendar date YYYY-MM-DD interpreted as that UTC day' })
   @IsOptional()
-  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  @IsUtcDate()
   date?: string;
 
   @ApiPropertyOptional({ description: 'Inclusive start of a visitedAt window (ISO-8601)' })
   @IsOptional()
-  @IsISO8601()
+  @IsAbsoluteInstant()
   from?: string;
 
   @ApiPropertyOptional({ description: 'Exclusive end of a visitedAt window (ISO-8601)' })
   @IsOptional()
-  @IsISO8601()
+  @IsAbsoluteInstant()
   to?: string;
 
   @ApiPropertyOptional({ default: 200, maximum: 200 })
@@ -127,17 +128,17 @@ export class ExportVisitsQueryDto {
 
   @ApiPropertyOptional({ description: 'Calendar date YYYY-MM-DD interpreted as that UTC day' })
   @IsOptional()
-  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  @IsUtcDate()
   date?: string;
 
   @ApiPropertyOptional({ description: 'Inclusive start of a visitedAt window (ISO-8601)' })
   @IsOptional()
-  @IsISO8601()
+  @IsAbsoluteInstant()
   from?: string;
 
   @ApiPropertyOptional({ description: 'Exclusive end of a visitedAt window (ISO-8601)' })
   @IsOptional()
-  @IsISO8601()
+  @IsAbsoluteInstant()
   to?: string;
 }
 

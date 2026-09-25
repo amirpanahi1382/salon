@@ -3,6 +3,7 @@ import { Prisma } from '@salon/database';
 import {
   addMoney,
   assertCurrencyIrr,
+  assertStoredMoneyRange,
   createId,
   DOMAIN_EVENT_TYPES,
   formatMoneyString,
@@ -58,6 +59,7 @@ export class CreateTransactionUseCase {
       };
     });
     const itemsSum = addMoney(itemMinors.map((item) => item.totalMinor));
+    assertStoredMoneyRange(itemsSum);
     if (itemsSum !== amountMinor) {
       throw new ValidationError('Sum of item totals must equal the transaction amount');
     }

@@ -3,10 +3,12 @@ import { IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
 import type { ReturnCommitmentSummaryDto } from '../return-commitment/return-commitment.dto';
 import {
   MESSAGE_DELIVERY_MODES,
+  MESSAGE_EXECUTION_STATES,
   MESSAGE_FAILURE_CODES,
   MESSAGE_REQUEST_STATUSES,
   OPPORTUNITY_TYPES,
   type MessageDeliveryMode,
+  type MessageExecutionState,
   type MessageFailureCode,
   type MessageRequestStatus,
   type OpportunityType,
@@ -58,7 +60,7 @@ export class AdminMessageQueueItemDto {
   @ApiProperty()
   customerName!: string;
 
-  @ApiProperty({ description: 'Full customer phone for manual fulfillment' })
+  @ApiProperty({ description: 'Snapshotted execution phone for manual fulfillment; empty when unproven historical destination' })
   customerPhone!: string;
 
   @ApiProperty()
@@ -100,11 +102,103 @@ export class AdminMessageQueueItemDto {
   @ApiProperty({ nullable: true, type: String })
   vipRequestId!: string | null;
 
+  @ApiProperty({ enum: MESSAGE_EXECUTION_STATES })
+  executionState!: MessageExecutionState;
+
+  @ApiProperty({ description: 'True when admin may cancel this item from the active queue' })
+  canCancel!: boolean;
+
+  @ApiProperty({ description: 'True when admin may mark a manual delivery sent' })
+  canMarkManualSent!: boolean;
+
   @ApiProperty({ nullable: true, type: () => Object })
   returnCommitment!: ReturnCommitmentSummaryDto | null;
 }
 
 export class AdminMessageQueuePageDto {
+  @ApiProperty({ type: [AdminMessageQueueItemDto] })
+  items!: AdminMessageQueueItemDto[];
+
+  @ApiProperty()
+  hasMore!: boolean;
+
+  @ApiProperty({ nullable: true, type: String })
+  nextCursor!: string | null;
+}
+
+export class AdminNormalSalonFolderQueryDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(512)
+  cursor?: string;
+
+  @ApiPropertyOptional({ description: 'Optional salon-name contains match' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  q?: string;
+}
+
+export class AdminNormalSalonFolderDto {
+  @ApiProperty()
+  salonId!: string;
+
+  @ApiProperty()
+  salonName!: string;
+
+  @ApiProperty({ description: 'Historical requested total, including cancelled' })
+  totalMessageCount!: number;
+
+  @ApiProperty({ description: 'Canonical SENT deliveries with submittedAt' })
+  sentMessageCount!: number;
+
+  @ApiProperty()
+  pendingMessageCount!: number;
+
+  @ApiProperty()
+  failedMessageCount!: number;
+
+  @ApiProperty()
+  cancelledMessageCount!: number;
+
+  @ApiProperty()
+  latestActivityAt!: string;
+}
+
+export class AdminNormalSalonFolderPageDto {
+  @ApiProperty({ type: [AdminNormalSalonFolderDto] })
+  items!: AdminNormalSalonFolderDto[];
+
+  @ApiProperty()
+  hasMore!: boolean;
+
+  @ApiProperty({ nullable: true, type: String })
+  nextCursor!: string | null;
+}
+
+export class AdminNormalSalonFolderDetailDto {
+  @ApiProperty()
+  salonId!: string;
+
+  @ApiProperty()
+  salonName!: string;
+
+  @ApiProperty()
+  totalMessageCount!: number;
+
+  @ApiProperty()
+  sentMessageCount!: number;
+
+  @ApiProperty()
+  pendingMessageCount!: number;
+
+  @ApiProperty()
+  failedMessageCount!: number;
+
+  @ApiProperty()
+  cancelledMessageCount!: number;
+
   @ApiProperty({ type: [AdminMessageQueueItemDto] })
   items!: AdminMessageQueueItemDto[];
 

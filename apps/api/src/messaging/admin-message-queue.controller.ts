@@ -12,6 +12,7 @@ import {
   MarkManualMessageSentUseCase,
   RetryBaleMessageUseCase,
   SelectMessageDeliveryModeUseCase,
+  CancelAdminMessageUseCase,
 } from './admin-message.use-cases';
 
 @ApiTags('admin-message-queue')
@@ -25,6 +26,7 @@ export class AdminMessageQueueController {
     private readonly selectMode: SelectMessageDeliveryModeUseCase,
     private readonly markManualSent: MarkManualMessageSentUseCase,
     private readonly retryBale: RetryBaleMessageUseCase,
+    private readonly cancelMessage: CancelAdminMessageUseCase,
   ) {}
 
   @Get()
@@ -67,6 +69,19 @@ export class AdminMessageQueueController {
     @Param('id', UuidParam) id: string,
   ) {
     return this.markManualSent.execute(admin, id);
+  }
+
+  @Post(':id/cancel')
+  @HttpCode(201)
+  @ApiOperation({
+    summary:
+      'Remove a message from the active queue without deleting history. Allowed for QUEUED or manual PENDING only.',
+  })
+  cancel(
+    @CurrentPlatformAdmin() admin: PlatformAdminPrincipal,
+    @Param('id', UuidParam) id: string,
+  ) {
+    return this.cancelMessage.execute(admin, id);
   }
 
   @Post(':id/retry')

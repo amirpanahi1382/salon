@@ -1,5 +1,6 @@
 import {
   maskCustomerPhone,
+  messageAdminCapabilities,
   MESSAGE_BODY_MAX_LENGTH,
   messageBusinessDateKey,
   normalizeMessageBody,
@@ -47,5 +48,67 @@ describe('message business day', () => {
     expect(salonMessageStatus('DISPATCHED')).toBe('QUEUED');
     expect(salonMessageStatus('SENT')).toBe('SENT');
     expect(salonMessageStatus('FAILED')).toBe('FAILED');
+    expect(salonMessageStatus('CANCELLED')).toBe('CANCELLED');
+  });
+});
+
+describe('admin message capabilities', () => {
+  it('allows cancel and manual sent only for queued or manual-pending states', () => {
+    expect(
+      messageAdminCapabilities({
+        messageRequestStatus: 'QUEUED',
+        deliveryStatus: null,
+        deliveryMode: null,
+        submittedAt: null,
+      }),
+    ).toEqual({ executionState: 'QUEUED', canCancel: true, canMarkManualSent: true });
+    expect(
+      messageAdminCapabilities({
+        messageRequestStatus: 'DISPATCHED',
+        deliveryStatus: 'PENDING',
+        deliveryMode: 'MANUAL',
+        submittedAt: null,
+      }),
+    ).toEqual({ executionState: 'IN_PIPELINE', canCancel: true, canMarkManualSent: true });
+    expect(
+      messageAdminCapabilities({
+        messageRequestStatus: 'DISPATCHED',
+        deliveryStatus: 'PENDING',
+        deliveryMode: 'BALE',
+        submittedAt: null,
+      }).canCancel,
+    ).toBe(false);
+    expect(
+      messageAdminCapabilities({
+        messageRequestStatus: 'DISPATCHED',
+        deliveryStatus: 'PROCESSING',
+        deliveryMode: 'BALE',
+        submittedAt: null,
+      }).canMarkManualSent,
+    ).toBe(false);
+    expect(
+      messageAdminCapabilities({
+        messageRequestStatus: 'SENT',
+        deliveryStatus: 'SENT',
+        deliveryMode: 'MANUAL',
+        submittedAt: '2026-09-22T10:00:00.000Z',
+      }),
+    ).toEqual({ executionState: 'SENT', canCancel: false, canMarkManualSent: false });
+    expect(
+      messageAdminCapabilities({
+        messageRequestStatus: 'CANCELLED',
+        deliveryStatus: 'PENDING',
+        deliveryMode: 'MANUAL',
+        submittedAt: null,
+      }).executionState,
+    ).toBe('CANCELLED');
+    expect(
+      messageAdminCapabilities({
+        messageRequestStatus: null,
+        deliveryStatus: null,
+        deliveryMode: null,
+        submittedAt: null,
+      }).canMarkManualSent,
+    ).toBe(false);
   });
 });

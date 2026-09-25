@@ -170,6 +170,24 @@ export class ReturnCommitmentRepository {
             select: { id: true, customerId: true, visitedAt: true },
           });
     const visitById = new Map(visits.map((visit) => [visit.id, visit]));
+    const linkedRows = rows.filter((row) => row.actualVisitId != null);
+    const sourceDeliveries = linkedRows.length === 0
+      ? []
+      : await db.messageDelivery.findMany({
+          where: {
+            salonId: tenantId,
+            id: { in: linkedRows.map((row) => row.sourceMessageDeliveryId) },
+          },
+          select: {
+            id: true,
+            customerId: true,
+            messageRequestId: true,
+            status: true,
+            submittedAt: true,
+            messageRequest: { select: { customerId: true, vipRequestId: true } },
+          },
+        });
+    const sourceById = new Map(sourceDeliveries.map((delivery) => [delivery.id, delivery]));
     const visitIdsByCustomer = new Map<string, string[]>();
     for (const visit of visits) {
       const current = visitIdsByCustomer.get(visit.customerId) ?? [];
@@ -196,7 +214,16 @@ export class ReturnCommitmentRepository {
         return toReturnCommitmentResponse(row, null, operationallyOpen);
       }
       const visit = visitById.get(row.actualVisitId);
-      if (!visit) {
+      const source = sourceById.get(row.sourceMessageDeliveryId);
+      if (
+        !visit || !source || visit.customerId !== row.customerId ||
+        source.messageRequestId !== row.sourceMessageRequestId ||
+        source.customerId !== row.customerId ||
+        source.messageRequest.customerId !== row.customerId ||
+        source.messageRequest.vipRequestId != null ||
+        source.status !== 'SENT' || !source.submittedAt ||
+        visit.visitedAt <= source.submittedAt
+      ) {
         return toReturnCommitmentResponse(row, null, false);
       }
       return toReturnCommitmentResponse(

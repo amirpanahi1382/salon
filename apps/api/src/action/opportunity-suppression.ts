@@ -26,18 +26,22 @@ export async function findLastVisitId(
 export async function loadSuppressedOpportunityKeys(
   db: SqlClient,
   tenantId: string,
+  customerIds?: readonly string[],
 ): Promise<Set<string>> {
+  if (customerIds?.length === 0) return new Set();
   const rows = await db.$queryRaw<Array<{ customerId: string; opportunityType: string }>>(Prisma.sql`
     WITH last_visits AS (
       SELECT DISTINCT ON (customer_id) customer_id, id
       FROM visits
       WHERE salon_id = ${tenantId}::uuid
+        ${customerIds ? Prisma.sql`AND customer_id = ANY(ARRAY[${Prisma.join(customerIds)}]::uuid[])` : Prisma.empty}
       ORDER BY customer_id, visited_at DESC, created_at DESC, id DESC
     )
     SELECT a.customer_id AS "customerId", a.opportunity_type::text AS "opportunityType"
     FROM opportunity_actions a
     LEFT JOIN last_visits lv ON lv.customer_id = a.customer_id
     WHERE a.salon_id = ${tenantId}::uuid
+      ${customerIds ? Prisma.sql`AND a.customer_id = ANY(ARRAY[${Prisma.join(customerIds)}]::uuid[])` : Prisma.empty}
       AND a.status IN ('COMPLETED'::"OpportunityActionStatus", 'DISMISSED'::"OpportunityActionStatus")
       AND a.source_visit_id IS NOT DISTINCT FROM lv.id
   `);

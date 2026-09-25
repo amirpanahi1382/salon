@@ -3,15 +3,23 @@ import { ValidationError } from './errors.js';
 export const MONEY_CURRENCY_IRR = 'IRR' as const;
 
 const MONEY_PATTERN = /^(0|[1-9]\d*)(\.\d{1,2})?$/;
+export const MAX_STORED_MONEY_MINOR = 9_999_999_999_999_999_999n;
+
+export function assertStoredMoneyRange(minorUnits: bigint): bigint {
+  if (minorUnits < 0n || minorUnits > MAX_STORED_MONEY_MINOR) {
+    throw new ValidationError('amount exceeds NUMERIC(19,2) bounds');
+  }
+  return minorUnits;
+}
 
 /** Parse an API money string into minor units (1/100 of IRR). Rejects JS numbers. */
 export function parseMoneyString(value: string): bigint {
-  if (typeof value !== 'string' || !MONEY_PATTERN.test(value.trim())) {
+  if (typeof value !== 'string' || !MONEY_PATTERN.test(value)) {
     throw new ValidationError('amount must be a non-negative decimal string with at most 2 fraction digits');
   }
-  const [whole = '0', fraction = ''] = value.trim().split('.');
+  const [whole = '0', fraction = ''] = value.split('.');
   const frac = `${fraction}00`.slice(0, 2);
-  return BigInt(whole) * 100n + BigInt(frac);
+  return assertStoredMoneyRange(BigInt(whole) * 100n + BigInt(frac));
 }
 
 export function formatMoneyString(minorUnits: bigint): string {
@@ -27,7 +35,7 @@ export function multiplyMoney(unitMinor: bigint, quantity: number): bigint {
   if (!Number.isInteger(quantity) || quantity < 1 || quantity > 9_999) {
     throw new ValidationError('quantity must be an integer from 1 to 9999');
   }
-  return unitMinor * BigInt(quantity);
+  return assertStoredMoneyRange(unitMinor * BigInt(quantity));
 }
 
 export function addMoney(values: bigint[]): bigint {

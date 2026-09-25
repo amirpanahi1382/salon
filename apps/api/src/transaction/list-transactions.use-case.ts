@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { NotFoundError, ValidationError, type AuthenticatedPrincipal } from '@salon/shared';
 import { CustomerRepository } from '../customer/customer.repository';
-import { decodeCursor, encodeCursor, toListPage } from '../infrastructure/http/list-page';
+import { decodeCursor, encodeCursor, parseCursorInstant, parseCursorUuid, toListPage } from '../infrastructure/http/list-page';
 import { parseVisitDateFilter, parseVisitInstantRange } from '../visit/visited-at';
 import type { ListTransactionsQueryDto } from './transaction.dto';
 import { toTransactionResponse } from './transaction.mapper';
@@ -36,10 +36,7 @@ export class ListTransactionsUseCase {
       to = range.to;
     }
     const parts = decodeCursor(query.cursor, 2);
-    const cursor = parts ? { occurredAt: new Date(parts[0]!), id: parts[1]! } : undefined;
-    if (cursor && Number.isNaN(cursor.occurredAt.getTime())) {
-      throw new ValidationError('Invalid cursor');
-    }
+    const cursor = parts ? { occurredAt: parseCursorInstant(parts[0]!), id: parseCursorUuid(parts[1]!) } : undefined;
     const limit = query.limit ?? TRANSACTION_LIST_LIMIT;
     const rows = await this.transactions.list(principal.tenantId, {
       customerId: query.customerId,

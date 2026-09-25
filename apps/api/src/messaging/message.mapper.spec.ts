@@ -14,8 +14,7 @@ describe('toMessageResponse', () => {
       requestedAt: new Date('2026-09-09T00:00:00.000Z'),
       createdAt: new Date('2026-09-09T00:00:00.000Z'),
       updatedAt: new Date('2026-09-09T00:00:00.000Z'),
-      customer: { phoneNumber: '09121111111' },
-      recipientPhoneNumber: null,
+      recipientPhoneNumber: '09121111111',
       deliveries: [],
     };
     const dto = toMessageResponse(row);
@@ -39,8 +38,7 @@ describe('toMessageResponse', () => {
       requestedAt: new Date('2026-09-09T00:00:00.000Z'),
       createdAt: new Date('2026-09-09T00:00:00.000Z'),
       updatedAt: new Date('2026-09-09T00:00:00.000Z'),
-      customer: { phoneNumber: '09121111111' },
-      recipientPhoneNumber: null,
+      recipientPhoneNumber: '09121111111',
       deliveries: [],
     };
     const dto = toMessageResponse(row);
@@ -61,7 +59,6 @@ describe('toMessageResponse', () => {
       requestedAt: new Date('2026-09-09T00:00:00.000Z'),
       createdAt: new Date('2026-09-09T00:00:00.000Z'),
       updatedAt: new Date('2026-09-09T00:00:00.000Z'),
-      customer: null,
       recipientPhoneNumber: '09121111111',
       deliveries: [],
     };

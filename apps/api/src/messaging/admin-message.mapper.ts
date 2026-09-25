@@ -4,6 +4,7 @@ import {
   type MessageFailureCode,
   type MessageRequestStatus,
   type OpportunityType,
+  messageAdminCapabilities,
 } from '@salon/shared';
 import type { AppConfig } from '@salon/config';
 import type { ReturnCommitmentSummaryDto } from '../return-commitment/return-commitment.dto';
@@ -22,7 +23,7 @@ export const ADMIN_MESSAGE_SELECT = {
   recipientDisplayName: true,
   recipientPhoneNumber: true,
   salon: { select: { name: true } },
-  customer: { select: { firstName: true, lastName: true, phoneNumber: true } },
+  customer: { select: { firstName: true, lastName: true } },
   deliveries: {
     select: {
       id: true,
@@ -50,7 +51,7 @@ export type AdminMessageRow = {
   recipientDisplayName: string | null;
   recipientPhoneNumber: string | null;
   salon: { name: string };
-  customer: { firstName: string; lastName: string; phoneNumber: string } | null;
+  customer: { firstName: string; lastName: string } | null;
   deliveries: Array<{
     id: string;
     mode: MessageDeliveryMode;
@@ -62,22 +63,35 @@ export type AdminMessageRow = {
   }>;
 };
 
+function vipRecipientDisplayName(row: Pick<AdminMessageRow, 'recipientDisplayName' | 'vipRequestId'>): string {
+  const name = row.recipientDisplayName?.trim() ?? '';
+  if (name) {
+    return name;
+  }
+  return row.vipRequestId ? 'بدون نام' : '';
+}
+
 export function toAdminMessageItem(
   row: AdminMessageRow,
   config: AppConfig,
   returnCommitment: ReturnCommitmentSummaryDto | null = null,
 ): AdminMessageQueueItemDto {
   const delivery = row.deliveries[0];
+  const capabilities = messageAdminCapabilities({
+    messageRequestStatus: row.status,
+    deliveryStatus: delivery?.status ?? null,
+    deliveryMode: delivery?.mode ?? null,
+    submittedAt: delivery?.submittedAt ?? null,
+  });
   return {
     id: row.id,
     salonId: row.salonId,
     salonName: row.salon.name,
     customerId: row.customerId,
-    customerName:
-      row.customer
-        ? `${row.customer.firstName} ${row.customer.lastName}`.trim()
-        : (row.recipientDisplayName ?? ''),
-    customerPhone: row.customer?.phoneNumber ?? row.recipientPhoneNumber ?? '',
+    customerName: row.customer
+      ? `${row.customer.firstName} ${row.customer.lastName}`.trim()
+      : vipRecipientDisplayName(row),
+    customerPhone: row.recipientPhoneNumber ?? '',
     messageText: row.messageText,
     opportunityType: row.opportunityType,
     requestedAt: row.requestedAt.toISOString(),
@@ -91,6 +105,9 @@ export function toAdminMessageItem(
     failedAt: delivery?.failedAt?.toISOString() ?? null,
     providerReady: getBaleSafirSettings(config) !== null,
     vipRequestId: row.vipRequestId,
+    executionState: capabilities.executionState,
+    canCancel: capabilities.canCancel,
+    canMarkManualSent: Boolean(row.recipientPhoneNumber) && capabilities.canMarkManualSent,
     returnCommitment,
   };
 }

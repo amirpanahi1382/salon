@@ -4,6 +4,7 @@ import {
   createId,
   DOMAIN_EVENT_TYPES,
   MessageDailyLimitError,
+  isUsableCustomerPhone,
   NotFoundError,
   messageBusinessDateValue,
   normalizeMessageBody,
@@ -89,6 +90,10 @@ export class SendManualOutreachMessageUseCase {
           throw new NotFoundError('Customer not found');
         }
 
+        const destination = await this.messages.lockCustomerDestination(tx, principal.tenantId, customerId);
+        if (!destination) throw new NotFoundError('Customer not found');
+        if (!isUsableCustomerPhone(destination)) throw new ValidationError('Customer phone is invalid');
+
         const inserted = await this.messages.insertEnforceableIfAbsent(tx, {
           id: requestId,
           salonId: principal.tenantId,
@@ -96,6 +101,7 @@ export class SendManualOutreachMessageUseCase {
           actionId: null,
           createdByUserId: principal.userId,
           opportunityType: null,
+          recipientPhoneNumber: destination,
           messageText: body,
           requestedAt: now,
           messageBusinessDate: messageBusinessDateValue(now),

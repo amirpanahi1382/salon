@@ -5,6 +5,7 @@ import {
   Headers,
   HttpCode,
   Param,
+  Query,
   Post,
   StreamableFile,
   UploadedFile,
@@ -22,13 +23,14 @@ import { RolesGuard } from '../infrastructure/auth/roles.guard';
 import { requireIdempotencyKey } from '../infrastructure/http/idempotency';
 import { UuidParam } from '../infrastructure/http/uuid-param';
 import { VIP_SAMPLE_WORK_FIELD, VIP_SAMPLE_WORK_MAX_BYTES } from './vip.constants';
-import { CreateVipRequestDto } from './vip.dto';
+import { CreateVipRequestDto, SalonVipListsQueryDto } from './vip.dto';
 import {
   CreateVipRequestUseCase,
   DownloadVipSampleWorkUseCase,
   GetSalonVipRequestUseCase,
   GetVipCapabilityUseCase,
   ListActiveVipListsUseCase,
+  ListVipRegionsUseCase,
   SubmitVipRequestUseCase,
   UploadVipSampleWorkUseCase,
 } from './vip.use-cases';
@@ -41,6 +43,7 @@ import {
 export class SalonVipController {
   constructor(
     private readonly capability: GetVipCapabilityUseCase,
+    private readonly regions: ListVipRegionsUseCase,
     private readonly lists: ListActiveVipListsUseCase,
     private readonly createRequest: CreateVipRequestUseCase,
     private readonly getRequest: GetSalonVipRequestUseCase,
@@ -50,21 +53,27 @@ export class SalonVipController {
   ) {}
 
   @Get('capability')
-  @ApiOperation({ summary: 'VIP entitlement, remaining 14-day quota, and current request' })
+  @ApiOperation({ summary: 'VIP entitlement, remaining rolling-window quota, and current request' })
   getCapability(@CurrentUser() user: AuthenticatedPrincipal) {
     return this.capability.execute(user);
   }
 
+  @Get('regions')
+  @ApiOperation({ summary: 'Canonical 14-region VIP inventory with available ACTIVE list counts' })
+  listRegions(@CurrentUser() user: AuthenticatedPrincipal) {
+    return this.regions.execute(user);
+  }
+
   @Get('lists')
-  @ApiOperation({ summary: 'Active VIP target lists available for reservation' })
-  list(@CurrentUser() user: AuthenticatedPrincipal) {
-    return this.lists.execute(user);
+  @ApiOperation({ summary: 'Active VIP target lists for one canonical region' })
+  list(@CurrentUser() user: AuthenticatedPrincipal, @Query() query: SalonVipListsQueryDto) {
+    return this.lists.execute(user, query.regionCode);
   }
 
   @Post('requests')
   @HttpCode(201)
   @ApiHeader({ name: 'Idempotency-Key', required: true })
-  @ApiOperation({ summary: 'Reserve one ACTIVE VIP list and consume rolling 14-day quota' })
+  @ApiOperation({ summary: 'Reserve one ACTIVE VIP list and consume rolling-window quota' })
   create(
     @CurrentUser() user: AuthenticatedPrincipal,
     @Body() body: CreateVipRequestDto,

@@ -157,9 +157,7 @@ export class IntelligenceSummaryResponseDto {
   @ApiProperty()
   frequent!: number;
 
-  @ApiProperty({
-    description: 'True when the salon has more customers than the intelligence scan cap',
-  })
+  @ApiProperty({ description: 'Compatibility field; complete salon-wide summary always returns false' })
   hasMore!: boolean;
 
   @ApiProperty({ example: 'IRR' })

@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/state/providers.dart';
+import '../../core/state/cursor_page_state.dart';
+import '../../core/theme/app_tokens.dart';
 import '../../core/widgets/app_widgets.dart';
 import '../../shared/jalali.dart';
 import '../../shared/jalali_date_picker.dart';
@@ -134,16 +136,6 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
                       .read(manualOutreachSelectionProvider.notifier)
                       .enterSelection(),
               child: const Text(AppStrings.selectMultipleCustomers),
-            ),
-            IconButton(
-              tooltip: AppStrings.importFromExcel,
-              onPressed: () async {
-                final imported = await context.push<bool>('/customers/import');
-                if (imported == true) {
-                  _load();
-                }
-              },
-              icon: const Icon(Icons.upload_file_outlined),
             ),
           ],
         ],
@@ -511,6 +503,28 @@ class _CustomerFormScreenState extends ConsumerState<CustomerFormScreen> {
                     onPressed: _save,
                     loading: _loading,
                   ),
+                  if (_isCreate) ...[
+                    const SizedBox(height: 12),
+                    FilledButton(
+                      key: const Key('import-customers-from-excel'),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppTokens.success,
+                        foregroundColor: AppTokens.textPrimary,
+                      ),
+                      onPressed: () async {
+                        final imported = await context.push<bool>(
+                          '/customers/import',
+                        );
+                        if (!context.mounted) {
+                          return;
+                        }
+                        if (imported == true) {
+                          context.pop(true);
+                        }
+                      },
+                      child: const Text(AppStrings.importCustomersViaExcel),
+                    ),
+                  ],
                 ],
               ),
       ),
@@ -539,13 +553,22 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
   String? _activityCursor;
   bool _activityHasMore = false;
   bool _loadingMoreActivity = false;
-  List<MessageDelivery> _messages = const [];
-  List<ReturnCommitment> _commitments = const [];
-  List<ObservedReturn> _observedReturns = const [];
-  bool _messagesLoaded = false;
+  late final CursorPageState<MessageDelivery> _messagesPage = CursorPageState(
+    keyOf: (item) => item.id, changed: () { if (mounted) setState(() {}); },
+  );
+  late final CursorPageState<ReturnCommitment> _commitmentsPage = CursorPageState(
+    keyOf: (item) => item.id, changed: () { if (mounted) setState(() {}); },
+  );
+  late final CursorPageState<ObservedReturn> _observedPage = CursorPageState(
+    keyOf: (item) => item.visitId, changed: () { if (mounted) setState(() {}); },
+  );
+  List<MessageDelivery> get _messages => _messagesPage.items;
+  List<ReturnCommitment> get _commitments => _commitmentsPage.items;
+  List<ObservedReturn> get _observedReturns => _observedPage.items;
   Map<String, OpportunityAction> _openActions = const {};
   Object? _error;
   bool _loading = true;
+  int _loadGeneration = 0;
 
   @override
   void initState() {
@@ -553,10 +576,19 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
     _load();
   }
 
+  @override
+  void didUpdateWidget(covariant CustomerDetailScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.customerId != widget.customerId) _load();
+  }
+
   Future<void> _load() async {
+    final generation = ++_loadGeneration;
     setState(() {
       _loading = true;
       _error = null;
+      _customer = null;
+      _intelligence = null;
     });
     try {
       final customer = await ref
@@ -574,7 +606,7 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
       final openActions = await ref
           .read(actionRepositoryProvider)
           .listForCustomer(widget.customerId, status: 'OPEN');
-      if (!mounted) {
+      if (!mounted || generation != _loadGeneration) {
         return;
       }
       setState(() {
@@ -595,7 +627,7 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
       });
       await _loadRecovery();
     } catch (error) {
-      if (!mounted) {
+      if (!mounted || generation != _loadGeneration) {
         return;
       }
       setState(() {
@@ -662,41 +694,20 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
   }
 
   Future<void> _loadRecovery() async {
-    List<MessageDelivery> messages = _messages;
-    var messagesLoaded = _messagesLoaded;
-    List<ReturnCommitment> commitments = _commitments;
-    List<ObservedReturn> observed = _observedReturns;
-    try {
-      final page = await ref
-          .read(messageRepositoryProvider)
-          .listForCustomer(widget.customerId);
-      messages = page.items;
-      messagesLoaded = true;
-    } catch (_) {
-      messagesLoaded = false;
-    }
-    try {
-      final page = await ref
-          .read(returnCommitmentRepositoryProvider)
-          .listForCustomer(widget.customerId);
-      commitments = page.items;
-    } catch (_) {}
-    try {
-      final page = await ref
-          .read(returnCommitmentRepositoryProvider)
-          .listObservedReturns(widget.customerId);
-      observed = page.items;
-    } catch (_) {}
-    if (!mounted) {
-      return;
-    }
-    setState(() {
-      _messages = messages;
-      _messagesLoaded = messagesLoaded;
-      _commitments = commitments;
-      _observedReturns = observed;
-    });
+    _messagesPage.reset();
+    _commitmentsPage.reset();
+    _observedPage.reset();
+    await Future.wait([_loadMoreMessages(), _loadMoreCommitments(), _loadMoreObserved()]);
   }
+
+  Future<void> _loadMoreMessages() => _messagesPage.load((cursor) =>
+      ref.read(messageRepositoryProvider).listForCustomer(widget.customerId, cursor: cursor));
+
+  Future<void> _loadMoreCommitments() => _commitmentsPage.load((cursor) =>
+      ref.read(returnCommitmentRepositoryProvider).listForCustomer(widget.customerId, cursor: cursor));
+
+  Future<void> _loadMoreObserved() => _observedPage.load((cursor) =>
+      ref.read(returnCommitmentRepositoryProvider).listObservedReturns(widget.customerId, cursor: cursor));
 
   Future<void> _recordCommitment(MessageDelivery message) async {
     final saved = await showReturnCommitmentForm(
@@ -816,7 +827,7 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
       for (final row in _commitments)
         if (row.commitmentBackedReturn != null) row,
     ];
-    final observed = observedReturnsWithoutCommitmentWins(
+    final observed = _commitmentsPage.hasMore ? <ObservedReturn>[] : observedReturnsWithoutCommitmentWins(
       observed: _observedReturns,
       commitments: _commitments,
     );
@@ -932,7 +943,7 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
   }
 
   List<Widget> _messageHistory(BuildContext context) {
-    if (!_messagesLoaded && _messages.isEmpty) {
+    if ((_messagesPage.loading || _messagesPage.error != null) && _messages.isEmpty) {
       return const [];
     }
     return [
@@ -979,6 +990,21 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
           ),
       const SizedBox(height: 8),
     ];
+  }
+
+  Widget _recoveryPageControl<T>(
+    CursorPageState<T> page,
+    Future<void> Function() load,
+    String label,
+  ) {
+    if (page.error != null) {
+      return ErrorView(message: friendlyError(page.error!), onRetry: load);
+    }
+    if (page.loading) return const Center(child: CircularProgressIndicator());
+    if (page.hasMore) {
+      return TextButton(onPressed: load, child: Text(label));
+    }
+    return const SizedBox.shrink();
   }
 
   @override
@@ -1176,12 +1202,22 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
             ..._outcomeCards(context),
             ..._agreedReturnCards(context),
             ..._messageHistory(context),
+            _recoveryPageControl(
+              _commitmentsPage, _loadMoreCommitments, AppStrings.loadMoreAgreedReturns,
+            ),
+            if (_commitmentsPage.hasMore && _observedReturns.isNotEmpty)
+              const Text(AppStrings.observedPendingCommitments),
+            _recoveryPageControl(
+              _observedPage, _loadMoreObserved, AppStrings.loadMoreObservedReturns,
+            ),
+            _recoveryPageControl(
+              _messagesPage, _loadMoreMessages, AppStrings.loadMoreMessages,
+            ),
             Builder(
               builder: (context) {
                 final visibleActivity = [
                   for (final item in _activity)
-                    if (item.type != 'VISIT' &&
-                        !(_messagesLoaded && item.type == 'MANUAL_MESSAGE'))
+                    if (item.type != 'VISIT')
                       item,
                 ];
                 if (visibleActivity.isEmpty && !_activityHasMore) {
@@ -1594,4 +1630,3 @@ class _VipCountSheet extends StatelessWidget {
     );
   }
 }
-

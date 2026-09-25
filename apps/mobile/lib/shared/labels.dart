@@ -65,7 +65,7 @@ class AppStrings {
   static const recommendationNote =
       'ارسال پیام فقط با تصمیم شما انجام می‌شود و به‌معنای اقدام انجام‌شده نیست.';
   static const sendBaleMessage = 'ارسال پیام در بله';
-  static const selectMultipleCustomers = 'انتخاب چند مشتری';
+  static const selectMultipleCustomers = 'انتخاب چند مشتری برای ارسال پیام';
   static const cancelSelection = 'لغو انتخاب';
   static const sendMessageAction = 'ارسال پیام';
   static const createSuitableMessage = 'ایجاد پیام مناسب';
@@ -98,7 +98,18 @@ class AppStrings {
   static const messageDailyLimit =
       'برای این مشتری امروز قبلاً پیام ثبت شده است.';
   static const platformAdminLogin = 'ورود مدیر پلتفرم';
-  static const adminQueueTitle = 'صف ارسال پیام';
+  static const adminQueueTitle = 'ارسال پیام عادی';
+  static const adminVipMessagingTitle = 'ارسال پیام VIP';
+  static const adminMessagingNav = 'پیام‌ها';
+  static const adminFolderSearch = 'جستجوی نام سالن';
+  static const adminNormalFoldersEmpty = 'هنوز پیام عادی در صف نیست.';
+  static const adminNormalFolderEmpty = 'برای این سالن پیام عادی ثبت نشده.';
+  static const adminRemoveFromQueue = 'حذف از صف';
+  static const adminRemoveFromQueueBody =
+      'این پیام از صف ارسال فعال خارج می‌شود. سابقه آن پاک نمی‌شود.';
+  static const adminCancelled = 'لغو شده';
+  static const adminMarkRecipientSent = 'ارسال دستی شد';
+  static const adminVipLists = 'لیست‌های VIP';
   static const adminManualSend = 'ارسال دستی';
   static const copyMessage = 'کپی پیام';
   static const markManualSent = 'علامت‌گذاری به عنوان ارسال‌شده';
@@ -139,7 +150,7 @@ class AppStrings {
       'زمان مراجعهٔ واقعی را ثبت کنید. این همان زمان توافق‌شده نیست.';
   static const agreedAtLabel = 'توافق شده';
   static const actualVisitLabel = 'مراجعه واقعی';
-  static const recoveryOutcomesTitle = 'نتیجه پیگیری‌ها';
+  static const recoveryOutcomesTitle = 'نتیجه ارسال پیام‌ها';
   static const recoveryOutcomesHint =
       'این خلاصه ثبت‌های هفته انتخاب‌شده است؛ دلیل مراجعه را مشخص نمی‌کند.';
   static const recoverySentFollowUps = 'پیگیری ارسال‌شده';
@@ -152,7 +163,14 @@ class AppStrings {
   static const recoveryOutcomesEmpty = 'در این هفته هنوز موردی ثبت نشده.';
   static const recoveryPreviousWeek = 'هفته قبل';
   static const recoveryCurrentWeek = 'هفته جاری';
-  static const recoveryOutcomesOpen = 'دیدن نتیجه پیگیری‌ها';
+  static const recoveryOutcomesOpen = 'دیدن نتیجه ارسال پیام‌ها';
+  static const overallPerformanceTitle = 'عملکرد کلی';
+  static const metricSalonCustomers = 'مشتریان سالن';
+  static const metricSalonCustomerSentMessages = 'پیام ارسال شده مشتریان سالن';
+  static const metricVipSentMessages = 'پیام ارسال شده VIP';
+  static const metricAgreedReturns = 'وقت توافق شده';
+  static const metricMessageAssociatedReturns = 'مشتری برگشتی توسط پیام';
+  static const metricReturningSalonCustomers = 'مشتری برگشتی سالن';
   static const recoveryDrillDownHint = 'فهرست مراجعه‌ها';
   static const recoveryCommitmentBackedTitle = 'بازگشت ثبت‌شده پس از پیگیری';
   static const recoveryCommitmentBackedBody =
@@ -194,12 +212,51 @@ class AppStrings {
   static const outreachStatusDispatched = 'ارسال به اجرا';
   static const outreachStatusSent = 'ارسال شد';
   static const outreachStatusFailed = 'ارسال ناموفق';
+  static const workspaceMessageSent = 'ارسال شده';
+  static const workspaceMessageAgreed =
+      'ارسال شده — زمان مراجعه توافق شده';
+  static const workspaceMessageReturned = 'ارسال شده — مراجعه ثبت شده';
+  static const workspaceEmptyAllTitle = 'هنوز پیام ارسالی ثبت نشده.';
+  static const workspaceEmptyAllBody =
+      'وقتی برای مشتری یا مخاطب VIP پیام در صف قرار بگیرد، اینجا دیده می‌شود.';
+  static const workspaceEmptySalonTitle = 'هنوز پیام مشتری سالن ثبت نشده.';
+  static const workspaceEmptySalonBody =
+      'پس از ایجاد پیام از مشتریان یا افت درآمد، وضعیت ارسال اینجا می‌آید.';
+  static const workspaceEmptyVipTitle = 'هنوز پیام VIP ثبت نشده.';
+  static const workspaceEmptyVipBody =
+      'فقط پیام‌هایی که از مسیر VIP وارد صف ارسال شده‌اند اینجا هستند.';
+  static const workspaceEmptyRevenueDropTitle =
+      'مشتری‌ای با افت مراجعه در این بازه نیست.';
+  static const workspaceEmptyRevenueDropBody =
+      'مشتریانی که ماه قبل مراجعه داشته‌اند و این ماه هنوز مراجعه نکرده‌اند اینجا می‌آیند.';
+  static const workspaceVipBadge = 'VIP';
+  static const workspacePendingSelectionTitle = 'مشتریان انتخاب‌شده برای ارسال';
   static const logout = 'خروج';
   static const retry = 'تلاش مجدد';
+  static const loadMore = 'نمایش موارد بیشتر';
+  static const loadedCount = 'موارد بارگذاری‌شده';
+  static const loadMoreAgreedReturns = 'نمایش توافق‌های بیشتر';
+  static const loadMoreObservedReturns = 'نمایش بازگشت‌های بیشتر';
+  static const loadMoreMessages = 'نمایش پیام‌های بیشتر';
+  static const observedPendingCommitments = 'برای نمایش کامل بازگشت‌های پس از پیام، ابتدا همه توافق‌ها را بارگذاری کنید.';
+  static const searchSalons = 'جستجوی سالن‌ها';
+  static const noSalons = 'سالنی پیدا نشد.';
   static const searchCustomers = 'جستجو با نام یا موبایل';
   static const addCustomer = 'افزودن مشتری';
   static const vipSendMessage = 'ارسال پیام vip';
-  static const vipAdminNav = 'ارسال VIP';
+  static const vipAdminNav = 'ارسال پیام VIP';
+  static const vipOutreachFolders = 'پوشه ارسال VIP سالن‌ها';
+  static const vipOutreachSearch = 'جستجوی نام سالن';
+  static const vipOutreachEmptyTitle = 'هنوز درخواست VIP ثبت نشده.';
+  static const vipOutreachEmptyBody =
+      'وقتی سالن VIP درخواست ارسال ثبت کند، پوشه همان سالن اینجا دیده می‌شود.';
+  static const vipOutreachLoadMore = 'موارد بعدی';
+  static const vipOutreachPending = 'در انتظار ارسال';
+  static const vipOutreachSent = 'ارسال‌شده';
+  static const vipOutreachFailed = 'ناموفق';
+  static const vipOutreachRequests = 'درخواست‌ها';
+  static const vipOutreachNoMessagesYet = 'هنوز پیامی در صف قرار نگرفته.';
+  static const vipOutreachNotQueued = 'در صف قرار نگرفته';
   static const vipInUse = 'در حال استفاده';
   static const vipActive = 'فعال';
   static const vipInactive = 'غیرفعال';
@@ -211,8 +268,18 @@ class AppStrings {
   static const vipSendBale = 'ارسال با بله';
   static const vipBaleNotImplemented = 'ارسال با بله برای VIP هنوز فعال نشده است.';
   static const vipChooseCount = 'تعداد پیام را انتخاب کنید';
+  static const vipDesiredRegion = 'محدوده موردنظر';
+  static const vipSelectRegion = 'انتخاب محدوده';
+  static const vipNoActiveListsInRegion =
+      'در حال حاضر لیست فعالی برای این محدوده وجود ندارد.';
+  static const vipListUnavailable =
+      'این لیست دیگر در دسترس نیست. فهرست محدوده به‌روز شد.';
+  static const vipContactCountLabel = 'تعداد مخاطب';
   static const vipGrant = 'فعال‌سازی VIP سالن';
   static const vipImportExcel = 'ورود لیست از اکسل';
+  static const vipImportHelp =
+      'ستون شماره تلفن الزامی است. ستون نام اختیاری است.';
+  static const vipUnnamedContact = 'بدون نام';
   static const vipRename = 'تغییر نام';
   static const vipRenameSuccess = 'نام لیست به‌روز شد.';
   static const vipRenameRequired = 'نام لیست را وارد کنید.';
@@ -224,13 +291,27 @@ class AppStrings {
   static const vipNeedsReview = 'نیازمند بررسی';
   static const vipMaxSamples = 'حداکثر ۳ نمونه کار مجاز است.';
   static const vipQuotaExhausted =
-      'سهمیه ۱۴روزه ارسال VIP تمام شده است. درخواست جدیدی نمی‌توان ثبت کرد.';
+      'سهمیه این هفته ارسال VIP تمام شده است. درخواست جدیدی نمی‌توان ثبت کرد.';
+
+  static String vipRemainingQuota(int remaining) =>
+      'سهمیه باقی‌مانده این هفته: $remaining';
+
+  static String sentOfTotal(int sent, int total) => 'ارسال شده $sent از $total';
   static const vipSampleNeeded = 'نمونه کار لازم است';
 
   static String vipSampleProgress(int count) => 'نمونه کارها: $count از 3';
+
+  static String vipListCardTitle(String name) {
+    final match = RegExp(r'^VIP-\d{2}-(\d{2})$').firstMatch(name);
+    if (match == null) {
+      return name;
+    }
+    return 'لیست ${int.parse(match.group(1)!)}';
+  }
   static const customerCreated = 'مشتری با موفقیت اضافه شد';
   static const backToCustomers = 'بازگشت به مشتریان';
   static const importFromExcel = 'ورود اطلاعات از اکسل';
+  static const importCustomersViaExcel = 'ورود مشتریان از طریق اکسل';
   static const importCustomers = 'ورود مشتریان از اکسل';
   static const importCustomersBody =
       'لیست مشتریان سالن را از اکسل وارد کنید. مشتری‌های قبلی تغییر نمی‌کنند.';
@@ -440,8 +521,11 @@ String localizeUserFacingMessage(String message) {
     'Action was already completed': 'اقدام این فرصت قبلاً ثبت شده.',
     'Export failed': 'خروجی اکسل گرفته نشد.',
     'VIP 14-day quota would be exceeded': AppStrings.vipQuotaExhausted,
+    'VIP rolling-window quota would be exceeded': AppStrings.vipQuotaExhausted,
     'At most 3 sample-work images are allowed': AppStrings.vipMaxSamples,
     'Bale is not available for VIP outreach': AppStrings.vipBaleNotImplemented,
+    'This VIP list is not available': AppStrings.vipListUnavailable,
+    'This VIP list does not have enough contacts': AppStrings.vipListUnavailable,
     'This VIP request reservation has expired':
         'مهلت رزرو این درخواست VIP تمام شده است.',
     'Service not found': 'این خدمت پیدا نشد.',
@@ -581,6 +665,8 @@ String messageStatusLabel(String status) {
       return AppStrings.messageSent;
     case 'FAILED':
       return AppStrings.messageFailed;
+    case 'CANCELLED':
+      return AppStrings.adminCancelled;
     default:
       return 'وضعیت پیام';
   }
@@ -598,8 +684,50 @@ String outreachLifecycleLabel(String status) {
       return AppStrings.outreachStatusSent;
     case 'FAILED':
       return AppStrings.outreachStatusFailed;
+    case 'CANCELLED':
+      return AppStrings.adminCancelled;
     default:
       return AppStrings.outreachStatusQueued;
+  }
+}
+
+String workspaceMessageStateLabel(String? state) {
+  switch (state) {
+    case 'QUEUED':
+      return AppStrings.outreachStatusQueued;
+    case 'IN_PIPELINE':
+      return AppStrings.outreachStatusDispatched;
+    case 'SENT':
+      return AppStrings.workspaceMessageSent;
+    case 'SENT_WITH_RETURN_COMMITMENT':
+      return AppStrings.workspaceMessageAgreed;
+    case 'SENT_WITH_RETURN_EVIDENCE':
+      return AppStrings.workspaceMessageReturned;
+    case 'FAILED':
+      return AppStrings.outreachStatusFailed;
+    case 'CANCELLED':
+      return AppStrings.adminCancelled;
+    default:
+      return '';
+  }
+}
+
+String vipOutreachExecutionLabel(String? state) {
+  switch (state) {
+    case 'NOT_YET_QUEUED':
+      return AppStrings.vipOutreachNotQueued;
+    case 'QUEUED':
+      return AppStrings.outreachStatusQueued;
+    case 'IN_PIPELINE':
+      return AppStrings.outreachStatusDispatched;
+    case 'SENT':
+      return AppStrings.outreachStatusSent;
+    case 'FAILED':
+      return AppStrings.outreachStatusFailed;
+    case 'CANCELLED':
+      return AppStrings.adminCancelled;
+    default:
+      return '';
   }
 }
 

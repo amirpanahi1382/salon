@@ -143,6 +143,7 @@ describeIfDb('Observed returns (e2e)', () => {
         createdByUserId: input.userId,
         opportunityType: input.opportunityType ?? null,
         messageText: 'سلام',
+        recipientPhoneNumber: (await prisma.client.customer.findUniqueOrThrow({ where: { id: input.customerId } })).phoneNumber,
         requestedAt: input.requestedAt,
         messageBusinessDate: new Date('2026-01-01T00:00:00.000Z'),
         countsTowardDailyLimit: false,

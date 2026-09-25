@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import type { AuthenticatedPrincipal } from '@salon/shared';
 import { CustomerRepository, CUSTOMER_LIST_LIMIT } from './customer.repository';
 import { toCustomerResponse } from './customer.mapper';
-import { decodeCursor, encodeCursor, toListPage } from '../infrastructure/http/list-page';
+import { decodeCursor, encodeCursor, parseCursorInstant, parseCursorUuid, toListPage } from '../infrastructure/http/list-page';
 
 @Injectable()
 export class ListCustomersUseCase {
@@ -13,7 +13,7 @@ export class ListCustomersUseCase {
     const rows = await this.customers.list(
       principal.tenantId,
       search,
-      parts ? { createdAt: new Date(parts[0]!), id: parts[1]! } : undefined,
+      parts ? { createdAt: parseCursorInstant(parts[0]!), id: parseCursorUuid(parts[1]!) } : undefined,
     );
     return toListPage(rows.map(toCustomerResponse), CUSTOMER_LIST_LIMIT, (item) =>
       encodeCursor([item.createdAt, item.id]),

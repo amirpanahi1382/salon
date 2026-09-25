@@ -262,6 +262,36 @@ class SalonProfile {
   }
 }
 
+class SalonOverallPerformance {
+  const SalonOverallPerformance({
+    required this.customerCount,
+    required this.salonCustomerSentMessageCount,
+    required this.vipSentMessageCount,
+    required this.agreedReturnCount,
+    required this.messageAssociatedReturnedCustomerCount,
+    required this.returningSalonCustomerCount,
+  });
+
+  final int customerCount;
+  final int salonCustomerSentMessageCount;
+  final int vipSentMessageCount;
+  final int agreedReturnCount;
+  final int messageAssociatedReturnedCustomerCount;
+  final int returningSalonCustomerCount;
+
+  factory SalonOverallPerformance.fromJson(Map<String, dynamic> json) {
+    return SalonOverallPerformance(
+      customerCount: json['customerCount'] as int,
+      salonCustomerSentMessageCount: json['salonCustomerSentMessageCount'] as int,
+      vipSentMessageCount: json['vipSentMessageCount'] as int,
+      agreedReturnCount: json['agreedReturnCount'] as int,
+      messageAssociatedReturnedCustomerCount:
+          json['messageAssociatedReturnedCustomerCount'] as int,
+      returningSalonCustomerCount: json['returningSalonCustomerCount'] as int,
+    );
+  }
+}
+
 class BehaviorMetrics {
   const BehaviorMetrics({
     required this.visitCount,
@@ -749,6 +779,9 @@ class AdminQueueItem {
     this.submittedAt,
     this.failedAt,
     this.returnCommitment,
+    this.executionState,
+    this.canCancel = false,
+    this.canMarkManualSent = false,
   });
 
   final String id;
@@ -771,6 +804,9 @@ class AdminQueueItem {
   final bool providerReady;
   final String? vipRequestId;
   final ReturnCommitmentSummary? returnCommitment;
+  final String? executionState;
+  final bool canCancel;
+  final bool canMarkManualSent;
 
   factory AdminQueueItem.fromJson(Map<String, dynamic> json) {
     return AdminQueueItem(
@@ -793,9 +829,83 @@ class AdminQueueItem {
       failedAt: _parseDate(json['failedAt']),
       providerReady: json['providerReady'] as bool? ?? false,
       vipRequestId: json['vipRequestId'] as String?,
+      executionState: json['executionState'] as String?,
+      canCancel: json['canCancel'] as bool? ?? false,
+      canMarkManualSent: json['canMarkManualSent'] as bool? ?? false,
       returnCommitment: json['returnCommitment'] is Map
           ? ReturnCommitmentSummary.fromJson(asJsonMap(json['returnCommitment']))
           : null,
+    );
+  }
+}
+
+class AdminNormalSalonFolder {
+  const AdminNormalSalonFolder({
+    required this.salonId,
+    required this.salonName,
+    required this.totalMessageCount,
+    required this.sentMessageCount,
+    required this.pendingMessageCount,
+    required this.failedMessageCount,
+    this.cancelledMessageCount = 0,
+    this.latestActivityAt,
+  });
+
+  final String salonId;
+  final String salonName;
+  final int totalMessageCount;
+  final int sentMessageCount;
+  final int pendingMessageCount;
+  final int failedMessageCount;
+  final int cancelledMessageCount;
+  final DateTime? latestActivityAt;
+
+  factory AdminNormalSalonFolder.fromJson(Map<String, dynamic> json) {
+    return AdminNormalSalonFolder(
+      salonId: json['salonId'] as String,
+      salonName: json['salonName'] as String,
+      totalMessageCount: json['totalMessageCount'] as int? ?? 0,
+      sentMessageCount: json['sentMessageCount'] as int? ?? 0,
+      pendingMessageCount: json['pendingMessageCount'] as int? ?? 0,
+      failedMessageCount: json['failedMessageCount'] as int? ?? 0,
+      cancelledMessageCount: json['cancelledMessageCount'] as int? ?? 0,
+      latestActivityAt: _parseDate(json['latestActivityAt']),
+    );
+  }
+}
+
+class AdminNormalSalonFolderDetail {
+  const AdminNormalSalonFolderDetail({
+    required this.salonId,
+    required this.salonName,
+    required this.totalMessageCount,
+    required this.sentMessageCount,
+    required this.pendingMessageCount,
+    required this.failedMessageCount,
+    required this.cancelledMessageCount,
+    required this.page,
+  });
+
+  final String salonId;
+  final String salonName;
+  final int totalMessageCount;
+  final int sentMessageCount;
+  final int pendingMessageCount;
+  final int failedMessageCount;
+  final int cancelledMessageCount;
+  final ItemPage<AdminQueueItem> page;
+
+  factory AdminNormalSalonFolderDetail.fromJson(Object? json) {
+    final map = json is Map ? asJsonMap(json) : <String, dynamic>{};
+    return AdminNormalSalonFolderDetail(
+      salonId: map['salonId'] as String? ?? '',
+      salonName: map['salonName'] as String? ?? '',
+      totalMessageCount: map['totalMessageCount'] as int? ?? 0,
+      sentMessageCount: map['sentMessageCount'] as int? ?? 0,
+      pendingMessageCount: map['pendingMessageCount'] as int? ?? 0,
+      failedMessageCount: map['failedMessageCount'] as int? ?? 0,
+      cancelledMessageCount: map['cancelledMessageCount'] as int? ?? 0,
+      page: parseItemPage(json, AdminQueueItem.fromJson),
     );
   }
 }
@@ -806,6 +916,9 @@ class VipTargetList {
     required this.name,
     required this.status,
     required this.contactCount,
+    this.regionCode,
+    this.regionName,
+    this.createdAt,
     this.attentionRequestId,
     this.reservedBySalonName,
     this.request,
@@ -816,6 +929,9 @@ class VipTargetList {
   final String name;
   final String status;
   final int contactCount;
+  final String? regionCode;
+  final String? regionName;
+  final DateTime? createdAt;
   final String? attentionRequestId;
   final String? reservedBySalonName;
   final VipRequest? request;
@@ -829,6 +945,11 @@ class VipTargetList {
       name: json['name'] as String,
       status: json['status'] as String,
       contactCount: json['contactCount'] as int? ?? 0,
+      regionCode: json['regionCode'] as String?,
+      regionName: json['regionName'] as String?,
+      createdAt: json['createdAt'] is String
+          ? DateTime.tryParse(json['createdAt'] as String)
+          : null,
       attentionRequestId: json['attentionRequestId'] as String?,
       reservedBySalonName: json['reservedBySalonName'] as String?,
       request: json['request'] is Map
@@ -844,20 +965,45 @@ class VipTargetList {
   }
 }
 
+class VipRegion {
+  const VipRegion({
+    required this.regionCode,
+    required this.regionName,
+    required this.availableListCount,
+    required this.availableContactCount,
+  });
+
+  final String regionCode;
+  final String regionName;
+  final int availableListCount;
+  final int availableContactCount;
+
+  factory VipRegion.fromJson(Map<String, dynamic> json) {
+    return VipRegion(
+      regionCode: json['regionCode'] as String,
+      regionName: json['regionName'] as String,
+      availableListCount: json['availableListCount'] as int? ?? 0,
+      availableContactCount: json['availableContactCount'] as int? ?? 0,
+    );
+  }
+}
+
 class VipContact {
   const VipContact({
-    required this.displayName,
+    this.displayName,
     required this.phoneNumber,
     required this.sortOrder,
   });
 
-  final String displayName;
+  final String? displayName;
   final String phoneNumber;
   final int sortOrder;
 
   factory VipContact.fromJson(Map<String, dynamic> json) {
+    final rawName = json['displayName'];
+    final name = rawName is String ? rawName.trim() : null;
     return VipContact(
-      displayName: json['displayName'] as String,
+      displayName: name == null || name.isEmpty ? null : name,
       phoneNumber: json['phoneNumber'] as String,
       sortOrder: json['sortOrder'] as int? ?? 0,
     );
@@ -935,12 +1081,16 @@ class VipCapability {
     required this.entitled,
     required this.remainingQuota,
     required this.usedQuota,
+    this.quotaMax = 0,
+    this.quotaWindowDays = 0,
     this.currentRequest,
   });
 
   final bool entitled;
   final int remainingQuota;
   final int usedQuota;
+  final int quotaMax;
+  final int quotaWindowDays;
   final VipRequest? currentRequest;
 
   factory VipCapability.fromJson(Map<String, dynamic> json) {
@@ -948,6 +1098,8 @@ class VipCapability {
       entitled: json['entitled'] as bool? ?? false,
       remainingQuota: json['remainingQuota'] as int? ?? 0,
       usedQuota: json['usedQuota'] as int? ?? 0,
+      quotaMax: json['quotaMax'] as int? ?? 0,
+      quotaWindowDays: json['quotaWindowDays'] as int? ?? 0,
       currentRequest: json['currentRequest'] is Map
           ? VipRequest.fromJson(asJsonMap(json['currentRequest']))
           : null,
@@ -1225,6 +1377,207 @@ class AdminSalonSummary {
   }
 }
 
+class AdminVipOutreachFolder {
+  const AdminVipOutreachFolder({
+    required this.salonId,
+    required this.salonName,
+    required this.requestCount,
+    required this.recipientCount,
+    required this.pendingMessageCount,
+    required this.sentMessageCount,
+    required this.failedMessageCount,
+    this.cancelledMessageCount = 0,
+    this.latestActivityAt,
+  });
+
+  final String salonId;
+  final String salonName;
+  final int requestCount;
+  final int recipientCount;
+  final int pendingMessageCount;
+  final int sentMessageCount;
+  final int failedMessageCount;
+  final int cancelledMessageCount;
+  final DateTime? latestActivityAt;
+
+  factory AdminVipOutreachFolder.fromJson(Map<String, dynamic> json) {
+    return AdminVipOutreachFolder(
+      salonId: json['salonId'] as String,
+      salonName: json['salonName'] as String,
+      requestCount: json['requestCount'] as int? ?? 0,
+      recipientCount: json['recipientCount'] as int? ?? 0,
+      pendingMessageCount: json['pendingMessageCount'] as int? ?? 0,
+      sentMessageCount: json['sentMessageCount'] as int? ?? 0,
+      failedMessageCount: json['failedMessageCount'] as int? ?? 0,
+      cancelledMessageCount: json['cancelledMessageCount'] as int? ?? 0,
+      latestActivityAt: _parseDate(json['latestActivityAt']),
+    );
+  }
+}
+
+class AdminVipOutreachRequest {
+  const AdminVipOutreachRequest({
+    required this.id,
+    required this.salonId,
+    required this.salonName,
+    required this.listId,
+    required this.listName,
+    required this.requestedCount,
+    required this.geographicRange,
+    required this.status,
+    required this.recipientCount,
+    required this.notYetQueuedCount,
+    required this.queuedCount,
+    required this.inPipelineCount,
+    required this.sentCount,
+    required this.failedCount,
+    required this.sampleWorkCount,
+    required this.canDispatchManual,
+    this.regionCode,
+    this.regionName,
+    this.displayTitle,
+    this.requestOrdinal = 0,
+    this.cancelledCount = 0,
+    this.createdAt,
+    this.submittedAt,
+  });
+
+  final String id;
+  final String salonId;
+  final String salonName;
+  final String listId;
+  final String listName;
+  final String? regionCode;
+  final String? regionName;
+  final int requestedCount;
+  final String geographicRange;
+  final String status;
+  final int recipientCount;
+  final int notYetQueuedCount;
+  final int queuedCount;
+  final int inPipelineCount;
+  final int sentCount;
+  final int failedCount;
+  final int cancelledCount;
+  final int sampleWorkCount;
+  final bool canDispatchManual;
+  final String? displayTitle;
+  final int requestOrdinal;
+  final DateTime? createdAt;
+  final DateTime? submittedAt;
+
+  factory AdminVipOutreachRequest.fromJson(Map<String, dynamic> json) {
+    return AdminVipOutreachRequest(
+      id: json['id'] as String,
+      salonId: json['salonId'] as String,
+      salonName: json['salonName'] as String? ?? '',
+      listId: json['listId'] as String,
+      listName: json['listName'] as String? ?? '',
+      regionCode: json['regionCode'] as String?,
+      regionName: json['regionName'] as String?,
+      requestedCount: json['requestedCount'] as int? ?? 0,
+      geographicRange: json['geographicRange'] as String? ?? '',
+      status: json['status'] as String,
+      recipientCount: json['recipientCount'] as int? ?? 0,
+      notYetQueuedCount: json['notYetQueuedCount'] as int? ?? 0,
+      queuedCount: json['queuedCount'] as int? ?? 0,
+      inPipelineCount: json['inPipelineCount'] as int? ?? 0,
+      sentCount: json['sentCount'] as int? ?? 0,
+      failedCount: json['failedCount'] as int? ?? 0,
+      cancelledCount: json['cancelledCount'] as int? ?? 0,
+      sampleWorkCount: json['sampleWorkCount'] as int? ?? 0,
+      canDispatchManual: json['canDispatchManual'] as bool? ?? false,
+      displayTitle: json['displayTitle'] as String?,
+      requestOrdinal: json['requestOrdinal'] as int? ?? 0,
+      createdAt: _parseDate(json['createdAt']),
+      submittedAt: _parseDate(json['submittedAt']),
+    );
+  }
+}
+
+class AdminVipOutreachRecipient {
+  const AdminVipOutreachRecipient({
+    required this.id,
+    required this.sortOrder,
+    required this.phoneNumber,
+    required this.executionState,
+    this.displayName,
+    this.messageRequestId,
+    this.messageRequestStatus,
+    this.deliveryStatus,
+    this.submittedAt,
+    this.canCancel = false,
+    this.canMarkManualSent = false,
+  });
+
+  final String id;
+  final int sortOrder;
+  final String? displayName;
+  final String phoneNumber;
+  final String? messageRequestId;
+  final String? messageRequestStatus;
+  final String? deliveryStatus;
+  final DateTime? submittedAt;
+  final String executionState;
+  final bool canCancel;
+  final bool canMarkManualSent;
+
+  factory AdminVipOutreachRecipient.fromJson(Map<String, dynamic> json) {
+    return AdminVipOutreachRecipient(
+      id: json['id'] as String,
+      sortOrder: json['sortOrder'] as int? ?? 0,
+      displayName: json['displayName'] as String?,
+      phoneNumber: json['phoneNumber'] as String? ?? '',
+      messageRequestId: json['messageRequestId'] as String?,
+      messageRequestStatus: json['messageRequestStatus'] as String?,
+      deliveryStatus: json['deliveryStatus'] as String?,
+      submittedAt: _parseDate(json['submittedAt']),
+      executionState: json['executionState'] as String? ?? 'NOT_YET_QUEUED',
+      canCancel: json['canCancel'] as bool? ?? false,
+      canMarkManualSent: json['canMarkManualSent'] as bool? ?? false,
+    );
+  }
+}
+
+class AdminVipOutreachSalonPage {
+  const AdminVipOutreachSalonPage({
+    required this.salonId,
+    required this.salonName,
+    required this.page,
+  });
+
+  final String salonId;
+  final String salonName;
+  final ItemPage<AdminVipOutreachRequest> page;
+
+  factory AdminVipOutreachSalonPage.fromJson(Object? json) {
+    final map = json is Map ? asJsonMap(json) : <String, dynamic>{};
+    return AdminVipOutreachSalonPage(
+      salonId: map['salonId'] as String? ?? '',
+      salonName: map['salonName'] as String? ?? '',
+      page: parseItemPage(json, AdminVipOutreachRequest.fromJson),
+    );
+  }
+}
+
+class AdminVipOutreachRequestPage {
+  const AdminVipOutreachRequestPage({
+    required this.request,
+    required this.page,
+  });
+
+  final AdminVipOutreachRequest request;
+  final ItemPage<AdminVipOutreachRecipient> page;
+
+  factory AdminVipOutreachRequestPage.fromJson(Object? json) {
+    final map = json is Map ? asJsonMap(json) : <String, dynamic>{};
+    return AdminVipOutreachRequestPage(
+      request: AdminVipOutreachRequest.fromJson(asJsonMap(map['request'])),
+      page: parseItemPage(json, AdminVipOutreachRecipient.fromJson),
+    );
+  }
+}
+
 class RecoveryOutcomesPeriod {
   const RecoveryOutcomesPeriod({
     required this.timezone,
@@ -1318,6 +1671,55 @@ class RecoveryOutcomeReturnItem {
       associatedRevenue: AssociatedRevenue.fromJson(
         asJsonMap(json['associatedRevenue']),
       ),
+    );
+  }
+}
+
+class OpportunityWorkspaceRow {
+  const OpportunityWorkspaceRow({
+    required this.rowKind,
+    required this.stableId,
+    required this.displayName,
+    this.customerId,
+    this.phoneNumber,
+    this.messageState,
+    this.messageRequestId,
+    this.requestedAt,
+    this.submittedAt,
+    this.commitmentExpectedAt,
+    this.returnEvidenceKind,
+    this.previousVisitAt,
+  });
+
+  final String rowKind;
+  final String stableId;
+  final String displayName;
+  final String? customerId;
+  final String? phoneNumber;
+  final String? messageState;
+  final String? messageRequestId;
+  final DateTime? requestedAt;
+  final DateTime? submittedAt;
+  final DateTime? commitmentExpectedAt;
+  final String? returnEvidenceKind;
+  final DateTime? previousVisitAt;
+
+  bool get isVip => rowKind == 'VIP_RECIPIENT';
+
+  factory OpportunityWorkspaceRow.fromJson(Map<String, dynamic> json) {
+    return OpportunityWorkspaceRow(
+      rowKind: json['rowKind'] as String,
+      stableId: json['stableId'] as String,
+      displayName: json['displayName'] as String? ?? '',
+      customerId: json['customerId'] as String?,
+      phoneNumber: json['phoneNumber'] as String?,
+      messageState: json['messageState'] as String?,
+      messageRequestId: json['messageRequestId'] as String?,
+      requestedAt: _parseDate(json['requestedAt']),
+      submittedAt: _parseDate(json['submittedAt']),
+      commitmentExpectedAt: _parseDate(json['commitmentExpectedAt']),
+      returnEvidenceKind: json['returnEvidenceKind'] as String?,
+      previousVisitAt: _parseDate(json['previousVisitAt']),
     );
   }
 }

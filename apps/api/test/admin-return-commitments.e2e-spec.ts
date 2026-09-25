@@ -116,7 +116,9 @@ describeIfDb('Admin return commitments and open agreed returns (e2e)', () => {
         countsTowardDailyLimit: false,
         status,
         recipientDisplayName: input.customerId ? null : 'VIP',
-        recipientPhoneNumber: input.customerId ? null : '09120000000',
+        recipientPhoneNumber: input.customerId
+          ? (await prisma.client.customer.findUniqueOrThrow({ where: { id: input.customerId } })).phoneNumber
+          : '09120000000',
         createdAt: requestedAt,
         updatedAt: requestedAt,
       },

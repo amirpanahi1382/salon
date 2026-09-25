@@ -14,6 +14,7 @@ Header vs line-item equality is **application-enforced** (no database CHECK that
 - `Transaction.amount` is the authoritative total.
 - Line items (`transaction_items`) must sum exactly to `Transaction.amount`.
 - Amounts are PostgreSQL `NUMERIC(19,2)`, Prisma `Decimal`, and API **decimal strings** (never JS `number`).
+- API writes accept unsigned decimal strings with at most two fractional digits and no surrounding whitespace, exponent, or separator. The maximum storable amount is `99999999999999999.99` IRR. The API checks each unit price, multiplied item total, aggregate total, and transaction header before persistence; quantity is a JSON integer from 1 to 9999. A value one cent over the bound is rejected instead of rounded or delegated to PostgreSQL.
 
 ## Lifecycle
 

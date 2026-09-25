@@ -5,16 +5,17 @@ import {
   IsArray,
   IsIn,
   IsInt,
-  IsISO8601,
   IsOptional,
   IsString,
   IsUUID,
+  ValidateIf,
   Matches,
   Max,
   MaxLength,
   Min,
   ValidateNested,
 } from 'class-validator';
+import { IsAbsoluteInstant, IsUtcDate } from '../infrastructure/http/date-input';
 
 export class CreateTransactionItemDto {
   @ApiProperty()
@@ -22,7 +23,6 @@ export class CreateTransactionItemDto {
   serviceId!: string;
 
   @ApiProperty()
-  @Type(() => Number)
   @IsInt()
   @Min(1)
   @Max(9999)
@@ -40,12 +40,12 @@ export class CreateTransactionDto {
   customerId!: string;
 
   @ApiPropertyOptional()
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined)
   @IsUUID('all')
   visitId?: string;
 
   @ApiProperty({ description: 'When the money was recorded (UTC ISO-8601)' })
-  @IsISO8601()
+  @IsAbsoluteInstant()
   occurredAt!: string;
 
   @ApiProperty({ example: '1500000.00' })
@@ -54,7 +54,7 @@ export class CreateTransactionDto {
   amount!: string;
 
   @ApiPropertyOptional({ example: 'IRR' })
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined)
   @IsString()
   currency?: string;
 
@@ -128,17 +128,17 @@ export class ListTransactionsQueryDto {
 
   @ApiPropertyOptional({ description: 'UTC calendar date YYYY-MM-DD' })
   @IsOptional()
-  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  @IsUtcDate()
   date?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsISO8601()
+  @IsAbsoluteInstant()
   from?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsISO8601()
+  @IsAbsoluteInstant()
   to?: string;
 
   @ApiPropertyOptional({ default: 200, maximum: 200 })

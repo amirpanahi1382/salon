@@ -4,7 +4,6 @@ import { PrismaService } from '../infrastructure/database/prisma.service';
 import { CUSTOMER_SELECT } from './customer.mapper';
 
 export const CUSTOMER_LIST_LIMIT = 200;
-export const INTELLIGENCE_CUSTOMER_CAP = 5000;
 
 type CustomerDb = Prisma.TransactionClient | PrismaService['client'];
 

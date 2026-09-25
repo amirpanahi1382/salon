@@ -35,8 +35,8 @@ Platform-owned: `platform_admins`, `vip_target_lists`, `vip_target_contacts` (li
 | `message_requests` | Intent | See CHECKs below |
 | `message_deliveries` | Execution | Unique `message_request_id`; unique `(salon_id, provider_request_id)` |
 | `return_commitments` | Recovery fact | Unique per `(salon_id, source_message_request_id)` and `(salon_id, source_message_delivery_id)`. Partial unique `(salon_id, actual_visit_id)` WHERE not null. Creator/updater XOR: composite salon user FKs **or** `platform_admins.id` (`return_commitments_created_actor_chk` / `updated_actor_chk`). Partial index `(salon_id, expected_at, id)` WHERE `actual_visit_id` IS NULL is a **candidate** filter for the operational open list; operational openness also requires NOT EXISTS a later Visit after source `submitted_at`. Not an appointment. |
-| `vip_target_lists` | Platform list | Reservation CHECK: `IN_USE` iff reserved fields set |
-| `vip_target_contacts` | List rows | Phone CHECK `09[0-9]{9}`; unique phone per list |
+| `vip_target_lists` | Platform list | Reservation CHECK: `IN_USE` iff reserved fields set. Optional `region_code` (`01`–`14` CHECK); null = historical/non-regional |
+| `vip_target_contacts` | List rows | Phone CHECK `09[0-9]{9}`; unique phone per list; display name optional |
 | `vip_salon_entitlements` | Product flag | Unique `salon_id`; revoke pair CHECK |
 | `vip_requests` | Intent | Unique `(id, salon_id)` |
 | `vip_request_recipients` | Snapshot | Optional `message_request_id` |

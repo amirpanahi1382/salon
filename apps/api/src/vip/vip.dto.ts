@@ -1,10 +1,11 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsIn, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsIn, IsOptional, IsString, MaxLength, MinLength, ValidateIf } from 'class-validator';
 import {
   VIP_ALLOWED_REQUEST_COUNTS,
   VIP_GEO_RANGE_MAX_LENGTH,
   VIP_LIST_NAME_MAX_LENGTH,
+  VIP_REGION_CODES,
   VIP_REQUEST_STATUSES,
   VIP_TARGET_LIST_STATUSES,
   type VipAllowedRequestCount,
@@ -14,14 +15,14 @@ import {
 
 export class PatchVipListDto {
   @ApiPropertyOptional()
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined)
   @IsString()
   @MinLength(1)
   @MaxLength(VIP_LIST_NAME_MAX_LENGTH)
   name?: string;
 
   @ApiPropertyOptional({ enum: ['ACTIVE', 'INACTIVE'] })
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined)
   @IsIn(['ACTIVE', 'INACTIVE'])
   availability?: 'ACTIVE' | 'INACTIVE';
 }
@@ -42,7 +43,6 @@ export class CreateVipRequestDto {
   listId!: string;
 
   @ApiProperty({ enum: VIP_ALLOWED_REQUEST_COUNTS })
-  @Type(() => Number)
   @IsIn([...VIP_ALLOWED_REQUEST_COUNTS])
   requestedCount!: VipAllowedRequestCount;
 
@@ -59,6 +59,42 @@ export class ListCursorQueryDto {
   @IsString()
   @MaxLength(512)
   cursor?: string;
+}
+
+export class AdminVipOutreachSalonsQueryDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(512)
+  cursor?: string;
+
+  @ApiPropertyOptional({ description: 'Optional salon-name contains match' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  q?: string;
+}
+
+export class ListAdminSalonsQueryDto {
+  @ApiPropertyOptional({ description: 'Opaque createdAt DESC, id DESC continuation cursor' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(512)
+  cursor?: string;
+
+  @ApiPropertyOptional({ description: 'Search all salon names, case-insensitively' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  q?: string;
+}
+
+export class SalonVipListsQueryDto {
+  @ApiPropertyOptional({ enum: VIP_REGION_CODES })
+  @IsOptional()
+  @IsString()
+  @IsIn([...VIP_REGION_CODES])
+  regionCode?: string;
 }
 
 export class VipTargetListSummaryDto {
@@ -95,8 +131,8 @@ export class VipTargetListSummaryDto {
 }
 
 export class VipTargetContactDto {
-  @ApiProperty()
-  displayName!: string;
+  @ApiProperty({ nullable: true, type: String })
+  displayName!: string | null;
 
   @ApiProperty()
   phoneNumber!: string;
@@ -166,6 +202,12 @@ export class VipCapabilityDto {
 
   @ApiProperty()
   usedQuota!: number;
+
+  @ApiProperty({ description: 'Temporary product rolling-window limit' })
+  quotaMax!: number;
+
+  @ApiProperty({ description: 'Rolling window in days. Not a calendar week.' })
+  quotaWindowDays!: number;
 
   @ApiProperty({ nullable: true, type: () => VipRequestDto })
   currentRequest!: VipRequestDto | null;

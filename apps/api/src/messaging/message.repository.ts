@@ -11,6 +11,17 @@ type MessageDb = Prisma.TransactionClient | PrismaService['client'];
 export class MessageRepository {
   constructor(private readonly prisma: PrismaService) {}
 
+  /** Locks CRM contact detail until the intent snapshot has been inserted. */
+  async lockCustomerDestination(tx: Prisma.TransactionClient, salonId: string, customerId: string): Promise<string | null> {
+    const rows = await tx.$queryRaw<Array<{ phoneNumber: string }>>`
+      SELECT phone_number AS "phoneNumber"
+      FROM customers
+      WHERE id = ${customerId}::uuid AND salon_id = ${salonId}::uuid
+      FOR SHARE
+    `;
+    return rows[0]?.phoneNumber ?? null;
+  }
+
   findRequestById(tenantId: string, id: string, db: MessageDb = this.prisma.client) {
     return db.messageRequest.findFirst({
       where: { id, salonId: tenantId },
@@ -31,6 +42,7 @@ export class MessageRepository {
       actionId: string | null;
       createdByUserId: string;
       opportunityType: string | null;
+      recipientPhoneNumber: string;
       messageText: string;
       requestedAt: Date;
       messageBusinessDate: Date;
@@ -39,7 +51,7 @@ export class MessageRepository {
     const inserted = await tx.$queryRaw<Array<{ id: string }>>`
       INSERT INTO message_requests (
         id, salon_id, customer_id, action_id, created_by_user_id, opportunity_type,
-        message_text, requested_at, message_business_date, counts_toward_daily_limit,
+        recipient_phone_number, message_text, requested_at, message_business_date, counts_toward_daily_limit,
         status, created_at, updated_at
       )
       VALUES (
@@ -49,6 +61,7 @@ export class MessageRepository {
         ${input.actionId}::uuid,
         ${input.createdByUserId}::uuid,
         CAST(${input.opportunityType} AS "OpportunityActionType"),
+        ${input.recipientPhoneNumber},
         ${input.messageText},
         ${input.requestedAt},
         ${input.messageBusinessDate}::date,
@@ -108,6 +121,7 @@ export class MessageRepository {
         vipRequestId: null,
         countsTowardDailyLimit: true,
         messageBusinessDate,
+        status: { not: 'CANCELLED' },
         ...(cursor
           ? {
               OR: [

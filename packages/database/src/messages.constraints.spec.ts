@@ -109,6 +109,7 @@ describeIfDb('message request constraints', () => {
       actionId: seeded.actionId,
       createdByUserId: seeded.userId,
       opportunityType: 'REVENUE_DECLINE' as const,
+      recipientPhoneNumber: '09121111111',
       messageText: 'سلام',
       messageBusinessDate: new Date('2026-09-10T00:00:00.000Z'),
       countsTowardDailyLimit: true,
@@ -252,6 +253,36 @@ describeIfDb('message request constraints', () => {
     expect(created.opportunityType).toBeNull();
   });
 
+  it.each([null, '', '9121111111', '0912 1111111', '0912111111a'])(
+    'rejects a new request with noncanonical destination %s',
+    async (recipientPhoneNumber) => {
+      const seeded = await seedSalon();
+      await expect(prisma.messageRequest.create({
+        data: requestData(seeded, { recipientPhoneNumber }),
+      })).rejects.toThrow(/Message destination snapshot is required/);
+      expect(await prisma.messageRequest.count({ where: { salonId: seeded.salonId } })).toBe(0);
+    },
+  );
+
+  it('keeps a valid request destination immutable while allowing other updates', async () => {
+    const seeded = await seedSalon();
+    const phone = (await prisma.customer.findUniqueOrThrow({ where: { id: seeded.customerId } })).phoneNumber;
+    const created = await prisma.messageRequest.create({
+      data: requestData(seeded, { recipientPhoneNumber: phone }),
+    });
+    await expect(prisma.messageRequest.update({
+      where: { id: created.id }, data: { recipientPhoneNumber: '09129999999' },
+    })).rejects.toThrow(/Message destination snapshot is immutable/);
+    await expect(prisma.messageRequest.update({
+      where: { id: created.id }, data: { recipientPhoneNumber: null },
+    })).rejects.toThrow(/Message destination snapshot is immutable/);
+    await prisma.messageRequest.update({ where: { id: created.id }, data: { status: 'DISPATCHED' } });
+    await prisma.customer.update({ where: { id: seeded.customerId }, data: { phoneNumber: '09129999998' } });
+    const historical = await prisma.messageRequest.findUniqueOrThrow({ where: { id: created.id } });
+    expect(historical.recipientPhoneNumber).toBe(phone);
+    expect(historical.status).toBe('DISPATCHED');
+  });
+
   it('requires a customer XOR a VIP request, never both or neither', async () => {
     const seeded = await seedSalon();
     await expect(
@@ -272,20 +303,15 @@ describeIfDb('message request constraints', () => {
       }),
     ).rejects.toThrow(/message_requests_recipient_origin_consistent/);
 
-    await expect(
-      prisma.messageRequest.create({
-        data: requestData(seeded, {
-          customerId: null,
-          actionId: null,
-          opportunityType: null,
-          vipRequestId: vip.requestId,
-          recipientDisplayName: null,
-          recipientPhoneNumber: '09121111111',
-          countsTowardDailyLimit: false,
-          messageText: 'بدون نام',
-        }),
+    const unnamed = await prisma.messageRequest.create({
+      data: requestData(seeded, {
+        customerId: null, actionId: null, opportunityType: null,
+        vipRequestId: vip.requestId, recipientDisplayName: null,
+        recipientPhoneNumber: '09121111111', countsTowardDailyLimit: false,
+        messageText: 'بدون نام',
       }),
-    ).rejects.toThrow(/message_requests_recipient_origin_consistent/);
+    });
+    expect(unnamed.recipientPhoneNumber).toBe('09121111111');
   });
 
   it('allows opportunity and manual customer messages only with a non-null customer', async () => {

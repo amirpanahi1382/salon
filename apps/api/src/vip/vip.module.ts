@@ -6,6 +6,12 @@ import { OBJECT_STORAGE } from '../infrastructure/storage/object-storage';
 import { S3CompatibleObjectStorage } from '../infrastructure/storage/s3-compatible.object-storage';
 import { AdminVipController } from './admin-vip.controller';
 import { SalonVipController } from './salon-vip.controller';
+import { AdminVipOutreachRepository } from './admin-vip-outreach.repository';
+import {
+  GetAdminVipOutreachRequestUseCase,
+  GetAdminVipOutreachSalonUseCase,
+  ListAdminVipOutreachSalonsUseCase,
+} from './admin-vip-outreach.use-cases';
 import { VipRepository } from './vip.repository';
 import {
   CreateVipRequestUseCase,
@@ -21,6 +27,7 @@ import {
   ListActiveVipListsUseCase,
   ListAdminSalonsUseCase,
   ListVipListsUseCase,
+  ListVipRegionsUseCase,
   PatchVipListUseCase,
   RevokeVipEntitlementUseCase,
   SubmitVipRequestUseCase,
@@ -32,6 +39,7 @@ import {
   controllers: [AdminVipController, SalonVipController],
   providers: [
     VipRepository,
+    AdminVipOutreachRepository,
     {
       provide: OBJECT_STORAGE,
       inject: [AppConfigService],
@@ -49,6 +57,7 @@ import {
     RevokeVipEntitlementUseCase,
     ListAdminSalonsUseCase,
     GetVipCapabilityUseCase,
+    ListVipRegionsUseCase,
     ListActiveVipListsUseCase,
     CreateVipRequestUseCase,
     UploadVipSampleWorkUseCase,
@@ -57,6 +66,9 @@ import {
     DownloadVipSampleWorkUseCase,
     ExportVipRequestExcelUseCase,
     DispatchVipRequestUseCase,
+    ListAdminVipOutreachSalonsUseCase,
+    GetAdminVipOutreachSalonUseCase,
+    GetAdminVipOutreachRequestUseCase,
   ],
 })
 export class VipModule {}

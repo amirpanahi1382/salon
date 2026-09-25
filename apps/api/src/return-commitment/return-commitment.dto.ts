@@ -1,23 +1,24 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsISO8601, IsOptional, IsString, IsUUID, Matches, MaxLength, ValidateNested } from 'class-validator';
+import { IsOptional, IsString, IsUUID, Matches, MaxLength, ValidateNested } from 'class-validator';
 import { AssociatedRevenueDto } from '../observed-outcome/observed-outcome.dto';
+import { IsAbsoluteInstant } from '../infrastructure/http/date-input';
 
 export class CreateReturnCommitmentDto {
   @ApiProperty({ description: 'Agreed future return instant (UTC ISO-8601). Not a booking slot.' })
-  @IsISO8601()
+  @IsAbsoluteInstant()
   expectedAt!: string;
 }
 
 export class UpdateReturnCommitmentDto {
   @ApiProperty({ description: 'Agreed future return instant (UTC ISO-8601). Not a booking slot.' })
-  @IsISO8601()
+  @IsAbsoluteInstant()
   expectedAt!: string;
 
   @ApiProperty({
     description: 'Optimistic concurrency token. Must equal the current updatedAt from the last read.',
   })
-  @IsISO8601()
+  @IsAbsoluteInstant()
   updatedAt!: string;
 }
 
@@ -35,7 +36,7 @@ export class ListUpcomingReturnCommitmentsQueryDto {
       'Inclusive start of the query window (UTC ISO-8601). Query bound only; not a booking horizon.',
   })
   @IsOptional()
-  @IsISO8601()
+  @IsAbsoluteInstant()
   from?: string;
 
   @ApiPropertyOptional({
@@ -43,7 +44,7 @@ export class ListUpcomingReturnCommitmentsQueryDto {
       'Exclusive end of the query window (UTC ISO-8601). Query bound only; defaults to 14 days after from; max 31 days.',
   })
   @IsOptional()
-  @IsISO8601()
+  @IsAbsoluteInstant()
   to?: string;
 
   @ApiPropertyOptional({ description: 'Opaque cursor from the previous page' })
@@ -248,7 +249,7 @@ export class ArriveReturnCommitmentDto {
   @ApiProperty({
     description: 'Actual completed visit time (UTC ISO-8601). Not ReturnCommitment.expectedAt.',
   })
-  @IsISO8601()
+  @IsAbsoluteInstant()
   visitedAt!: string;
 
   @ApiPropertyOptional({

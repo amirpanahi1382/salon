@@ -173,7 +173,7 @@ describeIfDb('Customer import (e2e)', () => {
       where: { tenantId: salonA.tenantId, eventType: DOMAIN_EVENT_TYPES.CustomerCreated },
     });
     expect(outbox.length).toBeGreaterThanOrEqual(2);
-    expect(JSON.stringify(outbox)).not.toMatch(new RegExp(uniquePhone));
+    expect(JSON.stringify(outbox, (_key, value) => typeof value === 'bigint' ? value.toString() : value)).not.toMatch(new RegExp(uniquePhone));
 
     const audit = await prisma.client.auditLog.findFirst({
       where: { tenantId: salonA.tenantId, action: 'CUSTOMERS_IMPORTED' },

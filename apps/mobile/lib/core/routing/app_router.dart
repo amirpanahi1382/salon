@@ -4,12 +4,14 @@ import 'package:go_router/go_router.dart';
 
 import '../../features/admin/admin_message_queue_screen.dart';
 import '../../features/admin/admin_vip_screen.dart';
+import '../../features/admin/admin_vip_outreach_screen.dart';
 import '../../features/auth/auth_screens.dart';
 import '../../features/customers/customer_edit_loader.dart';
 import '../../features/customers/customer_import_screen.dart';
 import '../../features/customers/customer_screens.dart';
 import '../../features/dashboard/dashboard_screen.dart';
 import '../../features/opportunities/opportunities_screen.dart';
+import '../../features/recovery/open_agreed_returns_screen.dart';
 import '../../features/recovery/recovery_outcomes_screen.dart';
 import '../../features/profile/profile_screen.dart';
 import '../../features/services/service_screens.dart';
@@ -79,8 +81,30 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const AdminMessageQueueScreen(),
       ),
       GoRoute(
+        path: '/admin/messages/salons/:salonId',
+        builder: (context, state) => AdminNormalSalonFolderScreen(
+          salonId: state.pathParameters['salonId']!,
+        ),
+      ),
+      GoRoute(
+        path: '/admin/vip/outreach',
+        builder: (context, state) => const AdminVipOutreachFoldersScreen(),
+      ),
+      GoRoute(
         path: '/admin/vip',
         builder: (context, state) => const AdminVipScreen(),
+      ),
+      GoRoute(
+        path: '/admin/vip/outreach/request/:requestId',
+        builder: (context, state) => AdminVipOutreachRequestScreen(
+          requestId: state.pathParameters['requestId']!,
+        ),
+      ),
+      GoRoute(
+        path: '/admin/vip/outreach/:salonId',
+        builder: (context, state) => AdminVipOutreachSalonScreen(
+          salonId: state.pathParameters['salonId']!,
+        ),
       ),
       GoRoute(
         path: '/admin/vip/:id',
@@ -118,6 +142,10 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/recovery',
             builder: (context, state) => const RecoveryOutcomesScreen(),
+          ),
+          GoRoute(
+            path: '/open-returns',
+            builder: (context, state) => const OpenAgreedReturnsScreen(),
           ),
           GoRoute(
             path: '/profile/services',

@@ -10,6 +10,10 @@ Customer messaging is a **human-initiated, one-to-one** operational action. It i
 
 **MessageRequest** is the durable salon intent: which recipient, which immutable text, requested when, by which salon user, and optionally which Opportunity context. It is tenant-scoped. It does not depend on Bale. It is created **before** admin dispatch. There is one queue for all salon-originated requests (including VIP).
 
+`MessageRequest.recipientPhoneNumber` is the immutable intended execution destination. Customer-origin requests copy the current canonical `Customer.phoneNumber` while creating the intent; VIP dispatch copies `VipRequestRecipient.phoneNumber`. A later Customer edit changes future intents only. `Customer.phoneNumber` remains current CRM contact detail, the VIP recipient remains the campaign snapshot, and MessageDelivery records the outcome against the MessageRequest destination. Idempotent replay returns the original request and destination. No phone is copied to audit or outbox payloads.
+
+Historical customer-origin requests made before destination capture have a null destination: current Customer.phone can only suggest a value, not prove what was intended then. Reads show an empty execution destination for these rows, and admin dispatch/manual completion is rejected. A legacy Bale delivery with a missing or malformed snapshot fails as `DESTINATION_UNVERIFIED` without a provider call. Historical VIP requests already carry the recipient snapshot. The migration's defensive linked-recipient VIP backfill has no reachable row under the predecessor CHECK, which already required a VIP destination; it never reads mutable inventory. A new request always requires a canonical `09` plus nine digits, and the database rejects destination edits after insert.
+
 MessageRequest may optionally carry Opportunity context. When present, `actionId` and `opportunityType` are **both** populated. When absent, **both** are NULL and the request is **manual outreach** (or VIP, which uses `vipRequestId` instead of a customer). Manual outreach is a first-class path, not an error, not a degraded Opportunity, and not a fake OpportunityAction.
 
 | Mode | `actionId` / `opportunityType` | `customerId` | `vipRequestId` |
@@ -64,6 +68,7 @@ Existing send/get-one/list-by-customer message DTOs still collapse admin dispatc
 | QUEUED, DISPATCHED | QUEUED | پیام در صف ارسال قرار گرفت |
 | SENT | SENT | پیام با موفقیت ارسال شد |
 | FAILED | FAILED | existing failure copy |
+| CANCELLED | CANCELLED | لغو شده |
 
 Manual outreach inbox and customer activity expose the durable `MessageRequest.status` directly (no second status model):
 
@@ -73,6 +78,7 @@ Manual outreach inbox and customer activity expose the durable `MessageRequest.s
 | DISPATCHED | DISPATCHED | ارسال به اجرا |
 | SENT | SENT | ارسال شد |
 | FAILED | FAILED | ارسال ناموفق |
+| CANCELLED | CANCELLED | لغو شده |
 
 `ارسال شد` is not shown merely because the salon user queued a request. Customer activity is a read projection of visits, transactions, opportunity actions, and manual MessageRequests (one row per request, current status). It does not include outbox, worker, or audit internals, and it does not return message bodies.
 
@@ -84,16 +90,18 @@ Daily limit: HTTP 409 `MESSAGE_DAILY_LIMIT_REACHED`.
 
 VIP is a separate product capability. It does **not** create salon `Customer` rows and does not use a second queue.
 
-**VipTargetList** is a platform-admin owned list of name+phone contacts (max 100 per import; more than 100 data rows rejects the whole file). Status: `PENDING` (imported) → `ACTIVE` / `INACTIVE`. A salon confirms a request with an atomic `UPDATE … WHERE status = ACTIVE`, which sets `IN_USE`. Opening a Flutter screen does not reserve. Abandoned `AWAITING_SAMPLE_WORK` reservations expire after 30 minutes and the list returns to `ACTIVE`.
+**VipTargetList** is a platform-admin owned list of phone contacts (optional display name; max 100 per import; more than 100 data rows rejects the whole file). Excel must include `شماره تلفن`; `نام` is optional. Empty or absent names persist as null — they are not invented. Optional `regionCode` (`01`–`14`) is canonical Tehran inventory identity; historical test lists stay null and are excluded from `GET /vip/regions` and `GET /vip/lists?regionCode=`. Status: `PENDING` (imported) → `ACTIVE` / `INACTIVE`. A salon confirms a request with an atomic `UPDATE … WHERE status = ACTIVE`, which sets `IN_USE`. Opening a Flutter screen does not reserve. Abandoned `AWAITING_SAMPLE_WORK` reservations expire after 30 minutes and the list returns to `ACTIVE`.
 
 **VipSalonEntitlement** is a **product entitlement placeholder**, not a billing or subscription system. Platform admin grants or revokes VIP access per salon. It does not verify payment, create invoices, or pretend a purchase occurred. Flutter cannot forge it. Server checks the entitlement row (`FOR UPDATE` on mutating VIP salon operations). Non-entitled salons receive 403 on VIP mutations/lists and `entitled: false` on `GET /vip/capability`. Audit: `VIP_ENTITLEMENT_GRANTED` / `VIP_ENTITLEMENT_REVOKED`.
 
 **VipRequest** is the salon request: selected list, requested count (30/50/100), geographic range text (template parameter only, not geospatial), quota, sample-work metadata. Recipients are snapshotted at create time (`VipRequestRecipient`) including the generated Persian template. Later list/name edits do not change history.
 
-Quota: per salon, rolling 14 days, max 100 target contacts. Counted from non-`CANCELLED` requests. Enforced by locking the entitlement row then summing in the same transaction.
+Quota: per salon, **temporary** rolling **7 days**, max **500** target contacts (`VIP_QUOTA_MAX` / `VIP_QUOTA_WINDOW_DAYS` in `@salon/shared`). Counted from non-`CANCELLED` requests. Enforced by locking the entitlement row then summing in the same transaction. Allowed request sizes remain 30/50/100. This is a rolling window, not a calendar week.
 
 Sample work: 1–3 images, magic-byte validated, stored in MinIO/S3-compatible object storage. Admin download is authenticated. Submit requires at least one image. Submit is a compare-and-set on `AWAITING_SAMPLE_WORK` with `reserved_until >= now()`; an expired reservation cannot become `SUBMITTED` and cannot be resurrected.
 
-**Manual dispatch** creates existing `MessageRequest` rows (`customerId` null, `vipRequestId` set, `countsTowardDailyLimit` false) that appear in صف ارسال پیام. Those VIP rows are **manual-only** until VIP Bale is explicitly implemented: `select-bale` / Bale retry on `vipRequestId IS NOT NULL` is rejected and does not create a delivery or call Safir. Campaign-level **Bale for VIP** records `BALE_NOT_IMPLEMENTED` and does not call Safir or create deliveries.
+**Manual dispatch** creates existing `MessageRequest` rows (`customerId` null, `vipRequestId` set, `countsTowardDailyLimit` false) that appear in ارسال پیام VIP (not mixed into ordinary salon folders). Those VIP rows are **manual-only** until VIP Bale is explicitly implemented: `select-bale` / Bale retry on `vipRequestId IS NOT NULL` is rejected and does not create a delivery or call Safir. Campaign-level **Bale for VIP** records `BALE_NOT_IMPLEMENTED` and does not call Safir or create deliveries.
 
-VipRequest statuses: `AWAITING_SAMPLE_WORK` → `SUBMITTED` → `MANUAL_QUEUED` or `BALE_NOT_IMPLEMENTED`, or `CANCELLED`.
+Platform admin messaging has two destinations: **ارسال پیام عادی** (`GET /admin/messages/normal/salons`) and **ارسال پیام VIP** (`GET /admin/vip/outreach/salons`). Both are derived salonId folders. Ordinary folders exclude `vipRequestId`. VIP folders group `VipRequest` by salon. Request display titles are derived (`vipOutreachRequestDisplayTitle`); identity remains `VipRequest.id`. Sent counts use canonical delivery `SENT` + `submittedAt`. Total requested is historical (includes cancelled). `POST /admin/message-queue/:id/cancel` is durable `MessageRequest.status = CANCELLED` for `QUEUED` (no delivery) or manual `PENDING` only — not a hard delete, not allowed for SENT or Bale in-flight. Worker claim excludes `CANCELLED`. Per-recipient «ارسال دستی شد» reuses `mark-manual-sent` (orchestrates select-manual when still `QUEUED`). Capabilities `canCancel` / `canMarkManualSent` are server-owned.
+
+VipRequest dispatch transitions are serialized on the request row: `SUBMITTED → BALE_NOT_IMPLEMENTED`, `SUBMITTED → MANUAL_QUEUED`, or deliberate fallback `BALE_NOT_IMPLEMENTED → MANUAL_QUEUED`. Repeating the Bale placeholder after `BALE_NOT_IMPLEMENTED` is a no-op; Bale can never overwrite `MANUAL_QUEUED`. Manual recipient messages, recipient links, audit, and outbox rows commit in the same transaction as the manual transition. `AWAITING_SAMPLE_WORK` may become `SUBMITTED` or `CANCELLED` under the existing reservation workflow.

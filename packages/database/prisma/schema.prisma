@@ -64,6 +64,7 @@ enum MessageRequestStatus {
   DISPATCHED
   SENT
   FAILED
+  CANCELLED
 }
 
 enum MessageDeliveryMode {
@@ -305,8 +306,9 @@ model MessageRequest {
   opportunityType     OpportunityActionType? @map("opportunity_type")
   vipRequestId        String?                @map("vip_request_id") @db.Uuid
   vipRequest          VipRequest?            @relation(fields: [vipRequestId, salonId], references: [id, salonId], onDelete: Restrict)
-  /// Snapshot used when customerId is null (VIP). Not a Customer record.
   recipientDisplayName String?               @map("recipient_display_name")
+  /// Immutable intended execution destination for new customer and VIP requests.
+  /// Null only for historical customer rows whose original destination cannot be proven.
   recipientPhoneNumber String?               @map("recipient_phone_number")
   /// Immutable customer-facing text. PII; not written to audit metadata or logs.
   messageText         String                 @map("message_text")
@@ -325,7 +327,9 @@ model MessageRequest {
   @@unique([id, salonId])
   /// SQL CHECKs:
   /// `message_requests_opportunity_context_consistent`: (action_id IS NULL) = (opportunity_type IS NULL).
-  /// `message_requests_recipient_origin_consistent`: salon customer XOR VIP request snapshot.
+  /// `message_requests_recipient_origin_consistent`: salon customer XOR VIP request snapshot;
+  /// customer-origin null destination is allowed only for legacy rows.
+  /// SQL trigger requires canonical destination on INSERT and prevents updates thereafter.
   /// Partial unique index `message_requests_salon_customer_day_key`:
   /// UNIQUE (salon_id, customer_id, message_business_date) WHERE counts_toward_daily_limit.
   /// Partial unique index `message_requests_one_per_vip_recipient_phone`:
@@ -358,6 +362,11 @@ model MessageDelivery {
   providerMessageId   String?                @map("provider_message_id")
   failureCode         String?                @map("failure_code")
   attempts            Int                    @default(0)
+  /// Logical admin retry generation, carried by activation events.
+  executionGeneration Int                    @default(0) @map("execution_generation")
+  /// Short-lived owner for one provider execution, reclaimed only after its lease expires.
+  executionToken      String?                @map("execution_token")
+  executionLockedUntil DateTime?              @map("execution_locked_until") @db.Timestamptz(3)
   createdBy           String                 @map("created_by") @db.Uuid
   createdByUser       User                   @relation(fields: [createdBy], references: [id], onDelete: Restrict)
   dispatchedByAdminId String?                @map("dispatched_by_admin_id") @db.Uuid
@@ -426,9 +435,13 @@ model OutboxEvent {
   id           String       @id @db.Uuid
   tenantId     String?      @map("tenant_id") @db.Uuid
   eventType    String       @map("event_type")
+  /// Optional durable dedupe key for one logical activation event.
+  dedupeKey    String?      @unique(map: "outbox_events_dedupe_key_key") @map("dedupe_key")
   payload      Json
   status       OutboxStatus @default(PENDING)
   attemptCount Int          @default(0) @map("attempt_count")
+  /// Monotonically changes on every claim or reclaim; post-claim writes are fenced by this value.
+  claimGeneration BigInt    @default(0) @map("claim_generation")
   availableAt  DateTime     @default(now()) @map("available_at") @db.Timestamptz(3)
   lockedAt     DateTime?    @map("locked_at") @db.Timestamptz(3)
   lockedUntil  DateTime?    @map("locked_until") @db.Timestamptz(3)
@@ -480,6 +493,8 @@ model VipTargetList {
   name               String
   status             VipTargetListStatus
   contactCount       Int                 @map("contact_count")
+  /// Canonical Tehran region code (01–14). Null for historical/non-regional lists.
+  regionCode         String?             @map("region_code")
   createdByAdminId   String              @map("created_by_admin_id") @db.Uuid
   createdByAdmin     PlatformAdmin       @relation("VipListCreatedByAdmin", fields: [createdByAdminId], references: [id], onDelete: Restrict)
   reservedBySalonId  String?             @map("reserved_by_salon_id") @db.Uuid
@@ -499,7 +514,7 @@ model VipTargetContact {
   listId      String        @map("list_id") @db.Uuid
   list        VipTargetList @relation(fields: [listId], references: [id], onDelete: Restrict)
   sortOrder   Int           @map("sort_order")
-  displayName String        @map("display_name")
+  displayName String?       @map("display_name")
   phoneNumber String        @map("phone_number")
   createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
   recipientSnapshots VipRequestRecipient[]
@@ -564,7 +579,7 @@ model VipRequestRecipient {
   sortOrder        Int            @map("sort_order")
   sourceContactId  String         @map("source_contact_id") @db.Uuid
   sourceContact    VipTargetContact @relation(fields: [sourceContactId], references: [id], onDelete: Restrict)
-  displayName      String         @map("display_name")
+  displayName      String?        @map("display_name")
   phoneNumber      String         @map("phone_number")
   messageText      String         @map("message_text")
   messageRequestId String?        @unique @map("message_request_id") @db.Uuid
