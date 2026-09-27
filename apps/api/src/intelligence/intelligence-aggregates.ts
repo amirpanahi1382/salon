@@ -137,15 +137,39 @@ export async function loadRankedSalonBehaviorChunk(
   after?: RankCursor,
 ): Promise<Array<SalonBehaviorRow & { rankDays: number }>> {
   const rows = await prisma.$queryRaw<RankedAggregateRow[]>(Prisma.sql`
-    WITH gaps AS (
-      SELECT customer_id, visited_at,
-        FLOOR(EXTRACT(EPOCH FROM (
-          visited_at - LAG(visited_at) OVER (
-            PARTITION BY customer_id ORDER BY visited_at ASC, id ASC
-          )
-        )) / 86400) AS gap_days
+    WITH last_visits AS (
+      SELECT customer_id, MAX(visited_at) AS last_visit_at
       FROM visits
       WHERE salon_id = ${tenantId}::uuid
+      GROUP BY customer_id
+    ), ranked AS (
+      SELECT c.id, c.first_name AS "firstName", c.last_name AS "lastName",
+        CASE WHEN lv.last_visit_at IS NULL THEN ${noVisitRank}::int
+          ELSE GREATEST(0, FLOOR(EXTRACT(EPOCH FROM (
+            ${asOf}::timestamptz - lv.last_visit_at
+          )) / 86400))::int END AS "rankDays"
+      FROM customers c
+      LEFT JOIN last_visits lv ON lv.customer_id = c.id
+      WHERE c.salon_id = ${tenantId}::uuid
+    ), selected AS MATERIALIZED (
+      SELECT * FROM ranked
+      WHERE true
+        ${after ? Prisma.sql`AND (
+          "rankDays" < ${after.days}::int OR
+          ("rankDays" = ${after.days}::int AND id ${after.inclusive ? Prisma.sql`<=` : Prisma.sql`<`} ${after.id}::uuid)
+        )` : Prisma.empty}
+      ORDER BY "rankDays" DESC, id DESC
+      LIMIT ${INTELLIGENCE_SCAN_BATCH_SIZE}
+    ), gaps AS (
+      SELECT v.customer_id, v.visited_at,
+        FLOOR(EXTRACT(EPOCH FROM (
+          v.visited_at - LAG(v.visited_at) OVER (
+            PARTITION BY v.customer_id ORDER BY v.visited_at ASC, v.id ASC
+          )
+        )) / 86400) AS gap_days
+      FROM visits v
+      INNER JOIN selected s ON s.id = v.customer_id
+      WHERE v.salon_id = ${tenantId}::uuid
     ), metrics AS (
       SELECT customer_id, COUNT(*)::int AS visit_count,
         MIN(visited_at) AS first_visit_at,
@@ -154,27 +178,14 @@ export async function loadRankedSalonBehaviorChunk(
           ELSE GREATEST(1, ROUND((AVG(gap_days) FILTER (WHERE gap_days > 0))::numeric))::int
         END AS average_return_interval_days
       FROM gaps GROUP BY customer_id
-    ), ranked AS (
-      SELECT c.id, c.first_name AS "firstName", c.last_name AS "lastName",
-        COALESCE(m.visit_count, 0)::int AS "visitCount",
-        m.first_visit_at AS "firstVisitAt", m.last_visit_at AS "lastVisitAt",
-        m.average_return_interval_days AS "averageReturnIntervalDays",
-        CASE WHEN m.last_visit_at IS NULL THEN ${noVisitRank}::int
-          ELSE GREATEST(0, FLOOR(EXTRACT(EPOCH FROM (
-            ${asOf}::timestamptz - m.last_visit_at
-          )) / 86400))::int END AS "rankDays"
-      FROM customers c
-      LEFT JOIN metrics m ON m.customer_id = c.id
-      WHERE c.salon_id = ${tenantId}::uuid
     )
-    SELECT * FROM ranked
-    WHERE true
-      ${after ? Prisma.sql`AND (
-        "rankDays" < ${after.days}::int OR
-        ("rankDays" = ${after.days}::int AND id ${after.inclusive ? Prisma.sql`<=` : Prisma.sql`<`} ${after.id}::uuid)
-      )` : Prisma.empty}
-    ORDER BY "rankDays" DESC, id DESC
-    LIMIT ${INTELLIGENCE_SCAN_BATCH_SIZE}
+    SELECT s.id, s."firstName", s."lastName", s."rankDays",
+      COALESCE(m.visit_count, 0)::int AS "visitCount",
+      m.first_visit_at AS "firstVisitAt", m.last_visit_at AS "lastVisitAt",
+      m.average_return_interval_days AS "averageReturnIntervalDays"
+    FROM selected s
+    LEFT JOIN metrics m ON m.customer_id = s.id
+    ORDER BY s."rankDays" DESC, s.id DESC
   `);
   return rows.map((row) => ({
     customer: { id: row.id, firstName: row.firstName, lastName: row.lastName },
