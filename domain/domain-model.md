@@ -61,7 +61,7 @@ Tenant. Owns users, customers, services, visits, transactions, actions, messages
 
 Salon operator. One salon. Roles `OWNER` | `MANAGER` | `STAFF`. Status `ACTIVE` | `DISABLED`. Email globally unique. Last active OWNER cannot be removed/demoted. MANAGER may create/disable STAFF only. OWNER assigns any role.
 
-`createdBy` on actions/messages/VIP requests points at `users.id` **without** a composite tenant FK (known debt TD-03). `ReturnCommitment` creator/updater is XOR: composite salon `(userId, salonId)` **or** `platform_admins.id`, never both, never neither.
+`createdBy` on actions/messages/VIP requests points at a same-salon `users(id, salon_id)` through Phase 8 composite FKs. These enforce new writes; historical rows await explicit FK validation. `ReturnCommitment` creator/updater is XOR: composite salon `(userId, salonId)` **or** `platform_admins.id`, never both, never neither.
 
 ### PlatformAdmin
 

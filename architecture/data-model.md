@@ -24,7 +24,7 @@ Platform-owned: `platform_admins`, `vip_target_lists`, `vip_target_contacts` (li
 | Table | Kind | Notes |
 | --- | --- | --- |
 | `salons` | Tenant | `ACTIVE` / `SUSPENDED` |
-| `users` | Operator | Unique `email`; `role`, `status`; unique `(id, salon_id)` (for ReturnCommitment composite creator FKs). Other creator FKs still global-id only (TD-03) |
+| `users` | Operator | Unique `email`; `role`, `status`; unique `(id, salon_id)` supports composite creator FKs |
 | `platform_admins` | Platform operator | No tenant |
 | `customers` | Business fact | Unique `(salon_id, phone_number)` |
 | `visits` | Business fact | `visited_at`; unique `(id, salon_id)` |
@@ -39,7 +39,7 @@ Platform-owned: `platform_admins`, `vip_target_lists`, `vip_target_contacts` (li
 | `vip_target_contacts` | List rows | Phone CHECK `09[0-9]{9}`; unique phone per list; display name optional |
 | `vip_salon_entitlements` | Product flag | Unique `salon_id`; revoke pair CHECK |
 | `vip_requests` | Intent | Unique `(id, salon_id)` |
-| `vip_request_recipients` | Snapshot | Optional `message_request_id` |
+| `vip_request_recipients` | Snapshot | Optional `message_request_id`; linked request must share `salon_id` |
 | `vip_sample_works` | Metadata | Unique `object_key`; bytes in MinIO |
 | `outbox_events` | Infra | `PENDING/PROCESSING/PROCESSED/DEAD_LETTER` |
 | `audit_logs` | Infra | `tenant_id` nullable (platform actors) |
@@ -59,6 +59,8 @@ MessageRequest SQL (migrations, not all visible as Prisma attributes):
 - Partial unique one MessageRequest per VIP recipient phone on a request
 
 Opportunity actions: unique open-row and per-episode uniqueness enforced in SQL (`ON CONFLICT DO NOTHING` on insert).
+
+Phase 8 adds tenant-composite creator FKs on `opportunity_actions`, `message_requests`, `message_deliveries`, and `vip_requests`: `(created_by[_user_id], salon_id) → users(id, salon_id)`. `vip_request_recipients(message_request_id, salon_id) → message_requests(id, salon_id)` is optional: a null `message_request_id` remains valid under PostgreSQL's default `MATCH SIMPLE`. All five use `ON DELETE RESTRICT ON UPDATE RESTRICT`; parent IDs and tenant ownership cannot cascade into historical rows. The existing `users(id, salon_id)` and `message_requests(id, salon_id)` unique keys suffice. The existing unique `vip_request_recipients.message_request_id` index still enforces one recipient per linked message. Prisma represents its inverse as a list because Prisma 6 requires another composite unique index to model this particular composite relation as one-to-one; the physical unique index remains authoritative.
 
 VIP list contact count 1–100. Sample works 1–3 at submit (application).
 
@@ -93,7 +95,7 @@ No intelligence tables. Read path: newest N customers + SQL visit aggregates + c
 
 ## 7. Known data debt
 
-Tracked in `docs/technical-debt.md`. Highlights: no RLS; some creator FKs not tenant-composite; `VipRequestRecipient.messageRequestId` is not a tenant-composite FK; `transaction_items` lack `(id, salon_id)` unique; finite idempotency window; intelligence cap 5,000; unused Redis; some outbox types have no real consumer; possible redundant indexes from scale migrations.
+Tracked in `docs/technical-debt.md`. Highlights: no RLS; Phase 8 historical relationship validation remains pending; `transaction_items` lack `(id, salon_id)` unique; finite idempotency window; unused Redis; some outbox types have no real consumer; possible redundant indexes from scale migrations.
 
 Do not “fix” these inside a documentation change.
 
@@ -104,3 +106,28 @@ Do not “fix” these inside a documentation change.
 Under `packages/database/prisma/migrations/`. Foundation → customers → visits → idempotency → scale indexes → revenue → opportunity actions → message deliveries → message request queue → optional action/manual outreach → opportunity context CHECK → source visit → VIP (+ quota/composite FK follow-ups).
 
 Apply only via Prisma; do not edit applied migration files.
+
+Phase 8 migration `20260927120000_phase8_tenant_composite_relations` installs five composite `NOT VALID` FKs without rewriting old rows. The forward-only `20260927130000_phase8b_preserve_historical_parent_fks` migration restores and validates the five original global-ID parent FKs alongside them. This is necessary because an old cross-salon VIP recipient link did not match its parent under the composite FK alone: deleting that parent succeeded and orphaned the historical link. The extra global-ID constraints are intentionally migration-only; Prisma models the composite relations, and schema diff proposes dropping the extra FKs. Do not apply that generated drop. Both families use `ON DELETE RESTRICT ON UPDATE RESTRICT`; the old global-ID FKs used `ON UPDATE CASCADE`. Parent metadata updates remain legal. Tenant/key moves can be rejected by other references and are not supported application workflows. An isolated parent MessageRequest tenant move can still succeed when only an already inconsistent recipient refers to it; the global-ID guard preserves parent existence, while the composite relation remains unvalidated. No data is backfilled or repaired.
+
+PostgreSQL checks inserted rows and updates that assign a composite key. On a historical mismatch, an unrelated mutable-column update succeeds. Raw SQL `SET reference = reference` fails with `23503`, as do another bad reference and an invalid tenant change. Prisma 6 `updateMany` explicitly assigning the existing scalar value succeeded in disposable tests for all five relationships; its generated UPDATE was observed, so do not infer raw-SQL behavior from the ORM call or vice versa. Application commands that update only status can proceed; commands creating a new child with that bad creator fail atomically. `NOT VALID` does **not** mean all updates to old bad rows fail, nor does migration success establish historical tenant integrity.
+
+Operator sequence: run read-only `packages/database/prisma/preflight/phase8_tenant_relations.sql` on the intended database before deployment. Install both migrations with the repository's Prisma `migrate:deploy` workflow in a planned write window. The Phase 8 `ALTER TABLE` steps need strong child-table locks and parent FK locks; Phase 8B's validated global-ID FKs scan historical rows and may fail atomically if orphaned parents exist. Investigate any migration failure without rewriting history. The composite FKs enforce new key writes immediately but remain `convalidated = false`. Run preflight again before later validation. If violations exist, obtain an explicit provenance decision for each; do not blanket-delete, null, reassign, or copy current tenant/user values onto historical facts.
+
+When all five preflight counts are zero, validate each composite FK separately in a maintenance window (validation scans history and takes locks, and a failure leaves historical rows unchanged):
+
+```sql
+ALTER TABLE opportunity_actions VALIDATE CONSTRAINT opportunity_actions_created_by_salon_id_fkey;
+ALTER TABLE message_requests VALIDATE CONSTRAINT message_requests_created_by_user_id_salon_id_fkey;
+ALTER TABLE message_deliveries VALIDATE CONSTRAINT message_deliveries_created_by_salon_id_fkey;
+ALTER TABLE vip_requests VALIDATE CONSTRAINT vip_requests_created_by_user_id_salon_id_fkey;
+ALTER TABLE vip_request_recipients VALIDATE CONSTRAINT vip_request_recipients_message_request_id_salon_id_fkey;
+SELECT conrelid::regclass, conname, convalidated FROM pg_constraint
+WHERE conname IN (
+  'opportunity_actions_created_by_salon_id_fkey',
+  'message_requests_created_by_user_id_salon_id_fkey',
+  'message_deliveries_created_by_salon_id_fkey',
+  'vip_requests_created_by_user_id_salon_id_fkey',
+  'vip_request_recipients_message_request_id_salon_id_fkey');
+```
+
+All five final `convalidated` values must be true. Synthetic-only tests: on a **task-owned disposable** PostgreSQL instance create `phase8_relations`, apply the 24 predecessor migrations and `verification/phase8_fixture_before.sql`, then deploy both Phase 8 migrations. Run `psql -v ON_ERROR_STOP=1 -f` for `phase8_constraint_checks.sql`, `phase8b_historical_checks.sql`, and `phase8b_validate_dirty.sql`; each asserts outcomes and fails nonzero on mismatch. With `PHASE8B_ISOLATED_DATABASE_URL` set to that exact loopback database, run `pnpm --filter @salon/api test:e2e --runInBand phase8b-historical-relations.e2e-spec.ts` on a fresh fixture. Separately create empty `phase8b_clean`, deploy all migrations, then run `phase8b_validate_clean.sql`. Never substitute an application or preview database. These probes establish synthetic behavior only; target-database preflight, provenance review, and composite validation remain deployment gates. Pre-existing Prisma drift includes ReturnCommitment index order/constraint names and two index names; Phase 8B additionally causes five intentional global-ID FK drop suggestions.

@@ -160,6 +160,8 @@ Statuses `OPEN COMPLETED DISMISSED`. `sourceVisitId` episode snapshot. Concurren
 
 **Implemented.** See `docs/messaging-domain.md`.
 
+Phase 8 database constraints require the salon user recorded as creator of an OpportunityAction, MessageRequest, MessageDelivery, or VipRequest to belong to the row's salon. A linked VIP recipient must reference a MessageRequest in the same salon; an unlinked recipient is valid. Platform-admin dispatch/fulfillment remains separately attributed, and workers do not become salon users. The composite FKs enforce new key writes but have not validated historical rows. Phase 8B also retains the original validated ID-only FKs so inconsistent historical rows cannot lose their parent. Unrelated updates to those rows remain possible; see `architecture/data-model.md` for rollout and preflight.
+
 Salon: opportunity messages, manual messages, get, customer message list, manual-outreach inbox.
 
 Admin: `GET /admin/message-queue`, get one, `select-bale`, `select-manual`, `mark-manual-sent` (QUEUED may be fulfilled in one step), `cancel` (QUEUED or manual PENDING only; durable `CANCELLED`, not a delete), `retry`. Derived ordinary salon folders: `GET /admin/messages/normal/salons` and `GET /admin/messages/normal/salons/:salonId` (customer-bound, non-VIP only; SQL aggregates; cursor pagination; optional salon-name `q`).

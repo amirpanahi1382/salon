@@ -1064,44 +1064,112 @@ export class DispatchVipRequestUseCase {
   ) {
     const requestHash = vipDispatchHash(requestId, mode);
     const now = new Date();
-    await this.prisma.client.$transaction(
-      async (tx) => {
-        const dispatchIdempotencyClaim = await replayOrClaim(tx, {
-          tenantId: admin.adminId,
-          actorId: admin.adminId,
-          operation: mode === 'MANUAL' ? VIP_DISPATCH_MANUAL_OPERATION : VIP_DISPATCH_BALE_OPERATION,
-          key: idempotencyKey,
-          requestHash,
-          resourceType: 'vip_request',
-          resourceId: requestId,
-        });
-        if (dispatchIdempotencyClaim !== 'inserted') {
-          return;
-        }
-        // Serialize every dispatch mode on the request row before reading its state.
-        await tx.$queryRaw`SELECT id FROM vip_requests WHERE id = ${requestId}::uuid FOR UPDATE`;
-        const request = await tx.vipRequest.findUnique({
-          where: { id: requestId },
-          include: { recipients: { orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }] } },
-        });
-        if (!request) {
-          throw new NotFoundError('VIP request not found');
-        }
-        if (request.status === 'MANUAL_QUEUED' && mode === 'MANUAL') {
-          return;
-        }
-        if (request.status === 'BALE_NOT_IMPLEMENTED' && mode === 'BALE') {
-          return;
-        }
-        if (request.status !== 'SUBMITTED' && request.status !== 'BALE_NOT_IMPLEMENTED') {
-          throw new ConflictError('This VIP request cannot be dispatched');
-        }
-        if (mode === 'BALE') {
-          const baleClaim = await tx.vipRequest.updateMany({
-            where: { id: requestId, status: 'SUBMITTED' },
-            data: { status: 'BALE_NOT_IMPLEMENTED', updatedAt: now },
+    try {
+      await this.prisma.client.$transaction(
+        async (tx) => {
+          const dispatchIdempotencyClaim = await replayOrClaim(tx, {
+            tenantId: admin.adminId,
+            actorId: admin.adminId,
+            operation: mode === 'MANUAL' ? VIP_DISPATCH_MANUAL_OPERATION : VIP_DISPATCH_BALE_OPERATION,
+            key: idempotencyKey,
+            requestHash,
+            resourceType: 'vip_request',
+            resourceId: requestId,
           });
-          if (baleClaim.count === 0) return;
+          if (dispatchIdempotencyClaim !== 'inserted') {
+            return;
+          }
+          // Serialize every dispatch mode on the request row before reading its state.
+          await tx.$queryRaw`SELECT id FROM vip_requests WHERE id = ${requestId}::uuid FOR UPDATE`;
+          const request = await tx.vipRequest.findUnique({
+            where: { id: requestId },
+            include: { recipients: { orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }] } },
+          });
+          if (!request) {
+            throw new NotFoundError('VIP request not found');
+          }
+          if (request.status === 'MANUAL_QUEUED' && mode === 'MANUAL') {
+            return;
+          }
+          if (request.status === 'BALE_NOT_IMPLEMENTED' && mode === 'BALE') {
+            return;
+          }
+          if (request.status !== 'SUBMITTED' && request.status !== 'BALE_NOT_IMPLEMENTED') {
+            throw new ConflictError('This VIP request cannot be dispatched');
+          }
+          if (mode === 'BALE') {
+            const baleClaim = await tx.vipRequest.updateMany({
+              where: { id: requestId, status: 'SUBMITTED' },
+              data: { status: 'BALE_NOT_IMPLEMENTED', updatedAt: now },
+            });
+            if (baleClaim.count === 0) return;
+            await tx.auditLog.create({
+              data: {
+                id: createId(),
+                tenantId: request.salonId,
+                actorId: admin.adminId,
+                action: 'VIP_DISPATCH_SELECTED',
+                resource: 'vip_request',
+                resourceId: requestId,
+                result: 'SUCCESS',
+                metadata: { mode: 'BALE', implemented: false },
+              },
+            });
+            return;
+          }
+
+          const manualClaim = await tx.vipRequest.updateMany({
+            where: { id: requestId, status: { in: ['SUBMITTED', 'BALE_NOT_IMPLEMENTED'] } },
+            data: { status: 'MANUAL_QUEUED', updatedAt: now },
+          });
+          if (manualClaim.count === 0) {
+            throw new ConflictError('This VIP request cannot be dispatched');
+          }
+
+          for (const recipient of request.recipients) {
+            if (recipient.messageRequestId) {
+              continue;
+            }
+            if (!isUsableCustomerPhone(recipient.phoneNumber)) {
+              throw new ValidationError('A stored VIP recipient phone is invalid');
+            }
+            const messageRequestId = createId();
+            await tx.messageRequest.create({
+              data: {
+                id: messageRequestId,
+                salonId: request.salonId,
+                customerId: null,
+                actionId: null,
+                createdByUserId: request.createdByUserId,
+                opportunityType: null,
+                vipRequestId: request.id,
+                recipientDisplayName: recipient.displayName,
+                recipientPhoneNumber: recipient.phoneNumber,
+                messageText: recipient.messageText,
+                requestedAt: now,
+                messageBusinessDate: messageBusinessDateValue(now),
+                countsTowardDailyLimit: false,
+                status: 'QUEUED',
+                updatedAt: now,
+              },
+            });
+            await tx.vipRequestRecipient.update({
+              where: { id: recipient.id },
+              data: { messageRequestId },
+            });
+            await tx.outboxEvent.create({
+              data: {
+                id: createId(),
+                tenantId: request.salonId,
+                eventType: DOMAIN_EVENT_TYPES.MessageRequested,
+                payload: {
+                  messageRequestId,
+                  salonId: request.salonId,
+                  vipRequestId: request.id,
+                },
+              },
+            });
+          }
           await tx.auditLog.create({
             data: {
               id: createId(),
@@ -1111,79 +1179,21 @@ export class DispatchVipRequestUseCase {
               resource: 'vip_request',
               resourceId: requestId,
               result: 'SUCCESS',
-              metadata: { mode: 'BALE', implemented: false },
+              metadata: { mode: 'MANUAL', messageCount: request.recipients.length },
             },
           });
-          return;
-        }
-
-        const manualClaim = await tx.vipRequest.updateMany({
-          where: { id: requestId, status: { in: ['SUBMITTED', 'BALE_NOT_IMPLEMENTED'] } },
-          data: { status: 'MANUAL_QUEUED', updatedAt: now },
-        });
-        if (manualClaim.count === 0) {
-          throw new ConflictError('This VIP request cannot be dispatched');
-        }
-
-        for (const recipient of request.recipients) {
-          if (recipient.messageRequestId) {
-            continue;
-          }
-          if (!isUsableCustomerPhone(recipient.phoneNumber)) {
-            throw new ValidationError('A stored VIP recipient phone is invalid');
-          }
-          const messageRequestId = createId();
-          await tx.messageRequest.create({
-            data: {
-              id: messageRequestId,
-              salonId: request.salonId,
-              customerId: null,
-              actionId: null,
-              createdByUserId: request.createdByUserId,
-              opportunityType: null,
-              vipRequestId: request.id,
-              recipientDisplayName: recipient.displayName,
-              recipientPhoneNumber: recipient.phoneNumber,
-              messageText: recipient.messageText,
-              requestedAt: now,
-              messageBusinessDate: messageBusinessDateValue(now),
-              countsTowardDailyLimit: false,
-              status: 'QUEUED',
-              updatedAt: now,
-            },
-          });
-          await tx.vipRequestRecipient.update({
-            where: { id: recipient.id },
-            data: { messageRequestId },
-          });
-          await tx.outboxEvent.create({
-            data: {
-              id: createId(),
-              tenantId: request.salonId,
-              eventType: DOMAIN_EVENT_TYPES.MessageRequested,
-              payload: {
-                messageRequestId,
-                salonId: request.salonId,
-                vipRequestId: request.id,
-              },
-            },
-          });
-        }
-        await tx.auditLog.create({
-          data: {
-            id: createId(),
-            tenantId: request.salonId,
-            actorId: admin.adminId,
-            action: 'VIP_DISPATCH_SELECTED',
-            resource: 'vip_request',
-            resourceId: requestId,
-            result: 'SUCCESS',
-            metadata: { mode: 'MANUAL', messageCount: request.recipients.length },
-          },
-        });
-      },
-      { timeout: VIP_DISPATCH_TX_TIMEOUT_MS },
-    );
+        },
+        { timeout: VIP_DISPATCH_TX_TIMEOUT_MS },
+      );
+    } catch (error: unknown) {
+      // Historical cross-salon creators can still appear in pre-validation VIP
+      // requests. The transaction has rolled back the claim and all effects.
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2003' &&
+          String(error.meta?.field_name).includes('message_requests_created_by_user_id_salon_id_fkey')) {
+        throw new ConflictError('VIP request creator cannot be used for dispatch');
+      }
+      throw error;
+    }
     const request = await this.vip.findRequestById(requestId);
     if (!request) {
       throw new NotFoundError('VIP request not found');

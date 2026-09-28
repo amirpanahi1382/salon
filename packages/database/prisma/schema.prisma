@@ -251,7 +251,7 @@ model OpportunityAction {
   opportunityType  OpportunityActionType    @map("opportunity_type")
   status           OpportunityActionStatus
   createdBy        String                   @map("created_by") @db.Uuid
-  createdByUser    User                     @relation(fields: [createdBy], references: [id], onDelete: Restrict)
+  createdByUser    User                     @relation(fields: [createdBy, salonId], references: [id, salonId], onDelete: Restrict, onUpdate: Restrict)
   createdAt        DateTime                 @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt        DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(3)
   completedAt      DateTime?                @map("completed_at") @db.Timestamptz(3)
@@ -302,7 +302,7 @@ model MessageRequest {
   actionId            String?                @map("action_id") @db.Uuid
   action              OpportunityAction?     @relation(fields: [actionId, salonId], references: [id, salonId], onDelete: Restrict)
   createdByUserId     String                 @map("created_by_user_id") @db.Uuid
-  createdByUser       User                   @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+  createdByUser       User                   @relation(fields: [createdByUserId, salonId], references: [id, salonId], onDelete: Restrict, onUpdate: Restrict)
   opportunityType     OpportunityActionType? @map("opportunity_type")
   vipRequestId        String?                @map("vip_request_id") @db.Uuid
   vipRequest          VipRequest?            @relation(fields: [vipRequestId, salonId], references: [id, salonId], onDelete: Restrict)
@@ -321,7 +321,10 @@ model MessageRequest {
   createdAt           DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt           DateTime               @updatedAt @map("updated_at") @db.Timestamptz(3)
   deliveries          MessageDelivery[]
-  vipRequestRecipient VipRequestRecipient?
+  /// Prisma requires a composite unique index to expose this composite FK as
+  /// one-to-one. The existing unique message_request_id index enforces that
+  /// cardinality physically, so avoid a redundant composite index here.
+  vipRequestRecipients VipRequestRecipient[]
   returnCommitment    ReturnCommitment?
 
   @@unique([id, salonId])
@@ -368,7 +371,7 @@ model MessageDelivery {
   executionToken      String?                @map("execution_token")
   executionLockedUntil DateTime?              @map("execution_locked_until") @db.Timestamptz(3)
   createdBy           String                 @map("created_by") @db.Uuid
-  createdByUser       User                   @relation(fields: [createdBy], references: [id], onDelete: Restrict)
+  createdByUser       User                   @relation(fields: [createdBy, salonId], references: [id, salonId], onDelete: Restrict, onUpdate: Restrict)
   dispatchedByAdminId String?                @map("dispatched_by_admin_id") @db.Uuid
   dispatchedByAdmin   PlatformAdmin?         @relation("MessageDeliveryDispatchedBy", fields: [dispatchedByAdminId], references: [id], onDelete: Restrict)
   fulfilledByAdminId  String?                @map("fulfilled_by_admin_id") @db.Uuid
@@ -550,7 +553,7 @@ model VipRequest {
   listId             String            @map("list_id") @db.Uuid
   list               VipTargetList     @relation(fields: [listId], references: [id], onDelete: Restrict)
   createdByUserId    String            @map("created_by_user_id") @db.Uuid
-  createdByUser      User              @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+  createdByUser      User              @relation(fields: [createdByUserId, salonId], references: [id, salonId], onDelete: Restrict, onUpdate: Restrict)
   requestedCount     Int               @map("requested_count")
   geographicRange    String            @map("geographic_range")
   status             VipRequestStatus
@@ -583,7 +586,7 @@ model VipRequestRecipient {
   phoneNumber      String         @map("phone_number")
   messageText      String         @map("message_text")
   messageRequestId String?        @unique @map("message_request_id") @db.Uuid
-  messageRequest   MessageRequest? @relation(fields: [messageRequestId], references: [id], onDelete: Restrict)
+  messageRequest   MessageRequest? @relation(fields: [messageRequestId, salonId], references: [id, salonId], onDelete: Restrict, onUpdate: Restrict)
   createdAt        DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
 
   @@unique([vipRequestId, sortOrder])

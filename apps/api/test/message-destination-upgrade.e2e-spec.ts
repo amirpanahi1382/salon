@@ -40,7 +40,11 @@ describeIsolated('Phase 3 historical destination upgrade', () => {
     temp = mkdtempSync(join(tmpdir(), 'salon-phase3-upgrade-'));
     writeFileSync(join(temp, 'schema.prisma'), readFileSync(schema));
     cpSync(join(migrations, 'migration_lock.toml'), join(temp, 'migrations', 'migration_lock.toml'), { recursive: true });
-    const names = readdirSync(migrations).filter((name) => /^\d/.test(name)).sort();
+    // This upgrade fixture deliberately stops at Phase 3's predecessor even
+    // when later forward-only migrations have been added to the repository.
+    const names = readdirSync(migrations)
+      .filter((name) => /^\d/.test(name) && name <= '20260924120000_message_request_destination_snapshot')
+      .sort();
     expect(names.at(-1)).toBe('20260924120000_message_request_destination_snapshot');
     expect(names.at(-2)).toBe('20260924100000_messaging_execution_ownership');
     for (const name of names.slice(0, -1)) cpSync(join(migrations, name), join(temp, 'migrations', name), { recursive: true });
