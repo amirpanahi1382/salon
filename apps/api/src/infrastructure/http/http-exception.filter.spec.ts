@@ -82,4 +82,42 @@ describe('HttpExceptionFilter', () => {
       expect.objectContaining({ error: 'INFRASTRUCTURE_ERROR' }),
     );
   });
+
+  it('returns a stable payload-free response for a Phase 9 aggregate failure', () => {
+    const json = jest.fn();
+    const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const error = new Prisma.PrismaClientUnknownRequestError(
+      'Error in connector: ERROR: transaction total must equal its nonempty item total',
+      { clientVersion: '6.4.1' },
+    );
+    filter.catch(error, hostWith(json, { method: 'POST', path: '/transactions' }) as never);
+    expect(json).toHaveBeenCalledWith(HttpStatus.BAD_REQUEST, {
+      statusCode: 400,
+      error: 'VALIDATION_ERROR',
+      message: 'Sum of item totals must equal the transaction amount',
+      requestId: 'req-1',
+    });
+    const response = JSON.stringify(json.mock.calls[0]?.[1]);
+    expect(response).not.toContain('connector');
+    expect(response).not.toContain('23514');
+    expect(response).not.toMatch(/\d+\.\d{2}/);
+    expect(JSON.stringify(warnSpy.mock.calls[0])).not.toMatch(/\d+\.\d{2}/);
+  });
+
+  it('treats an unsupported isolation guard as an internal configuration failure', () => {
+    const json = jest.fn();
+    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    const error = new Prisma.PrismaClientUnknownRequestError(
+      'Error in connector: ERROR: financial writes require read committed isolation',
+      { clientVersion: '6.4.1' },
+    );
+    filter.catch(error, hostWith(json, { method: 'POST', path: '/transactions' }) as never);
+    expect(json).toHaveBeenCalledWith(HttpStatus.INTERNAL_SERVER_ERROR, {
+      statusCode: 500,
+      error: 'INTERNAL_ERROR',
+      message: 'An unexpected error occurred',
+      requestId: 'req-1',
+    });
+    expect(JSON.stringify(json.mock.calls[0]?.[1])).not.toContain('isolation');
+  });
 });

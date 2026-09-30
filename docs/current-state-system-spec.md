@@ -116,7 +116,7 @@ Flutter: record visit, list, export, delete for non-STAFF.
 
 ## 8. Revenue
 
-**Implemented:** `LedgerTransaction` + items; create; list; get; void (repeat void no-op); customer transactions list. Amount decimal strings. IRR. Complete-with-sale writes visit+tx+item atomically.
+**Implemented:** `LedgerTransaction` + items; create; list; get; void (repeat void no-op); customer transactions list. Amount decimal strings. IRR. Complete-with-sale writes visit+tx+item atomically. Phase 9 database triggers now enforce item arithmetic and a nonempty exact item sum equal to the header at commit for new/financially changed rows, including VOIDED; existing historical discrepancies remain unvalidated until the read-only preflight and provenance review described in `domain/financial-domain.md`.
 
 Revenue metrics on intelligence summary/customer: completed only; UTC months; `REVENUE_DECLINE` when trend `DECREASING`. Details: `domain/financial-domain.md`.
 

@@ -34,4 +34,17 @@ describe('mapPrismaError', () => {
     expect(mapPrismaError(known('P1001'))).toBeUndefined();
     expect(mapPrismaError(new Error('boom'))).toBeUndefined();
   });
+
+  it('maps only recognized payload-free money trigger failures', () => {
+    const error = (message: string) => new Prisma.PrismaClientUnknownRequestError(message, {
+      clientVersion: '6.4.1',
+    });
+    expect(mapPrismaError(error('Error in connector: ERROR: transaction total must equal its nonempty item total'))).toBeInstanceOf(ValidationError);
+    expect(mapPrismaError(error('Error in connector: ERROR: transaction item total must equal quantity times unit price'))).toBeInstanceOf(ValidationError);
+    expect(mapPrismaError(error('ConnectorError(QueryError(PostgresError { code: "23514", message: "transaction item total must equal quantity times unit price", severity: "ERROR" }))'))).toBeInstanceOf(ValidationError);
+    expect(mapPrismaError(error('ConnectorError(QueryError(PostgresError { code: "23503", message: "transaction item total must equal quantity times unit price", severity: "ERROR" }))'))).toBeUndefined();
+    expect(mapPrismaError(error('Error in connector: ERROR: another constraint failed'))).toBeUndefined();
+    expect(mapPrismaError(error('ERROR: prefix transaction item total must equal quantity times unit price suffix'))).toBeUndefined();
+    expect(mapPrismaError(error('Error in connector: ERROR: financial writes require read committed isolation'))).toBeUndefined();
+  });
 });

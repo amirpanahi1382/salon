@@ -83,7 +83,7 @@ Customer/visit **hard delete** is allowed only when financial and message histor
 
 ## 5. Money
 
-See `domain/financial-domain.md`. Header amount is authoritative. Item sum equality is application-side.
+See `domain/financial-domain.md`. Header amount is authoritative. Phase 9 deferred constraint triggers check nonempty `SUM(transaction_items.total_amount) = transactions.amount` on new/financially changed rows at commit; an immediate payload-free trigger checks new/financially changed item arithmetic. Both statuses are covered. Existing mismatches are not rewritten or automatically validated; use the Phase 9 read-only preflight and provenance review.
 
 ---
 

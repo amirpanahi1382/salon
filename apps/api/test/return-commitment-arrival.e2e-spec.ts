@@ -574,6 +574,7 @@ describeIfDb('Return commitment arrival (e2e)', () => {
         currency: 'IRR',
         status: 'COMPLETED',
         updatedAt: new Date(),
+        items: { create: [{ id: randomUUID(), serviceId, quantity: 1, unitPrice: '0.00', totalAmount: '0.00' }] },
       },
     });
     const zeroLinked = await request(app.getHttpServer())

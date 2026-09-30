@@ -53,8 +53,10 @@ async function explain(label: string, sql: string): Promise<string> {
 async function seed() {
   const existing = await prisma.salon.findMany({ where: { name: BENCH_NAME } });
   for (const salon of existing) {
-    await prisma.transactionItem.deleteMany({ where: { salonId: salon.id } });
-    await prisma.ledgerTransaction.deleteMany({ where: { salonId: salon.id } });
+    await prisma.$transaction(async (tx) => {
+      await tx.transactionItem.deleteMany({ where: { salonId: salon.id } });
+      await tx.ledgerTransaction.deleteMany({ where: { salonId: salon.id } });
+    });
     await prisma.service.deleteMany({ where: { salonId: salon.id } });
     await prisma.visit.deleteMany({ where: { salonId: salon.id } });
     await prisma.customer.deleteMany({ where: { salonId: salon.id } });
@@ -137,10 +139,10 @@ async function seed() {
     });
   }
   for (let i = 0; i < transactions.length; i += 500) {
-    await prisma.ledgerTransaction.createMany({ data: transactions.slice(i, i + 500) });
-  }
-  for (let i = 0; i < items.length; i += 500) {
-    await prisma.transactionItem.createMany({ data: items.slice(i, i + 500) });
+    await prisma.$transaction(async (tx) => {
+      await tx.ledgerTransaction.createMany({ data: transactions.slice(i, i + 500) });
+      await tx.transactionItem.createMany({ data: items.slice(i, i + 500) });
+    });
   }
 
   return { salonId, firstCustomerId: customers[0]!.id, searchPhone: customers[0]!.phoneNumber };

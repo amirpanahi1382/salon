@@ -34,6 +34,22 @@ export function mapPrismaError(error: unknown): AppError | undefined {
     return new ValidationError('Invalid request data');
   }
 
+  // Prisma 6 reports deferred PostgreSQL constraint-trigger failures at
+  // interactive transaction commit as UnknownRequestError, without SQLSTATE
+  // or constraint metadata. Match only this fixed, payload-free DB message.
+  if (error instanceof Prisma.PrismaClientUnknownRequestError &&
+      error.message.endsWith('ERROR: transaction total must equal its nonempty item total')) {
+    return new ValidationError('Sum of item totals must equal the transaction amount');
+  }
+  const itemMathMessage = 'transaction item total must equal quantity times unit price';
+  if (error instanceof Prisma.PrismaClientUnknownRequestError &&
+      (error.message.endsWith(`ERROR: ${itemMathMessage}`) ||
+        error.message.includes(
+          `PostgresError { code: "23514", message: "${itemMathMessage}",`,
+        ))) {
+    return new ValidationError('Item total must equal quantity times unit price');
+  }
+
   return undefined;
 }
 

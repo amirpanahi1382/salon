@@ -93,19 +93,36 @@ describeIfDb('Phase 6B intelligence completeness (disposable PostgreSQL)', () =>
     const monthStart = new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth(), 1));
     const previousMonthStart = new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth() - 1, 1));
     const previousMonthEnd = new Date(monthStart.getTime() - 1);
-    await db.client.ledgerTransaction.createMany({ data: [
+    const serviceId = randomUUID(), exactServiceId = randomUUID();
+    await db.client.service.createMany({ data: [
+      { id: serviceId, salonId, name: 'Synthetic revenue' },
+      { id: exactServiceId, salonId: exactSalonId, name: 'Synthetic revenue' },
+    ] });
+    const revenueRows = [
       { id: randomUUID(), salonId, customerId: customerIds[5200]!, occurredAt: previousMonthStart, amount: '40.00', status: 'COMPLETED' },
       { id: randomUUID(), salonId, customerId: customerIds[5200]!, occurredAt: previousMonthEnd, amount: '60.00', status: 'COMPLETED' },
       { id: randomUUID(), salonId, customerId: customerIds[5200]!, occurredAt: previousMonthEnd, amount: '200.00', status: 'VOIDED' },
       { id: randomUUID(), salonId, customerId: customerIds[5000]!, occurredAt: monthStart, amount: '1.00', status: 'COMPLETED' },
       { id: randomUUID(), salonId: exactSalonId, customerId: exactDualId, occurredAt: previousMonthStart, amount: '10.00', status: 'COMPLETED' },
-    ] });
+    ] as const;
+    await db.client.$transaction(async (tx) => {
+      await tx.ledgerTransaction.createMany({ data: revenueRows.map((row) => ({ ...row, updatedAt: new Date() })) });
+      await tx.transactionItem.createMany({ data: revenueRows.map((row) => ({
+        id: randomUUID(), salonId: row.salonId, transactionId: row.id,
+        serviceId: row.salonId === exactSalonId ? exactServiceId : serviceId,
+        quantity: 1, unitPrice: row.amount, totalAmount: row.amount,
+      })) });
+    });
   }, 120_000);
 
   afterAll(async () => {
     if (!app) return;
     for (const id of [salonId, otherSalonId, emptySalonId, exactSalonId]) {
-      await db.client.ledgerTransaction.deleteMany({ where: { salonId: id } });
+      await db.client.$transaction(async (tx) => {
+        await tx.transactionItem.deleteMany({ where: { salonId: id } });
+        await tx.ledgerTransaction.deleteMany({ where: { salonId: id } });
+      });
+      await db.client.service.deleteMany({ where: { salonId: id } });
       await db.client.visit.deleteMany({ where: { salonId: id } });
       await db.client.customer.deleteMany({ where: { salonId: id } });
       await db.client.user.deleteMany({ where: { salonId: id } });
