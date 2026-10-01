@@ -24,6 +24,7 @@ import {
 } from '@salon/shared';
 import { Prisma } from '@salon/database';
 import { PrismaService } from '../infrastructure/database/prisma.service';
+import { AppConfigService } from '../infrastructure/config/app-config.service';
 import {
   assertSameIdempotentRequest,
   claimIdempotencyKey,
@@ -65,6 +66,7 @@ import { detectVipImageContentType, assertSafeObjectFileName } from './image-sig
 import { parseVipTargetExcel } from './parse-vip-excel';
 import { toListSummary, toVipRequest } from './vip.mapper';
 import { VipRepository } from './vip.repository';
+import { readVerifiedVipSampleObject } from './vip-sample-work-integrity';
 import type { CreateVipRequestDto, PatchVipListDto } from './vip.dto';
 import ExcelJS from 'exceljs';
 
@@ -774,6 +776,7 @@ export class UploadVipSampleWorkUseCase {
   constructor(
     private readonly prisma: PrismaService,
     private readonly vip: VipRepository,
+    private readonly config: AppConfigService,
     @Inject(OBJECT_STORAGE) private readonly storage: ObjectStorage,
   ) {}
 
@@ -798,78 +801,156 @@ export class UploadVipSampleWorkUseCase {
     }
     const sha256 = createHash('sha256').update(file.buffer).digest('hex');
     const requestHash = vipSampleWorkHash(requestId, sha256);
-    const imageId = createId();
-    const objectKey = `vip/${principal.tenantId}/${requestId}/${imageId}`;
     const now = new Date();
-    let extraObjectKey: string | undefined;
-
-    await this.storage.putObject({ key: objectKey, body: file.buffer, contentType });
-
-    try {
-      await this.prisma.client.$transaction(async (tx) => {
-        const claimed = await replayOrClaim(tx, {
-          tenantId: principal.tenantId,
-          actorId: principal.userId,
-          operation: VIP_SAMPLE_WORK_UPLOAD_OPERATION,
-          key: idempotencyKey,
-          requestHash,
-          resourceType: 'vip_sample_work',
-          resourceId: imageId,
-        });
-        if (claimed !== 'inserted') {
-          extraObjectKey = objectKey;
-          return;
-        }
-        await this.vip.expireStaleReservations(now, tx);
-        const request = await tx.vipRequest.findFirst({
-          where: { id: requestId, salonId: principal.tenantId },
-          include: { sampleWorks: true },
-        });
-        if (!request) {
-          throw new NotFoundError('VIP request not found');
-        }
-        if (request.status !== 'AWAITING_SAMPLE_WORK') {
-          throw new ConflictError('Sample work cannot be added in the current state');
-        }
-        if (request.sampleWorks.length >= VIP_MAX_SAMPLE_WORKS) {
-          throw new ValidationError('At most 3 sample-work images are allowed');
-        }
-        const used = new Set(request.sampleWorks.map((row) => row.position));
-        const position = [1, 2, 3].find((value) => !used.has(value));
-        if (!position) {
-          throw new ValidationError('At most 3 sample-work images are allowed');
-        }
-        await tx.vipSampleWork.create({
-          data: {
-            id: imageId,
-            vipRequestId: requestId,
-            salonId: principal.tenantId,
-            position,
-            objectKey,
-            contentType,
-            byteSize: file.buffer.length,
-            sha256,
-          },
-        });
+    const execution = await this.prisma.client.$transaction(async (tx) => {
+      await this.vip.expireStaleReservations(now, tx);
+      await tx.$queryRaw`SELECT id FROM vip_requests WHERE id = ${requestId}::uuid FOR UPDATE`;
+      const request = await tx.vipRequest.findFirst({
+        where: { id: requestId, salonId: principal.tenantId },
+        include: { sampleWorks: { select: { position: true } } },
       });
-    } catch (error: unknown) {
-      await this.storage.deleteObject(objectKey).catch(() => undefined);
-      if (
-        error instanceof ForbiddenError ||
-        error instanceof ConflictError ||
-        error instanceof ValidationError ||
-        error instanceof NotFoundError
-      ) {
-        throw error;
+      if (!request) throw new NotFoundError('VIP request not found');
+
+      const existingKey = await findIdempotencyRecord(tx, {
+        tenantId: principal.tenantId,
+        actorId: principal.userId,
+        operation: VIP_SAMPLE_WORK_UPLOAD_OPERATION,
+        key: idempotencyKey,
+      });
+      if (existingKey) assertSameIdempotentRequest(existingKey.requestHash, requestHash);
+
+      let upload = existingKey
+        ? await tx.vipSampleWorkUpload.findUnique({ where: { id: existingKey.resourceId } })
+        : await tx.vipSampleWorkUpload.findUnique({
+            where: { vipRequestId_sha256: { vipRequestId: requestId, sha256 } },
+          });
+      if (existingKey && !upload) throw new NotFoundError('Upload intent not found');
+
+      const uploadId = upload?.id ?? createId();
+      if (!existingKey) {
+        const claim = await claimIdempotencyKey(tx, {
+          id: createId(), tenantId: principal.tenantId, actorId: principal.userId,
+          operation: VIP_SAMPLE_WORK_UPLOAD_OPERATION, key: idempotencyKey,
+          requestHash, resourceType: 'vip_sample_work_upload', resourceId: uploadId,
+        });
+        if (!claim.inserted) throw new ConflictError('Upload retry conflicted; retry the request');
       }
-      const mapped = mapPrismaError(error);
-      if (mapped) {
-        throw mapped;
+      if (!upload) {
+        upload = await tx.vipSampleWorkUpload.create({ data: {
+          id: uploadId, vipRequestId: requestId, salonId: principal.tenantId,
+          sha256, contentType, byteSize: file.buffer.length, status: 'RETRYABLE',
+        } });
       }
-      throw error;
-    }
-    if (extraObjectKey) {
-      await this.storage.deleteObject(extraObjectKey).catch(() => undefined);
+      if (upload.vipRequestId !== requestId || upload.salonId !== principal.tenantId) {
+        throw new NotFoundError('Upload intent not found');
+      }
+      if (upload.status === 'AVAILABLE') return { kind: 'available' as const };
+
+      const eligible = request.status === 'AWAITING_SAMPLE_WORK' &&
+        request.reservedUntil.getTime() >= now.getTime();
+      if (!eligible) {
+        if (upload.status === 'UPLOADING' && upload.objectKey) {
+          await enqueueVipObjectCleanup(tx, upload.id, upload.generation, upload.objectKey,
+            cleanupSchedule(upload.lockedUntil, this.config.values.MINIO_REQUEST_TIMEOUT_MS,
+              this.config.values.VIP_UPLOAD_CLEANUP_SETTLE_MS, now));
+        }
+        await tx.vipSampleWorkUpload.updateMany({
+          where: { id: upload.id, status: { not: 'AVAILABLE' } },
+          data: { status: 'ABANDONED', position: null, ownerToken: null, lockedUntil: null,
+            sampleWorkId: null, lastErrorCode: 'REQUEST_INELIGIBLE' },
+        });
+        throw new ConflictError('Sample work cannot be added in the current state');
+      }
+
+      if (upload.status === 'UPLOADING') {
+        if (upload.lockedUntil && upload.lockedUntil.getTime() > now.getTime()) {
+          throw new ConflictError('This sample-work upload is already in progress');
+        }
+        if (upload.objectKey) {
+          await enqueueVipObjectCleanup(tx, upload.id, upload.generation, upload.objectKey,
+            cleanupSchedule(upload.lockedUntil, this.config.values.MINIO_REQUEST_TIMEOUT_MS,
+              this.config.values.VIP_UPLOAD_CLEANUP_SETTLE_MS, now));
+        }
+        upload = await tx.vipSampleWorkUpload.update({
+          where: { id: upload.id },
+          data: { status: 'RETRYABLE', position: null, ownerToken: null, lockedUntil: null,
+            lastErrorCode: 'LEASE_EXPIRED' },
+        });
+      }
+      if (upload.status === 'ABANDONED') {
+        throw new ConflictError('Sample work cannot be added in the current state');
+      }
+
+      const pending = await tx.vipSampleWorkUpload.findMany({
+        where: { vipRequestId: requestId, status: 'UPLOADING', position: { not: null } },
+        select: { position: true },
+      });
+      const used = new Set([
+        ...request.sampleWorks.map((row) => row.position),
+        ...pending.flatMap((row) => row.position == null ? [] : [row.position]),
+      ]);
+      const position = [1, 2, 3].find((value) => !used.has(value));
+      if (!position) throw new ValidationError('At most 3 sample-work images are allowed');
+
+      const generation = upload.generation + 1;
+      const ownerToken = createId();
+      const objectKey = `vip/${principal.tenantId}/${requestId}/${upload.id}/g${generation}`;
+      const lockedUntil = new Date(now.getTime() + this.config.values.VIP_UPLOAD_LEASE_MS);
+      await tx.vipSampleWorkUpload.update({
+        where: { id: upload.id },
+        data: { status: 'UPLOADING', position, generation, objectKey, ownerToken,
+          lockedUntil, lastErrorCode: null },
+      });
+      return { kind: 'upload' as const, uploadId: upload.id, generation, ownerToken,
+        objectKey, position, lockedUntil };
+    });
+
+    if (execution.kind === 'upload') {
+      await this.storage.putObject({ key: execution.objectKey, body: file.buffer, contentType });
+      await readVerifiedVipSampleObject(this.storage, {
+        objectKey: execution.objectKey, contentType, byteSize: file.buffer.length, sha256,
+      });
+      const finalized = await this.prisma.client.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT id FROM vip_requests WHERE id = ${requestId}::uuid FOR UPDATE`;
+        const [request, upload] = await Promise.all([
+          tx.vipRequest.findFirst({ where: { id: requestId, salonId: principal.tenantId } }),
+          tx.vipSampleWorkUpload.findUnique({ where: { id: execution.uploadId } }),
+        ]);
+        const owned = upload?.status === 'UPLOADING' && upload.generation === execution.generation &&
+          upload.ownerToken === execution.ownerToken && upload.objectKey === execution.objectKey &&
+          upload.position === execution.position;
+        const eligible = request?.status === 'AWAITING_SAMPLE_WORK' &&
+          request.reservedUntil.getTime() >= new Date().getTime();
+        if (!owned || !eligible) {
+          await enqueueVipObjectCleanup(tx, execution.uploadId, execution.generation,
+            execution.objectKey, cleanupSchedule(execution.lockedUntil,
+              this.config.values.MINIO_REQUEST_TIMEOUT_MS,
+              this.config.values.VIP_UPLOAD_CLEANUP_SETTLE_MS, new Date()));
+          if (owned) {
+            await tx.vipSampleWorkUpload.update({
+              where: { id: execution.uploadId },
+              data: { status: eligible ? 'RETRYABLE' : 'ABANDONED', position: null,
+                ownerToken: null, lockedUntil: null, lastErrorCode: 'FINALIZE_OWNERSHIP_LOST' },
+            });
+          }
+          return false;
+        }
+        const verifiedAt = new Date();
+        await tx.vipSampleWork.create({ data: {
+          id: execution.uploadId, vipRequestId: requestId, salonId: principal.tenantId,
+          position: execution.position, objectKey: execution.objectKey, contentType,
+          byteSize: file.buffer.length, sha256, verifiedAt,
+        } });
+        const moved = await tx.vipSampleWorkUpload.updateMany({
+          where: { id: execution.uploadId, status: 'UPLOADING', generation: execution.generation,
+            ownerToken: execution.ownerToken, objectKey: execution.objectKey },
+          data: { status: 'AVAILABLE', position: null, ownerToken: null, lockedUntil: null,
+            sampleWorkId: execution.uploadId, verifiedAt, lastErrorCode: null },
+        });
+        if (moved.count !== 1) throw new ConflictError('Upload ownership was lost');
+        return true;
+      });
+      if (!finalized) throw new ConflictError('Upload ownership was lost; retry the request');
     }
 
     const request = await this.vip.findRequestForSalon(principal.tenantId, requestId);
@@ -880,20 +961,102 @@ export class UploadVipSampleWorkUseCase {
   }
 }
 
+function cleanupSchedule(
+  lockedUntil: Date | null,
+  timeoutMs: number,
+  settleMs: number,
+  now: Date,
+): { availableAt: Date; settleUntil: Date } {
+  const base = Math.max(now.getTime(), lockedUntil?.getTime() ?? 0);
+  return {
+    availableAt: new Date(base + timeoutMs),
+    settleUntil: new Date(base + settleMs),
+  };
+}
+
+async function enqueueVipObjectCleanup(
+  tx: Prisma.TransactionClient,
+  uploadId: string,
+  generation: number,
+  objectKey: string,
+  schedule: { availableAt: Date; settleUntil: Date },
+) {
+  await tx.$executeRaw`
+    INSERT INTO vip_sample_work_cleanups
+      (id, upload_id, object_key, upload_generation, status, request_generation,
+       claim_generation, available_at, settle_until, delete_passes, attempts, created_at)
+    VALUES
+      (${createId()}::uuid, ${uploadId}::uuid, ${objectKey}, ${generation}, 'PENDING',
+       1, 0, ${schedule.availableAt}, ${schedule.settleUntil}, 0, 0, NOW())
+    ON CONFLICT (object_key) DO UPDATE
+      SET request_generation = vip_sample_work_cleanups.request_generation + 1,
+          status = CASE
+            WHEN vip_sample_work_cleanups.status = 'PROCESSED' THEN 'PENDING'::"VipSampleCleanupStatus"
+            ELSE vip_sample_work_cleanups.status
+          END,
+          available_at = LEAST(vip_sample_work_cleanups.available_at, EXCLUDED.available_at),
+          settle_until = GREATEST(vip_sample_work_cleanups.settle_until, EXCLUDED.settle_until),
+          processed_at = CASE
+            WHEN vip_sample_work_cleanups.status = 'PROCESSED' THEN NULL
+            ELSE vip_sample_work_cleanups.processed_at
+          END,
+          last_error_code = NULL
+  `;
+}
+
 @Injectable()
 export class SubmitVipRequestUseCase {
   constructor(
     private readonly prisma: PrismaService,
     private readonly vip: VipRepository,
+    @Inject(OBJECT_STORAGE) private readonly storage: ObjectStorage,
   ) {}
 
   async execute(principal: AuthenticatedPrincipal, requestId: string, idempotencyKey: string) {
     const requestHash = vipRequestSubmitHash(requestId);
+    const existing = await findIdempotencyRecord(this.prisma.client, {
+      tenantId: principal.tenantId,
+      actorId: principal.userId,
+      operation: VIP_REQUEST_SUBMIT_OPERATION,
+      key: idempotencyKey,
+    });
+    if (existing) {
+      assertSameIdempotentRequest(existing.requestHash, requestHash);
+      const replay = await this.vip.findRequestForSalon(principal.tenantId, existing.resourceId);
+      if (!replay) throw new NotFoundError('VIP request not found');
+      return toVipRequest(replay);
+    }
+
     const now = new Date();
     await this.prisma.client.$transaction(async (tx) => {
       await this.vip.expireStaleReservations(now, tx);
     });
+
+    const candidate = await this.prisma.client.vipRequest.findFirst({
+      where: { id: requestId, salonId: principal.tenantId },
+      include: { sampleWorks: { orderBy: [{ position: 'asc' }, { id: 'asc' }] } },
+    });
+    if (!candidate) throw new NotFoundError('VIP request not found');
+    if (candidate.status !== 'AWAITING_SAMPLE_WORK') {
+      throw new ConflictError('This VIP request cannot be submitted');
+    }
+    if (candidate.sampleWorks.length < VIP_MIN_SAMPLE_WORKS) {
+      throw new ValidationError('Upload at least one sample-work image');
+    }
+    if (candidate.sampleWorks.length > VIP_MAX_SAMPLE_WORKS) {
+      throw new ValidationError('At most 3 sample-work images are allowed');
+    }
+
+    // Storage reads are deliberately outside the transaction. AVAILABLE and verifiedAt prove
+    // only that these exact bytes were readable at this point in time.
+    await Promise.all(candidate.sampleWorks.map((sample) => readVerifiedVipSampleObject(this.storage, sample)));
+    const verifiedIds = candidate.sampleWorks.map((sample) => sample.id);
+    const evidence = candidate.sampleWorks.map((sample) =>
+      `${sample.id}:${sample.objectKey}:${sample.sha256}:${sample.byteSize}:${sample.contentType}`,
+    );
+
     await this.prisma.client.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM vip_requests WHERE id = ${requestId}::uuid FOR UPDATE`;
       const claimed = await replayOrClaim(tx, {
         tenantId: principal.tenantId,
         actorId: principal.userId,
@@ -908,7 +1071,7 @@ export class SubmitVipRequestUseCase {
       }
       const request = await tx.vipRequest.findFirst({
         where: { id: requestId, salonId: principal.tenantId },
-        include: { sampleWorks: true },
+        include: { sampleWorks: { orderBy: [{ position: 'asc' }, { id: 'asc' }] } },
       });
       if (!request) {
         throw new NotFoundError('VIP request not found');
@@ -921,6 +1084,12 @@ export class SubmitVipRequestUseCase {
       }
       if (request.sampleWorks.length > VIP_MAX_SAMPLE_WORKS) {
         throw new ValidationError('At most 3 sample-work images are allowed');
+      }
+      const latestEvidence = request.sampleWorks.map((sample) =>
+        `${sample.id}:${sample.objectKey}:${sample.sha256}:${sample.byteSize}:${sample.contentType}`,
+      );
+      if (latestEvidence.length !== evidence.length || latestEvidence.some((value, index) => value !== evidence[index])) {
+        throw new ConflictError('Sample work changed during submission; retry the request');
       }
       const moved = await tx.vipRequest.updateMany({
         where: {
@@ -946,6 +1115,14 @@ export class SubmitVipRequestUseCase {
         }
         throw new ConflictError('This VIP request cannot be submitted');
       }
+      await tx.vipSampleWork.updateMany({
+        where: { id: { in: verifiedIds }, vipRequestId: requestId, salonId: principal.tenantId },
+        data: { verifiedAt: now },
+      });
+      await tx.vipSampleWorkUpload.updateMany({
+        where: { sampleWorkId: { in: verifiedIds }, status: 'AVAILABLE' },
+        data: { verifiedAt: now },
+      });
       await tx.outboxEvent.create({
         data: {
           id: createId(),
@@ -1000,7 +1177,7 @@ export class DownloadVipSampleWorkUseCase {
     if (!image) {
       throw new NotFoundError('Sample work not found');
     }
-    return this.storage.getObject(image.objectKey);
+    return this.readAndRecord(image);
   }
 
   async executeForSalon(principal: AuthenticatedPrincipal, imageId: string) {
@@ -1010,7 +1187,29 @@ export class DownloadVipSampleWorkUseCase {
     if (!image) {
       throw new NotFoundError('Sample work not found');
     }
-    return this.storage.getObject(image.objectKey);
+    return this.readAndRecord(image);
+  }
+
+  private async readAndRecord(image: {
+    id: string;
+    objectKey: string;
+    contentType: string;
+    byteSize: number;
+    sha256: string;
+  }) {
+    const stored = await readVerifiedVipSampleObject(this.storage, image);
+    const verifiedAt = new Date();
+    await this.prisma.client.$transaction(async (tx) => {
+      await tx.vipSampleWork.updateMany({
+        where: { id: image.id, objectKey: image.objectKey, sha256: image.sha256 },
+        data: { verifiedAt },
+      });
+      await tx.vipSampleWorkUpload.updateMany({
+        where: { sampleWorkId: image.id, status: 'AVAILABLE', objectKey: image.objectKey },
+        data: { verifiedAt },
+      });
+    });
+    return stored;
   }
 }
 

@@ -18,6 +18,10 @@ describe('loadConfig', () => {
     expect(config.OUTBOX_PROCESSED_RETENTION_DAYS).toBe(14);
     expect(config.IDEMPOTENCY_RETENTION_DAYS).toBe(7);
     expect(config.MINIO_USE_SSL).toBe(false);
+    expect(config.MINIO_REQUEST_TIMEOUT_MS).toBe(10_000);
+    expect(config.VIP_UPLOAD_LEASE_MS).toBe(30_000);
+    expect(config.VIP_UPLOAD_RECOVERY_INTERVAL_MS).toBe(30_000);
+    expect(config.VIP_UPLOAD_CLEANUP_SETTLE_MS).toBe(3_600_000);
   });
 
   it('fails fast when JWT_SECRET is too short', () => {

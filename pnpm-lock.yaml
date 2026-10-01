@@ -44,6 +44,9 @@ importers:
       '@salon/database':
         specifier: workspace:*
         version: link:../../packages/database
+      '@salon/object-storage':
+        specifier: workspace:*
+        version: link:../../packages/object-storage
       '@salon/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -141,6 +144,9 @@ importers:
       '@salon/database':
         specifier: workspace:*
         version: link:../../packages/database
+      '@salon/object-storage':
+        specifier: workspace:*
+        version: link:../../packages/object-storage
       '@salon/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -222,6 +228,25 @@ importers:
       ts-jest:
         specifier: ^29.2.6
         version: 29.4.12(@babel/core@7.29.7)(@jest/transform@29.7.0)(@jest/types@29.6.3)(babel-jest@29.7.0(@babel/core@7.29.7))(esbuild@0.28.2)(jest-util@29.7.0)(jest@29.7.0(@types/node@24.13.3))(typescript@5.9.3)
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
+
+  packages/object-storage:
+    dependencies:
+      '@salon/shared':
+        specifier: workspace:*
+        version: link:../shared
+    devDependencies:
+      '@types/jest':
+        specifier: ^29.5.14
+        version: 29.5.14
+      '@types/node':
+        specifier: ^24.3.0
+        version: 24.13.3
+      jest:
+        specifier: ^29.7.0
+        version: 29.7.0(@types/node@24.13.3)(ts-node@10.9.2(@types/node@24.13.3)(typescript@5.9.3))
       typescript:
         specifier: ^5.7.3
         version: 5.9.3

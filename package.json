@@ -15,7 +15,7 @@
     "db:migrate:dev": "dotenv -e .env -- pnpm --filter @salon/database migrate:dev",
     "db:ensure-dev-catalog": "dotenv -e .env -- pnpm --filter @salon/database exec node scripts/ensure-dev-catalog.cjs",
     "db:bootstrap-admin": "dotenv -e .env -- pnpm --filter @salon/api exec node scripts/bootstrap-platform-admin.cjs",
-    "build:packages": "pnpm --filter @salon/shared build && pnpm --filter @salon/config build && pnpm --filter @salon/database build",
+    "build:packages": "pnpm --filter @salon/shared build && pnpm --filter @salon/config build && pnpm --filter @salon/database build && pnpm --filter @salon/object-storage build",
     "build": "pnpm build:packages && pnpm --filter @salon/api build && pnpm --filter @salon/worker build",
     "dev:api": "pnpm build:packages && dotenv -e .env -- pnpm --filter @salon/api start:dev",
     "dev:worker": "pnpm build:packages && dotenv -e .env -- pnpm --filter @salon/worker start:dev",

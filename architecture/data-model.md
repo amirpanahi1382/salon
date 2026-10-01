@@ -40,7 +40,9 @@ Platform-owned: `platform_admins`, `vip_target_lists`, `vip_target_contacts` (li
 | `vip_salon_entitlements` | Product flag | Unique `salon_id`; revoke pair CHECK |
 | `vip_requests` | Intent | Unique `(id, salon_id)` |
 | `vip_request_recipients` | Snapshot | Optional `message_request_id`; linked request must share `salon_id` |
-| `vip_sample_works` | Metadata | Unique `object_key`; bytes in MinIO |
+| `vip_sample_works` | Committed metadata | Unique `object_key`; bytes in MinIO; nullable `verified_at` is point-in-time evidence and remains null for unverified history |
+| `vip_sample_work_uploads` | Durable upload intent | Request/tenant, digest/type/size, reserved position, generation/token/lease, and optional committed sample link |
+| `vip_sample_work_cleanups` | Abandoned-attempt cleanup | Unique generation-specific key; request + claim generation fences; bounded worker retries |
 | `outbox_events` | Infra | `PENDING/PROCESSING/PROCESSED/DEAD_LETTER` |
 | `audit_logs` | Infra | `tenant_id` nullable (platform actors) |
 | `idempotency_records` | Infra | Unique `(tenant_id, actor_id, operation, key)` |
@@ -63,6 +65,8 @@ Opportunity actions: unique open-row and per-episode uniqueness enforced in SQL 
 Phase 8 adds tenant-composite creator FKs on `opportunity_actions`, `message_requests`, `message_deliveries`, and `vip_requests`: `(created_by[_user_id], salon_id) → users(id, salon_id)`. `vip_request_recipients(message_request_id, salon_id) → message_requests(id, salon_id)` is optional: a null `message_request_id` remains valid under PostgreSQL's default `MATCH SIMPLE`. All five use `ON DELETE RESTRICT ON UPDATE RESTRICT`; parent IDs and tenant ownership cannot cascade into historical rows. The existing `users(id, salon_id)` and `message_requests(id, salon_id)` unique keys suffice. The existing unique `vip_request_recipients.message_request_id` index still enforces one recipient per linked message. Prisma represents its inverse as a list because Prisma 6 requires another composite unique index to model this particular composite relation as one-to-one; the physical unique index remains authoritative.
 
 VIP list contact count 1–100. Sample works 1–3 at submit (application).
+
+Pending `UPLOADING` rows reserve a position through a partial unique `(vip_request_id, position)` index. CHECKs require ownership fields only in `UPLOADING` and a verified committed link only in `AVAILABLE`. Cleanup keys originate only from a durable upload generation and are never inferred by listing the bucket.
 
 ---
 

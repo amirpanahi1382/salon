@@ -1,0 +1,27 @@
+{
+  "name": "@salon/object-storage",
+  "version": "0.0.1",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "jest --config jest.config.cjs --passWithNoTests"
+  },
+  "dependencies": {
+    "@salon/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.14",
+    "@types/node": "^24.3.0",
+    "jest": "^29.7.0",
+    "typescript": "^5.7.3"
+  }
+}

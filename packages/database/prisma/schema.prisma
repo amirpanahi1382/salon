@@ -95,6 +95,19 @@ enum VipRequestStatus {
   CANCELLED
 }
 
+enum VipSampleUploadStatus {
+  RETRYABLE
+  UPLOADING
+  AVAILABLE
+  ABANDONED
+}
+
+enum VipSampleCleanupStatus {
+  PENDING
+  PROCESSING
+  PROCESSED
+}
+
 model Salon {
   id        String      @id @db.Uuid
   name      String
@@ -564,6 +577,7 @@ model VipRequest {
   updatedAt          DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
   recipients         VipRequestRecipient[]
   sampleWorks        VipSampleWork[]
+  sampleWorkUploads  VipSampleWorkUpload[]
   messageRequests    MessageRequest[]
 
   @@unique([id, salonId])
@@ -606,11 +620,68 @@ model VipSampleWork {
   contentType String     @map("content_type")
   byteSize    Int        @map("byte_size")
   sha256      String
+  verifiedAt  DateTime?  @map("verified_at") @db.Timestamptz(3)
   createdAt   DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  upload      VipSampleWorkUpload?
 
   @@unique([vipRequestId, position])
   @@unique([vipRequestId, sha256])
   @@unique([objectKey])
   @@index([salonId, vipRequestId])
   @@map("vip_sample_works")
+}
+
+/// Durable intent for a cross-store VIP sample upload. Bytes remain in object storage.
+model VipSampleWorkUpload {
+  id             String                @id @db.Uuid
+  vipRequestId   String                @map("vip_request_id") @db.Uuid
+  salonId        String                @map("salon_id") @db.Uuid
+  vipRequest     VipRequest            @relation(fields: [vipRequestId, salonId], references: [id, salonId], onDelete: Restrict)
+  sha256         String
+  contentType    String                @map("content_type")
+  byteSize       Int                   @map("byte_size")
+  status         VipSampleUploadStatus @default(RETRYABLE)
+  position       Int?
+  generation     Int                   @default(0)
+  objectKey      String?               @unique @map("object_key")
+  ownerToken     String?               @map("owner_token")
+  lockedUntil    DateTime?             @map("locked_until") @db.Timestamptz(3)
+  sampleWorkId   String?               @unique @map("sample_work_id") @db.Uuid
+  sampleWork     VipSampleWork?        @relation(fields: [sampleWorkId], references: [id], onDelete: Restrict)
+  verifiedAt     DateTime?             @map("verified_at") @db.Timestamptz(3)
+  lastErrorCode  String?               @map("last_error_code")
+  createdAt      DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
+  cleanups       VipSampleWorkCleanup[]
+
+  @@unique([vipRequestId, sha256])
+  @@index([status, lockedUntil, id])
+  @@index([vipRequestId, position])
+  @@index([salonId, vipRequestId])
+  @@map("vip_sample_work_uploads")
+}
+
+/// Fenced deletion of an object key owned by an obsolete, uncommitted upload generation.
+model VipSampleWorkCleanup {
+  id              String                 @id @db.Uuid
+  uploadId        String                 @map("upload_id") @db.Uuid
+  upload          VipSampleWorkUpload    @relation(fields: [uploadId], references: [id], onDelete: Restrict)
+  objectKey       String                 @unique @map("object_key")
+  uploadGeneration Int                   @map("upload_generation")
+  status          VipSampleCleanupStatus @default(PENDING)
+  requestGeneration BigInt               @default(1) @map("request_generation")
+  claimGeneration BigInt                 @default(0) @map("claim_generation")
+  claimToken      String?                @map("claim_token")
+  lockedUntil     DateTime?              @map("locked_until") @db.Timestamptz(3)
+  availableAt     DateTime               @default(now()) @map("available_at") @db.Timestamptz(3)
+  settleUntil     DateTime               @map("settle_until") @db.Timestamptz(3)
+  deletePasses    Int                    @default(0) @map("delete_passes")
+  attempts        Int                    @default(0)
+  lastErrorCode   String?                @map("last_error_code")
+  createdAt       DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
+  processedAt     DateTime?              @map("processed_at") @db.Timestamptz(3)
+
+  @@index([status, availableAt, lockedUntil, id])
+  @@index([uploadId, uploadGeneration])
+  @@map("vip_sample_work_cleanups")
 }

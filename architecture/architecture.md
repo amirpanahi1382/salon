@@ -12,7 +12,7 @@ One product, **two NestJS deployables** plus a Flutter client:
 | Process | Path | Responsibility |
 | --- | --- | --- |
 | HTTP API | `apps/api` | Auth, validation, use-cases, Prisma writes, audit+outbox in the same DB transaction |
-| Worker | `apps/worker` | Claim outbox (`FOR UPDATE SKIP LOCKED`), Bale send, processed-outbox + idempotency retention |
+| Worker | `apps/worker` | Claim outbox (`FOR UPDATE SKIP LOCKED`), Bale send, retention, VIP upload recovery and abandoned-object cleanup |
 | Flutter | `apps/mobile` | Persian/Jalali salon + platform-admin UI |
 | Shared | `packages/shared`, `packages/database`, `packages/config` | Rules, Prisma, env |
 
@@ -77,7 +77,9 @@ Typical mutating use-case:
    - `outbox_events` insert
 3. Map HTTP result
 
-VIP sample upload writes metadata in Postgres and object bytes in MinIO; treat storage failure as a failed use-case (do not leave unbounded orphans as a feature).
+VIP sample upload is an explicit cross-store lifecycle; PostgreSQL and MinIO are not atomic. The API first commits a `VipSampleWorkUpload` intent and reserves one of the request's three positions. It then performs PUT and read-back verification without an open database transaction, and conditionally creates `VipSampleWork` only while it still owns the same generation/token. Retries use generation-specific object keys. A stale finalizer can only re-arm cleanup for its own uncommitted generation.
+
+The worker releases expired upload leases in bounded batches and retries deletion through `VipSampleWorkCleanup`. Cleanup claims carry both a claim generation and the cleanup request generation. A durable settlement horizon requires a final successful DELETE after the configured maximum PUT lifetime, so process exit does not make recovery depend on a finalizer. Cleanup excludes any key referenced by committed `VipSampleWork`; submitted, historical, committed, or ambiguously owned objects are never automatic deletion targets. The client must resend bytes to resume a `RETRYABLE` intent; the worker never invents or stores upload bodies.
 
 ---
 
@@ -94,7 +96,7 @@ VIP sample upload writes metadata in Postgres and object bytes in MinIO; treat s
 ## 6. Storage and config
 
 - PostgreSQL is the system of record.
-- MinIO/S3-compatible: VIP images (`apps/api/src/infrastructure/storage`).
+- MinIO/S3-compatible: VIP images through `@salon/object-storage`, used by API upload/read and the worker's narrowly scoped abandoned-attempt cleanup.
 - Env via `@salon/config` Zod schema. Names in `.env.example`. Never document secret values.
 - Bale credentials are **platform env**, not per-salon secrets.
 
@@ -117,7 +119,7 @@ Failure model:
 - Single-region modular monolith.
 - API replicas possible; throttle counters are **per process** (Redis throttle deferred).
 - Each process has its own Prisma pool (`DATABASE_CONNECTION_LIMIT`).
-- Worker is required in any environment that must send Bale or reclaim outbox/idempotency.
+- Worker is required in any environment that must send Bale, reclaim outbox/idempotency, or release/reconcile abandoned VIP uploads.
 - Flutter talks HTTPS in production; local Android emulator uses `http://10.0.2.2:3000` unless `API_BASE_URL` is set.
 
 ---

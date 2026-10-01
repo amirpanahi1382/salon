@@ -8,6 +8,8 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/infrastructure/database/prisma.service';
 import { HttpExceptionFilter } from '../src/infrastructure/http/http-exception.filter';
+import { MemoryObjectStorage } from '../src/infrastructure/storage/memory.object-storage';
+import { OBJECT_STORAGE } from '../src/infrastructure/storage/object-storage';
 import {
   VIP_QUOTA_MAX,
   VIP_QUOTA_WINDOW_DAYS,
@@ -48,11 +50,12 @@ describeIfDb('VIP outreach (e2e)', () => {
   let prisma: PrismaService;
   let adminToken: string;
   let jwt: JwtService;
+  const objectStorage = new MemoryObjectStorage();
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
       imports: [AppModule],
-    }).compile();
+    }).overrideProvider(OBJECT_STORAGE).useValue(objectStorage).compile();
     app = moduleRef.createNestApplication();
     app.useGlobalPipes(
       new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }),
@@ -892,6 +895,40 @@ describeIfDb('VIP outreach (e2e)', () => {
         where: { tenantId: salon.tenantId, eventType: 'MessageRequested' },
       }),
     ).toBe(30);
+  });
+
+  it('refuses submission when previously available sample bytes have disappeared', async () => {
+    const salon = await createOwner('vip-storage-missing');
+    await grantVip(salon.tenantId);
+    const listId = await importList(30, '0926');
+    await request(app.getHttpServer())
+      .patch(`/admin/vip/lists/${listId}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ availability: 'ACTIVE' })
+      .expect(200);
+    const created = await request(app.getHttpServer())
+      .post('/vip/requests')
+      .set('Authorization', `Bearer ${salon.token}`)
+      .set('Idempotency-Key', `missing-create-${randomUUID()}`)
+      .send({ listId, requestedCount: 30, geographicRange: 'ونک' })
+      .expect(201);
+    const requestId = created.body.id as string;
+    await request(app.getHttpServer())
+      .post(`/vip/requests/${requestId}/sample-works`)
+      .set('Authorization', `Bearer ${salon.token}`)
+      .set('Idempotency-Key', `missing-image-${randomUUID()}`)
+      .attach('file', JPEG, 'work.jpg')
+      .expect(201);
+    const sample = await prisma.client.vipSampleWork.findFirstOrThrow({ where: { vipRequestId: requestId } });
+    await objectStorage.deleteObject(sample.objectKey);
+
+    await request(app.getHttpServer())
+      .post(`/vip/requests/${requestId}/submit`)
+      .set('Authorization', `Bearer ${salon.token}`)
+      .set('Idempotency-Key', `missing-submit-${randomUUID()}`)
+      .expect(503);
+    expect((await prisma.client.vipRequest.findUniqueOrThrow({ where: { id: requestId } })).status)
+      .toBe('AWAITING_SAMPLE_WORK');
   });
 
   async function awaitingWithSample(label: string, prefix: string) {

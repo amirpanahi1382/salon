@@ -1,4 +1,5 @@
 import type { ObjectStorage, StoredObject } from './object-storage';
+import { InfrastructureError } from '@salon/shared';
 
 /** In-process storage for unit tests. Not used in production. */
 export class MemoryObjectStorage implements ObjectStorage {
@@ -16,7 +17,7 @@ export class MemoryObjectStorage implements ObjectStorage {
   async getObject(key: string): Promise<{ body: Buffer; contentType: string }> {
     const found = this.objects.get(key);
     if (!found) {
-      throw new Error('NOT_FOUND');
+      throw new InfrastructureError('File storage is temporarily unavailable');
     }
     return found;
   }

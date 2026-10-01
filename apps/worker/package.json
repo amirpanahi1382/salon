@@ -14,6 +14,7 @@
     "@nestjs/core": "^11.0.12",
     "@salon/config": "workspace:*",
     "@salon/database": "workspace:*",
+    "@salon/object-storage": "workspace:*",
     "@salon/shared": "workspace:*",
     "pino": "^9.6.0",
     "reflect-metadata": "^0.2.2",
