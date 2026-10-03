@@ -81,12 +81,13 @@ export class VipSampleWorkRecoveryProcessor implements OnModuleInit, OnModuleDes
           'VIP sample-work recovery batch completed',
         );
       }
-    } catch (error: unknown) {
+    } catch {
       this.logger.error(
         {
           operation: 'vip_sample_work_recovery.tick',
           outcome: 'failed',
-          err: error instanceof Error ? error.message : 'recovery failed',
+          errorCode: 'VIP_RECOVERY_FAILED',
+          errorType: 'Error',
         },
         'VIP sample-work recovery failed',
       );

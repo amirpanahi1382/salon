@@ -68,6 +68,8 @@ Consent/opt-out for messaging is **not implemented**.
 
 Do not log: passwords, JWT, Authorization, bodies, phone numbers, message text, MinIO/DB secrets.
 
+Unexpected exception messages, stacks, causes, connector text, and provider/storage responses are not safe diagnostic fields. API and worker error logs retain request/event IDs, operation, outcome, status, and stable codes/categories instead. Pino field-name redaction remains defense in depth; it cannot sanitize an arbitrary string. Known 4xx client contracts remain unchanged. Unexpected 5xx responses use fixed messages, including `INFRASTRUCTURE_ERROR` responses.
+
 Audit `metadata` must follow the same rule.
 
 ---

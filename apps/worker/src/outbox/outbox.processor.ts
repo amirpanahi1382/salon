@@ -10,6 +10,7 @@ import {
   DOMAIN_EVENT_TYPES,
   fullJitterDelayMs,
   isDomainEventType,
+  MESSAGE_FAILURE_CODES,
   type MessageFailureCode,
   TimeoutError,
   withTimeout,
@@ -94,14 +95,13 @@ export class OutboxProcessor implements OnModuleInit, OnModuleDestroy {
       const results = await Promise.allSettled(claimed.map((event) => this.processOne(event)));
       const failed = results.find((result) => result.status === 'rejected');
       if (failed?.status === 'rejected') throw failed.reason;
-    } catch (error: unknown) {
+    } catch {
       this.logger.error(
         {
           operation: 'outbox.poll',
           outcome: 'failed',
-          errorType: error instanceof Error ? error.name : 'unknown',
-          err: error instanceof Error ? error.message : 'outbox tick failed',
-          stack: error instanceof Error ? error.stack : undefined,
+          errorCode: 'OUTBOX_POLL_FAILED',
+          errorType: 'Error',
         },
         'Outbox poll failed',
       );
@@ -113,7 +113,7 @@ export class OutboxProcessor implements OnModuleInit, OnModuleDestroy {
     const maxAttempts = this.config.values.OUTBOX_MAX_ATTEMPTS;
     const base = {
       eventId: event.id,
-      eventType: event.eventType,
+      eventType: isDomainEventType(event.eventType) ? event.eventType : 'UNKNOWN_EVENT_TYPE',
       attempt: event.attemptCount,
       claimGeneration: event.claimGeneration.toString(),
       tenantId: event.tenantId,
@@ -178,16 +178,19 @@ export class OutboxProcessor implements OnModuleInit, OnModuleDestroy {
       );
     } catch (error: unknown) {
       abort.abort();
-      const message = error instanceof Error ? error.message : 'consumer failed';
-      const errorType = error instanceof Error ? error.name : 'unknown';
+      const errorType = error instanceof TimeoutError
+        ? 'TimeoutError'
+        : error instanceof RetryableMessageSendError
+          ? 'RetryableMessageSendError'
+          : error instanceof Error ? 'Error' : 'unknown';
       const errorCode =
         error instanceof TimeoutError
           ? 'HANDLER_TIMEOUT'
           : error instanceof RetryableMessageSendError
-            ? error.code
+            ? safeProviderFailureCode(error.code)
             : 'CONSUMER_FAILED';
       if (event.attemptCount >= maxAttempts) {
-        const applied = await this.deadLetterEvent(event, message, error);
+        const applied = await this.deadLetterEvent(event, errorCode, error);
         if (!applied) {
           this.logger.warn({ ...base, outcome: 'stale_owner' }, 'Stale outbox owner rejected');
           return;
@@ -199,7 +202,6 @@ export class OutboxProcessor implements OnModuleInit, OnModuleDestroy {
             outcome: 'dead_letter',
             errorCode,
             errorType,
-            stack: error instanceof Error ? error.stack : undefined,
             next: 'manual replay after fix',
           },
           'Outbox event dead-lettered',
@@ -215,7 +217,7 @@ export class OutboxProcessor implements OnModuleInit, OnModuleDestroy {
               this.config.values.OUTBOX_BACKOFF_BASE_MS,
               this.config.values.OUTBOX_BACKOFF_CAP_MS,
             );
-      const applied = await markOutboxRetry(this.prisma.client, event.id, event.claimGeneration, message, delayMs);
+      const applied = await markOutboxRetry(this.prisma.client, event.id, event.claimGeneration, errorCode, delayMs);
       if (!applied) {
         this.logger.warn({ ...base, outcome: 'stale_owner' }, 'Stale outbox owner rejected');
         return;
@@ -229,7 +231,6 @@ export class OutboxProcessor implements OnModuleInit, OnModuleDestroy {
           errorType,
           delayMs,
           next: `retry after ${delayMs}ms`,
-          stack: error instanceof Error ? error.stack : undefined,
         },
         'Outbox event scheduled for retry',
       );
@@ -280,7 +281,13 @@ export function handlerTimeoutMs(leaseMs: number): number {
 
 function deadLetterFailureCode(error: unknown): MessageFailureCode {
   if (error instanceof RetryableMessageSendError) {
-    return error.code;
+    return safeProviderFailureCode(error.code);
   }
   return 'PROVIDER_UNKNOWN';
+}
+
+function safeProviderFailureCode(code: string): MessageFailureCode {
+  return (MESSAGE_FAILURE_CODES as readonly string[]).includes(code)
+    ? code as MessageFailureCode
+    : 'PROVIDER_UNKNOWN';
 }

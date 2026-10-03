@@ -2,6 +2,19 @@ import { Prisma, type OutboxEvent, type PrismaClient } from '@prisma/client';
 
 type OutboxDb = PrismaClient | Prisma.TransactionClient;
 
+// A durable diagnostic is a code, never exception text. Keep this guard at the
+// persistence boundary so another caller cannot accidentally store raw errors.
+const OUTBOX_LAST_ERROR_CODES = new Set([
+  'UNKNOWN_EVENT_TYPE', 'HANDLER_TIMEOUT', 'CONSUMER_FAILED',
+  'DESTINATION_UNVERIFIED', 'PROVIDER_TEMPORARY', 'PROVIDER_RATE_LIMITED',
+  'PROVIDER_AUTH', 'PROVIDER_INVALID_REQUEST',
+  'PROVIDER_RECIPIENT_UNAVAILABLE', 'PROVIDER_UNKNOWN', 'NOT_CONFIGURED',
+]);
+
+function safeOutboxLastError(code: string): string {
+  return OUTBOX_LAST_ERROR_CODES.has(code) ? code : 'CONSUMER_FAILED';
+}
+
 /** Claims a batch and advances each row's fencing generation atomically. */
 export async function claimOutboxEvents(
   prisma: PrismaClient,
@@ -49,7 +62,7 @@ export async function markOutboxRetry(
 ): Promise<boolean> {
   const result = await prisma.outboxEvent.updateMany({
     where: { id, status: 'PROCESSING', claimGeneration: generation },
-    data: { status: 'PENDING', availableAt: new Date(Date.now() + delayMs), lastError: lastError.slice(0, 2000), lockedAt: null, lockedUntil: null },
+    data: { status: 'PENDING', availableAt: new Date(Date.now() + delayMs), lastError: safeOutboxLastError(lastError), lockedAt: null, lockedUntil: null },
   });
   return result.count === 1;
 }
@@ -59,7 +72,7 @@ export async function markOutboxDeadLetter(
 ): Promise<boolean> {
   const result = await prisma.outboxEvent.updateMany({
     where: { id, status: 'PROCESSING', claimGeneration: generation },
-    data: { status: 'DEAD_LETTER', lastError: lastError.slice(0, 2000), lockedAt: null, lockedUntil: null },
+    data: { status: 'DEAD_LETTER', lastError: safeOutboxLastError(lastError), lockedAt: null, lockedUntil: null },
   });
   return result.count === 1;
 }

@@ -43,7 +43,7 @@ export function requestLogFields(req: AppRequest): Record<string, unknown> {
     adminId: isPlatformAdminPrincipal(user) ? user.adminId : undefined,
     operation: req.operation,
     method: req.method,
-    route: req.route?.path ? String(req.route.path) : req.path,
+    route: req.route?.path ? String(req.route.path) : 'unmatched',
   };
 }
 

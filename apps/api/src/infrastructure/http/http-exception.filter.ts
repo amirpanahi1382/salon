@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import {
   ArgumentsHost,
   Catch,
@@ -7,7 +8,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { Prisma } from '@salon/database';
-import { AppError } from '@salon/shared';
+import { AppError, firstHeaderValue, isSafeRequestId } from '@salon/shared';
 import type { AppRequest } from './request-context';
 import type { Response } from 'express';
 import { MulterError } from 'multer';
@@ -22,14 +23,16 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
     const request = ctx.getRequest<AppRequest>();
-    const requestId = request.id?.toString() ?? request.headers['x-request-id'];
+    const incomingRequestId = firstHeaderValue(request.headers['x-request-id']);
+    const requestId = request.id?.toString() ??
+      (isSafeRequestId(incomingRequestId) ? incomingRequestId : randomUUID());
     const correlationId = request.correlationId;
     const tenantId =
       request.user && 'tenantId' in request.user ? request.user.tenantId : undefined;
     const userId = request.user && 'userId' in request.user ? request.user.userId : undefined;
     const operation = request.operation;
     const method = request.method;
-    const route = request.route?.path ? String(request.route.path) : request.path;
+    const route = request.route?.path ? String(request.route.path) : 'unmatched';
 
     if (exception instanceof MulterError && exception.code === 'LIMIT_FILE_SIZE') {
       response.status(HttpStatus.PAYLOAD_TOO_LARGE).json({
@@ -52,10 +55,9 @@ export class HttpExceptionFilter implements ExceptionFilter {
         method,
         route,
         errorCode: prismaMapped.code,
-        errorType: prismaMapped.name,
+        errorType: 'PrismaError',
         statusCode: prismaMapped.statusCode,
         prismaCode: prismaCodeOf(exception),
-        err: exception instanceof Error ? exception.message : 'prisma',
       });
       response.status(prismaMapped.statusCode).json({
         statusCode: prismaMapped.statusCode,
@@ -79,7 +81,11 @@ export class HttpExceptionFilter implements ExceptionFilter {
       response.status(exception.statusCode).json({
         statusCode: exception.statusCode,
         error: exception.code,
-        message: exception.message,
+        message: exception.statusCode >= 500
+          ? exception.code === 'INFRASTRUCTURE_ERROR'
+            ? 'A required service is temporarily unavailable'
+            : 'An unexpected error occurred'
+          : exception.message,
         requestId,
       });
       return;
@@ -89,7 +95,9 @@ export class HttpExceptionFilter implements ExceptionFilter {
       const status = exception.getStatus();
       const body = exception.getResponse();
       const message =
-        typeof body === 'string'
+        status >= 500
+          ? 'An unexpected error occurred'
+          : typeof body === 'string'
           ? body
           : typeof body === 'object' && body !== null && 'message' in body
             ? (body as { message: string | string[] }).message
@@ -104,7 +112,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
         method,
         route,
         errorCode: httpErrorCode(status),
-        errorType: exception.name,
+        errorType: 'HttpException',
         statusCode: status,
       });
 
@@ -127,11 +135,9 @@ export class HttpExceptionFilter implements ExceptionFilter {
         method,
         route,
         errorCode: 'INTERNAL_ERROR',
-        errorType: exception instanceof Error ? exception.name : 'unknown',
+        errorType: exception instanceof Error ? 'Error' : 'unknown',
         statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
         prismaCode: prismaCodeOf(exception),
-        err: exception instanceof Error ? exception.message : 'unknown',
-        stack: exception instanceof Error ? exception.stack : undefined,
       },
       'Unhandled error',
     );
@@ -151,11 +157,11 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const payload = {
       ...context,
       errorCode: exception.code,
-      errorType: exception.name,
+      errorType: 'AppError',
       statusCode: exception.statusCode,
     };
     if (exception.statusCode >= 500) {
-      this.logger.error({ ...payload, stack: exception.stack }, exception.message);
+      this.logger.error(payload, 'Application service failure');
       return;
     }
     this.logger.warn(payload);
@@ -164,7 +170,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
 function prismaCodeOf(exception: unknown): string | undefined {
   if (exception instanceof Prisma.PrismaClientKnownRequestError) {
-    return exception.code;
+    return /^P[0-9]{4}$/.test(exception.code) ? exception.code : undefined;
   }
   return undefined;
 }

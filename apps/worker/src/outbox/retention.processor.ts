@@ -65,12 +65,13 @@ export class RetentionProcessor implements OnModuleInit, OnModuleDestroy {
           'Retention cleanup deleted expired rows',
         );
       }
-    } catch (error: unknown) {
+    } catch {
       this.logger.error(
         {
           operation: 'retention.cleanup',
           outcome: 'failed',
-          err: error instanceof Error ? error.message : 'retention failed',
+          errorCode: 'RETENTION_FAILED',
+          errorType: 'Error',
         },
         'Retention cleanup failed',
       );

@@ -53,6 +53,7 @@ function event(overrides: Partial<OutboxEvent> = {}): OutboxEvent {
 }
 
 describe('OutboxProcessor', () => {
+  const synthetic = 'PHONE_FAKE_09120000000 BODY_FAKE_HELLO MONEY_FAKE_1234.56 TOKEN_FAKE_XYZ DBURL_FAKE_postgres OBJECT_FAKE_vip/key';
   const logger = pino({ level: 'silent' });
   const prisma = { client: {} } as PrismaService;
   const config = {
@@ -93,6 +94,16 @@ describe('OutboxProcessor', () => {
     expect(deadLetter).toHaveBeenCalledWith(prisma.client, event().id, 1n, 'UNKNOWN_EVENT_TYPE');
     expect(processed).not.toHaveBeenCalled();
     expect(retry).not.toHaveBeenCalled();
+  });
+
+  it('does not log an unrecognized event type as raw text', async () => {
+    const lines: string[] = [];
+    const capturedLogger = pino({ level: 'trace' }, { write: (line: string) => { lines.push(line); } } as never);
+    const captured = new OutboxProcessor(prisma, config, sendCustomerMessage as never, capturedLogger);
+    await captured.processOne(event({ eventType: synthetic }));
+    expect(lines.join('')).not.toContain(synthetic);
+    expect(lines.join('')).toContain('UNKNOWN_EVENT_TYPE');
+    expect(deadLetter).toHaveBeenCalledWith(prisma.client, event().id, 1n, 'UNKNOWN_EVENT_TYPE');
   });
 
   it('marks known events processed', async () => {
@@ -149,6 +160,53 @@ describe('OutboxProcessor', () => {
     await processor.processOne(event({ attemptCount: 1 }));
     expect(retry).toHaveBeenCalled();
     expect(deadLetter).not.toHaveBeenCalled();
+  });
+
+  it('keeps synthetic consumer markers out of full serialized logs and retry/dead-letter reasons', async () => {
+    const lines: string[] = [];
+    const capturedLogger = pino({ level: 'trace' }, { write: (line: string) => { lines.push(line); } } as never);
+    const captured = new OutboxProcessor(prisma, config, sendCustomerMessage as never, capturedLogger);
+    const consumer = new Error(synthetic);
+    consumer.stack = `consumer stack ${synthetic}`;
+    jest.spyOn(captured as never, 'consume').mockRejectedValue(consumer as never);
+    await captured.processOne(event({ attemptCount: 1 }));
+    expect(lines.join('')).not.toContain(synthetic);
+    expect(lines.join('')).toContain('outbox.consume');
+    expect(lines.join('')).toContain(event().id);
+    expect(lines.join('')).toContain('CONSUMER_FAILED');
+    expect(lines.join('')).toContain('retry');
+    expect(lines.join('')).toContain('delayMs');
+    expect(retry.mock.calls[0]?.[3]).toBe('CONSUMER_FAILED');
+    await captured.processOne(event({ attemptCount: 2 }));
+    expect(deadLetter.mock.calls[0]?.[3]).toBe('CONSUMER_FAILED');
+    expect(lines.join('')).not.toContain(synthetic);
+    expect(lines.join('')).toContain('dead_letter');
+  });
+
+  it('keeps provider retry code and delay while discarding exception stack', async () => {
+    const lines: string[] = [];
+    const capturedLogger = pino({ level: 'trace' }, { write: (line: string) => { lines.push(line); } } as never);
+    const captured = new OutboxProcessor(prisma, config, sendCustomerMessage as never, capturedLogger);
+    const provider = new RetryableMessageSendError('PROVIDER_RATE_LIMITED', 5000);
+    provider.stack = `provider stack ${synthetic}`;
+    jest.spyOn(captured as never, 'consume').mockRejectedValue(provider as never);
+    await captured.processOne(event());
+    expect(retry.mock.calls[0]?.[3]).toBe('PROVIDER_RATE_LIMITED');
+    expect(retry.mock.calls[0]?.[4]).toBe(5000);
+    expect(lines.join('')).toContain('PROVIDER_RATE_LIMITED');
+    expect(lines.join('')).toContain('5000');
+    expect(lines.join('')).not.toContain(synthetic);
+  });
+
+  it('does not log synthetic polling failures', async () => {
+    const lines: string[] = [];
+    const capturedLogger = pino({ level: 'trace' }, { write: (line: string) => { lines.push(line); } } as never);
+    const captured = new OutboxProcessor(prisma, config, sendCustomerMessage as never, capturedLogger);
+    claim.mockRejectedValueOnce(new Error(synthetic));
+    await captured.tick();
+    expect(lines.join('')).toContain('OUTBOX_POLL_FAILED');
+    expect(lines.join('')).toContain('outbox.poll');
+    expect(lines.join('')).not.toContain(synthetic);
   });
 
   it('dead-letters after max attempts', async () => {

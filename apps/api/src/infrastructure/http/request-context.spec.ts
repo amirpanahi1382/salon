@@ -48,4 +48,13 @@ describe('request context', () => {
     expect(fields.tenantId).toBeUndefined();
     expect(fields.userId).toBeUndefined();
   });
+
+  it('does not log an unmatched path that may contain sensitive input', () => {
+    const fields = requestLogFields({
+      id: 'req-1', correlationId: 'corr-1', method: 'GET',
+      path: '/not-a-route/PHONE_FAKE_09120000000',
+    } as unknown as AppRequest);
+    expect(fields.route).toBe('unmatched');
+    expect(JSON.stringify(fields)).not.toContain('PHONE_FAKE_09120000000');
+  });
 });

@@ -20,12 +20,13 @@ Common fields:
 | tenantId / userId | authenticated JWT context only | tenantId from outbox row |
 | operation | Nest handler name | `outbox.consume` / `outbox.poll` |
 | eventId / eventType / attempt / outcome | — | yes |
-| errorCode / errorType / stack | server logs | server logs |
+| errorCode / safe errorType | server logs | server logs and stable outbox failure code |
 | prismaCode | when a Prisma known error is mapped | — |
 
-Never logged: passwords, JWTs, `Authorization`, cookies, request bodies, phone numbers, secrets, database URLs.
+Never logged: passwords, JWTs, `Authorization`, cookies, request bodies, phone numbers, secrets, database URLs, or raw unexpected exception messages/stacks/causes. Error logs carry allowlisted codes and broad categories instead of connector/provider/storage text. A matched route template is logged; unmatched request paths are labeled `unmatched`.
 
-Client error bodies stay stable (`statusCode`, `error`, `message`, `requestId`). Diagnostics stay in server logs.
+Client error bodies retain (`statusCode`, `error`, `message`, `requestId`). Existing 4xx contracts are unchanged; unexpected 5xx and `InfrastructureError` responses use fixed text. For diagnosis, look up `requestId` or `eventId`, then use `operation`, `outcome`, status, stable `errorCode`, and worker `attempt`/`delayMs`. The code in `outbox_events.last_error` is a reason for retry or dead-letter, not a copy of an exception. `message_deliveries.failure_code` and VIP cleanup `last_error_code` likewise use stable codes. No operator UI currently displays `outbox_events.last_error`; manual replay remains an operational action after examining the code and fixing the cause. Existing historical logs and `last_error` rows are not scrubbed by this change. Their retention or remediation requires a separate review; current retention deletes old `PROCESSED` outbox rows but keeps `DEAD_LETTER` rows.
+Both processes suppress Nest's raw dependency-initialization logging before their safe bootstrap handlers run. A bootstrap failure emits a fixed operation/code and exits; it does not include configuration or connector exception text.
 
 ## Request / correlation IDs
 

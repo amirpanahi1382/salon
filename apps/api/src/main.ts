@@ -10,7 +10,8 @@ import { ShutdownState } from './infrastructure/observability/shutdown-state';
 
 async function bootstrap(): Promise<void> {
   const config = loadConfig();
-  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  // Suppress Nest's own raw bootstrap exception logging until the safe logger is installed.
+  const app = await NestFactory.create(AppModule, { logger: false, abortOnError: false });
   app.useLogger(app.get(PinoLogger));
   app.use(helmet());
   app.enableShutdownHooks();
@@ -48,8 +49,7 @@ async function bootstrap(): Promise<void> {
   Logger.log(`API listening on port ${config.API_PORT}`, 'Bootstrap');
 }
 
-bootstrap().catch((error: unknown) => {
-  const message = error instanceof Error ? error.message : 'Unknown bootstrap error';
-  Logger.error(message, 'Bootstrap');
+bootstrap().catch(() => {
+  Logger.error('API bootstrap failed; inspect configuration and dependencies', 'Bootstrap');
   process.exit(1);
 });
