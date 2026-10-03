@@ -220,7 +220,9 @@ describeIfDisposable('VIP sample-work real PostgreSQL + MinIO lifecycle', () => 
     const ambiguous = await prisma.client.vipSampleWorkCleanup.findFirstOrThrow({ where: { objectKey: oldKey } });
     expect(ambiguous).toMatchObject({ status: 'PENDING', deletePasses: 0, lastErrorCode: 'STORAGE_DELETE_FAILED' });
 
-    const retryAt = new Date(ambiguous.availableAt.getTime() + 1);
+    // An ambiguous early DELETE may be retried before the mandatory settlement
+    // horizon; assert terminal cleanup only after both times have passed.
+    const retryAt = new Date(Math.max(ambiguous.availableAt.getTime(), ambiguous.settleUntil.getTime()) + 1);
     const deleteRetry = await recovery.claimCleanups(retryAt);
     const deleteRetryClaim = deleteRetry.find((claim) => claim.objectKey === oldKey);
     expect(deleteRetryClaim).toBeDefined();

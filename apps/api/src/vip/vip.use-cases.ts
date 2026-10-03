@@ -801,6 +801,35 @@ export class UploadVipSampleWorkUseCase {
     }
     const sha256 = createHash('sha256').update(file.buffer).digest('hex');
     const requestHash = vipSampleWorkHash(requestId, sha256);
+    const prior = await findIdempotencyRecord(this.prisma.client, {
+      tenantId: principal.tenantId, actorId: principal.userId,
+      operation: VIP_SAMPLE_WORK_UPLOAD_OPERATION, key: idempotencyKey,
+    });
+    if (prior?.resourceType === 'vip_sample_work') {
+      assertSameIdempotentRequest(prior.requestHash, requestHash);
+      // Phase 10 changed the record target from committed sample to upload intent.
+      // The old API could still write this shape after the migration during rollout.
+      // Verify the predecessor key and committed sample rather than a timestamp.
+      const sample = await this.prisma.client.vipSampleWork.findFirst({
+        where: { id: prior.resourceId, vipRequestId: requestId, salonId: principal.tenantId },
+      });
+      if (!sample || sample.sha256 !== sha256 || sample.byteSize !== file.buffer.length ||
+          sample.contentType !== contentType ||
+          sample.objectKey !== `vip/${principal.tenantId}/${requestId}/${sample.id}`) {
+        throw new NotFoundError('Sample work not found');
+      }
+      await readVerifiedVipSampleObject(this.storage, sample);
+      const verified = await this.prisma.client.vipSampleWork.updateMany({
+        where: { id: sample.id, vipRequestId: requestId, salonId: principal.tenantId,
+          objectKey: sample.objectKey, sha256: sample.sha256, byteSize: sample.byteSize,
+          contentType: sample.contentType },
+        data: { verifiedAt: new Date() },
+      });
+      if (verified.count !== 1) throw new NotFoundError('Sample work not found');
+      const request = await this.vip.findRequestForSalon(principal.tenantId, requestId);
+      if (!request) throw new NotFoundError('VIP request not found');
+      return toVipRequest(request);
+    }
     const now = new Date();
     const execution = await this.prisma.client.$transaction(async (tx) => {
       await this.vip.expireStaleReservations(now, tx);
@@ -836,6 +865,11 @@ export class UploadVipSampleWorkUseCase {
         if (!claim.inserted) throw new ConflictError('Upload retry conflicted; retry the request');
       }
       if (!upload) {
+        const committed = await tx.vipSampleWork.findFirst({
+          where: { vipRequestId: requestId, salonId: principal.tenantId, sha256 },
+          select: { id: true },
+        });
+        if (committed) throw new ConflictError('This sample-work image was already uploaded');
         upload = await tx.vipSampleWorkUpload.create({ data: {
           id: uploadId, vipRequestId: requestId, salonId: principal.tenantId,
           sha256, contentType, byteSize: file.buffer.length, status: 'RETRYABLE',
@@ -1091,37 +1125,45 @@ export class SubmitVipRequestUseCase {
       if (latestEvidence.length !== evidence.length || latestEvidence.some((value, index) => value !== evidence[index])) {
         throw new ConflictError('Sample work changed during submission; retry the request');
       }
-      const moved = await tx.vipRequest.updateMany({
-        where: {
-          id: requestId,
-          salonId: principal.tenantId,
-          status: 'AWAITING_SAMPLE_WORK',
-          reservedUntil: { gte: now },
-          submittedAt: null,
-          cancelledAt: null,
-        },
-        data: { status: 'SUBMITTED', submittedAt: now, updatedAt: now },
-      });
-      if (moved.count !== 1) {
+      // PostgreSQL evaluates this time at the final statement, after storage I/O
+      // and lock acquisition. All uses within the statement share one instant.
+      const moved = await tx.$queryRaw<Array<{ submittedAt: Date }>>`
+        UPDATE vip_requests
+           SET status = 'SUBMITTED'::"VipRequestStatus",
+               submitted_at = statement_timestamp(),
+               updated_at = statement_timestamp()
+         WHERE id = ${requestId}::uuid
+           AND salon_id = ${principal.tenantId}::uuid
+           AND status = 'AWAITING_SAMPLE_WORK'::"VipRequestStatus"
+           AND reserved_until >= statement_timestamp()
+           AND submitted_at IS NULL
+           AND cancelled_at IS NULL
+        RETURNING submitted_at AS "submittedAt"
+      `;
+      if (moved.length !== 1) {
+        const decisionNow = (await tx.$queryRaw<Array<{ decisionNow: Date }>>`
+          SELECT statement_timestamp() AS "decisionNow"
+        `)[0]!.decisionNow;
         const latest = await tx.vipRequest.findFirst({
           where: { id: requestId, salonId: principal.tenantId },
           select: { status: true, reservedUntil: true, submittedAt: true, cancelledAt: true },
         });
         if (
           latest?.status === 'CANCELLED' ||
-          (latest != null && latest.reservedUntil.getTime() < now.getTime())
+          (latest != null && latest.reservedUntil.getTime() < decisionNow.getTime())
         ) {
           throw new ConflictError(VIP_RESERVATION_EXPIRED_MESSAGE);
         }
         throw new ConflictError('This VIP request cannot be submitted');
       }
+      const decisionNow = moved[0]!.submittedAt;
       await tx.vipSampleWork.updateMany({
         where: { id: { in: verifiedIds }, vipRequestId: requestId, salonId: principal.tenantId },
-        data: { verifiedAt: now },
+        data: { verifiedAt: decisionNow },
       });
       await tx.vipSampleWorkUpload.updateMany({
         where: { sampleWorkId: { in: verifiedIds }, status: 'AVAILABLE' },
-        data: { verifiedAt: now },
+        data: { verifiedAt: decisionNow },
       });
       await tx.outboxEvent.create({
         data: {
