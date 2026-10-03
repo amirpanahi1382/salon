@@ -2,7 +2,7 @@ import { createHash, createHmac } from 'node:crypto';
 import { request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 import { InfrastructureError } from '@salon/shared';
-import type { ObjectStorage, ObjectStorageConfig, StoredObject } from './index.js';
+import type { ObjectStorage, ObjectStorageConfig, PreparedObjectPut, StoredObject } from './index.js';
 
 function sha256Hex(data: Buffer | string): string {
   return createHash('sha256').update(data).digest('hex');
@@ -31,6 +31,47 @@ export class S3CompatibleObjectStorage implements ObjectStorage {
   async putObject(input: { key: string; body: Buffer; contentType: string }): Promise<StoredObject> {
     await this.request('PUT', input.key, input.body, { 'content-type': input.contentType });
     return { key: input.key, contentType: input.contentType, byteSize: input.body.length };
+  }
+
+  preparePutObject(input: { key: string; body: Buffer; contentType: string; expiresAt: Date }): PreparedObjectPut {
+    const config = this.config;
+    const host = `${config.MINIO_ENDPOINT}:${config.MINIO_PORT}`;
+    const signedAt = new Date();
+    const { amz, stamp } = amzDate(signedAt);
+    const signedSecond = Date.UTC(signedAt.getUTCFullYear(), signedAt.getUTCMonth(),
+      signedAt.getUTCDate(), signedAt.getUTCHours(), signedAt.getUTCMinutes(), signedAt.getUTCSeconds());
+    const expiresSeconds = Math.floor((input.expiresAt.getTime() - signedSecond) / 1000);
+    if (expiresSeconds < 1 || expiresSeconds > 604_800) {
+      throw new InfrastructureError('File storage is temporarily unavailable');
+    }
+    const path = `/${config.MINIO_BUCKET}/${input.key.split('/').map(encodeURIComponent).join('/')}`;
+    const scope = `${stamp}/us-east-1/s3/aws4_request`;
+    const query = new URLSearchParams({
+      'X-Amz-Algorithm': 'AWS4-HMAC-SHA256',
+      'X-Amz-Credential': `${config.MINIO_ACCESS_KEY}/${scope}`,
+      'X-Amz-Date': amz,
+      'X-Amz-Expires': String(expiresSeconds),
+      'X-Amz-SignedHeaders': 'content-type;host',
+    });
+    query.sort();
+    const canonical = [
+      'PUT', path, query.toString(),
+      `content-type:${input.contentType}\nhost:${host}\n`,
+      'content-type;host', 'UNSIGNED-PAYLOAD',
+    ].join('\n');
+    const stringToSign = ['AWS4-HMAC-SHA256', amz, scope, sha256Hex(canonical)].join('\n');
+    const signature = createHmac('sha256', signingKey(config.MINIO_SECRET_KEY, stamp, 'us-east-1', 's3'))
+      .update(stringToSign).digest('hex');
+    query.set('X-Amz-Signature', signature);
+    const authorizedPath = `${path}?${query.toString()}`;
+    return {
+      execute: async () => {
+        await this.send('PUT', authorizedPath, input.body, {
+          host, 'content-type': input.contentType, 'content-length': String(input.body.length),
+        });
+        return { key: input.key, contentType: input.contentType, byteSize: input.body.length };
+      },
+    };
   }
 
   async getObject(key: string): Promise<{ body: Buffer; contentType: string }> {
@@ -75,6 +116,12 @@ export class S3CompatibleObjectStorage implements ObjectStorage {
     };
     if (method === 'PUT') headers['content-length'] = String(body.length);
 
+    return this.send(method, path, body, headers);
+  }
+
+  private send(method: 'GET' | 'PUT' | 'DELETE', path: string, body: Buffer,
+    headers: Record<string, string>): Promise<{ body: Buffer; headers: Record<string, string> }> {
+    const config = this.config;
     const transport = config.MINIO_USE_SSL ? httpsRequest : httpRequest;
     return new Promise((resolve, reject) => {
       let settled = false;

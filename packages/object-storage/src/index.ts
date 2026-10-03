@@ -4,8 +4,12 @@ export type StoredObject = {
   byteSize: number;
 };
 
+export type PreparedObjectPut = { execute(): Promise<StoredObject> };
+
 export interface ObjectStorage {
   putObject(input: { key: string; body: Buffer; contentType: string }): Promise<StoredObject>;
+  /** VIP API requires this local, pre-commit authorization; no storage I/O occurs until execute. */
+  preparePutObject?(input: { key: string; body: Buffer; contentType: string; expiresAt: Date }): PreparedObjectPut;
   getObject(key: string): Promise<{ body: Buffer; contentType: string }>;
   deleteObject(key: string): Promise<void>;
 }

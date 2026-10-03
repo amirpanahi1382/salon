@@ -33,6 +33,22 @@ class FaultInjectingRealStorage implements ObjectStorage {
 
   constructor(readonly delegate: S3CompatibleObjectStorage) {}
 
+  preparePutObject(input: { key: string; body: Buffer; contentType: string; expiresAt: Date }) {
+    const prepared = this.delegate.preparePutObject(input);
+    return { execute: async () => {
+      const delayed = this.delayed;
+      this.delayed = undefined;
+      if (delayed) {
+        delayed.started();
+        await delayed.proceed;
+      }
+      const written = await prepared.execute();
+      this.writtenKeys.push(input.key);
+      if (delayed) throw new InfrastructureError('Injected process exit after PUT');
+      return written;
+    } };
+  }
+
   delayNextPutThenFailAfterWrite(): DelayedPut {
     let started!: () => void;
     let proceed!: () => void;

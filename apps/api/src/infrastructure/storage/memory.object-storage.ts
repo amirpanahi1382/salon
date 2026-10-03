@@ -14,6 +14,15 @@ export class MemoryObjectStorage implements ObjectStorage {
     return { key: input.key, contentType: input.contentType, byteSize: input.body.length };
   }
 
+  preparePutObject(input: { key: string; body: Buffer; contentType: string; expiresAt: Date }) {
+    return { execute: async () => {
+      if (Date.now() >= input.expiresAt.getTime()) {
+        throw new InfrastructureError('File storage is temporarily unavailable');
+      }
+      return this.putObject(input);
+    } };
+  }
+
   async getObject(key: string): Promise<{ body: Buffer; contentType: string }> {
     const found = this.objects.get(key);
     if (!found) {

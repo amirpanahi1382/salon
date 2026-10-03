@@ -38,6 +38,15 @@ class BarrierStorage implements ObjectStorage {
 
   constructor(private readonly delegate: ObjectStorage) {}
 
+  preparePutObject(input: { key: string; body: Buffer; contentType: string; expiresAt: Date }) {
+    const prepared = this.delegate.preparePutObject?.(input);
+    if (!prepared) throw new Error('Test storage cannot prepare PUT');
+    return { execute: async () => {
+      this.writes += 1;
+      return prepared.execute();
+    } };
+  }
+
   override async putObject(input: { key: string; body: Buffer; contentType: string }) {
     this.writes += 1;
     return this.delegate.putObject(input);

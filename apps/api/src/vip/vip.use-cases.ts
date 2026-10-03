@@ -4,6 +4,7 @@ import {
   ConflictError,
   DOMAIN_EVENT_TYPES,
   ForbiddenError,
+  InfrastructureError,
   NotFoundError,
   ValidationError,
   VIP_LIST_MAX_CONTACTS,
@@ -935,12 +936,20 @@ export class UploadVipSampleWorkUseCase {
         data: { status: 'UPLOADING', position, generation, objectKey, ownerToken,
           lockedUntil, lastErrorCode: null },
       });
+      // Authorization is fixed before intent commit. A paused obsolete attempt
+      // cannot obtain a fresh storage signature after its lease has expired.
+      if (!this.storage.preparePutObject) {
+        throw new InfrastructureError('File storage is temporarily unavailable');
+      }
+      const preparedPut = this.storage.preparePutObject({
+        key: objectKey, body: file.buffer, contentType, expiresAt: lockedUntil,
+      });
       return { kind: 'upload' as const, uploadId: upload.id, generation, ownerToken,
-        objectKey, position, lockedUntil };
+        objectKey, position, lockedUntil, preparedPut };
     });
 
     if (execution.kind === 'upload') {
-      await this.storage.putObject({ key: execution.objectKey, body: file.buffer, contentType });
+      await execution.preparedPut.execute();
       await readVerifiedVipSampleObject(this.storage, {
         objectKey: execution.objectKey, contentType, byteSize: file.buffer.length, sha256,
       });
