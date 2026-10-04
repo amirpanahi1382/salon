@@ -112,4 +112,70 @@ void main() {
     expect(visits.lastVisitedAt, isNotNull);
     expect(jalaliFromLocal(visits.lastVisitedAt!).year, jalaliFromLocal(DateTime.now()).year);
   });
+
+  testWidgets(
+    'default visit time submits without opening date or time pickers',
+    (tester) async {
+      final visits = FakeVisitRepository();
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [visitRepositoryProvider.overrideWith((ref) => visits)],
+          child: MaterialApp.router(
+            routerConfig: GoRouter(
+              routes: [
+                GoRoute(
+                  path: '/',
+                  builder: (_, _) =>
+                      const RecordVisitScreen(customerId: 'c1'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('save-visit')));
+      await tester.pumpAndSettle();
+
+      expect(visits.recorded, isTrue);
+      expect(visits.lastVisitedAt, isNotNull);
+      expect(visits.lastVisitedAt!.isUtc, isFalse);
+    },
+  );
+
+  testWidgets('time picker selection keeps local meaning at minute precision', (
+    tester,
+  ) async {
+    final visits = FakeVisitRepository();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [visitRepositoryProvider.overrideWith((ref) => visits)],
+        child: MaterialApp.router(
+          routerConfig: GoRouter(
+            routes: [
+              GoRoute(
+                path: '/',
+                builder: (_, _) =>
+                    const RecordVisitScreen(customerId: 'c1'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('visit-time-tile')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(TextButton).last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('save-visit')));
+    await tester.pumpAndSettle();
+
+    expect(visits.recorded, isTrue);
+    expect(visits.lastVisitedAt!.isUtc, isFalse);
+    expect(visits.lastVisitedAt!.second, 0);
+    expect(visits.lastVisitedAt!.microsecond, 0);
+  });
 }

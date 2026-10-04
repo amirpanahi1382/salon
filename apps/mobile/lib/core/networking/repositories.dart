@@ -5,6 +5,7 @@ import '../../core/errors/api_exception.dart';
 import '../../core/networking/api_client.dart';
 import '../../core/storage/session_store.dart';
 import '../../shared/models/models.dart';
+import 'api_instant.dart';
 
 String sanitizeAuthEmail(String email) {
   return email
@@ -225,7 +226,7 @@ class VisitRepository {
         '/visits',
         data: {
           'customerId': customerId,
-          'visitedAt': visitedAt.toUtc().toIso8601String(),
+          'visitedAt': toApiInstant(visitedAt),
         },
         headers: {'Idempotency-Key': idempotencyKey},
       ) as Map<String, dynamic>;
@@ -251,7 +252,7 @@ class VisitRepository {
         '/visits/complete-with-sale',
         data: {
           'customerId': customerId,
-          'visitedAt': visitedAt.toUtc().toIso8601String(),
+          'visitedAt': toApiInstant(visitedAt),
           'serviceId': serviceId,
           'amount': amount,
           'currency': 'IRR',
@@ -284,8 +285,8 @@ class VisitRepository {
     final start = DateTime(day.year, day.month, day.day);
     final end = start.add(const Duration(days: 1));
     return {
-      'from': start.toUtc().toIso8601String(),
-      'to': end.toUtc().toIso8601String(),
+      'from': toApiInstant(start),
+      'to': toApiInstant(end),
     };
   }
 }
@@ -552,7 +553,7 @@ class ReturnCommitmentRepository {
     Future<ReturnCommitment> send() async {
       final data = await _api.post(
         '/messages/$messageRequestId/return-commitments',
-        data: {'expectedAt': expectedAt.toUtc().toIso8601String()},
+        data: {'expectedAt': toApiInstant(expectedAt)},
         headers: {'Idempotency-Key': idempotencyKey},
       ) as Map<String, dynamic>;
       return ReturnCommitment.fromJson(data);
@@ -575,8 +576,8 @@ class ReturnCommitmentRepository {
       final data = await _api.patch(
         '/return-commitments/$id',
         data: {
-          'expectedAt': expectedAt.toUtc().toIso8601String(),
-          'updatedAt': updatedAt.toUtc().toIso8601String(),
+          'expectedAt': toApiInstant(expectedAt),
+          'updatedAt': toApiInstant(updatedAt),
         },
         headers: {'Idempotency-Key': idempotencyKey},
       ) as Map<String, dynamic>;
@@ -599,7 +600,7 @@ class ReturnCommitmentRepository {
   }) async {
     Future<ReturnCommitment> send() async {
       final payload = <String, dynamic>{
-        'visitedAt': visitedAt.toUtc().toIso8601String(),
+        'visitedAt': toApiInstant(visitedAt),
         if (serviceId != null && amount != null)
           'sale': {
             'serviceId': serviceId,
@@ -627,7 +628,7 @@ class ReturnCommitmentRepository {
       '/recovery/outcomes/summary',
       query: weekStart == null
           ? null
-          : {'weekStart': weekStart.toUtc().toIso8601String()},
+          : {'weekStart': toApiInstant(weekStart)},
     );
     return RecoveryOutcomesSummary.fromJson(asJsonMap(data));
   }
@@ -641,7 +642,7 @@ class ReturnCommitmentRepository {
       '/recovery/outcomes/returns',
       query: {
         'kind': kind,
-        if (weekStart != null) 'weekStart': weekStart.toUtc().toIso8601String(),
+        if (weekStart != null) 'weekStart': toApiInstant(weekStart),
         if (cursor != null && cursor.isNotEmpty) 'cursor': cursor,
       },
     );
@@ -730,7 +731,7 @@ class AdminMessageRepository {
     Future<ReturnCommitment> send() async {
       final data = await _api.post(
         '/admin/message-queue/$messageRequestId/return-commitments',
-        data: {'expectedAt': expectedAt.toUtc().toIso8601String()},
+        data: {'expectedAt': toApiInstant(expectedAt)},
         headers: {'Idempotency-Key': idempotencyKey},
       ) as Map<String, dynamic>;
       return ReturnCommitment.fromJson(data);
@@ -753,8 +754,8 @@ class AdminMessageRepository {
       final data = await _api.patch(
         '/admin/return-commitments/$id',
         data: {
-          'expectedAt': expectedAt.toUtc().toIso8601String(),
-          'updatedAt': updatedAt.toUtc().toIso8601String(),
+          'expectedAt': toApiInstant(expectedAt),
+          'updatedAt': toApiInstant(updatedAt),
         },
         headers: {'Idempotency-Key': idempotencyKey},
       ) as Map<String, dynamic>;
@@ -856,7 +857,7 @@ class TransactionRepository {
       '/transactions',
       data: {
         'customerId': customerId,
-        'occurredAt': DateTime.now().toUtc().toIso8601String(),
+        'occurredAt': toApiInstant(DateTime.now()),
         'amount': amount,
         'currency': 'IRR',
         'visitId': ?visitId,

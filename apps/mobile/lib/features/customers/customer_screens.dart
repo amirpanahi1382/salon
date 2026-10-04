@@ -241,9 +241,13 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
                             children: [
                               const SizedBox(height: 48),
                               EmptyStateView(
-                                title: AppStrings.noCustomers,
-                                body: AppStrings.addFirstCustomer,
-                                action: Wrap(
+                                title: _search.text.trim().isEmpty
+                                    ? AppStrings.noCustomers
+                                    : AppStrings.noMatchingCustomers,
+                                body: _search.text.trim().isEmpty
+                                    ? AppStrings.addFirstCustomer
+                                    : AppStrings.changeCustomerSearch,
+                                action: _search.text.trim().isNotEmpty ? null : Wrap(
                                   alignment: WrapAlignment.center,
                                   spacing: 8,
                                   runSpacing: 8,

@@ -1252,6 +1252,32 @@ void main() {
     expect(find.text('ورود اطلاعات از اکسل'), findsWidgets);
   });
 
+  testWidgets('customer search has a distinct filtered empty state', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          customerRepositoryProvider.overrideWithValue(
+            FakeCustomerRepository(items: [_customer()]),
+          ),
+          vipRepositoryProvider.overrideWithValue(FakeVipRepository()),
+        ],
+        child: const MaterialApp(home: CustomersScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField), 'does-not-match');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+
+    expect(find.text(AppStrings.noMatchingCustomers), findsOneWidget);
+    expect(find.text(AppStrings.changeCustomerSearch), findsOneWidget);
+    expect(find.text(AppStrings.noCustomers), findsNothing);
+    expect(find.text(AppStrings.addFirstCustomer), findsNothing);
+  });
+
   testWidgets('customer list loads the next page with cursor', (tester) async {
     final repo = FakeCustomerRepository(
       items: [

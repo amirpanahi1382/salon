@@ -38,6 +38,9 @@ class AppStrings {
   static const caughtUpBody = 'الان مشتری‌ای نیست که لازم باشد دنبالش بروید.';
   static const noCustomers = 'هنوز مشتری‌ای ثبت نشده.';
   static const addFirstCustomer = 'اولین مشتری را اضافه کنید تا سابقه مراجعه‌ها شکل بگیرد.';
+  static const noMatchingCustomers = 'مشتری مطابق جستجو پیدا نشد.';
+  static const changeCustomerSearch =
+      'عبارت جستجو را تغییر دهید یا آن را پاک کنید.';
   static const noVisits = 'هنوز نوبت انجام‌شده‌ای ثبت نشده.';
   static const noVisitsToday = 'امروز نوبت انجام‌شده‌ای ثبت نشده.';
   static const noMatchingVisits = 'با این فیلترها نوبت انجام‌شده‌ای پیدا نشد.';
