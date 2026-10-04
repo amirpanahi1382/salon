@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/errors/api_exception.dart';
 import '../../core/networking/api_client.dart';
 import '../../core/state/providers.dart';
 import '../../core/theme/app_tokens.dart';
@@ -26,6 +27,8 @@ class _AdminVipOutreachFoldersScreenState
   bool _loading = true;
   Object? _error;
   final _search = TextEditingController();
+  String _activeQuery = '';
+  int _loadGeneration = 0;
 
   @override
   void initState() {
@@ -40,6 +43,11 @@ class _AdminVipOutreachFoldersScreenState
   }
 
   Future<void> _load({bool moreFolders = false}) async {
+    final generation = ++_loadGeneration;
+    final query = moreFolders ? _activeQuery : _search.text.trim();
+    if (!moreFolders) {
+      _activeQuery = query;
+    }
     setState(() {
       _loading = true;
       _error = null;
@@ -47,9 +55,9 @@ class _AdminVipOutreachFoldersScreenState
     try {
       final folders = await ref.read(vipRepositoryProvider).adminOutreachSalons(
             cursor: moreFolders ? _folderCursor : null,
-            query: _search.text,
+            query: query,
           );
-      if (!mounted) {
+      if (!mounted || generation != _loadGeneration) {
         return;
       }
       setState(() {
@@ -58,7 +66,7 @@ class _AdminVipOutreachFoldersScreenState
         _loading = false;
       });
     } catch (error) {
-      if (!mounted) {
+      if (!mounted || generation != _loadGeneration) {
         return;
       }
       setState(() {
@@ -126,9 +134,13 @@ class _AdminVipOutreachFoldersScreenState
                       ),
                       const SizedBox(height: AppTokens.space8),
                       if (_folders.isEmpty)
-                        const EmptyStateView(
-                          title: AppStrings.vipOutreachEmptyTitle,
-                          body: AppStrings.vipOutreachEmptyBody,
+                        EmptyStateView(
+                          title: _activeQuery.isEmpty
+                              ? AppStrings.vipOutreachEmptyTitle
+                              : AppStrings.vipOutreachFilteredEmptyTitle,
+                          body: _activeQuery.isEmpty
+                              ? AppStrings.vipOutreachEmptyBody
+                              : AppStrings.vipOutreachFilteredEmptyBody,
                           compact: true,
                         )
                       else
@@ -320,6 +332,8 @@ class _AdminVipOutreachRequestScreenState
   String? _cursor;
   bool _loading = true;
   Object? _error;
+  String? _busyRecipientId;
+  bool _dispatching = false;
 
   @override
   void initState() {
@@ -369,9 +383,10 @@ class _AdminVipOutreachRequestScreenState
 
   Future<void> _markSent(AdminVipOutreachRecipient row) async {
     final id = row.messageRequestId;
-    if (id == null) {
+    if (id == null || _busyRecipientId != null) {
       return;
     }
+    setState(() => _busyRecipientId = row.id);
     try {
       await ref.read(adminMessageRepositoryProvider).markManualSent(id);
       await _load();
@@ -382,12 +397,19 @@ class _AdminVipOutreachRequestScreenState
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(friendlyError(error))),
       );
+      if ((error is ApiException && error.isConflict) || error is NetworkException) {
+        await _load();
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _busyRecipientId = null);
+      }
     }
   }
 
   Future<void> _cancel(AdminVipOutreachRecipient row) async {
     final id = row.messageRequestId;
-    if (id == null) {
+    if (id == null || _busyRecipientId != null) {
       return;
     }
     final confirmed = await showDialog<bool>(
@@ -410,6 +432,7 @@ class _AdminVipOutreachRequestScreenState
     if (confirmed != true || !mounted) {
       return;
     }
+    setState(() => _busyRecipientId = row.id);
     try {
       await ref.read(adminMessageRepositoryProvider).cancel(id);
       await _load();
@@ -420,6 +443,42 @@ class _AdminVipOutreachRequestScreenState
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(friendlyError(error))),
       );
+      if ((error is ApiException && error.isConflict) || error is NetworkException) {
+        await _load();
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _busyRecipientId = null);
+      }
+    }
+  }
+
+  Future<void> _dispatchRequest() async {
+    final request = _request;
+    if (request == null || !request.canDispatchManual || _dispatching) {
+      return;
+    }
+    setState(() => _dispatching = true);
+    try {
+      await ref.read(vipRepositoryProvider).dispatchManual(
+            request.id,
+            createRequestId(),
+          );
+      await _load();
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyError(error))),
+      );
+      if ((error is ApiException && error.isConflict) || error is NetworkException) {
+        await _load();
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _dispatching = false);
+      }
     }
   }
 
@@ -451,6 +510,16 @@ class _AdminVipOutreachRequestScreenState
                         Text(
                           AppStrings.sentOfTotal(request.sentCount, request.recipientCount),
                         ),
+                        if (request.canDispatchManual) ...[
+                          const SizedBox(height: AppTokens.space8),
+                          const Text(AppStrings.vipOutreachDispatchPrerequisite),
+                          const SizedBox(height: AppTokens.space8),
+                          AppButton(
+                            label: AppStrings.vipOutreachDispatchAllManual,
+                            onPressed: _dispatching ? null : _dispatchRequest,
+                            loading: _dispatching,
+                          ),
+                        ],
                         if (_items.isEmpty && !_loading)
                           const Padding(
                             padding: EdgeInsets.only(top: AppTokens.space16),
@@ -479,11 +548,15 @@ class _AdminVipOutreachRequestScreenState
                                 ),
                                 LtrText(row.phoneNumber),
                                 Text(vipOutreachExecutionLabel(row.executionState)),
+                                if (row.messageRequestId == null)
+                                  const Text(AppStrings.vipOutreachDispatchPrerequisite),
                                 if (row.canMarkManualSent)
                                   Align(
                                     alignment: Alignment.centerLeft,
                                     child: TextButton(
-                                      onPressed: () => _markSent(row),
+                                      onPressed: _busyRecipientId == null
+                                          ? () => _markSent(row)
+                                          : null,
                                       child: const Text(AppStrings.adminMarkRecipientSent),
                                     ),
                                   ),
@@ -491,7 +564,9 @@ class _AdminVipOutreachRequestScreenState
                                   Align(
                                     alignment: Alignment.centerLeft,
                                     child: TextButton(
-                                      onPressed: () => _cancel(row),
+                                      onPressed: _busyRecipientId == null
+                                          ? () => _cancel(row)
+                                          : null,
                                       child: const Text(AppStrings.adminRemoveFromQueue),
                                     ),
                                   ),

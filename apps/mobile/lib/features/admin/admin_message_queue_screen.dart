@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/errors/api_exception.dart';
 import '../../core/state/providers.dart';
 import '../../core/theme/app_tokens.dart';
 import '../../core/widgets/app_widgets.dart';
@@ -26,6 +27,8 @@ class _AdminMessageQueueScreenState extends ConsumerState<AdminMessageQueueScree
   bool _loading = true;
   Object? _error;
   final _search = TextEditingController();
+  String _activeQuery = '';
+  int _loadGeneration = 0;
 
   @override
   void initState() {
@@ -40,6 +43,11 @@ class _AdminMessageQueueScreenState extends ConsumerState<AdminMessageQueueScree
   }
 
   Future<void> _load({bool more = false}) async {
+    final generation = ++_loadGeneration;
+    final query = more ? _activeQuery : _search.text.trim();
+    if (!more) {
+      _activeQuery = query;
+    }
     setState(() {
       _loading = true;
       _error = null;
@@ -47,9 +55,9 @@ class _AdminMessageQueueScreenState extends ConsumerState<AdminMessageQueueScree
     try {
       final page = await ref.read(adminMessageRepositoryProvider).listNormalSalons(
             cursor: more ? _cursor : null,
-            query: _search.text,
+            query: query,
           );
-      if (!mounted) {
+      if (!mounted || generation != _loadGeneration) {
         return;
       }
       setState(() {
@@ -58,7 +66,7 @@ class _AdminMessageQueueScreenState extends ConsumerState<AdminMessageQueueScree
         _loading = false;
       });
     } catch (error) {
-      if (!mounted) {
+      if (!mounted || generation != _loadGeneration) {
         return;
       }
       setState(() {
@@ -98,9 +106,13 @@ class _AdminMessageQueueScreenState extends ConsumerState<AdminMessageQueueScree
                       ),
                       const SizedBox(height: AppTokens.space16),
                       if (_items.isEmpty)
-                        const EmptyStateView(
-                          title: AppStrings.adminNormalFoldersEmpty,
-                          body: AppStrings.adminNormalFoldersEmpty,
+                        EmptyStateView(
+                          title: _activeQuery.isEmpty
+                              ? AppStrings.adminNormalFoldersEmpty
+                              : AppStrings.adminNormalFoldersFilteredEmpty,
+                          body: _activeQuery.isEmpty
+                              ? AppStrings.adminNormalFoldersEmpty
+                              : AppStrings.changeCustomerSearch,
                         )
                       else
                         for (final folder in _items) ...[
@@ -336,6 +348,9 @@ class _AdminMessageDetailSheetState extends ConsumerState<AdminMessageDetailShee
         _error = error;
         _busy = false;
       });
+      if ((error is ApiException && error.isConflict) || error is NetworkException) {
+        await _reload();
+      }
     }
   }
 
@@ -444,7 +459,9 @@ class _AdminMessageDetailSheetState extends ConsumerState<AdminMessageDetailShee
                   const SizedBox(height: 8),
                   Text('مشتری: ${item.customerName}'),
                   const SizedBox(height: 8),
-                  Text('شماره: ${item.customerPhone}'),
+                  Text(
+                    'شماره: ${item.customerPhone.isEmpty ? AppStrings.adminUnknownDestination : item.customerPhone}',
+                  ),
                   const SizedBox(height: 8),
                   if (item.messageBusinessDate != null) ...[
                     Text('تاریخ کسب‌وکار: ${item.messageBusinessDate}'),
@@ -489,6 +506,7 @@ class _AdminMessageDetailSheetState extends ConsumerState<AdminMessageDetailShee
                     ),
                   ],
                   if (item.mode == null &&
+                      item.customerPhone.isNotEmpty &&
                       item.vipRequestId == null &&
                       item.status == 'QUEUED') ...[
                     const SizedBox(height: 8),
@@ -521,6 +539,7 @@ class _AdminMessageDetailSheetState extends ConsumerState<AdminMessageDetailShee
                     ),
                   ],
                   if (item.mode == 'BALE' &&
+                      item.customerPhone.isNotEmpty &&
                       item.status != 'SENT' &&
                       item.status != 'CANCELLED' &&
                       item.vipRequestId == null) ...[

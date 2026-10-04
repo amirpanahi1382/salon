@@ -1096,6 +1096,7 @@ describeIfDb('Opportunity messages (e2e)', () => {
   it('groups ordinary messages by salon and excludes VIP provenance', async () => {
     const salonA = await createOwnerBypassingRegisterThrottle('fold-a');
     const salonB = await createOwnerBypassingRegisterThrottle('fold-b');
+    const emptySalon = await createOwnerBypassingRegisterThrottle('fold-empty');
     const customerA = await createCustomer(salonA.token, 'FolderA');
     const customerB = await createCustomer(salonB.token, 'FolderB');
     const first = await request(app.getHttpServer())
@@ -1157,6 +1158,19 @@ describeIfDb('Opportunity messages (e2e)', () => {
     );
     expect(detail.body.items[0].canCancel).toBeDefined();
     expect(detail.body.items[0].canMarkManualSent).toBeDefined();
+
+    const emptyDetail = await request(app.getHttpServer())
+      .get(`/admin/messages/normal/salons/${emptySalon.tenantId}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    expect(emptyDetail.body).toMatchObject({
+      totalMessageCount: 0,
+      sentMessageCount: 0,
+      pendingMessageCount: 0,
+      failedMessageCount: 0,
+      cancelledMessageCount: 0,
+      items: [],
+    });
   });
 
   it('cancels queued ordinary messages without deleting history and races with claim/manual-sent', async () => {

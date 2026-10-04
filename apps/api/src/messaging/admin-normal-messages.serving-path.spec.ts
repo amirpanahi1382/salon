@@ -18,7 +18,8 @@ describe('admin normal message folder serving path', () => {
     expect(useCaseSource).not.toContain('messageFolder');
     expect(repositorySource).toContain('GROUP BY s.id, s.name');
     expect(repositorySource).toContain('vip_request_id IS NULL');
-    expect(repositorySource).toContain('customer_id IS NOT NULL');
+    expect(repositorySource).not.toContain('customer_id IS NOT NULL');
+    expect(repositorySource).toContain('mr.id IS NOT NULL');
   });
 
   it('aggregates folder counts in SQL instead of grouping in Node', () => {

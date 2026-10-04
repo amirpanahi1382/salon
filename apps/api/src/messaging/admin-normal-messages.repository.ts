@@ -73,7 +73,6 @@ export class AdminNormalMessagesRepository {
         JOIN salons s ON s.id = mr.salon_id
         LEFT JOIN message_deliveries d ON d.message_request_id = mr.id
         WHERE mr.vip_request_id IS NULL
-          AND mr.customer_id IS NOT NULL
         GROUP BY s.id, s.name
       )
       SELECT
@@ -106,15 +105,14 @@ export class AdminNormalMessagesRepository {
         s.name AS "salonName",
         COUNT(mr.id)::int AS "totalMessageCount",
         COUNT(*) FILTER (WHERE mr.id IS NOT NULL AND ${EXECUTION_SQL} = 'SENT')::int AS "sentMessageCount",
-        COUNT(*) FILTER (WHERE ${EXECUTION_SQL} IN ('QUEUED', 'IN_PIPELINE'))::int AS "pendingMessageCount",
-        COUNT(*) FILTER (WHERE ${EXECUTION_SQL} = 'FAILED')::int AS "failedMessageCount",
-        COUNT(*) FILTER (WHERE ${EXECUTION_SQL} = 'CANCELLED')::int AS "cancelledMessageCount",
+        COUNT(*) FILTER (WHERE mr.id IS NOT NULL AND ${EXECUTION_SQL} IN ('QUEUED', 'IN_PIPELINE'))::int AS "pendingMessageCount",
+        COUNT(*) FILTER (WHERE mr.id IS NOT NULL AND ${EXECUTION_SQL} = 'FAILED')::int AS "failedMessageCount",
+        COUNT(*) FILTER (WHERE mr.id IS NOT NULL AND ${EXECUTION_SQL} = 'CANCELLED')::int AS "cancelledMessageCount",
         MAX(COALESCE(d.updated_at, mr.updated_at, mr.requested_at)) AS "latestActivityAt"
       FROM salons s
       LEFT JOIN message_requests mr
         ON mr.salon_id = s.id
         AND mr.vip_request_id IS NULL
-        AND mr.customer_id IS NOT NULL
       LEFT JOIN message_deliveries d ON d.message_request_id = mr.id
       WHERE s.id = ${salonId}::uuid
       GROUP BY s.id, s.name
@@ -128,7 +126,6 @@ export class AdminNormalMessagesRepository {
       where: {
         salonId,
         vipRequestId: null,
-        customerId: { not: null },
         ...(parsed
           ? {
               OR: [

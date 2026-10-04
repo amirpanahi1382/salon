@@ -106,12 +106,15 @@ class AppStrings {
   static const adminMessagingNav = 'پیام‌ها';
   static const adminFolderSearch = 'جستجوی نام سالن';
   static const adminNormalFoldersEmpty = 'هنوز پیام عادی در صف نیست.';
+  static const adminNormalFoldersFilteredEmpty =
+      'سالنی مطابق جستجو در پیام‌های عادی پیدا نشد.';
   static const adminNormalFolderEmpty = 'برای این سالن پیام عادی ثبت نشده.';
   static const adminRemoveFromQueue = 'حذف از صف';
   static const adminRemoveFromQueueBody =
       'این پیام از صف ارسال فعال خارج می‌شود. سابقه آن پاک نمی‌شود.';
   static const adminCancelled = 'لغو شده';
   static const adminMarkRecipientSent = 'ارسال دستی شد';
+  static const adminUnknownDestination = 'نامشخص (نشانی تاریخی تأیید نشده)';
   static const adminVipLists = 'لیست‌های VIP';
   static const adminManualSend = 'ارسال دستی';
   static const copyMessage = 'کپی پیام';
@@ -253,6 +256,10 @@ class AppStrings {
   static const vipOutreachEmptyTitle = 'هنوز درخواست VIP ثبت نشده.';
   static const vipOutreachEmptyBody =
       'وقتی سالن VIP درخواست ارسال ثبت کند، پوشه همان سالن اینجا دیده می‌شود.';
+  static const vipOutreachFilteredEmptyTitle =
+      'سالنی مطابق جستجو در درخواست‌های VIP پیدا نشد.';
+  static const vipOutreachFilteredEmptyBody =
+      'عبارت جستجو را تغییر دهید یا آن را پاک کنید.';
   static const vipOutreachLoadMore = 'موارد بعدی';
   static const vipOutreachPending = 'در انتظار ارسال';
   static const vipOutreachSent = 'ارسال‌شده';
@@ -260,6 +267,10 @@ class AppStrings {
   static const vipOutreachRequests = 'درخواست‌ها';
   static const vipOutreachNoMessagesYet = 'هنوز پیامی در صف قرار نگرفته.';
   static const vipOutreachNotQueued = 'در صف قرار نگرفته';
+  static const vipOutreachDispatchPrerequisite =
+      'برای فعال شدن اقدام‌های گیرنده، ابتدا همه گیرندگان این درخواست را وارد صف دستی کنید.';
+  static const vipOutreachDispatchAllManual =
+      'قرار دادن همه گیرندگان در صف دستی';
   static const vipInUse = 'در حال استفاده';
   static const vipActive = 'فعال';
   static const vipInactive = 'غیرفعال';

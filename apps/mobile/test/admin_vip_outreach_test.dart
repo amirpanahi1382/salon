@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -76,12 +78,14 @@ class _FakeVipRepository extends VipRepository {
     this.requestsBySalon = const {},
     this.recipientsByRequest = const {},
     this.foldersError,
+    this.queryResponses = const {},
   }) : super(_client());
 
   final List<AdminVipOutreachFolder> folders;
   final Map<String, List<AdminVipOutreachRequest>> requestsBySalon;
   final Map<String, List<AdminVipOutreachRecipient>> recipientsByRequest;
   final Object? foldersError;
+  final Map<String, Future<ItemPage<AdminVipOutreachFolder>>> queryResponses;
   final List<String> folderQueries = [];
   final List<String> salonLoads = [];
 
@@ -101,10 +105,20 @@ class _FakeVipRepository extends VipRepository {
     String? query,
   }) async {
     folderQueries.add(query ?? '');
+    final q = query?.trim() ?? '';
+    final controlled = queryResponses[q];
+    if (controlled != null) {
+      return controlled;
+    }
     if (foldersError != null) {
       throw foldersError!;
     }
-    return ItemPage(items: folders, hasMore: false);
+    return ItemPage(
+      items: q.isEmpty
+          ? folders
+          : folders.where((row) => row.salonName.contains(q)).toList(),
+      hasMore: false,
+    );
   }
 
   @override
@@ -193,6 +207,43 @@ void main() {
     expect(find.text(AppStrings.retry), findsOneWidget);
   });
 
+  testWidgets('VIP search shows a filtered empty state', (tester) async {
+    await _pumpAdmin(
+      tester,
+      _FakeVipRepository(folders: [_folder(salonId: 's1', name: 'Salon A')]),
+    );
+    await tester.enterText(find.byType(TextField), 'وجود ندارد');
+    await tester.testTextInput.receiveAction(TextInputAction.search);
+    await tester.pumpAndSettle();
+    expect(find.text(AppStrings.vipOutreachFilteredEmptyTitle), findsOneWidget);
+    expect(find.text(AppStrings.vipOutreachEmptyTitle), findsNothing);
+  });
+
+  testWidgets('a stale VIP search cannot overwrite a newer query', (tester) async {
+    final oldResponse = Completer<ItemPage<AdminVipOutreachFolder>>();
+    final newResponse = Completer<ItemPage<AdminVipOutreachFolder>>();
+    final repo = _FakeVipRepository(
+      folders: [_folder(salonId: 'initial', name: 'نتیجه اولیه')],
+      queryResponses: {'قدیمی': oldResponse.future, 'جدید': newResponse.future},
+    );
+    await _pumpAdmin(tester, repo);
+    await tester.enterText(find.byType(TextField), 'قدیمی');
+    await tester.testTextInput.receiveAction(TextInputAction.search);
+    await tester.pump();
+    await tester.enterText(find.byType(TextField), 'جدید');
+    await tester.testTextInput.receiveAction(TextInputAction.search);
+    newResponse.complete(ItemPage(
+      items: [_folder(salonId: 'new', name: 'نتیجه جدید')], hasMore: false,
+    ));
+    await tester.pumpAndSettle();
+    oldResponse.complete(ItemPage(
+      items: [_folder(salonId: 'old', name: 'نتیجه قدیمی')], hasMore: false,
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text('نتیجه جدید'), findsOneWidget);
+    expect(find.text('نتیجه قدیمی'), findsNothing);
+  });
+
   testWidgets('opening a salon folder shows only that salon’s requests', (tester) async {
     final repo = _FakeVipRepository(
       folders: [_folder(salonId: 's1', name: 'Salon A', requests: 2)],
@@ -279,5 +330,33 @@ void main() {
     expect(find.text(AppStrings.vipUnnamedContact), findsOneWidget);
     expect(find.text(AppStrings.adminMarkRecipientSent), findsOneWidget);
     expect(find.text(AppStrings.adminRemoveFromQueue), findsOneWidget);
+  });
+
+  testWidgets('unqueued VIP recipients expose the request-level prerequisite', (tester) async {
+    final repo = _FakeVipRepository(
+      requestsBySalon: {
+        's1': [_request(id: 'r1', salonId: 's1')],
+      },
+      recipientsByRequest: {
+        'r1': const [
+          AdminVipOutreachRecipient(
+            id: 'c1', sortOrder: 0, phoneNumber: '09121111111',
+            executionState: 'NOT_YET_QUEUED',
+          ),
+        ],
+      },
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [vipRepositoryProvider.overrideWithValue(repo)],
+        child: const MaterialApp(
+          home: AdminVipOutreachRequestScreen(requestId: 'r1'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text(AppStrings.vipOutreachDispatchPrerequisite), findsNWidgets(2));
+    expect(find.text(AppStrings.vipOutreachDispatchAllManual), findsOneWidget);
+    expect(find.text(AppStrings.adminMarkRecipientSent), findsNothing);
   });
 }
