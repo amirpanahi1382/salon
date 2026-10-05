@@ -2,6 +2,9 @@ import { createHash, randomUUID } from 'node:crypto';
 import { Prisma, type PrismaClient } from '@prisma/client';
 
 export const ORIGINAL_TEHRAN_CATALOG = 'ORIGINAL_TEHRAN';
+export const PERSISTENT_CATALOG_CONFIRMATION = 'PERSISTENT_SALON';
+const PREVIEW_HOST_PORT = '15442';
+const PERSISTENT_HOST_PORT = '5432';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const REGION_PATTERN = /^(0[1-9]|1[0-4])$/;
@@ -75,6 +78,43 @@ export function assertDisposableCatalogTarget(databaseUrl: string, expectedDatab
   }
 }
 
+/**
+ * Explicit persistent-target gate. Database name must be salon, the host must be
+ * loopback, and the URL port must be the declared host port. Port 15442 stays
+ * reserved for the disposable preview. The default host port is 5432.
+ */
+export function assertPersistentCatalogTarget(
+  databaseUrl: string,
+  input: { expectedDatabase: string; systemIdentifier: string; confirmation: string; hostPort?: string },
+): void {
+  if (input.confirmation !== PERSISTENT_CATALOG_CONFIRMATION) {
+    throw new VipCatalogClassificationError('CONFIRMATION_REQUIRED', 'Persistent classification requires explicit confirmation');
+  }
+  if (input.expectedDatabase !== 'salon') {
+    throw new VipCatalogClassificationError('REFUSING_UNEXPECTED_DATABASE', 'Persistent classification only targets database salon');
+  }
+  if (!/^\d{1,30}$/.test(input.systemIdentifier)) {
+    throw new VipCatalogClassificationError('SERVER_IDENTITY_MISMATCH', 'Server system identifier is not numeric');
+  }
+  const hostPort = input.hostPort ?? PERSISTENT_HOST_PORT;
+  if (!/^\d{2,5}$/.test(hostPort) || hostPort === PREVIEW_HOST_PORT) {
+    throw new VipCatalogClassificationError('REFUSING_UNEXPECTED_PORT', 'Refusing the disposable preview port');
+  }
+  let url: URL;
+  try {
+    url = new URL(databaseUrl);
+  } catch {
+    throw new VipCatalogClassificationError('DATABASE_TARGET_INVALID', 'DATABASE_URL is not a valid URL');
+  }
+  const database = decodeURIComponent(url.pathname.replace(/^\//, '').split('?')[0] ?? '');
+  if (url.hostname !== '127.0.0.1' && url.hostname !== 'localhost') {
+    throw new VipCatalogClassificationError('DATABASE_TARGET_INVALID', 'Refusing non-loopback database host');
+  }
+  if (url.port !== hostPort || database !== 'salon') {
+    throw new VipCatalogClassificationError('REFUSING_UNEXPECTED_DATABASE', 'Persistent classification only targets database salon on the declared port');
+  }
+}
+
 export function parseVipCatalogManifest(csv: string): VipCatalogManifestRow[] {
   const rows = parseCsv(csv.replace(/^\uFEFF/, '')).filter((row) => row.some((cell) => cell.trim() !== ''));
   if (rows.length < 2) {
@@ -143,9 +183,6 @@ export async function classifyVipCatalogMembership(
   prisma: PrismaClient,
   input: { manifestCsv: string; actorAdminId: string; expectedDatabase: string },
 ): Promise<ClassifyVipCatalogMembershipResult> {
-  if (!UUID_PATTERN.test(input.actorAdminId)) {
-    throw new VipCatalogClassificationError('ACTOR_INVALID', 'Classification requires an active platform admin');
-  }
   if (input.expectedDatabase === 'salon') {
     throw new VipCatalogClassificationError('REFUSING_PERSISTENT_DATABASE', 'Refusing persistent database salon');
   }
@@ -156,6 +193,55 @@ export async function classifyVipCatalogMembership(
   }
   if (database !== input.expectedDatabase) {
     throw new VipCatalogClassificationError('DATABASE_MISMATCH', 'Connected database does not match the expected target');
+  }
+  return classifyReviewedManifest(prisma, input);
+}
+
+export async function classifyPersistentVipCatalogMembership(
+  prisma: PrismaClient,
+  input: {
+    manifestCsv: string;
+    actorAdminId: string;
+    expectedDatabase: string;
+    systemIdentifier: string;
+    confirmation: string;
+    hostPort?: string;
+  },
+): Promise<ClassifyVipCatalogMembershipResult> {
+  if (input.confirmation !== PERSISTENT_CATALOG_CONFIRMATION) {
+    throw new VipCatalogClassificationError('CONFIRMATION_REQUIRED', 'Persistent classification requires explicit confirmation');
+  }
+  if (input.expectedDatabase !== 'salon') {
+    throw new VipCatalogClassificationError('REFUSING_UNEXPECTED_DATABASE', 'Persistent classification only targets database salon');
+  }
+  if (!/^\d{1,30}$/.test(input.systemIdentifier)) {
+    throw new VipCatalogClassificationError('SERVER_IDENTITY_MISMATCH', 'Server system identifier is not numeric');
+  }
+  const hostPort = input.hostPort ?? PERSISTENT_HOST_PORT;
+  if (hostPort === PREVIEW_HOST_PORT) {
+    throw new VipCatalogClassificationError('REFUSING_UNEXPECTED_PORT', 'Refusing the disposable preview port');
+  }
+  const identity = await prisma.$queryRaw<Array<{ db: string; systemIdentifier: string; port: string }>>`
+    SELECT current_database() AS db,
+           (SELECT system_identifier::text FROM pg_control_system()) AS "systemIdentifier",
+           inet_server_port()::text AS port
+  `;
+  const row = identity[0];
+  if (row?.db !== 'salon') {
+    throw new VipCatalogClassificationError('DATABASE_MISMATCH', 'Connected database is not salon');
+  }
+  if (row.systemIdentifier !== input.systemIdentifier || row.port !== '5432') {
+    throw new VipCatalogClassificationError('SERVER_IDENTITY_MISMATCH', 'Connected server identity does not match');
+  }
+  return classifyReviewedManifest(prisma, { ...input, expectedDatabase: 'salon' });
+}
+
+async function classifyReviewedManifest(
+  prisma: PrismaClient,
+  input: { manifestCsv: string; actorAdminId: string; expectedDatabase: string },
+): Promise<ClassifyVipCatalogMembershipResult> {
+  if (!UUID_PATTERN.test(input.actorAdminId)) {
+    throw new VipCatalogClassificationError('ACTOR_INVALID', 'Classification requires an active platform admin');
   }
   const column = await prisma.$queryRaw<Array<{ ok: number }>>`
     SELECT 1 AS ok

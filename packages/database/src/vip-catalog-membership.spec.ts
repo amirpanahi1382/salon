@@ -1,4 +1,10 @@
-import { assertDisposableCatalogTarget, parseVipCatalogManifest, VipCatalogClassificationError } from './vip-catalog-membership';
+import {
+  PERSISTENT_CATALOG_CONFIRMATION,
+  assertDisposableCatalogTarget,
+  assertPersistentCatalogTarget,
+  parseVipCatalogManifest,
+  VipCatalogClassificationError,
+} from './vip-catalog-membership';
 
 const HEADER = 'id,name,region_code,status,recorded_contacts,contact_rows,reserved_by_salon_id,vip_requests,created_at';
 const ID_A = '00000000-0000-4000-8000-0000000000a1';
@@ -77,3 +83,52 @@ describe('disposable catalog target', () => {
     }
   });
 });
+
+describe('persistent catalog target', () => {
+  const persistent = 'postgresql://salon:secret@127.0.0.1:5432/salon';
+  const systemIdentifier = '100';
+  const allowed = {
+    expectedDatabase: 'salon',
+    systemIdentifier,
+    confirmation: PERSISTENT_CATALOG_CONFIRMATION,
+    hostPort: '5432',
+  };
+
+  it('accepts the loopback persistent database on port 5432', () => {
+    expect(() => assertPersistentCatalogTarget(persistent, allowed)).not.toThrow();
+  });
+
+  it('accepts an explicit rehearsal port that is not the preview port', () => {
+    expect(() => assertPersistentCatalogTarget('postgresql://salon:secret@127.0.0.1:15443/salon', {
+      ...allowed,
+      hostPort: '15443',
+    })).not.toThrow();
+  });
+
+  it('refuses the preview port, a non-salon database, and a missing confirmation', () => {
+    expect(() => assertPersistentCatalogTarget('postgresql://salon:secret@127.0.0.1:15442/salon', {
+      ...allowed,
+      hostPort: '15442',
+    })).toThrow(VipCatalogClassificationError);
+    expect(() => assertPersistentCatalogTarget('postgresql://salon:secret@127.0.0.1:5432/salon_preview', allowed)).toThrow(/salon/);
+    expect(() => assertPersistentCatalogTarget(persistent, { ...allowed, confirmation: 'yes' })).toThrow(/confirmation/i);
+    expect(() => assertPersistentCatalogTarget(persistent, { ...allowed, expectedDatabase: 'salon_preview' })).toThrow(VipCatalogClassificationError);
+    expect(() => assertPersistentCatalogTarget(persistent, { ...allowed, systemIdentifier: 'not-numeric' })).toThrow(VipCatalogClassificationError);
+    expect(() => assertPersistentCatalogTarget('postgresql://salon:secret@203.0.113.5:5432/salon', allowed)).toThrow(/loopback/i);
+  });
+
+  it('does not echo the URL when the persistent target is refused', () => {
+    try {
+      assertPersistentCatalogTarget(previewUrl(), { ...allowed, hostPort: '15443' });
+      throw new Error('expected refusal');
+    } catch (error) {
+      expect(error).toBeInstanceOf(VipCatalogClassificationError);
+      expect((error as Error).message).not.toContain('secret');
+      expect((error as Error).message).not.toContain('postgresql://');
+    }
+  });
+});
+
+function previewUrl(): string {
+  return 'postgresql://salon:secret@127.0.0.1:15443/salon_preview';
+}

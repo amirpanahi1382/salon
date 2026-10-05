@@ -48,8 +48,11 @@ export {
 } from './retention.js';
 export {
   ORIGINAL_TEHRAN_CATALOG,
+  PERSISTENT_CATALOG_CONFIRMATION,
   VipCatalogClassificationError,
   assertDisposableCatalogTarget,
+  assertPersistentCatalogTarget,
+  classifyPersistentVipCatalogMembership,
   classifyVipCatalogMembership,
   parseVipCatalogManifest,
 } from './vip-catalog-membership.js';
