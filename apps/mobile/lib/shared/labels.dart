@@ -116,6 +116,11 @@ class AppStrings {
   static const adminMarkRecipientSent = 'ارسال دستی شد';
   static const adminUnknownDestination = 'نامشخص (نشانی تاریخی تأیید نشده)';
   static const adminVipLists = 'لیست‌های VIP';
+  static const vipOriginalTehranLists = 'لیست‌های اصلی تهران';
+  static const vipAllLists = 'همهٔ لیست‌ها';
+  static const vipOriginalCollectionEmpty = 'لیست‌های اصلی تهران هنوز مشخص نشده‌اند';
+  static const vipOriginalCollectionEmptyBody =
+      'این نما فقط عضویت بررسی‌شده را نشان می‌دهد و به لیست‌های منطقه‌ای دیگر برنمی‌گردد.';
   static const adminManualSend = 'ارسال دستی';
   static const copyMessage = 'کپی پیام';
   static const markManualSent = 'علامت‌گذاری به عنوان ارسال‌شده';

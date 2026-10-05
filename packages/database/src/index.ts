@@ -46,3 +46,14 @@ export {
   deleteExpiredIdempotencyBatch,
   deleteProcessedOutboxBatch,
 } from './retention.js';
+export {
+  ORIGINAL_TEHRAN_CATALOG,
+  VipCatalogClassificationError,
+  assertDisposableCatalogTarget,
+  classifyVipCatalogMembership,
+  parseVipCatalogManifest,
+} from './vip-catalog-membership.js';
+export type {
+  ClassifyVipCatalogMembershipResult,
+  VipCatalogManifestRow,
+} from './vip-catalog-membership.js';

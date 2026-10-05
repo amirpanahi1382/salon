@@ -969,12 +969,27 @@ class VipRepository {
     );
   }
 
-  Future<ItemPage<VipTargetList>> adminLists({String? cursor}) async {
+  Future<AdminVipInventoryPage> adminLists({
+    String? cursor,
+    String? catalogMembership,
+  }) async {
     final data = await _api.get(
       '/admin/vip/lists',
-      query: cursor == null ? null : {'cursor': cursor},
+      query: {
+        'cursor': ?cursor,
+        'catalogMembership': ?catalogMembership,
+      },
     );
-    return parseItemPage(data, VipTargetList.fromJson);
+    final page = parseItemPage(data, VipTargetList.fromJson);
+    final map = asJsonMap(data);
+    return AdminVipInventoryPage(
+      items: page.items,
+      hasMore: page.hasMore,
+      nextCursor: page.nextCursor,
+      listCount: map['listCount'] as int? ?? 0,
+      contactRowCount: map['contactRowCount'] as int? ?? 0,
+      recordedContactCount: map['recordedContactCount'] as int? ?? 0,
+    );
   }
 
   Future<VipTargetList> adminGetList(String id) async {

@@ -71,6 +71,10 @@ export const VIP_DISPLAY_NAME_MAX_LENGTH = 160;
 export const VIP_TARGET_LIST_STATUSES = ['PENDING', 'ACTIVE', 'INACTIVE', 'IN_USE'] as const;
 export type VipTargetListStatus = (typeof VIP_TARGET_LIST_STATUSES)[number];
 
+/** Reviewed catalog collection. Null on a list means it is not a member. */
+export const VIP_CATALOG_MEMBERSHIPS = ['ORIGINAL_TEHRAN'] as const;
+export type VipCatalogMembership = (typeof VIP_CATALOG_MEMBERSHIPS)[number];
+
 export const VIP_REQUEST_STATUSES = [
   'AWAITING_SAMPLE_WORK',
   'SUBMITTED',

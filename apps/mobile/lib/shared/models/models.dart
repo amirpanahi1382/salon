@@ -595,6 +595,21 @@ class ItemPage<T> {
   final String? nextCursor;
 }
 
+class AdminVipInventoryPage extends ItemPage<VipTargetList> {
+  const AdminVipInventoryPage({
+    required super.items,
+    required super.hasMore,
+    super.nextCursor,
+    required this.listCount,
+    required this.contactRowCount,
+    required this.recordedContactCount,
+  });
+
+  final int listCount;
+  final int contactRowCount;
+  final int recordedContactCount;
+}
+
 Map<String, dynamic>? jsonObject(dynamic value) {
   if (value is Map<String, dynamic>) {
     return value;

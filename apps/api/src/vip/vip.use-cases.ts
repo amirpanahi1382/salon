@@ -7,6 +7,7 @@ import {
   InfrastructureError,
   NotFoundError,
   ValidationError,
+  VIP_CATALOG_MEMBERSHIPS,
   VIP_LIST_MAX_CONTACTS,
   VIP_RESERVATION_EXPIRED_MESSAGE,
   VIP_LIST_NAME_MAX_LENGTH,
@@ -22,6 +23,7 @@ import {
   vipRegionName,
   type AuthenticatedPrincipal,
   type PlatformAdminPrincipal,
+  type VipCatalogMembership,
 } from '@salon/shared';
 import { Prisma } from '@salon/database';
 import { PrismaService } from '../infrastructure/database/prisma.service';
@@ -259,22 +261,62 @@ export class ImportVipListUseCase {
   }
 }
 
+const ADMIN_VIP_LIST_PAGE_SIZE = 50;
+
 @Injectable()
 export class ListVipListsUseCase {
   constructor(private readonly vip: VipRepository) {}
 
-  async execute(cursor?: string) {
-    let parsed: { createdAt: Date; id: string } | undefined;
-    const decoded = decodeCursor(cursor, 2);
-    if (decoded) parsed = { createdAt: parseCursorInstant(decoded[0]!), id: parseCursorUuid(decoded[1]!) };
-    const rows = await this.vip.listLists(parsed);
-    const page = toListPage(rows, 50, (row) => encodeCursor([row.createdAt.toISOString(), row.id]));
+  async execute(cursor?: string, catalogMembership?: VipCatalogMembership) {
+    if (catalogMembership && !VIP_CATALOG_MEMBERSHIPS.includes(catalogMembership)) {
+      throw new ValidationError('Invalid catalog membership');
+    }
+    const parsed = parseAdminVipListCursor(cursor, catalogMembership);
+    const [rows, summary] = await Promise.all([
+      this.vip.listLists({
+        cursor: parsed,
+        catalogMembership,
+        take: ADMIN_VIP_LIST_PAGE_SIZE + 1,
+      }),
+      this.vip.summarizeLists(catalogMembership),
+    ]);
+    const page = toListPage(rows, ADMIN_VIP_LIST_PAGE_SIZE, (row) =>
+      encodeAdminVipListCursor(row, catalogMembership),
+    );
     return {
       items: page.items.map(toListSummary),
       hasMore: page.hasMore,
       nextCursor: page.nextCursor,
+      listCount: summary.listCount,
+      contactRowCount: summary.contactRowCount,
+      recordedContactCount: summary.recordedContactCount,
     };
   }
+}
+
+function parseAdminVipListCursor(
+  cursor: string | undefined,
+  catalogMembership?: VipCatalogMembership,
+): { createdAt: Date; id: string } | undefined {
+  if (catalogMembership) {
+    const decoded = decodeCursor(cursor, 3);
+    if (!decoded) return undefined;
+    if (decoded[0] !== catalogMembership) throw new ValidationError('Invalid cursor');
+    return { createdAt: parseCursorInstant(decoded[1]!), id: parseCursorUuid(decoded[2]!) };
+  }
+  const decoded = decodeCursor(cursor, 2);
+  if (!decoded) return undefined;
+  return { createdAt: parseCursorInstant(decoded[0]!), id: parseCursorUuid(decoded[1]!) };
+}
+
+function encodeAdminVipListCursor(
+  row: { createdAt: Date; id: string },
+  catalogMembership?: VipCatalogMembership,
+): string {
+  const parts = catalogMembership
+    ? [catalogMembership, row.createdAt.toISOString(), row.id]
+    : [row.createdAt.toISOString(), row.id];
+  return encodeCursor(parts);
 }
 
 @Injectable()

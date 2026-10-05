@@ -90,8 +90,17 @@ class _FakeVipRepository extends VipRepository {
   final List<String> salonLoads = [];
 
   @override
-  Future<ItemPage<VipTargetList>> adminLists({String? cursor}) async {
-    return const ItemPage(items: [], hasMore: false);
+  Future<AdminVipInventoryPage> adminLists({
+    String? cursor,
+    String? catalogMembership,
+  }) async {
+    return const AdminVipInventoryPage(
+      items: [],
+      hasMore: false,
+      listCount: 0,
+      contactRowCount: 0,
+      recordedContactCount: 0,
+    );
   }
 
   @override

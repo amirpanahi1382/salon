@@ -4,6 +4,7 @@ export function toListSummary(row: {
   id: string;
   name: string;
   status: VipTargetListSummaryDto['status'];
+  catalogMembership: VipTargetListSummaryDto['catalogMembership'];
   contactCount: number;
   reservedBySalonId: string | null;
   reservedBySalon: { name: string } | null;
@@ -15,6 +16,7 @@ export function toListSummary(row: {
     id: row.id,
     name: row.name,
     status: row.status,
+    catalogMembership: row.catalogMembership,
     contactCount: row.contactCount,
     reservedBySalonId: row.reservedBySalonId,
     reservedBySalonName: row.reservedBySalon?.name ?? null,

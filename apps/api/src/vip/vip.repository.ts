@@ -9,6 +9,7 @@ const LIST_SUMMARY_SELECT = {
   id: true,
   name: true,
   status: true,
+  catalogMembership: true,
   contactCount: true,
   reservedBySalonId: true,
   reservedBySalon: { select: { name: true } },
@@ -37,20 +38,46 @@ export class VipRepository {
     });
   }
 
-  listLists(cursor?: { createdAt: Date; id: string }, take = 51) {
+  listLists(input: {
+    cursor?: { createdAt: Date; id: string };
+    catalogMembership?: 'ORIGINAL_TEHRAN';
+    take?: number;
+  }) {
+    const membership = input.catalogMembership
+      ? { catalogMembership: input.catalogMembership }
+      : {};
     return this.prisma.client.vipTargetList.findMany({
-      where: cursor
-        ? {
-            OR: [
-              { createdAt: { lt: cursor.createdAt } },
-              { createdAt: cursor.createdAt, id: { lt: cursor.id } },
-            ],
-          }
-        : {},
+      where: {
+        ...membership,
+        ...(input.cursor
+          ? {
+              OR: [
+                { createdAt: { lt: input.cursor.createdAt } },
+                { createdAt: input.cursor.createdAt, id: { lt: input.cursor.id } },
+              ],
+            }
+          : {}),
+      },
       select: LIST_SUMMARY_SELECT,
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-      take,
+      take: input.take ?? 51,
     });
+  }
+
+  summarizeLists(catalogMembership?: 'ORIGINAL_TEHRAN') {
+    const where = catalogMembership ? { catalogMembership } : {};
+    return Promise.all([
+      this.prisma.client.vipTargetList.aggregate({
+        where,
+        _count: { _all: true },
+        _sum: { contactCount: true },
+      }),
+      this.prisma.client.vipTargetContact.count({ where: { list: where } }),
+    ]).then(([totals, contactRowCount]) => ({
+      listCount: totals._count._all,
+      recordedContactCount: totals._sum.contactCount ?? 0,
+      contactRowCount,
+    }));
   }
 
   listActiveLists() {

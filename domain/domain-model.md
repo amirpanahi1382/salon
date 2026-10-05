@@ -107,7 +107,7 @@ Return evidence is selected across the full tenant/customer history before a rep
 
 ### VIP
 
-- **VipTargetList** — platform list; `PENDING` → `ACTIVE`/`INACTIVE`; `IN_USE` while reserved. Optional canonical `regionCode` (`01`–`14`); null means not regional inventory.
+- **VipTargetList** — platform list; `PENDING` → `ACTIVE`/`INACTIVE`; `IN_USE` while reserved. Optional canonical `regionCode` (`01`–`14`); null means not regional inventory. Optional `catalogMembership` `ORIGINAL_TEHRAN` means membership in the reviewed Original Tehran collection; null means the list is not in that collection. It does not classify a list as test data and does not change salon eligibility.
 - **VipTargetContact** — phone on a list (optional display name); not a Customer. Phone is the identity.
 - **VipSalonEntitlement** — admin-granted product flag; revoke is a timestamp, not a delete of history.
 - **VipRequest** — salon request: count 30/50/100, geographic range **text** (template only), statuses `AWAITING_SAMPLE_WORK` | `SUBMITTED` | `MANUAL_QUEUED` | `BALE_NOT_IMPLEMENTED` | `CANCELLED`. Reservation TTL 30 minutes. Admin outreach folders group existing VipRequests by `salonId` on read; they are not a new persisted entity.

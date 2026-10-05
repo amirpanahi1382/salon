@@ -29,7 +29,7 @@ import {
   VIP_IMPORT_MAX_FILE_BYTES,
   XLSX_CONTENT_TYPE,
 } from './vip.constants';
-import { GrantVipEntitlementDto, ListCursorQueryDto, PatchVipListDto, AdminVipOutreachSalonsQueryDto, ListAdminSalonsQueryDto } from './vip.dto';
+import { AdminVipListsQueryDto, GrantVipEntitlementDto, ListCursorQueryDto, PatchVipListDto, AdminVipOutreachSalonsQueryDto, ListAdminSalonsQueryDto } from './vip.dto';
 import { buildVipImportTemplate } from './parse-vip-excel';
 import {
   GetAdminVipOutreachRequestUseCase,
@@ -135,9 +135,12 @@ export class AdminVipController {
   }
 
   @Get('lists')
-  @ApiOperation({ summary: 'List platform VIP target lists' })
-  list(@Query() query: ListCursorQueryDto) {
-    return this.listLists.execute(query.cursor);
+  @ApiOperation({
+    summary:
+      'List platform VIP target lists. Omitted catalogMembership returns every list. ORIGINAL_TEHRAN filters that reviewed collection before pagination.',
+  })
+  list(@Query() query: AdminVipListsQueryDto) {
+    return this.listLists.execute(query.cursor, query.catalogMembership);
   }
 
   @Get('lists/:id')

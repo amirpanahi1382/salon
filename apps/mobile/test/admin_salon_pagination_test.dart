@@ -28,8 +28,17 @@ class _Salons extends VipRepository {
   Completer<ItemPage<AdminSalonSummary>>? searchGate;
 
   @override
-  Future<ItemPage<VipTargetList>> adminLists({String? cursor}) async =>
-      const ItemPage(items: [], hasMore: false);
+  Future<AdminVipInventoryPage> adminLists({
+    String? cursor,
+    String? catalogMembership,
+  }) async =>
+      const AdminVipInventoryPage(
+        items: [],
+        hasMore: false,
+        listCount: 0,
+        contactRowCount: 0,
+        recordedContactCount: 0,
+      );
 
   @override
   Future<ItemPage<AdminSalonSummary>> adminSalons({

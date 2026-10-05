@@ -23,8 +23,19 @@ class AdminVipScreen extends ConsumerStatefulWidget {
   ConsumerState<AdminVipScreen> createState() => _AdminVipScreenState();
 }
 
+enum AdminVipListView { originalTehran, all }
+
+extension on AdminVipListView {
+  String? get catalogMembership =>
+      this == AdminVipListView.originalTehran ? 'ORIGINAL_TEHRAN' : null;
+}
+
 class _AdminVipScreenState extends ConsumerState<AdminVipScreen> {
-  List<VipTargetList> _lists = [];
+  AdminVipListView _view = AdminVipListView.originalTehran;
+  late final CursorPageState<VipTargetList> _lists = CursorPageState(
+    keyOf: (list) => list.id,
+    changed: () { if (mounted) setState(() {}); },
+  );
   late final CursorPageState<AdminSalonSummary> _salons = CursorPageState(
     keyOf: (salon) => salon.id,
     changed: () { if (mounted) setState(() {}); },
@@ -32,13 +43,16 @@ class _AdminVipScreenState extends ConsumerState<AdminVipScreen> {
   final TextEditingController _salonSearchController = TextEditingController();
   Timer? _searchDebounce;
   String _salonSearch = '';
-  bool _loading = true;
-  Object? _error;
+  int _listGeneration = 0;
+  int? _listCount;
+  int? _contactRowCount;
+  int? _recordedContactCount;
 
   @override
   void initState() {
     super.initState();
-    _load();
+    _loadLists();
+    _loadMoreSalons();
   }
 
   @override
@@ -60,32 +74,41 @@ class _AdminVipScreenState extends ConsumerState<AdminVipScreen> {
   Future<void> _loadMoreSalons() => _salons.load((cursor) =>
       ref.read(vipRepositoryProvider).adminSalons(cursor: cursor, q: _salonSearch));
 
-  Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-    try {
-      final vip = ref.read(vipRepositoryProvider);
-      final page = await vip.adminLists();
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _lists = page.items;
-        _loading = false;
-      });
-      _salons.reset();
-      await _loadMoreSalons();
-    } catch (error) {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _error = error;
-        _loading = false;
-      });
+  Future<void> _loadLists({bool reset = false}) async {
+    if (reset) {
+      _listGeneration++;
+      _listCount = null;
+      _contactRowCount = null;
+      _recordedContactCount = null;
+      _lists.reset();
     }
+    final generation = _listGeneration;
+    final membership = _view.catalogMembership;
+    await _lists.load((cursor) async {
+      final page = await ref.read(vipRepositoryProvider).adminLists(
+            cursor: cursor,
+            catalogMembership: membership,
+          );
+      if (generation == _listGeneration && cursor == null) {
+        _listCount = page.listCount;
+        _contactRowCount = page.contactRowCount;
+        _recordedContactCount = page.recordedContactCount;
+      }
+      return page;
+    });
+  }
+
+  Future<void> _loadMoreLists() => _loadLists();
+
+  void _selectView(AdminVipListView next) {
+    if (next == _view) return;
+    setState(() => _view = next);
+    _loadLists(reset: true);
+  }
+
+  Future<void> _refresh() async {
+    _salons.reset();
+    await Future.wait([_loadLists(reset: true), _loadMoreSalons()]);
   }
 
   Future<void> _import() async {
@@ -97,17 +120,33 @@ class _AdminVipScreenState extends ConsumerState<AdminVipScreen> {
       return;
     }
     final bytes = await file.readAsBytes();
-    await ref.read(vipRepositoryProvider).importList(
-          bytes,
-          file.name,
-          createRequestId(),
-        );
-    await _load();
+    VipTargetList imported;
+    try {
+      imported = await ref.read(vipRepositoryProvider).importList(
+            bytes,
+            file.name,
+            createRequestId(),
+          );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyError(error))),
+      );
+      return;
+    }
+    if (!mounted) return;
+    setState(() => _view = AdminVipListView.all);
+    await _loadLists(reset: true);
+    if (!mounted) return;
+    await context.push('/admin/vip/${imported.id}');
+    if (!mounted) return;
+    await _loadLists(reset: true);
   }
 
   Future<void> _open(VipTargetList item) async {
     await context.push('/admin/vip/${item.id}');
-    await _load();
+    if (!mounted) return;
+    await _loadLists(reset: true);
   }
 
   @override
@@ -132,11 +171,7 @@ class _AdminVipScreenState extends ConsumerState<AdminVipScreen> {
           icon: const Icon(Icons.upload_file_outlined),
           label: const Text(AppStrings.vipImportExcel),
         ),
-        body: _error != null
-            ? ErrorView(message: friendlyError(_error!), onRetry: _load)
-            : _loading && _lists.isEmpty
-                ? const LoadingSkeleton(lines: 6)
-                : ListView(
+        body: ListView(
                     padding: const EdgeInsets.all(AppTokens.space16),
                     children: [
                       const SectionHeader(AppStrings.vipGrant),
@@ -167,7 +202,7 @@ class _AdminVipScreenState extends ConsumerState<AdminVipScreen> {
                                           salon.id,
                                           createRequestId(),
                                         );
-                                    await _load();
+                                    await _refresh();
                                   },
                                   child: const Text(AppStrings.activate),
                                 ),
@@ -187,16 +222,68 @@ class _AdminVipScreenState extends ConsumerState<AdminVipScreen> {
                         ),
                       const SizedBox(height: AppTokens.space24),
                       const SectionHeader(AppStrings.adminVipLists),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          ChoiceChip(
+                            key: const ValueKey('vip-view-original'),
+                            label: const Text(AppStrings.vipOriginalTehranLists),
+                            selected: _view == AdminVipListView.originalTehran,
+                            onSelected: (_) => _selectView(AdminVipListView.originalTehran),
+                          ),
+                          ChoiceChip(
+                            key: const ValueKey('vip-view-all'),
+                            label: const Text(AppStrings.vipAllLists),
+                            selected: _view == AdminVipListView.all,
+                            onSelected: (_) => _selectView(AdminVipListView.all),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: AppTokens.space8),
                       const Padding(
                         padding: EdgeInsets.only(bottom: AppTokens.space8),
                         child: Text(AppStrings.vipImportHelp),
                       ),
-                      if (_lists.isEmpty)
-                        const EmptyStateView(
-                          title: AppStrings.vipNoLists,
-                          body: AppStrings.vipNoLists,
+                      if (_listCount != null && _contactRowCount != null)
+                        Padding(
+                          key: const ValueKey('vip-inventory-counts'),
+                          padding: const EdgeInsets.only(bottom: AppTokens.space8),
+                          child: Text(
+                            '$_listCount لیست · $_contactRowCount مخاطب'
+                            '${_recordedContactCount != null && _recordedContactCount != _contactRowCount ? '\nشمارش ثبت‌شده روی لیست‌ها: $_recordedContactCount' : ''}',
+                          ),
                         ),
-                      ..._lists.map((list) => _adminListCard(list)),
+                      if (_lists.loading && _lists.items.isEmpty)
+                        const LoadingSkeleton(lines: 4),
+                      if (_lists.error != null && _lists.items.isEmpty)
+                        ErrorView(
+                          message: friendlyError(_lists.error!),
+                          onRetry: () => _loadLists(reset: true),
+                        ),
+                      if (_lists.empty)
+                        EmptyStateView(
+                          title: _view == AdminVipListView.originalTehran
+                              ? AppStrings.vipOriginalCollectionEmpty
+                              : AppStrings.vipNoLists,
+                          body: _view == AdminVipListView.originalTehran
+                              ? AppStrings.vipOriginalCollectionEmptyBody
+                              : AppStrings.vipImportHelp,
+                        ),
+                      ..._lists.items.map((list) => _adminListCard(list)),
+                      if (_lists.error != null && _lists.items.isNotEmpty)
+                        ErrorView(
+                          message: friendlyError(_lists.error!),
+                          onRetry: _loadMoreLists,
+                        ),
+                      if (_lists.loading && _lists.items.isNotEmpty)
+                        const Center(child: CircularProgressIndicator()),
+                      if (_lists.hasMore && !_lists.loading && _lists.error == null)
+                        TextButton(
+                          key: const ValueKey('vip-lists-load-more'),
+                          onPressed: _loadMoreLists,
+                          child: const Text(AppStrings.loadMore),
+                        ),
                     ],
                   ),
       ),
@@ -207,7 +294,7 @@ class _AdminVipScreenState extends ConsumerState<AdminVipScreen> {
     final attention = list.needsAttention;
     return Padding(
       padding: const EdgeInsets.only(bottom: AppTokens.space8),
-      child: DecoratedBox(
+        child: DecoratedBox(
         decoration: BoxDecoration(
           color: attention
               ? AppTokens.danger.withValues(alpha: 0.14)
@@ -218,7 +305,10 @@ class _AdminVipScreenState extends ConsumerState<AdminVipScreen> {
             width: attention ? 2 : 1,
           ),
         ),
-        child: ListTile(
+        child: Material(
+          color: Colors.transparent,
+          child: ListTile(
+          key: ValueKey(list.id),
           leading: attention
               ? const Icon(Icons.warning_amber_rounded, color: AppTokens.danger)
               : null,
@@ -235,6 +325,7 @@ class _AdminVipScreenState extends ConsumerState<AdminVipScreen> {
                 )
               : null,
           onTap: () => _open(list),
+        ),
         ),
       ),
     );

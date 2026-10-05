@@ -3,12 +3,14 @@ import { Type } from 'class-transformer';
 import { IsIn, IsOptional, IsString, MaxLength, MinLength, ValidateIf } from 'class-validator';
 import {
   VIP_ALLOWED_REQUEST_COUNTS,
+  VIP_CATALOG_MEMBERSHIPS,
   VIP_GEO_RANGE_MAX_LENGTH,
   VIP_LIST_NAME_MAX_LENGTH,
   VIP_REGION_CODES,
   VIP_REQUEST_STATUSES,
   VIP_TARGET_LIST_STATUSES,
   type VipAllowedRequestCount,
+  type VipCatalogMembership,
   type VipRequestStatus,
   type VipTargetListStatus,
 } from '@salon/shared';
@@ -61,6 +63,19 @@ export class ListCursorQueryDto {
   cursor?: string;
 }
 
+export class AdminVipListsQueryDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(512)
+  cursor?: string;
+
+  @ApiPropertyOptional({ enum: VIP_CATALOG_MEMBERSHIPS })
+  @IsOptional()
+  @IsIn([...VIP_CATALOG_MEMBERSHIPS])
+  catalogMembership?: VipCatalogMembership;
+}
+
 export class AdminVipOutreachSalonsQueryDto {
   @ApiPropertyOptional()
   @IsOptional()
@@ -106,6 +121,9 @@ export class VipTargetListSummaryDto {
 
   @ApiProperty({ enum: VIP_TARGET_LIST_STATUSES })
   status!: VipTargetListStatus;
+
+  @ApiProperty({ nullable: true, enum: VIP_CATALOG_MEMBERSHIPS })
+  catalogMembership!: VipCatalogMembership | null;
 
   @ApiProperty()
   contactCount!: number;

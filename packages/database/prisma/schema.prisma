@@ -87,6 +87,11 @@ enum VipTargetListStatus {
   IN_USE
 }
 
+/// Reviewed catalog collection. Null means the list is not in that collection.
+enum VipCatalogMembership {
+  ORIGINAL_TEHRAN
+}
+
 enum VipRequestStatus {
   AWAITING_SAMPLE_WORK
   SUBMITTED
@@ -511,6 +516,8 @@ model VipTargetList {
   contactCount       Int                 @map("contact_count")
   /// Canonical Tehran region code (01–14). Null for historical/non-regional lists.
   regionCode         String?             @map("region_code")
+  /// Membership in a reviewed catalog collection. Null means unclassified, not invalid.
+  catalogMembership  VipCatalogMembership? @map("catalog_membership")
   createdByAdminId   String              @map("created_by_admin_id") @db.Uuid
   createdByAdmin     PlatformAdmin       @relation("VipListCreatedByAdmin", fields: [createdByAdminId], references: [id], onDelete: Restrict)
   reservedBySalonId  String?             @map("reserved_by_salon_id") @db.Uuid
@@ -522,6 +529,7 @@ model VipTargetList {
   requests           VipRequest[]
 
   @@index([status, createdAt, id])
+  @@index([catalogMembership, createdAt, id])
   @@map("vip_target_lists")
 }
 
