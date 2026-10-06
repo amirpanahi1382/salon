@@ -1,8 +1,10 @@
+import { isVipRegionCode, vipRegionName } from '@salon/shared';
 import type { VipRequestDto, VipSampleWorkDto, VipTargetListSummaryDto } from './vip.dto';
 
 export function toListSummary(row: {
   id: string;
   name: string;
+  regionCode?: string | null;
   status: VipTargetListSummaryDto['status'];
   catalogMembership: VipTargetListSummaryDto['catalogMembership'];
   contactCount: number;
@@ -12,9 +14,12 @@ export function toListSummary(row: {
   updatedAt: Date;
   requests: Array<{ id: string }>;
 }): VipTargetListSummaryDto {
+  const regionCode = row.regionCode && isVipRegionCode(row.regionCode) ? row.regionCode : null;
   return {
     id: row.id,
     name: row.name,
+    regionCode,
+    regionName: regionCode ? vipRegionName(regionCode) : null,
     status: row.status,
     catalogMembership: row.catalogMembership,
     contactCount: row.contactCount,

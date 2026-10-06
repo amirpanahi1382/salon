@@ -119,6 +119,12 @@ export class VipTargetListSummaryDto {
   @ApiProperty()
   name!: string;
 
+  @ApiProperty({ nullable: true, type: String })
+  regionCode!: string | null;
+
+  @ApiProperty({ nullable: true, type: String })
+  regionName!: string | null;
+
   @ApiProperty({ enum: VIP_TARGET_LIST_STATUSES })
   status!: VipTargetListStatus;
 

@@ -253,6 +253,11 @@ describeIfDb('VIP catalog membership (e2e)', () => {
       select: { updatedAt: true, status: true, reservedAt: true },
     });
     const auditsBefore = await auditCount();
+    const beforeOriginal = await request(app.getHttpServer())
+      .get('/admin/vip/lists')
+      .query({ catalogMembership: 'ORIGINAL_TEHRAN' })
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
     const first = await classify(manifest);
     expect(first.unchanged).toBe(false);
     expect(first.listCount).toBe(members.length);
@@ -273,47 +278,34 @@ describeIfDb('VIP catalog membership (e2e)', () => {
     expect(storedRequest.submittedAt?.toISOString()).toBe(submittedAt.toISOString());
     expect(storedRequest.listId).toBe(inUseId);
 
-    const originalIds = new Set<string>();
-    let originalCursor: string | undefined;
-    let originalPages = 0;
-    do {
-      const response = await request(app.getHttpServer())
-        .get('/admin/vip/lists')
-        .query({ catalogMembership: 'ORIGINAL_TEHRAN', ...(originalCursor ? { cursor: originalCursor } : {}) })
-        .set('Authorization', `Bearer ${adminToken}`)
-        .expect(200);
-      originalPages += 1;
-      expect(response.body.listCount).toBe(members.length);
-      expect(response.body.contactRowCount).toBe(members.length);
-      expect(response.body.recordedContactCount).toBe(members.length);
-      for (const item of response.body.items as Array<{ id: string; status: string }>) {
-        originalIds.add(item.id);
-      }
-      if (originalPages === 1) {
-        expect(response.body.items).toHaveLength(50);
-        expect(response.body.hasMore).toBe(true);
-        expect(response.body.items.at(-1).id).toBe(greaterId);
-        expect(response.body.items.some((item: { id: string; status: string }) => item.id === pendingId && item.status === 'PENDING')).toBe(true);
-        expect(response.body.items.some((item: { id: string; status: string }) => item.id === inUseId && item.status === 'IN_USE')).toBe(true);
-      }
-      originalCursor = response.body.nextCursor ?? undefined;
-      if (response.body.hasMore) expect(originalCursor).toEqual(expect.any(String));
-    } while (originalCursor);
-    expect(originalIds).toEqual(new Set(members));
-    expect(originalIds.has(syntheticId)).toBe(false);
+    const original = await collectAdminListPages(app, adminToken, {
+      catalogMembership: 'ORIGINAL_TEHRAN',
+    });
+    expect(original.listCount).toBe(beforeOriginal.body.listCount + members.length);
+    expect(original.contactRowCount).toBe(beforeOriginal.body.contactRowCount + members.length);
+    expect(original.recordedContactCount).toBe(beforeOriginal.body.recordedContactCount + members.length);
+    expect(original.items.map((item) => item.id).filter((id) => members.includes(id))).toEqual([
+      inUseId,
+      activeOriginalId,
+      pendingId,
+      ...[...fillerIds].reverse(),
+      greaterId,
+      lesserId,
+      oldestId,
+    ]);
+    expect(original.items.find((item) => item.id === pendingId)?.status).toBe('PENDING');
+    expect(original.items.find((item) => item.id === inUseId)?.status).toBe('IN_USE');
+    expect(original.items.some((item) => item.id === syntheticId)).toBe(false);
 
-    const all = await request(app.getHttpServer())
-      .get('/admin/vip/lists')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200);
-    const allIds = (all.body.items as Array<{ id: string }>).map((item) => item.id);
-    expect(allIds).toContain(syntheticId);
-    expect(allIds).toContain(activeOriginalId);
-    expect(all.body.listCount).toBeGreaterThan(members.length);
+    const all = await collectAdminListPages(app, adminToken, {});
+    requireListedFixture(all, syntheticId, 'unclassified regional list');
+    requireListedFixture(all, activeOriginalId, 'active original list');
+    expect(all.listCount).toBeGreaterThan(members.length);
 
+    expect(all.firstNextCursor).toEqual(expect.any(String));
     await request(app.getHttpServer())
       .get('/admin/vip/lists')
-      .query({ cursor: originalCursorFrom(all.body.nextCursor), catalogMembership: 'ORIGINAL_TEHRAN' })
+      .query({ cursor: originalCursorFrom(all.firstNextCursor!), catalogMembership: 'ORIGINAL_TEHRAN' })
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(400);
     const originalFirst = await request(app.getHttpServer())
@@ -339,7 +331,25 @@ describeIfDb('VIP catalog membership (e2e)', () => {
       .set('Authorization', `Bearer ${salonToken}`)
       .expect(200);
     const salonIds = (salonLists.body.items as Array<{ id: string }>).map((item) => item.id);
-    expect(salonIds).toEqual([syntheticId, activeOriginalId]);
+    expect(salonIds).toEqual([activeOriginalId]);
+    const regions = await request(app.getHttpServer())
+      .get('/vip/regions')
+      .set('Authorization', `Bearer ${salonToken}`)
+      .expect(200);
+    const region03 = (regions.body.items as Array<{ regionCode: string; regionName: string; availableListCount: number }>)
+      .find((row) => row.regionCode === '03');
+    expect(region03).toEqual({
+      regionCode: '03',
+      regionName: 'شمال‌غرب؛ سعادت‌آباد، پونک و جنت‌آباد',
+      availableListCount: 1,
+      availableContactCount: 1,
+    });
+    await request(app.getHttpServer())
+      .post('/vip/requests')
+      .set('Authorization', `Bearer ${salonToken}`)
+      .set('Idempotency-Key', `synthetic-${randomUUID()}`)
+      .send({ listId: syntheticId, requestedCount: 30, geographicRange: 'سعادت‌آباد' })
+      .expect(409);
 
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet('VIP');
@@ -353,21 +363,129 @@ describeIfDb('VIP catalog membership (e2e)', () => {
       .attach('file', file, 'vip.xlsx')
       .expect(201);
     expect(imported.body.catalogMembership).toBeNull();
-    const afterImport = await request(app.getHttpServer())
-      .get('/admin/vip/lists')
+    const afterImport = await collectAdminListPages(app, adminToken, {});
+    requireListedFixture(afterImport, imported.body.id as string, 'newly imported list');
+    expect(afterImport.items[0]?.id).toBe(imported.body.id);
+    const originalAfterImport = await collectAdminListPages(app, adminToken, {
+      catalogMembership: 'ORIGINAL_TEHRAN',
+    });
+    expect(originalAfterImport.items.some((item) => item.id === imported.body.id)).toBe(false);
+    expect(originalAfterImport.listCount).toBe(original.listCount);
+
+    const historicalId = randomUUID();
+    await prisma.client.vipRequest.create({
+      data: {
+        id: historicalId,
+        salonId,
+        listId: syntheticId,
+        createdByUserId: userId,
+        requestedCount: 30,
+        geographicRange: 'سعادت‌آباد',
+        status: 'SUBMITTED',
+        reservedUntil: new Date('2030-01-01T00:00:00.000Z'),
+        submittedAt: now,
+        updatedAt: now,
+      },
+    });
+    const historical = await request(app.getHttpServer())
+      .get(`/vip/requests/${historicalId}`)
+      .set('Authorization', `Bearer ${salonToken}`)
+      .expect(200);
+    expect(historical.body.geographicRange).toBe('سعادت‌آباد');
+    expect(historical.body.listId).toBe(syntheticId);
+    const outreach = await request(app.getHttpServer())
+      .get(`/admin/vip/outreach/requests/${historicalId}`)
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(200);
-    expect((afterImport.body.items as Array<{ id: string }>).some((item) => item.id === imported.body.id)).toBe(true);
-    const originalAfterImport = await request(app.getHttpServer())
-      .get('/admin/vip/lists')
-      .query({ catalogMembership: 'ORIGINAL_TEHRAN' })
-      .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200);
-    expect((originalAfterImport.body.items as Array<{ id: string }>).some((item) => item.id === imported.body.id)).toBe(false);
-    expect(originalAfterImport.body.listCount).toBe(members.length);
+    expect(outreach.body.request.listName).toBe('منطقه‌ای خارج از مجموعه');
+    expect(outreach.body.request.regionName).toBe('شمال‌غرب؛ سعادت‌آباد، پونک و جنت‌آباد');
+    expect(outreach.body.request.geographicRange).toBe('سعادت‌آباد');
+
+    await prisma.client.vipTargetList.update({
+      where: { id: activeOriginalId },
+      data: { catalogMembership: null },
+    });
+    await request(app.getHttpServer())
+      .post('/vip/requests')
+      .set('Authorization', `Bearer ${salonToken}`)
+      .set('Idempotency-Key', `cleared-${randomUUID()}`)
+      .send({ listId: activeOriginalId, requestedCount: 30, geographicRange: 'شمال‌غرب' })
+      .expect(409);
+    const stillActive = await prisma.client.vipTargetList.findUniqueOrThrow({ where: { id: activeOriginalId } });
+    expect(stillActive.status).toBe('ACTIVE');
+    expect(stillActive.catalogMembership).toBeNull();
   });
 });
 
 function originalCursorFrom(cursor: string): string {
   return cursor;
+}
+
+type AdminListPageItem = { id: string; status: string };
+
+async function collectAdminListPages(
+  app: INestApplication,
+  adminToken: string,
+  query: { catalogMembership?: string },
+) {
+  const items: AdminListPageItem[] = [];
+  const seen = new Set<string>();
+  const cursors: string[] = [];
+  let listCount = 0;
+  let contactRowCount = 0;
+  let recordedContactCount = 0;
+  let firstNextCursor: string | null = null;
+  let cursor: string | undefined;
+  for (let page = 1; ; page += 1) {
+    if (page > 40) {
+      throw new Error('Admin VIP list pagination exceeded 40 pages without ending');
+    }
+    const response = await request(app.getHttpServer())
+      .get('/admin/vip/lists')
+      .query({ ...query, ...(cursor ? { cursor } : {}) })
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    const pageItems = response.body.items as AdminListPageItem[];
+    listCount = response.body.listCount;
+    contactRowCount = response.body.contactRowCount;
+    recordedContactCount = response.body.recordedContactCount;
+    if (response.body.hasMore) {
+      expect(pageItems).toHaveLength(50);
+      expect(response.body.nextCursor).toEqual(expect.any(String));
+      expect(cursors).not.toContain(response.body.nextCursor);
+      if (page === 1) {
+        firstNextCursor = response.body.nextCursor;
+      }
+      cursors.push(response.body.nextCursor);
+      cursor = response.body.nextCursor;
+    } else {
+      expect(pageItems.length).toBeLessThanOrEqual(50);
+      expect(response.body.nextCursor ?? null).toBeNull();
+      cursor = undefined;
+    }
+    for (const item of pageItems) {
+      if (seen.has(item.id)) {
+        throw new Error(`Admin VIP list page repeated ${item.id}`);
+      }
+      seen.add(item.id);
+      items.push(item);
+    }
+    if (!cursor) {
+      break;
+    }
+  }
+  expect(items).toHaveLength(listCount);
+  return { items, listCount, contactRowCount, recordedContactCount, cursors, firstNextCursor };
+}
+
+function requireListedFixture(
+  page: { items: AdminListPageItem[]; cursors: string[] },
+  id: string,
+  label: string,
+) {
+  if (!page.items.some((item) => item.id === id)) {
+    throw new Error(
+      `${label} was not returned after ${page.cursors.length + 1} admin list pages (${page.items.length} rows)`,
+    );
+  }
 }

@@ -134,8 +134,8 @@ export function vipOutreachRequestDisplayTitle(input: {
 }): string {
   const salonName = input.salonName.trim() || 'سالن';
   const region = input.regionCode?.trim();
-  if (region) {
-    return `${salonName} — منطقه ${region} — ${input.recipientCount} مخاطب`;
+  if (region && isVipRegionCode(region)) {
+    return `${salonName} — ${vipRegionName(region)} — ${input.recipientCount} مخاطب`;
   }
   return `${salonName} — درخواست VIP شماره ${input.requestOrdinal} — ${input.recipientCount} مخاطب`;
 }

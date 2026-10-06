@@ -68,7 +68,9 @@ AdminVipOutreachRequest _request({
     failedCount: 0,
     sampleWorkCount: 1,
     canDispatchManual: status == 'SUBMITTED',
-    displayTitle: 'Salon A — منطقه ${regionCode ?? '—'} — ${pending + sent} مخاطب',
+    displayTitle: regionName == null
+        ? 'Salon A — درخواست VIP شماره 1 — ${pending + sent} مخاطب'
+        : 'Salon A — $regionName — ${pending + sent} مخاطب',
   );
 }
 
@@ -283,8 +285,10 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(repo.salonLoads, ['s1']);
-    expect(find.textContaining('منطقه 01'), findsOneWidget);
-    expect(find.textContaining('منطقه 02'), findsOneWidget);
+    expect(find.textContaining('مرکز؛ حسن‌آباد، بازار و انقلاب'), findsOneWidget);
+    expect(find.textContaining('شمال'), findsOneWidget);
+    expect(find.textContaining('نام لیست: VIP-01-01'), findsOneWidget);
+    expect(find.textContaining('نام لیست: VIP-02-01'), findsOneWidget);
     expect(find.textContaining('VIP-03-01'), findsNothing);
     expect(find.textContaining(AppStrings.vipNeedsReview), findsWidgets);
   });

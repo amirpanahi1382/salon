@@ -52,7 +52,7 @@ void main() {
       AppStrings.vipNoActiveListsInRegion,
       'در حال حاضر لیست فعالی برای این محدوده وجود ندارد.',
     );
-    expect(AppStrings.vipListCardTitle('VIP-01-03'), 'لیست 3');
+    expect(AppStrings.vipListCardTitle('VIP-01-03'), 'VIP-01-03');
     expect(AppStrings.vipListCardTitle('لیست ونک'), 'لیست ونک');
     expect(AppStrings.vipExcelExport, 'خروجی اکسل');
     expect(AppStrings.vipSendManual, 'ارسال دستی');

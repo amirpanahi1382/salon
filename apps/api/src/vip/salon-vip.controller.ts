@@ -59,13 +59,18 @@ export class SalonVipController {
   }
 
   @Get('regions')
-  @ApiOperation({ summary: 'Canonical 14-region VIP inventory with available ACTIVE list counts' })
+  @ApiOperation({
+    summary:
+      'Canonical 14-region VIP inventory. Counts include only ACTIVE, unreserved ORIGINAL_TEHRAN lists',
+  })
   listRegions(@CurrentUser() user: AuthenticatedPrincipal) {
     return this.regions.execute(user);
   }
 
   @Get('lists')
-  @ApiOperation({ summary: 'Active VIP target lists for one canonical region' })
+  @ApiOperation({
+    summary: 'ACTIVE unreserved ORIGINAL_TEHRAN lists for one canonical region',
+  })
   list(@CurrentUser() user: AuthenticatedPrincipal, @Query() query: SalonVipListsQueryDto) {
     return this.lists.execute(user, query.regionCode);
   }
@@ -73,7 +78,9 @@ export class SalonVipController {
   @Post('requests')
   @HttpCode(201)
   @ApiHeader({ name: 'Idempotency-Key', required: true })
-  @ApiOperation({ summary: 'Reserve one ACTIVE VIP list and consume rolling-window quota' })
+  @ApiOperation({
+    summary: 'Reserve one ACTIVE unreserved ORIGINAL_TEHRAN list and consume rolling-window quota',
+  })
   create(
     @CurrentUser() user: AuthenticatedPrincipal,
     @Body() body: CreateVipRequestDto,

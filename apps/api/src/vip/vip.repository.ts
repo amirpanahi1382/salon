@@ -8,6 +8,7 @@ type Db = Prisma.TransactionClient | PrismaService['client'];
 const LIST_SUMMARY_SELECT = {
   id: true,
   name: true,
+  regionCode: true,
   status: true,
   catalogMembership: true,
   contactCount: true,
@@ -90,7 +91,12 @@ export class VipRepository {
 
   listActiveListsByRegion(regionCode: string) {
     return this.prisma.client.vipTargetList.findMany({
-      where: { regionCode, status: 'ACTIVE' },
+      where: {
+        regionCode,
+        status: 'ACTIVE',
+        catalogMembership: 'ORIGINAL_TEHRAN',
+        reservedBySalonId: null,
+      },
       select: {
         id: true,
         name: true,
@@ -127,6 +133,7 @@ export class VipRepository {
       LEFT JOIN vip_target_lists l
         ON l.region_code = c.code
        AND l.status = 'ACTIVE'
+       AND l.catalog_membership = 'ORIGINAL_TEHRAN'::"VipCatalogMembership"
        AND l.reserved_by_salon_id IS NULL
       GROUP BY c.code, c.name, c.sort
       ORDER BY c.sort
@@ -225,6 +232,7 @@ export class VipRepository {
         updated_at = ${now}
       WHERE id = ${listId}::uuid
         AND status = 'ACTIVE'
+        AND catalog_membership = 'ORIGINAL_TEHRAN'::"VipCatalogMembership"
         AND reserved_by_salon_id IS NULL
       RETURNING id
     `;

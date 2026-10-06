@@ -172,8 +172,9 @@ void main() {
     await tester.tap(find.textContaining('01 — '));
     await tester.pumpAndSettle();
     expect(repo.listRequests, ['01']);
-    expect(find.text('لیست 1'), findsOneWidget);
-    expect(find.text('لیست 8'), findsOneWidget);
+    expect(find.text('VIP-01-01'), findsOneWidget);
+    expect(find.text('VIP-01-08'), findsOneWidget);
+    expect(find.text('مرکز؛ حسن‌آباد، بازار و انقلاب'), findsWidgets);
     expect(find.text('VIP-02-01'), findsNothing);
     expect(find.textContaining('0912'), findsNothing);
 
@@ -182,9 +183,9 @@ void main() {
     await tester.tap(find.textContaining('02 — '));
     await tester.pumpAndSettle();
     expect(repo.listRequests, ['01', '02']);
-    expect(find.text('لیست 1'), findsOneWidget);
-    expect(find.text('لیست 2'), findsOneWidget);
-    expect(find.text('لیست 8'), findsNothing);
+    expect(find.text('VIP-02-01'), findsOneWidget);
+    expect(find.text('VIP-02-02'), findsOneWidget);
+    expect(find.text('VIP-01-08'), findsNothing);
   });
 
   testWidgets('regions 11 and 14 show a truthful empty state', (tester) async {
@@ -224,7 +225,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(ChoiceChip, '30'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('لیست 8'));
+    await tester.tap(find.text('VIP-01-08'));
     await tester.pumpAndSettle();
     final hundred = tester.widget<ChoiceChip>(find.widgetWithText(ChoiceChip, '100'));
     expect(hundred.onSelected, isNull);
@@ -269,7 +270,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(ChoiceChip, '30'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('لیست 1'));
+    await tester.tap(find.text('VIP-01-01'));
     await tester.pumpAndSettle();
     await tester.tap(find.text(AppStrings.sendMessageAction));
     await tester.pumpAndSettle();

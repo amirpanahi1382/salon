@@ -396,6 +396,10 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
                       AppStrings.vipListCardTitle(list.name),
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
+                    if (list.regionName != null) ...[
+                      const SizedBox(height: 4),
+                      Text(list.regionName!),
+                    ],
                     const SizedBox(height: 4),
                     Text('${AppStrings.vipContactCountLabel}: ${list.contactCount}'),
                   ],
@@ -407,7 +411,10 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
         const SizedBox(height: 12),
         TextField(
           controller: _geo,
-          decoration: const InputDecoration(labelText: AppStrings.vipSalonRange),
+          decoration: const InputDecoration(
+            labelText: AppStrings.vipSalonRange,
+            helperText: AppStrings.vipGeographicRangeHelp,
+          ),
         ),
         const SizedBox(height: 16),
         FilledButton(

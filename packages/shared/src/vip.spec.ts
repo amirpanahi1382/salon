@@ -160,7 +160,7 @@ describe('VIP shared rules', () => {
         recipientCount: 100,
         requestOrdinal: 2,
       }),
-    ).toBe('سالن زیبایی گل — منطقه 03 — 100 مخاطب');
+    ).toBe('سالن زیبایی گل — شمال‌غرب؛ سعادت‌آباد، پونک و جنت‌آباد — 100 مخاطب');
     expect(
       vipOutreachRequestDisplayTitle({
         salonName: 'سالن زیبایی گل',
@@ -169,5 +169,23 @@ describe('VIP shared rules', () => {
         requestOrdinal: 3,
       }),
     ).toBe('سالن زیبایی گل — درخواست VIP شماره 3 — 30 مخاطب');
+    for (const code of VIP_REGION_CODES) {
+      expect(
+        vipOutreachRequestDisplayTitle({
+          salonName: 'سالن',
+          regionCode: code,
+          recipientCount: 30,
+          requestOrdinal: 1,
+        }),
+      ).toBe(`سالن — ${VIP_REGION_CATALOG[code]} — 30 مخاطب`);
+    }
+    expect(
+      vipOutreachRequestDisplayTitle({
+        salonName: 'سالن',
+        regionCode: '99',
+        recipientCount: 30,
+        requestOrdinal: 4,
+      }),
+    ).toBe('سالن — درخواست VIP شماره 4 — 30 مخاطب');
   });
 });

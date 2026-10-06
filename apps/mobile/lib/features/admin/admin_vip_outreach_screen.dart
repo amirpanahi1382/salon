@@ -267,6 +267,7 @@ class _AdminVipOutreachSalonScreenState
                                           : '${request.regionCode} — ${request.regionName}'),
                                   style: Theme.of(context).textTheme.titleMedium,
                                 ),
+                                Text('${AppStrings.vipListNameLabel}: ${request.listName}'),
                                 const SizedBox(height: 4),
                                 Text(_requestStatus(request.status)),
                                 Text(
@@ -507,6 +508,7 @@ class _AdminVipOutreachRequestScreenState
                                   : '${request.regionCode} — ${request.regionName}'),
                           style: Theme.of(context).textTheme.titleMedium,
                         ),
+                        Text('${AppStrings.vipListNameLabel}: ${request.listName}'),
                         Text(
                           AppStrings.sentOfTotal(request.sentCount, request.recipientCount),
                         ),

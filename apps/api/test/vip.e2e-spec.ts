@@ -205,7 +205,7 @@ describeIfDb('VIP outreach (e2e)', () => {
       .expect(200);
     await prisma.client.vipTargetList.update({
       where: { id: listId },
-      data: { regionCode: '02' },
+      data: { regionCode: '02', catalogMembership: 'ORIGINAL_TEHRAN' },
     });
 
     const lists = await request(app.getHttpServer())
@@ -283,6 +283,7 @@ describeIfDb('VIP outreach (e2e)', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ name: 'لیست ونک', availability: 'ACTIVE' })
       .expect(200);
+    await classifyOriginal(listId);
 
     const created = await request(app.getHttpServer())
       .post('/vip/requests')
@@ -393,6 +394,7 @@ describeIfDb('VIP outreach (e2e)', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ availability: 'ACTIVE' })
       .expect(200);
+    await classifyOriginal(listId);
     const created = await request(app.getHttpServer())
       .post('/vip/requests')
       .set('Authorization', `Bearer ${salon.token}`)
@@ -443,11 +445,13 @@ describeIfDb('VIP outreach (e2e)', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ availability: 'ACTIVE' })
       .expect(200);
+    await classifyOriginal(listA);
     await request(app.getHttpServer())
       .patch(`/admin/vip/lists/${listB}`)
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ availability: 'ACTIVE' })
       .expect(200);
+    await classifyOriginal(listB);
 
     const responses = await Promise.all([
       request(app.getHttpServer())
@@ -478,6 +482,7 @@ describeIfDb('VIP outreach (e2e)', () => {
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ availability: 'ACTIVE' })
         .expect(200);
+      await classifyOriginal(listId);
     }
     for (const [index, listId] of usedLists.entries()) {
       await request(app.getHttpServer())
@@ -514,6 +519,7 @@ describeIfDb('VIP outreach (e2e)', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ availability: 'ACTIVE' })
       .expect(200);
+    await classifyOriginal(listId);
 
     const responses = await Promise.all(
       salons.map((salon) =>
@@ -538,6 +544,7 @@ describeIfDb('VIP outreach (e2e)', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ availability: 'ACTIVE' })
       .expect(200);
+    await classifyOriginal(listId);
     const key = `same-${randomUUID()}`;
     const body = { listId, requestedCount: 30, geographicRange: 'پاسداران' };
     const first = await request(app.getHttpServer())
@@ -602,6 +609,7 @@ describeIfDb('VIP outreach (e2e)', () => {
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ availability: 'ACTIVE' })
         .expect(200);
+      await classifyOriginal(listId);
     }
     for (let index = 0; index < 5; index += 1) {
       await request(app.getHttpServer())
@@ -639,6 +647,7 @@ describeIfDb('VIP outreach (e2e)', () => {
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ availability: 'ACTIVE' })
         .expect(200);
+      await classifyOriginal(listId);
     }
     const sequential = [
       { listId: used[0], count: 100 },
@@ -685,6 +694,7 @@ describeIfDb('VIP outreach (e2e)', () => {
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ availability: 'ACTIVE' })
         .expect(200);
+      await classifyOriginal(listId);
     }
     const created = await request(app.getHttpServer())
       .post('/vip/requests')
@@ -722,6 +732,7 @@ describeIfDb('VIP outreach (e2e)', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ availability: 'ACTIVE' })
       .expect(200);
+    await classifyOriginal(listId);
 
     const responses = await Promise.all(
       salons.map((salon) =>
@@ -751,6 +762,7 @@ describeIfDb('VIP outreach (e2e)', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ availability: 'ACTIVE' })
       .expect(200);
+    await classifyOriginal(listId);
     const created = await request(app.getHttpServer())
       .post('/vip/requests')
       .set('Authorization', `Bearer ${first.token}`)
@@ -794,6 +806,7 @@ describeIfDb('VIP outreach (e2e)', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ name: 'نام اولیه', availability: 'ACTIVE' })
       .expect(200);
+    await classifyOriginal(listId);
     const created = await request(app.getHttpServer())
       .post('/vip/requests')
       .set('Authorization', `Bearer ${salon.token}`)
@@ -906,6 +919,7 @@ describeIfDb('VIP outreach (e2e)', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ availability: 'ACTIVE' })
       .expect(200);
+    await classifyOriginal(listId);
     const created = await request(app.getHttpServer())
       .post('/vip/requests')
       .set('Authorization', `Bearer ${salon.token}`)
@@ -940,6 +954,7 @@ describeIfDb('VIP outreach (e2e)', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ availability: 'ACTIVE' })
       .expect(200);
+    await classifyOriginal(listId);
     const created = await request(app.getHttpServer())
       .post('/vip/requests')
       .set('Authorization', `Bearer ${salon.token}`)
@@ -1130,6 +1145,7 @@ describeIfDb('VIP outreach (e2e)', () => {
     const unnamedHistorical = await importList(30, '0945');
     const inUseRegional = await importList(30, '0946');
     const inactiveRegional = await importList(30, '0947');
+    const unclassifiedActive = await importList(30, '0948');
 
     await prisma.client.vipTargetList.update({
       where: { id: region01Active },
@@ -1159,6 +1175,10 @@ describeIfDb('VIP outreach (e2e)', () => {
       where: { id: inactiveRegional },
       data: { regionCode: '01' },
     });
+    await prisma.client.vipTargetList.update({
+      where: { id: unclassifiedActive },
+      data: { name: 'e2e-region-01-unclassified', regionCode: '01' },
+    });
 
     for (const listId of [region01Active, region01Other, region02Active, unnamedHistorical, inUseRegional]) {
       await request(app.getHttpServer())
@@ -1177,6 +1197,27 @@ describeIfDb('VIP outreach (e2e)', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ availability: 'INACTIVE' })
       .expect(200);
+    await request(app.getHttpServer())
+      .patch(`/admin/vip/lists/${unclassifiedActive}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ availability: 'ACTIVE' })
+      .expect(200);
+    await prisma.client.vipTargetList.updateMany({
+      where: {
+        id: {
+          in: [
+            region01Active,
+            region01Other,
+            region02Active,
+            region11Pending,
+            region14Pending,
+            inUseRegional,
+            inactiveRegional,
+          ],
+        },
+      },
+      data: { catalogMembership: 'ORIGINAL_TEHRAN' },
+    });
 
     await request(app.getHttpServer())
       .post('/vip/requests')
@@ -1226,6 +1267,9 @@ describeIfDb('VIP outreach (e2e)', () => {
     expect(region01.availableListCount).toBeGreaterThanOrEqual(2);
     expect(region01.availableContactCount).toBeGreaterThanOrEqual(95);
     expect(region02.availableListCount).toBeGreaterThanOrEqual(1);
+    expect(regions.body.items.find((row: { regionCode: string }) => row.regionCode === '03').regionName).toBe(
+      'شمال‌غرب؛ سعادت‌آباد، پونک و جنت‌آباد',
+    );
     expect(region11.availableListCount).toBe(0);
     expect(region11.availableContactCount).toBe(0);
     expect(region14.availableListCount).toBe(0);
@@ -1243,6 +1287,11 @@ describeIfDb('VIP outreach (e2e)', () => {
     expect(ids01).not.toContain(inUseRegional);
     expect(ids01).not.toContain(inactiveRegional);
     expect(ids01).not.toContain(region11Pending);
+    expect(ids01).not.toContain(unclassifiedActive);
+    expect(region01.availableListCount).toBe(listed01.body.items.length);
+    expect(region01.availableContactCount).toBe(
+      listed01.body.items.reduce((sum: number, row: { contactCount: number }) => sum + row.contactCount, 0),
+    );
     expect(listed01.body.items.every((row: { regionCode: string }) => row.regionCode === '01')).toBe(
       true,
     );
@@ -1301,6 +1350,17 @@ describeIfDb('VIP outreach (e2e)', () => {
       .set('Idempotency-Key', `pending-11-${randomUUID()}`)
       .send({ listId: region11Pending, requestedCount: 30, geographicRange: 'ونک' })
       .expect(409);
+    const unclassifiedAttempts = await Promise.all(
+      [0, 1].map(() =>
+        request(app.getHttpServer())
+          .post('/vip/requests')
+          .set('Authorization', `Bearer ${salon.token}`)
+          .set('Idempotency-Key', `unclassified-${randomUUID()}`)
+          .send({ listId: unclassifiedActive, requestedCount: 30, geographicRange: 'پونک' }),
+      ),
+    );
+    expect(unclassifiedAttempts.map((res) => res.status)).toEqual([409, 409]);
+    expect(await prisma.client.vipRequest.count({ where: { listId: unclassifiedActive } })).toBe(0);
 
     await request(app.getHttpServer())
       .post('/vip/requests')
@@ -1316,6 +1376,15 @@ describeIfDb('VIP outreach (e2e)', () => {
       .send({ listId: region01Active, requestedCount: 50, geographicRange: VIP_REGION_CATALOG['01'] })
       .expect(201);
     expect(created.body.listId).toBe(region01Active);
+    const snapshotted = await prisma.client.vipRequestRecipient.findFirstOrThrow({
+      where: { vipRequestId: created.body.id },
+    });
+    expect(snapshotted.messageText).toContain(VIP_REGION_CATALOG['01']);
+    const reservedCopy = await prisma.client.vipRequestRecipient.findFirstOrThrow({
+      where: { vipRequest: { listId: inUseRegional } },
+    });
+    expect(reservedCopy.messageText).toContain('ونک');
+    expect(reservedCopy.messageText).not.toContain(VIP_REGION_CATALOG['01']);
 
     const stale = await request(app.getHttpServer())
       .post('/vip/requests')
@@ -1333,12 +1402,75 @@ describeIfDb('VIP outreach (e2e)', () => {
     expect(afterBrowse.requests).toBe(beforeBrowse.requests + 1);
   });
 
+  it('keeps a historical request on an unclassified list readable and refuses a new reservation', async () => {
+    const salon = await createOwner('vip-historical');
+    await grantVip(salon.tenantId);
+    const listId = await importList(30, '0955');
+    await prisma.client.vipTargetList.update({
+      where: { id: listId },
+      data: { name: 'historical-unclassified', regionCode: '03' },
+    });
+    await request(app.getHttpServer())
+      .patch(`/admin/vip/lists/${listId}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ availability: 'ACTIVE' })
+      .expect(200);
+    await request(app.getHttpServer())
+      .post('/vip/requests')
+      .set('Authorization', `Bearer ${salon.token}`)
+      .set('Idempotency-Key', `historical-new-${randomUUID()}`)
+      .send({ listId, requestedCount: 30, geographicRange: 'سعادت‌آباد' })
+      .expect(409);
+
+    const historicalId = randomUUID();
+    const submittedAt = new Date('2026-09-22T10:02:06.135Z');
+    await prisma.client.vipRequest.create({
+      data: {
+        id: historicalId,
+        salonId: salon.tenantId,
+        listId,
+        createdByUserId: salon.userId,
+        requestedCount: 30,
+        geographicRange: 'سعادت‌آباد',
+        status: 'SUBMITTED',
+        reservedUntil: new Date('2030-01-01T00:00:00.000Z'),
+        submittedAt,
+        updatedAt: submittedAt,
+      },
+    });
+    const seen = await request(app.getHttpServer())
+      .get(`/vip/requests/${historicalId}`)
+      .set('Authorization', `Bearer ${salon.token}`)
+      .expect(200);
+    expect(seen.body.geographicRange).toBe('سعادت‌آباد');
+    expect(seen.body.listName).toBe('historical-unclassified');
+    const outreach = await request(app.getHttpServer())
+      .get(`/admin/vip/outreach/requests/${historicalId}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    expect(outreach.body.request.listName).toBe('historical-unclassified');
+    expect(outreach.body.request.regionCode).toBe('03');
+    expect(outreach.body.request.regionName).toBe('شمال‌غرب؛ سعادت‌آباد، پونک و جنت‌آباد');
+    expect(outreach.body.request.geographicRange).toBe('سعادت‌آباد');
+    const stored = await prisma.client.vipRequest.findUniqueOrThrow({ where: { id: historicalId } });
+    expect(stored.geographicRange).toBe('سعادت‌آباد');
+    expect(stored.submittedAt?.toISOString()).toBe(submittedAt.toISOString());
+  });
+
+  async function classifyOriginal(listId: string) {
+    await prisma.client.vipTargetList.update({
+      where: { id: listId },
+      data: { catalogMembership: 'ORIGINAL_TEHRAN' },
+    });
+  }
+
   async function activate(listId: string) {
     await request(app.getHttpServer())
       .patch(`/admin/vip/lists/${listId}`)
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ availability: 'ACTIVE' })
       .expect(200);
+    await classifyOriginal(listId);
   }
 
   async function submitVip(owner: { token: string }, listId: string, count: 30 | 50 | 100, geo: string) {
@@ -1458,7 +1590,7 @@ describeIfDb('VIP outreach (e2e)', () => {
     const regional = detailA.body.items.find((row: { id: string }) => row.id === r1);
     expect(regional.regionCode).toBe('01');
     expect(regional.regionName).toBe(VIP_REGION_CATALOG['01']);
-    expect(regional.displayTitle).toContain('منطقه 01');
+    expect(regional.displayTitle).toContain(VIP_REGION_CATALOG['01']);
     expect(regional.requestOrdinal).toBeGreaterThanOrEqual(1);
     expect(regional.requestedCount).toBe(30);
     expect(regional.recipientCount).toBe(30);

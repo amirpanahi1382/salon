@@ -281,6 +281,9 @@ class AppStrings {
   static const vipInactive = 'غیرفعال';
   static const vipPending = 'در انتظار';
   static const vipSalonRange = 'محدوده سالن';
+  static const vipGeographicRangeHelp =
+      'این متن در پیام مخاطب ذخیره می‌شود و می‌تواند با نام منطقه انتخاب‌شده فرق داشته باشد.';
+  static const vipListNameLabel = 'نام لیست';
   static const vipSampleWorks = 'نمونه کارها';
   static const vipExcelExport = 'خروجی اکسل';
   static const vipSendManual = 'ارسال دستی';
@@ -320,13 +323,7 @@ class AppStrings {
 
   static String vipSampleProgress(int count) => 'نمونه کارها: $count از 3';
 
-  static String vipListCardTitle(String name) {
-    final match = RegExp(r'^VIP-\d{2}-(\d{2})$').firstMatch(name);
-    if (match == null) {
-      return name;
-    }
-    return 'لیست ${int.parse(match.group(1)!)}';
-  }
+  static String vipListCardTitle(String name) => name;
   static const customerCreated = 'مشتری با موفقیت اضافه شد';
   static const backToCustomers = 'بازگشت به مشتریان';
   static const importFromExcel = 'ورود اطلاعات از اکسل';

@@ -314,9 +314,12 @@ class _AdminVipScreenState extends ConsumerState<AdminVipScreen> {
               : null,
           title: Text(list.name),
           subtitle: Text(
-            attention
-                ? '${AppStrings.vipNeedsReview} · ${_statusLabel(list.status)} · ${list.contactCount}'
-                : '${_statusLabel(list.status)} · ${list.contactCount}',
+            [
+              if (list.regionName != null) '${list.regionCode} — ${list.regionName}',
+              attention
+                  ? '${AppStrings.vipNeedsReview} · ${_statusLabel(list.status)} · ${list.contactCount}'
+                  : '${_statusLabel(list.status)} · ${list.contactCount}',
+            ].join('\n'),
           ),
           trailing: attention
               ? Text(
@@ -475,6 +478,8 @@ class _AdminVipListDetailScreenState extends ConsumerState<AdminVipListDetailScr
                         ),
                       ],
                     ),
+                    if (list.regionName != null)
+                      Text('${list.regionCode} — ${list.regionName}'),
                     if (list.needsAttention) ...[
                       const SizedBox(height: 8),
                       Text(
