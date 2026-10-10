@@ -1240,6 +1240,11 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('مدیریت خدمات'), findsOneWidget);
+    expect(find.text(AppStrings.contactSupport), findsOneWidget);
+    expect(
+      tester.getTopLeft(find.text(AppStrings.contactSupport)).dy,
+      greaterThan(tester.getTopLeft(find.text('مدیریت خدمات')).dy),
+    );
     expect(find.text(AppStrings.attentionQuestion), findsNothing);
     expect(find.text(AppStrings.overallPerformanceTitle), findsNothing);
   });

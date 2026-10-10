@@ -184,6 +184,18 @@ Return-evidence selection is all-history and tenant/customer-ID based before wee
 
 ---
 
+## 11A. Support conversations
+
+**Implemented.** One text conversation per salon user with Platform Admin, opened from «حساب من» → «ارتباط با پشتیبانی». It is not attached to a MessageRequest or VipRequest.
+
+`support_conversations` is unique on `user_id` and tenant-bound with `(user_id, salon_id)`. `support_messages` are immutable. The author is exactly one salon user or one Platform Admin. Body length is 1–2000. Pages are 30 rows, newest first, cursor `(createdAt, id)`.
+
+Salon: `GET /support/conversation`, `POST /support/conversation/messages` (`Idempotency-Key`). Identity comes from the JWT. OWNER, MANAGER, and STAFF each see only their own thread.
+
+Platform Admin: `GET /admin/support/conversations`, `GET /admin/support/conversations/:id`, `POST /admin/support/conversations/:id/messages`. Flutter lists them under «ارتباط با کاربران», separate from ordinary and VIP delivery queues.
+
+A message and its conversation timestamp/reply flag commit in one transaction. After the conversation row lock is held, the new message timestamp is the later of the database clock truncated to milliseconds and the previous `lastMessageAt` plus one millisecond. That keeps `(createdAt, id)` strictly after the stored conversation time when two commits share a millisecond. `lastMessageAt` and `awaitingSupportReply` follow that latest row. Replaying an idempotency key returns the original message and does not move either field. Audit metadata is `conversationId`, `messageId`, and `authorKind` only. No outbox, provider, edit, delete, attachment, or realtime channel.
+
 ## 12. VIP
 
 **Implemented** (API + Flutter in current repository HEAD).
@@ -243,6 +255,8 @@ Persian-first, RTL, `fa_IR`, Vazirmatn, **dark** charcoal/champagne theme (`AppT
 | Salon VIP section (from opportunities) | Implemented |
 | Visits list/export/delete | Implemented |
 | Profile + OWNER services | Implemented |
+| Salon support conversation | Implemented («ارتباط با پشتیبانی» on حساب من for every salon role) |
+| Admin user support | Implemented («ارتباط با کاربران»; not the message or VIP queues) |
 | User admin / void / segments / salon PATCH | **Absent** (API exists) |
 
 Android emulator API default `http://10.0.2.2:3000`. Physical device: LAN IP via `--dart-define=API_BASE_URL`. Production: HTTPS.

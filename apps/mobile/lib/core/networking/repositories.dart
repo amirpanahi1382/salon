@@ -1112,3 +1112,74 @@ class VipRepository {
     return AdminVipOutreachRequestPage.fromJson(data);
   }
 }
+
+class SupportRepository {
+  SupportRepository(this._api);
+
+  final ApiClient _api;
+
+  Future<SupportThread> loadSalon({String? cursor}) async {
+    final data = await _api.get(
+      '/support/conversation',
+      query: cursor == null ? null : {'cursor': cursor},
+    );
+    return SupportThread.fromJson(data);
+  }
+
+  Future<SupportMessage> sendSalon({
+    required String text,
+    required String idempotencyKey,
+  }) async {
+    Future<SupportMessage> request() async {
+      final data = await _api.post(
+        '/support/conversation/messages',
+        data: {'text': text},
+        headers: {'Idempotency-Key': idempotencyKey},
+      ) as Map<String, dynamic>;
+      return SupportMessage.fromJson(data);
+    }
+
+    try {
+      return await request();
+    } on NetworkException {
+      return request();
+    }
+  }
+
+  Future<ItemPage<SupportConversationSummary>> listAdmin({String? cursor}) async {
+    final data = await _api.get(
+      '/admin/support/conversations',
+      query: cursor == null ? null : {'cursor': cursor},
+    );
+    return parseItemPage(data, SupportConversationSummary.fromJson);
+  }
+
+  Future<SupportThread> loadAdmin(String conversationId, {String? cursor}) async {
+    final data = await _api.get(
+      '/admin/support/conversations/$conversationId',
+      query: cursor == null ? null : {'cursor': cursor},
+    );
+    return SupportThread.fromJson(data);
+  }
+
+  Future<SupportMessage> sendAdmin({
+    required String conversationId,
+    required String text,
+    required String idempotencyKey,
+  }) async {
+    Future<SupportMessage> request() async {
+      final data = await _api.post(
+        '/admin/support/conversations/$conversationId/messages',
+        data: {'text': text},
+        headers: {'Idempotency-Key': idempotencyKey},
+      ) as Map<String, dynamic>;
+      return SupportMessage.fromJson(data);
+    }
+
+    try {
+      return await request();
+    } on NetworkException {
+      return request();
+    }
+  }
+}

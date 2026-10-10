@@ -46,6 +46,8 @@ Platform-owned: `platform_admins`, `vip_target_lists`, `vip_target_contacts` (li
 | `outbox_events` | Infra | `PENDING/PROCESSING/PROCESSED/DEAD_LETTER` |
 | `audit_logs` | Infra | `tenant_id` nullable (platform actors) |
 | `idempotency_records` | Infra | Unique `(tenant_id, actor_id, operation, key)` |
+| `support_conversations` | Support fact | One row per salon `user_id`; composite FK `(user_id, salon_id)`; ordered by `last_message_at DESC, id DESC` |
+| `support_messages` | Support fact | Immutable. Author XOR salon user or Platform Admin. Body length 1–2000. No cascade delete |
 
 There are **no** `campaigns`, `products`, or `appointments` tables. `return_commitments` is not an appointment table.
 

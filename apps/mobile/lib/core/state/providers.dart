@@ -71,6 +71,10 @@ final vipRepositoryProvider = Provider<VipRepository>((ref) {
   return VipRepository(ref.watch(apiClientProvider));
 });
 
+final supportRepositoryProvider = Provider<SupportRepository>((ref) {
+  return SupportRepository(ref.watch(apiClientProvider));
+});
+
 final salonRepositoryProvider = Provider<SalonRepository>((ref) {
   return SalonRepository(ref.watch(apiClientProvider));
 });

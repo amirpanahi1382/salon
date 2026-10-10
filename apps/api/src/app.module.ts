@@ -26,6 +26,7 @@ import { ActionModule } from './action/action.module';
 import { MessagingModule } from './messaging/messaging.module';
 import { OpportunitiesModule } from './opportunities/opportunities.module';
 import { VipModule } from './vip/vip.module';
+import { SupportModule } from './support/support.module';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { AppRequest } from './infrastructure/http/request-context';
 
@@ -105,6 +106,7 @@ import type { AppRequest } from './infrastructure/http/request-context';
     MessagingModule,
     OpportunitiesModule,
     VipModule,
+    SupportModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: HttpExceptionFilter },

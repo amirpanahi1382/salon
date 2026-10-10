@@ -20,6 +20,19 @@ class AppStrings {
   static const opportunities = 'فرصت‌ها';
   static const profile = 'حساب من';
   static const manageServices = 'مدیریت خدمات';
+  static const contactSupport = 'ارتباط با پشتیبانی';
+  static const adminUserSupport = 'ارتباط با کاربران';
+  static const supportEmpty = 'هنوز پیامی در این گفت‌وگو نیست.';
+  static const adminSupportEmpty = 'هنوز گفت‌وگویی ثبت نشده.';
+  static const supportHint = 'پیام خود را بنویسید';
+  static const sendSupport = 'ارسال';
+  static const supportYou = 'شما';
+  static const supportTeam = 'پشتیبانی';
+  static const supportNeedsReply = 'نیاز به پاسخ';
+  static const supportReplied = 'پاسخ داده شده';
+  static const supportOlderMessages = 'پیام‌های قبلی';
+  static const supportOlderFailed = 'پیام‌های قبلی بارگذاری نشد.';
+  static const supportMoreConversations = 'گفت‌وگوهای قبلی';
   static const addService = 'افزودن خدمت';
   static const editService = 'ویرایش خدمت';
   static const serviceName = 'نام خدمت';
@@ -579,6 +592,10 @@ String localizeUserFacingMessage(String message) {
     'A message was already requested for this customer today':
         AppStrings.messageDailyLimit,
     'Message text is invalid': 'متن پیام معتبر نیست.',
+    'Support text is invalid': 'متن پیام معتبر نیست.',
+    'Support message could not be recorded': 'پیام ثبت نشد. دوباره تلاش کنید.',
+    'Idempotency-Key was already used with a different request':
+        'این ارسال قبلاً با متن دیگری ثبت شده.',
     'Idempotency-Key is required': 'کلید تکرار درخواست لازم است.',
     'Opportunity not found': 'این فرصت الان وجود ندارد.',
     'Customer not found': 'این مشتری پیدا نشد.',

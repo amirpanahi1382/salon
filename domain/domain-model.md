@@ -65,7 +65,11 @@ Salon operator. One salon. Roles `OWNER` | `MANAGER` | `STAFF`. Status `ACTIVE` 
 
 ### PlatformAdmin
 
-Not a salon user. No tenant. JWT `scp=platform`. Owns VIP lists and entitlements; dispatches the message queue.
+Not a salon user. No tenant. JWT `scp=platform`. Owns VIP lists and entitlements; dispatches the message queue. Authors support replies on a salon user's conversation; the reply records that admin and does not change messaging or VIP status.
+
+### SupportConversation
+
+One thread per salon user with Platform Admin. Associated with that user's salon for authorization and admin context. A coworker's thread is a different conversation. Messages are immutable text. Not a Customer, MessageRequest, MessageDelivery, or VipRequest.
 
 ### Customer
 

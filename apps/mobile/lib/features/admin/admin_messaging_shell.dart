@@ -17,6 +17,9 @@ class AdminMessagingShell extends StatelessWidget {
       return 0;
     }
     final location = GoRouterState.of(context).uri.path;
+    if (location.startsWith('/admin/support')) {
+      return 2;
+    }
     if (location.startsWith('/admin/vip')) {
       return 1;
     }
@@ -47,6 +50,11 @@ class AdminMessagingShell extends StatelessWidget {
               selectedIcon: Icon(Icons.workspace_premium),
               label: AppStrings.adminVipMessagingTitle,
             ),
+            NavigationDestination(
+              icon: Icon(Icons.support_agent_outlined),
+              selectedIcon: Icon(Icons.support_agent),
+              label: AppStrings.adminUserSupport,
+            ),
           ],
           onDestinationSelected: (index) {
             if (GoRouter.maybeOf(context) == null) {
@@ -54,8 +62,10 @@ class AdminMessagingShell extends StatelessWidget {
             }
             if (index == 0) {
               context.go('/admin/messages');
-            } else {
+            } else if (index == 1) {
               context.go('/admin/vip/outreach');
+            } else {
+              context.go('/admin/support');
             }
           },
         ),

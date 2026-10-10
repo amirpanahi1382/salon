@@ -91,8 +91,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       trailing: const Icon(Icons.arrow_forward),
                       onTap: () => context.push('/profile/services'),
                     ),
-                    const SizedBox(height: 16),
                   ],
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.support_agent_outlined),
+                    title: const Text(AppStrings.contactSupport),
+                    trailing: const Icon(Icons.arrow_forward),
+                    onTap: () => context.push('/profile/support'),
+                  ),
+                  const SizedBox(height: 16),
                   OutlinedButton(
                     onPressed: () =>
                         ref.read(authControllerProvider.notifier).logout(),

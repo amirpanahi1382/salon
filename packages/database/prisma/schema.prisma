@@ -133,6 +133,7 @@ model Salon {
   vipRequests         VipRequest[]
   reservedVipLists    VipTargetList[]      @relation("VipListReservedBySalon")
   returnCommitments   ReturnCommitment[]
+  supportConversations SupportConversation[]
 
   @@map("salons")
 }
@@ -252,6 +253,8 @@ model User {
   createdVipRequests        VipRequest[]
   createdReturnCommitments  ReturnCommitment[] @relation("ReturnCommitmentCreatedBy")
   updatedReturnCommitments  ReturnCommitment[] @relation("ReturnCommitmentUpdatedBy")
+  supportConversation       SupportConversation?
+  authoredSupportMessages   SupportMessage[] @relation("SupportMessageAuthorUser")
 
   @@unique([id, salonId])
   @@index([salonId])
@@ -305,6 +308,7 @@ model PlatformAdmin {
   revokedVipEntitlements VipSalonEntitlement[] @relation("VipEntitlementRevokedBy")
   createdReturnCommitments ReturnCommitment[] @relation("ReturnCommitmentCreatedByAdmin")
   updatedReturnCommitments ReturnCommitment[] @relation("ReturnCommitmentUpdatedByAdmin")
+  supportMessages          SupportMessage[]
 
   @@map("platform_admins")
 }
@@ -506,6 +510,43 @@ model IdempotencyRecord {
   @@unique([tenantId, actorId, operation, key])
   @@index([createdAt])
   @@map("idempotency_records")
+}
+
+/// One in-app support thread between a salon user and Platform Admin.
+/// Not a customer message, VIP request, or provider delivery.
+model SupportConversation {
+  id                   String   @id @db.Uuid
+  salonId              String   @map("salon_id") @db.Uuid
+  salon                Salon    @relation(fields: [salonId], references: [id], onDelete: Restrict)
+  userId               String   @unique @map("user_id") @db.Uuid
+  user                 User     @relation(fields: [userId, salonId], references: [id, salonId], onDelete: Restrict)
+  lastMessageAt        DateTime @map("last_message_at") @db.Timestamptz(3)
+  awaitingSupportReply Boolean  @map("awaiting_support_reply")
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  messages             SupportMessage[]
+
+  @@unique([id, salonId])
+  @@unique([userId, salonId])
+  @@index([lastMessageAt(sort: Desc), id(sort: Desc)])
+  @@map("support_conversations")
+}
+
+/// Immutable support text. Author is exactly one salon user or one Platform Admin.
+model SupportMessage {
+  id                    String              @id @db.Uuid
+  conversationId        String              @map("conversation_id") @db.Uuid
+  salonId               String              @map("salon_id") @db.Uuid
+  conversation          SupportConversation @relation(fields: [conversationId, salonId], references: [id, salonId], onDelete: Restrict)
+  authorUserId          String?             @map("author_user_id") @db.Uuid
+  authorUser            User?               @relation("SupportMessageAuthorUser", fields: [authorUserId, salonId], references: [id, salonId], onDelete: Restrict)
+  authorPlatformAdminId String?             @map("author_platform_admin_id") @db.Uuid
+  authorPlatformAdmin   PlatformAdmin?      @relation(fields: [authorPlatformAdminId], references: [id], onDelete: Restrict)
+  body                  String              @db.Text
+  createdAt             DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([conversationId, createdAt(sort: Desc), id(sort: Desc)])
+  @@map("support_messages")
 }
 
 /// Platform-admin owned VIP contact list. Not salon Customer records.

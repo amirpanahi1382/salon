@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/admin/admin_message_queue_screen.dart';
+import '../../features/admin/admin_support_screen.dart';
+import '../../features/profile/support_conversation_screen.dart';
 import '../../features/admin/admin_vip_screen.dart';
 import '../../features/admin/admin_vip_outreach_screen.dart';
 import '../../features/auth/auth_screens.dart';
@@ -95,6 +97,16 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const AdminVipScreen(),
       ),
       GoRoute(
+        path: '/admin/support',
+        builder: (context, state) => const AdminSupportListScreen(),
+      ),
+      GoRoute(
+        path: '/admin/support/:id',
+        builder: (context, state) => AdminSupportThreadScreen(
+          conversationId: state.pathParameters['id']!,
+        ),
+      ),
+      GoRoute(
         path: '/admin/vip/outreach/request/:requestId',
         builder: (context, state) => AdminVipOutreachRequestScreen(
           requestId: state.pathParameters['requestId']!,
@@ -146,6 +158,10 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/open-returns',
             builder: (context, state) => const OpenAgreedReturnsScreen(),
+          ),
+          GoRoute(
+            path: '/profile/support',
+            builder: (context, state) => const SupportConversationScreen(),
           ),
           GoRoute(
             path: '/profile/services',

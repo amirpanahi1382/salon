@@ -1764,3 +1764,86 @@ class OpportunityWorkspaceRow {
     );
   }
 }
+
+class SupportMessage {
+  const SupportMessage({
+    required this.id,
+    required this.body,
+    required this.createdAt,
+    required this.authorKind,
+    this.authorName,
+  });
+
+  final String id;
+  final String body;
+  final DateTime createdAt;
+  final String authorKind;
+  final String? authorName;
+
+  bool get fromSalonUser => authorKind == 'SALON_USER';
+
+  factory SupportMessage.fromJson(Map<String, dynamic> json) {
+    return SupportMessage(
+      id: json['id'] as String,
+      body: json['body'] as String? ?? '',
+      createdAt: DateTime.parse(json['createdAt'] as String),
+      authorKind: json['authorKind'] as String? ?? '',
+      authorName: json['authorName'] as String?,
+    );
+  }
+}
+
+int compareSupportMessages(SupportMessage a, SupportMessage b) {
+  final byTime = a.createdAt.compareTo(b.createdAt);
+  if (byTime != 0) {
+    return byTime;
+  }
+  return a.id.compareTo(b.id);
+}
+
+class SupportConversationSummary {
+  const SupportConversationSummary({
+    required this.id,
+    required this.userName,
+    required this.userEmail,
+    required this.salonName,
+    required this.lastMessageAt,
+    required this.awaitingSupportReply,
+  });
+
+  final String id;
+  final String userName;
+  final String userEmail;
+  final String salonName;
+  final DateTime lastMessageAt;
+  final bool awaitingSupportReply;
+
+  factory SupportConversationSummary.fromJson(Map<String, dynamic> json) {
+    return SupportConversationSummary(
+      id: json['id'] as String,
+      userName: json['userName'] as String? ?? '',
+      userEmail: json['userEmail'] as String? ?? '',
+      salonName: json['salonName'] as String? ?? '',
+      lastMessageAt: DateTime.parse(json['lastMessageAt'] as String),
+      awaitingSupportReply: json['awaitingSupportReply'] == true,
+    );
+  }
+}
+
+class SupportThread {
+  const SupportThread({required this.conversation, required this.messages});
+
+  final SupportConversationSummary? conversation;
+  final ItemPage<SupportMessage> messages;
+
+  factory SupportThread.fromJson(Object? data) {
+    final json = asJsonMap(data);
+    final conversation = jsonObject(json['conversation']);
+    return SupportThread(
+      conversation: conversation == null
+          ? null
+          : SupportConversationSummary.fromJson(conversation),
+      messages: parseItemPage(json, SupportMessage.fromJson),
+    );
+  }
+}
