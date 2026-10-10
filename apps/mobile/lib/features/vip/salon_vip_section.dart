@@ -61,6 +61,8 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
   bool _busy = false;
   Object? _error;
   Object? _listsError;
+  int _loadGeneration = 0;
+  int _listGeneration = 0;
 
   @override
   void initState() {
@@ -95,6 +97,7 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
   }
 
   Future<void> _load() async {
+    final generation = ++_loadGeneration;
     setState(() {
       _loading = true;
       _error = null;
@@ -104,7 +107,7 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
       final regions = capability.entitled
           ? await ref.read(vipRepositoryProvider).regions()
           : <VipRegion>[];
-      if (!mounted) {
+      if (!mounted || generation != _loadGeneration) {
         return;
       }
       setState(() {
@@ -116,7 +119,7 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
         await _loadLists();
       }
     } catch (error) {
-      if (!mounted) {
+      if (!mounted || generation != _loadGeneration) {
         return;
       }
       setState(() {
@@ -131,13 +134,14 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
     if (code == null) {
       return;
     }
+    final generation = ++_listGeneration;
     setState(() {
       _listsLoading = true;
       _listsError = null;
     });
     try {
       final lists = await ref.read(vipRepositoryProvider).listsByRegion(code);
-      if (!mounted) {
+      if (!mounted || generation != _listGeneration) {
         return;
       }
       setState(() {
@@ -148,7 +152,7 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
         }
       });
     } catch (error) {
-      if (!mounted) {
+      if (!mounted || generation != _listGeneration) {
         return;
       }
       setState(() {
@@ -172,10 +176,45 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
     await _loadLists();
   }
 
+  bool _selectionAllowed(
+    VipCapability capability,
+    int? count,
+    VipTargetList? selectedList,
+    List<int> sizes,
+  ) {
+    if (_busy || count == null || selectedList == null) {
+      return false;
+    }
+    if (!sizes.contains(count)) {
+      return false;
+    }
+    if (count > capability.remainingQuota) {
+      return false;
+    }
+    if (selectedList.contactCount < count) {
+      return false;
+    }
+    return true;
+  }
+
   Future<void> _submit() async {
+    final capability = _capability;
     final count = ref.read(vipSelectedCountProvider);
     final listId = _listId;
-    if (count == null || listId == null) {
+    VipTargetList? selectedList;
+    for (final list in _lists) {
+      if (list.id == listId) {
+        selectedList = list;
+        break;
+      }
+    }
+    final sizes = capability == null || capability.allowedRequestCounts.isEmpty
+        ? const [30, 50, 100]
+        : capability.allowedRequestCounts;
+    if (capability == null ||
+        count == null ||
+        listId == null ||
+        !_selectionAllowed(capability, count, selectedList, sizes)) {
       return;
     }
     setState(() => _busy = true);
@@ -193,7 +232,7 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
       await _addSample(created);
     } catch (error) {
       _snack(friendlyError(error));
-      await _loadLists();
+      await _load();
     } finally {
       if (mounted) {
         setState(() => _busy = false);
@@ -247,6 +286,7 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
       await _load();
     } catch (error) {
       _snack(friendlyError(error));
+      await _load();
     } finally {
       if (mounted) {
         setState(() => _busy = false);
@@ -300,7 +340,15 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const LoadingSkeleton(lines: 4);
+      return RefreshIndicator(
+        onRefresh: _load,
+        child: ListView(
+          children: const [
+            SizedBox(height: 24),
+            LoadingSkeleton(lines: 4),
+          ],
+        ),
+      );
     }
     if (_error != null) {
       return ErrorView(message: friendlyError(_error!), onRetry: _load);
@@ -312,13 +360,27 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
         body: AppStrings.vipNeedEntitlement,
       );
     }
-    if (capability.currentRequest != null) {
-      return _currentRequestView(capability);
+    final draft = capability.activeDraft ?? capability.currentRequest;
+    if (draft != null && draft.status == 'AWAITING_SAMPLE_WORK') {
+      return _scrollable(_currentRequestView(capability, draft));
     }
-    if (capability.remainingQuota == 0) {
-      return const EmptyStateView(
-        title: AppStrings.vipQuotaExhausted,
-        body: AppStrings.vipQuotaExhausted,
+    final sizes = capability.allowedRequestCounts.isEmpty
+        ? const [30, 50, 100]
+        : capability.allowedRequestCounts;
+    final minimumSize = sizes.reduce((left, right) => left < right ? left : right);
+    if (capability.remainingQuota < minimumSize) {
+      final belowMinimum = capability.remainingQuota > 0;
+      final message = belowMinimum
+          ? AppStrings.vipQuotaBelowMinimum(capability.remainingQuota)
+          : AppStrings.vipQuotaExhausted;
+      return _scrollable(
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _history(capability),
+            EmptyStateView(title: message, body: message),
+          ],
+        ),
       );
     }
     final count = ref.watch(vipSelectedCountProvider);
@@ -334,9 +396,12 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
     }).toList();
     final region = _selectedRegion;
 
-    return ListView(
-      padding: const EdgeInsets.all(AppTokens.space16),
+    final canSubmit = _selectionAllowed(capability, count, selectedList, sizes);
+    return _scrollable(
+      Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        _history(capability),
         Text(AppStrings.vipRemainingQuota(capability.remainingQuota)),
         const SizedBox(height: 12),
         const SectionHeader(AppStrings.vipDesiredRegion),
@@ -354,11 +419,12 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
         Wrap(
           spacing: 8,
           children: [
-            for (final value in [30, 50, 100])
+            for (final value in sizes)
               ChoiceChip(
                 label: Text('$value'),
                 selected: count == value,
-                onSelected: selectedList != null && selectedList.contactCount < value
+                onSelected: value > capability.remainingQuota ||
+                        (selectedList != null && selectedList.contactCount < value)
                     ? null
                     : (_) {
                         ref.read(vipSelectedCountProvider.notifier).setValue(value);
@@ -418,23 +484,64 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
         ),
         const SizedBox(height: 16),
         FilledButton(
-          onPressed: _busy || count == null || _listId == null ? null : _submit,
+          onPressed: canSubmit ? _submit : null,
           child: const Text(AppStrings.sendMessageAction),
         ),
+      ],
+      ),
+    );
+  }
+
+  Widget _scrollable(Widget child) {
+    return RefreshIndicator(
+      onRefresh: _load,
+      child: ListView(
+        padding: const EdgeInsets.all(AppTokens.space16),
+        children: [child],
+      ),
+    );
+  }
+
+  Widget _history(VipCapability capability) {
+    if (capability.inProgressRequests.isEmpty && !capability.inProgressRequestsHasMore) {
+      return const SizedBox.shrink();
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          AppStrings.vipInProgressRequests,
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
+        const SizedBox(height: 8),
+        for (final request in capability.inProgressRequests) ...[
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: Text(request.listName),
+            subtitle: Text(
+              '${vipRequestStatusLabel(request.status)} · ${request.requestedCount}',
+            ),
+          ),
+        ],
+        if (capability.inProgressRequestsHasMore) ...[
+          const SizedBox(height: 4),
+          const Text(AppStrings.vipInProgressRequestsTruncated),
+        ],
+        const SizedBox(height: 16),
       ],
     );
   }
 
-  Widget _currentRequestView(VipCapability capability) {
-    final current = capability.currentRequest!;
+  Widget _currentRequestView(VipCapability capability, VipRequest current) {
     final awaiting = current.status == 'AWAITING_SAMPLE_WORK';
-    return ListView(
-      padding: const EdgeInsets.all(AppTokens.space16),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        _history(capability),
         ListTile(
           contentPadding: EdgeInsets.zero,
           title: Text(current.listName),
-          subtitle: Text('${current.status} · ${current.requestedCount}'),
+          subtitle: Text('${vipRequestStatusLabel(current.status)} · ${current.requestedCount}'),
         ),
         if (capability.remainingQuota == 0) ...[
           const SizedBox(height: 8),

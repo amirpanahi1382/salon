@@ -53,7 +53,10 @@ export class SalonVipController {
   ) {}
 
   @Get('capability')
-  @ApiOperation({ summary: 'VIP entitlement, remaining rolling-window quota, and current request' })
+  @ApiOperation({
+    summary:
+      'VIP entitlement, rolling seven-day quota, the single sample-work draft, and in-progress request history',
+  })
   getCapability(@CurrentUser() user: AuthenticatedPrincipal) {
     return this.capability.execute(user);
   }

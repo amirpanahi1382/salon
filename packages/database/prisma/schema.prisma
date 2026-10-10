@@ -592,6 +592,10 @@ model VipRequest {
   @@index([salonId, createdAt, id])
   @@index([salonId, status])
   @@index([listId, status])
+  // Database-only partial unique index vip_requests_one_awaiting_draft_per_salon
+  // (migration 20261007140000). Prisma cannot model a partial unique index.
+  // A schema diff that omits it is not drift to drop: the index is the one-draft guarantee.
+  // It includes only AWAITING_SAMPLE_WORK. Submitted and processing requests are unaffected.
   @@map("vip_requests")
 }
 

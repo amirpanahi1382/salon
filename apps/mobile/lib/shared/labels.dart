@@ -312,8 +312,13 @@ class AppStrings {
   static const vipNeedEntitlement = 'ارسال VIP برای این سالن فعال نیست.';
   static const vipNeedsReview = 'نیازمند بررسی';
   static const vipMaxSamples = 'حداکثر ۳ نمونه کار مجاز است.';
+  static const vipInProgressRequests = 'درخواست‌های در جریان';
+  static const vipInProgressRequestsTruncated =
+      'فقط ۱۰ درخواست جدیدتر در جریان نمایش داده می‌شود.';
   static const vipQuotaExhausted =
       'سهمیه این هفته ارسال VIP تمام شده است. درخواست جدیدی نمی‌توان ثبت کرد.';
+  static String vipQuotaBelowMinimum(int remaining) =>
+      'سهمیه باقی‌مانده این هفته $remaining نفر است و از حداقل اندازه درخواست کمتر است.';
 
   static String vipRemainingQuota(int remaining) =>
       'سهمیه باقی‌مانده این هفته: $remaining';
@@ -405,6 +410,23 @@ class AppStrings {
   static const bytesLabel = 'بایت';
   static const previousMonth = 'ماه قبل';
   static const nextMonth = 'ماه بعد';
+}
+
+String vipRequestStatusLabel(String status) {
+  switch (status) {
+    case 'AWAITING_SAMPLE_WORK':
+      return AppStrings.vipPending;
+    case 'SUBMITTED':
+      return AppStrings.vipNeedsReview;
+    case 'MANUAL_QUEUED':
+      return AppStrings.outreachStatusQueued;
+    case 'BALE_NOT_IMPLEMENTED':
+      return AppStrings.vipBaleNotImplemented;
+    case 'CANCELLED':
+      return AppStrings.failed;
+    default:
+      return AppStrings.unknownStatus;
+  }
 }
 
 String statusLabel(String value) {
@@ -538,6 +560,8 @@ String localizeUserFacingMessage(String message) {
     'Export failed': 'خروجی اکسل گرفته نشد.',
     'VIP 14-day quota would be exceeded': AppStrings.vipQuotaExhausted,
     'VIP rolling-window quota would be exceeded': AppStrings.vipQuotaExhausted,
+    'Finish or let the current VIP draft expire before starting another':
+        'اول پیش‌نویس فعلی را تمام کنید یا بگذارید مهلت آن تمام شود.',
     'At most 3 sample-work images are allowed': AppStrings.vipMaxSamples,
     'Bale is not available for VIP outreach': AppStrings.vipBaleNotImplemented,
     'This VIP list is not available': AppStrings.vipListUnavailable,

@@ -1098,6 +1098,10 @@ class VipCapability {
     required this.usedQuota,
     this.quotaMax = 0,
     this.quotaWindowDays = 0,
+    this.allowedRequestCounts = const [30, 50, 100],
+    this.activeDraft,
+    this.inProgressRequests = const [],
+    this.inProgressRequestsHasMore = false,
     this.currentRequest,
   });
 
@@ -1106,18 +1110,40 @@ class VipCapability {
   final int usedQuota;
   final int quotaMax;
   final int quotaWindowDays;
+  final List<int> allowedRequestCounts;
+  final VipRequest? activeDraft;
+  final List<VipRequest> inProgressRequests;
+  final bool inProgressRequestsHasMore;
+
+  /// Unfinished sample-work draft only. Submitted requests are not a blocker.
   final VipRequest? currentRequest;
 
   factory VipCapability.fromJson(Map<String, dynamic> json) {
+    final current = json['currentRequest'] is Map
+        ? VipRequest.fromJson(asJsonMap(json['currentRequest']))
+        : null;
+    final active = json['activeDraft'] is Map
+        ? VipRequest.fromJson(asJsonMap(json['activeDraft']))
+        : (current?.status == 'AWAITING_SAMPLE_WORK' ? current : null);
+    final history = json['inProgressRequests'] is List
+        ? (json['inProgressRequests'] as List)
+            .whereType<Map>()
+            .map((row) => VipRequest.fromJson(asJsonMap(row)))
+            .toList()
+        : const <VipRequest>[];
     return VipCapability(
       entitled: json['entitled'] as bool? ?? false,
       remainingQuota: json['remainingQuota'] as int? ?? 0,
       usedQuota: json['usedQuota'] as int? ?? 0,
       quotaMax: json['quotaMax'] as int? ?? 0,
       quotaWindowDays: json['quotaWindowDays'] as int? ?? 0,
-      currentRequest: json['currentRequest'] is Map
-          ? VipRequest.fromJson(asJsonMap(json['currentRequest']))
-          : null,
+      allowedRequestCounts: json['allowedRequestCounts'] is List
+          ? (json['allowedRequestCounts'] as List).whereType<int>().toList()
+          : const [30, 50, 100],
+      activeDraft: active,
+      inProgressRequests: history,
+      inProgressRequestsHasMore: json['inProgressRequestsHasMore'] as bool? ?? false,
+      currentRequest: active,
     );
   }
 }

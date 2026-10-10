@@ -13,6 +13,8 @@ import {
   VIP_LIST_NAME_MAX_LENGTH,
   VIP_MAX_SAMPLE_WORKS,
   VIP_MIN_SAMPLE_WORKS,
+  VIP_ALLOWED_REQUEST_COUNTS,
+  VIP_ONE_ACTIVE_DRAFT_MESSAGE,
   VIP_QUOTA_MAX,
   VIP_QUOTA_EXCEEDED_MESSAGE,
   VIP_QUOTA_WINDOW_DAYS,
@@ -608,26 +610,48 @@ export class ListAdminSalonsUseCase {
   }
 }
 
+/** Response bound for the capability summary. Not a domain quota. */
+const VIP_CAPABILITY_IN_PROGRESS_LIMIT = 10;
+
 @Injectable()
 export class GetVipCapabilityUseCase {
   constructor(private readonly vip: VipRepository) {}
 
   async execute(principal: AuthenticatedPrincipal) {
     const entitled = (await this.vip.findActiveEntitlement(principal.tenantId)) != null;
-    const used = entitled
+    const evaluatedAt = new Date();
+    const windowStartsAt = this.vip.quotaWindowStart(evaluatedAt);
+    const snapshot = entitled
       ? await this.vip.client.$transaction(async (tx) => {
-          await this.vip.expireStaleReservations(new Date(), tx);
-          return this.vip.quotaUsedSince(tx, principal.tenantId, this.vip.quotaWindowStart(new Date()));
+          await this.vip.expireStaleReservations(evaluatedAt, tx);
+          const usedQuota = await this.vip.quotaUsedSince(tx, principal.tenantId, windowStartsAt);
+          const activeDraft = await this.vip.findActiveDraft(principal.tenantId, tx);
+          const inProgressRows = await this.vip.listInProgressRequests(
+            principal.tenantId,
+            VIP_CAPABILITY_IN_PROGRESS_LIMIT + 1,
+            tx,
+          );
+          return { usedQuota, activeDraft, inProgressRows };
         })
-      : 0;
-    const current = entitled ? await this.vip.currentOpenRequest(principal.tenantId) : null;
+      : { usedQuota: 0, activeDraft: null, inProgressRows: [] };
+    const activeDraft = snapshot.activeDraft ? toVipRequest(snapshot.activeDraft) : null;
+    const inProgressRequestsHasMore =
+      snapshot.inProgressRows.length > VIP_CAPABILITY_IN_PROGRESS_LIMIT;
     return {
       entitled,
-      usedQuota: used,
-      remainingQuota: Math.max(0, VIP_QUOTA_MAX - used),
+      usedQuota: snapshot.usedQuota,
+      remainingQuota: Math.max(0, VIP_QUOTA_MAX - snapshot.usedQuota),
       quotaMax: VIP_QUOTA_MAX,
       quotaWindowDays: VIP_QUOTA_WINDOW_DAYS,
-      currentRequest: current ? toVipRequest(current) : null,
+      quotaEvaluatedAt: evaluatedAt.toISOString(),
+      quotaWindowStartsAt: windowStartsAt.toISOString(),
+      allowedRequestCounts: [...VIP_ALLOWED_REQUEST_COUNTS],
+      activeDraft,
+      inProgressRequests: snapshot.inProgressRows
+        .slice(0, VIP_CAPABILITY_IN_PROGRESS_LIMIT)
+        .map((row) => toVipRequest({ ...row, sampleWorks: [] })),
+      inProgressRequestsHasMore,
+      currentRequest: activeDraft,
     };
   }
 }
@@ -710,6 +734,10 @@ export class CreateVipRequestUseCase {
           if (!entitlement || entitlement.revoked_at) {
             throw new ForbiddenError('VIP outreach is not enabled for this salon');
           }
+          const draft = await this.vip.findActiveDraft(principal.tenantId, tx);
+          if (draft) {
+            throw new ConflictError(VIP_ONE_ACTIVE_DRAFT_MESSAGE);
+          }
           const used = await this.vip.quotaUsedSince(
             tx,
             principal.tenantId,
@@ -787,6 +815,12 @@ export class CreateVipRequestUseCase {
         error instanceof NotFoundError
       ) {
         throw error;
+      }
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        const target = JSON.stringify(error.meta ?? {});
+        if (target.includes('vip_requests_one_awaiting_draft_per_salon')) {
+          throw new ConflictError(VIP_ONE_ACTIVE_DRAFT_MESSAGE);
+        }
       }
       const mapped = mapPrismaError(error);
       if (mapped) {

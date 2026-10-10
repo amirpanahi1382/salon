@@ -11,6 +11,8 @@ import { HttpExceptionFilter } from '../src/infrastructure/http/http-exception.f
 import { MemoryObjectStorage } from '../src/infrastructure/storage/memory.object-storage';
 import { OBJECT_STORAGE } from '../src/infrastructure/storage/object-storage';
 import {
+  VIP_ONE_ACTIVE_DRAFT_MESSAGE,
+  VIP_QUOTA_EXCEEDED_MESSAGE,
   VIP_QUOTA_MAX,
   VIP_QUOTA_WINDOW_DAYS,
   VIP_REGION_CATALOG,
@@ -115,6 +117,20 @@ describeIfDb('VIP outreach (e2e)', () => {
       userId,
       tenantId: salonId,
     };
+  }
+
+  async function submitExistingDraft(token: string, requestId: string) {
+    await request(app.getHttpServer())
+      .post(`/vip/requests/${requestId}/sample-works`)
+      .set('Authorization', `Bearer ${token}`)
+      .set('Idempotency-Key', `img-${randomUUID()}`)
+      .attach('file', JPEG, 'work.jpg')
+      .expect(201);
+    await request(app.getHttpServer())
+      .post(`/vip/requests/${requestId}/submit`)
+      .set('Authorization', `Bearer ${token}`)
+      .set('Idempotency-Key', `submit-${randomUUID()}`)
+      .expect(201);
   }
 
   async function grantVip(salonId: string) {
@@ -435,8 +451,8 @@ describeIfDb('VIP outreach (e2e)', () => {
     expect(dispatchAudits.filter((entry) => (entry.metadata as { mode?: string } | null)?.mode === 'MANUAL')).toHaveLength(1);
   });
 
-  it('lets only one of two concurrent 100-count requests consume quota', async () => {
-    const salon = await createOwner('vip-quota');
+  it('lets only one of two concurrent creates keep an active draft', async () => {
+    const salon = await createOwner('vip-one-draft');
     await grantVip(salon.tenantId);
     const listA = await importList(100, '0914');
     const listB = await importList(100, '0915');
@@ -453,20 +469,105 @@ describeIfDb('VIP outreach (e2e)', () => {
       .expect(200);
     await classifyOriginal(listB);
 
+    const keyA = `q1-${randomUUID()}`;
+    const keyB = `q2-${randomUUID()}`;
     const responses = await Promise.all([
       request(app.getHttpServer())
         .post('/vip/requests')
         .set('Authorization', `Bearer ${salon.token}`)
-        .set('Idempotency-Key', `q1-${randomUUID()}`)
+        .set('Idempotency-Key', keyA)
         .send({ listId: listA, requestedCount: 100, geographicRange: 'جردن' }),
       request(app.getHttpServer())
         .post('/vip/requests')
         .set('Authorization', `Bearer ${salon.token}`)
-        .set('Idempotency-Key', `q2-${randomUUID()}`)
+        .set('Idempotency-Key', keyB)
         .send({ listId: listB, requestedCount: 100, geographicRange: 'جردن' }),
     ]);
     const statuses = responses.map((res) => res.status).sort();
-    expect(statuses).toEqual([201, 201]);
+    expect(statuses).toEqual([201, 409]);
+    const winner = responses.find((res) => res.status === 201);
+    const loser = responses.find((res) => res.status === 409);
+    expect(winner).toBeDefined();
+    expect(loser?.body.message).toBe(VIP_ONE_ACTIVE_DRAFT_MESSAGE);
+    const winnerListId = winner?.body.listId as string;
+    const loserListId = winnerListId === listA ? listB : listA;
+    const loserKey = winnerListId === listA ? keyB : keyA;
+
+    expect(
+      await prisma.client.vipRequest.count({
+        where: { salonId: salon.tenantId, status: 'AWAITING_SAMPLE_WORK' },
+      }),
+    ).toBe(1);
+    expect(await prisma.client.vipRequest.count({ where: { salonId: salon.tenantId } })).toBe(1);
+    const reserved = await prisma.client.vipTargetList.findUniqueOrThrow({ where: { id: winnerListId } });
+    expect(reserved.status).toBe('IN_USE');
+    expect(reserved.reservedBySalonId).toBe(salon.tenantId);
+    const released = await prisma.client.vipTargetList.findUniqueOrThrow({ where: { id: loserListId } });
+    expect(released.status).toBe('ACTIVE');
+    expect(released.reservedBySalonId).toBeNull();
+    expect(await prisma.client.vipRequest.count({ where: { listId: loserListId } })).toBe(0);
+    expect(
+      await prisma.client.vipRequestRecipient.count({ where: { vipRequest: { listId: loserListId } } }),
+    ).toBe(0);
+    expect(
+      await prisma.client.idempotencyRecord.count({ where: { tenantId: salon.tenantId, key: loserKey } }),
+    ).toBe(0);
+    expect(
+      await prisma.client.auditLog.count({
+        where: { tenantId: salon.tenantId, action: 'VIP_REQUEST_CREATED' },
+      }),
+    ).toBe(1);
+    expect(
+      await prisma.client.outboxEvent.count({
+        where: { tenantId: salon.tenantId, eventType: 'VipRequestCreated' },
+      }),
+    ).toBe(1);
+    const capability = await request(app.getHttpServer())
+      .get('/vip/capability')
+      .set('Authorization', `Bearer ${salon.token}`)
+      .expect(200);
+    expect(capability.body.usedQuota).toBe(100);
+    expect(capability.body.remainingQuota).toBe(VIP_QUOTA_MAX - 100);
+  });
+
+  it('lets a salon start another request after the active draft is submitted', async () => {
+    const salon = await createOwner('vip-after-submit');
+    await grantVip(salon.tenantId);
+    const firstList = await importList(100, '0930');
+    const secondList = await importList(100, '0931');
+    for (const listId of [firstList, secondList]) {
+      await request(app.getHttpServer())
+        .patch(`/admin/vip/lists/${listId}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ availability: 'ACTIVE' })
+        .expect(200);
+      await classifyOriginal(listId);
+    }
+    const created = await request(app.getHttpServer())
+      .post('/vip/requests')
+      .set('Authorization', `Bearer ${salon.token}`)
+      .set('Idempotency-Key', `after-${randomUUID()}`)
+      .send({ listId: firstList, requestedCount: 100, geographicRange: 'جردن' })
+      .expect(201);
+    await submitExistingDraft(salon.token, created.body.id as string);
+    const next = await request(app.getHttpServer())
+      .post('/vip/requests')
+      .set('Authorization', `Bearer ${salon.token}`)
+      .set('Idempotency-Key', `next-${randomUUID()}`)
+      .send({ listId: secondList, requestedCount: 100, geographicRange: 'جردن' })
+      .expect(201);
+    expect(next.body.status).toBe('AWAITING_SAMPLE_WORK');
+    const capability = await request(app.getHttpServer())
+      .get('/vip/capability')
+      .set('Authorization', `Bearer ${salon.token}`)
+      .expect(200);
+    expect(capability.body.usedQuota).toBe(200);
+    expect(capability.body.remainingQuota).toBe(VIP_QUOTA_MAX - 200);
+    expect(
+      await prisma.client.vipRequest.count({
+        where: { salonId: salon.tenantId, status: 'AWAITING_SAMPLE_WORK' },
+      }),
+    ).toBe(1);
   });
 
   it('lets only one of two concurrent 100-count requests consume remaining quota of 100', async () => {
@@ -485,12 +586,13 @@ describeIfDb('VIP outreach (e2e)', () => {
       await classifyOriginal(listId);
     }
     for (const [index, listId] of usedLists.entries()) {
-      await request(app.getHttpServer())
+      const created = await request(app.getHttpServer())
         .post('/vip/requests')
         .set('Authorization', `Bearer ${salon.token}`)
         .set('Idempotency-Key', `pre-${index}-${randomUUID()}`)
         .send({ listId, requestedCount: 100, geographicRange: 'جردن' })
         .expect(201);
+      await submitExistingDraft(salon.token, created.body.id as string);
     }
     const responses = await Promise.all([
       request(app.getHttpServer())
@@ -612,12 +714,13 @@ describeIfDb('VIP outreach (e2e)', () => {
       await classifyOriginal(listId);
     }
     for (let index = 0; index < 5; index += 1) {
-      await request(app.getHttpServer())
+      const created = await request(app.getHttpServer())
         .post('/vip/requests')
         .set('Authorization', `Bearer ${salon.token}`)
         .set('Idempotency-Key', `qs${index}-${randomUUID()}`)
         .send({ listId: lists[index], requestedCount: 100, geographicRange: 'ونک' })
         .expect(201);
+      await submitExistingDraft(salon.token, created.body.id as string);
     }
     const exhausted = await request(app.getHttpServer())
       .get('/vip/capability')
@@ -625,12 +728,13 @@ describeIfDb('VIP outreach (e2e)', () => {
       .expect(200);
     expect(exhausted.body.remainingQuota).toBe(0);
     expect(exhausted.body.usedQuota).toBe(VIP_QUOTA_MAX);
-    await request(app.getHttpServer())
+    const exhaustedRequest = await request(app.getHttpServer())
       .post('/vip/requests')
       .set('Authorization', `Bearer ${salon.token}`)
       .set('Idempotency-Key', `qs5-${randomUUID()}`)
       .send({ listId: lists[5], requestedCount: 30, geographicRange: 'ونک' })
       .expect(409);
+    expect(exhaustedRequest.body.message).toBe(VIP_QUOTA_EXCEEDED_MESSAGE);
 
     const salonB = await createOwner('vip-quota-470');
     await grantVip(salonB.tenantId);
@@ -658,12 +762,13 @@ describeIfDb('VIP outreach (e2e)', () => {
       { listId: used[5], count: 30 },
     ];
     for (const [index, item] of sequential.entries()) {
-      await request(app.getHttpServer())
+      const created = await request(app.getHttpServer())
         .post('/vip/requests')
         .set('Authorization', `Bearer ${salonB.token}`)
         .set('Idempotency-Key', `q470-${index}-${randomUUID()}`)
         .send({ listId: item.listId, requestedCount: item.count, geographicRange: 'ونک' })
         .expect(201);
+      await submitExistingDraft(salonB.token, created.body.id as string);
     }
     const mid = await request(app.getHttpServer())
       .get('/vip/capability')
@@ -671,18 +776,20 @@ describeIfDb('VIP outreach (e2e)', () => {
       .expect(200);
     expect(mid.body.usedQuota).toBe(480);
     expect(mid.body.remainingQuota).toBe(20);
-    await request(app.getHttpServer())
+    const deny50 = await request(app.getHttpServer())
       .post('/vip/requests')
       .set('Authorization', `Bearer ${salonB.token}`)
       .set('Idempotency-Key', `q470-deny50-${randomUUID()}`)
       .send({ listId: used[6], requestedCount: 50, geographicRange: 'ونک' })
       .expect(409);
-    await request(app.getHttpServer())
+    expect(deny50.body.message).toBe(VIP_QUOTA_EXCEEDED_MESSAGE);
+    const deny30 = await request(app.getHttpServer())
       .post('/vip/requests')
       .set('Authorization', `Bearer ${salonB.token}`)
       .set('Idempotency-Key', `q470-deny30-${randomUUID()}`)
       .send({ listId: used[7], requestedCount: 30, geographicRange: 'ونک' })
       .expect(409);
+    expect(deny30.body.message).toBe(VIP_QUOTA_EXCEEDED_MESSAGE);
 
     const salonC = await createOwner('vip-quota-window');
     await grantVip(salonC.tenantId);
@@ -702,6 +809,7 @@ describeIfDb('VIP outreach (e2e)', () => {
       .set('Idempotency-Key', `qwin-${randomUUID()}`)
       .send({ listId: windowList, requestedCount: 100, geographicRange: 'ونک' })
       .expect(201);
+    await submitExistingDraft(salonC.token, created.body.id as string);
     await prisma.client.vipRequest.update({
       where: { id: created.body.id },
       data: { createdAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000 - 1000) },
@@ -1219,7 +1327,7 @@ describeIfDb('VIP outreach (e2e)', () => {
       data: { catalogMembership: 'ORIGINAL_TEHRAN' },
     });
 
-    await request(app.getHttpServer())
+    const held = await request(app.getHttpServer())
       .post('/vip/requests')
       .set('Authorization', `Bearer ${other.token}`)
       .set('Idempotency-Key', `in-use-${randomUUID()}`)
@@ -1385,6 +1493,7 @@ describeIfDb('VIP outreach (e2e)', () => {
     });
     expect(reservedCopy.messageText).toContain('ونک');
     expect(reservedCopy.messageText).not.toContain(VIP_REGION_CATALOG['01']);
+    await submitExistingDraft(other.token, held.body.id as string);
 
     const stale = await request(app.getHttpServer())
       .post('/vip/requests')

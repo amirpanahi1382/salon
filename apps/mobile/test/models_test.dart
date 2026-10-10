@@ -313,6 +313,47 @@ void main() {
     expect(session.user.email, 'admin@salon.local');
   });
 
+  test('parses whether the in-progress VIP summary is truncated', () {
+    final truncated = VipCapability.fromJson({
+      'entitled': true,
+      'remainingQuota': 170,
+      'usedQuota': 330,
+      'inProgressRequestsHasMore': true,
+      'inProgressRequests': [
+        {
+          'id': 'request-1',
+          'salonId': 'salon-1',
+          'listId': 'list-1',
+          'listName': 'VIP-03-01',
+          'status': 'SUBMITTED',
+          'requestedCount': 30,
+        },
+      ],
+    });
+    expect(truncated.inProgressRequestsHasMore, isTrue);
+    expect(truncated.inProgressRequests, hasLength(1));
+    expect(truncated.inProgressRequests.first.status, 'SUBMITTED');
+
+    final complete = VipCapability.fromJson({
+      'entitled': true,
+      'remainingQuota': 400,
+      'usedQuota': 100,
+      'inProgressRequestsHasMore': false,
+      'inProgressRequests': [
+        {
+          'id': 'request-2',
+          'salonId': 'salon-1',
+          'listId': 'list-2',
+          'listName': 'VIP-04-01',
+          'status': 'MANUAL_QUEUED',
+          'requestedCount': 50,
+        },
+      ],
+    });
+    expect(complete.inProgressRequestsHasMore, isFalse);
+    expect(complete.inProgressRequests, hasLength(1));
+  });
+
   test('strips hidden bidi marks from login emails', () {
     expect(
       sanitizeAuthEmail('\u200eadmin@salon.local\u200f'),

@@ -6,6 +6,10 @@ void main() {
     expect(statusLabel('AT_RISK'), 'در آستانه از دست رفتن');
     expect(statusLabel('NEW'), 'مشتری جدید');
     expect(statusLabel('SOMETHING_FUTURE'), 'وضعیت نامشخص');
+    expect(vipRequestStatusLabel('SUBMITTED'), AppStrings.vipNeedsReview);
+    expect(vipRequestStatusLabel('MANUAL_QUEUED'), AppStrings.outreachStatusQueued);
+    expect(vipRequestStatusLabel('BALE_NOT_IMPLEMENTED'), AppStrings.vipBaleNotImplemented);
+    expect(vipRequestStatusLabel('FUTURE'), AppStrings.unknownStatus);
   });
 
   test('opportunity and signal labels have safe fallbacks', () {

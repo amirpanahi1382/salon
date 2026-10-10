@@ -3,7 +3,9 @@ import {
   isVipAllowedRequestCount,
   isVipRegionCode,
   renderVipMessageTemplate,
+  VIP_ACTIVE_DRAFT_STATUS,
   VIP_BALE_NOT_AVAILABLE_MESSAGE,
+  VIP_IN_PROGRESS_STATUSES,
   VIP_OUTREACH_EXECUTION_STATES,
   VIP_QUOTA_EXCEEDED_MESSAGE,
   VIP_QUOTA_MAX,
@@ -24,6 +26,17 @@ describe('VIP shared rules', () => {
     expect(isVipAllowedRequestCount(100)).toBe(true);
     expect(isVipAllowedRequestCount(101)).toBe(false);
     expect(isVipAllowedRequestCount(0)).toBe(false);
+  });
+
+  it('keeps the rolling seven-day quota and one-draft rule as shared policy', () => {
+    expect(VIP_QUOTA_MAX).toBe(500);
+    expect(VIP_QUOTA_WINDOW_DAYS).toBe(7);
+    expect(VIP_IN_PROGRESS_STATUSES).toEqual([
+      'SUBMITTED',
+      'MANUAL_QUEUED',
+      'BALE_NOT_IMPLEMENTED',
+    ]);
+    expect(VIP_ACTIVE_DRAFT_STATUS).toBe('AWAITING_SAMPLE_WORK');
   });
 
   it('renders a deterministic Persian template', () => {

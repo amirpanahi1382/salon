@@ -233,7 +233,32 @@ export class VipCapabilityDto {
   @ApiProperty({ description: 'Rolling window in days. Not a calendar week.' })
   quotaWindowDays!: number;
 
+  @ApiProperty({ description: 'Instant used for the rolling-window calculation' })
+  quotaEvaluatedAt!: string;
+
+  @ApiProperty({ description: 'Requests created at or after this instant count toward the window' })
+  quotaWindowStartsAt!: string;
+
+  @ApiProperty({ type: [Number], example: [30, 50, 100] })
+  allowedRequestCounts!: number[];
+
   @ApiProperty({ nullable: true, type: () => VipRequestDto })
+  activeDraft!: VipRequestDto | null;
+
+  @ApiProperty({
+    type: () => [VipRequestDto],
+    description: 'At most the 10 most recent submitted or processing requests. Not a complete history.',
+  })
+  inProgressRequests!: VipRequestDto[];
+
+  @ApiProperty({ description: 'True when older in-progress requests exist beyond this summary.' })
+  inProgressRequestsHasMore!: boolean;
+
+  @ApiProperty({
+    nullable: true,
+    type: () => VipRequestDto,
+    description: 'Same as activeDraft. Submitted and processing requests are not returned here.',
+  })
   currentRequest!: VipRequestDto | null;
 }
 

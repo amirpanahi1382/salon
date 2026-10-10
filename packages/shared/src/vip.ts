@@ -61,6 +61,12 @@ export const VIP_LIST_MAX_CONTACTS = 100;
 export const VIP_QUOTA_MAX = 500;
 export const VIP_QUOTA_WINDOW_DAYS = 7;
 export const VIP_QUOTA_EXCEEDED_MESSAGE = 'VIP rolling-window quota would be exceeded';
+/** The salon must finish or let this draft expire before starting another. */
+export const VIP_ACTIVE_DRAFT_STATUS = 'AWAITING_SAMPLE_WORK' as const;
+/** Visible history. These do not block another request. */
+export const VIP_IN_PROGRESS_STATUSES = ['SUBMITTED', 'MANUAL_QUEUED', 'BALE_NOT_IMPLEMENTED'] as const;
+export const VIP_ONE_ACTIVE_DRAFT_MESSAGE =
+  'Finish or let the current VIP draft expire before starting another';
 export const VIP_RESERVATION_TTL_MS = 30 * 60 * 1000;
 export const VIP_MAX_SAMPLE_WORKS = 3;
 export const VIP_MIN_SAMPLE_WORKS = 1;

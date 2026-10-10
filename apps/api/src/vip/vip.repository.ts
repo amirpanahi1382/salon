@@ -1,9 +1,19 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@salon/database';
-import { VIP_QUOTA_WINDOW_DAYS, VIP_REGIONS, VIP_RESERVATION_TTL_MS } from '@salon/shared';
+import {
+  VIP_ACTIVE_DRAFT_STATUS,
+  VIP_IN_PROGRESS_STATUSES,
+  VIP_QUOTA_WINDOW_DAYS,
+  VIP_REGIONS,
+  VIP_RESERVATION_TTL_MS,
+} from '@salon/shared';
 import { PrismaService } from '../infrastructure/database/prisma.service';
 
 type Db = Prisma.TransactionClient | PrismaService['client'];
+
+const inProgressStatuses: Array<(typeof VIP_IN_PROGRESS_STATUSES)[number]> = [
+  ...VIP_IN_PROGRESS_STATUSES,
+];
 
 const LIST_SUMMARY_SELECT = {
   id: true,
@@ -17,12 +27,12 @@ const LIST_SUMMARY_SELECT = {
   createdAt: true,
   updatedAt: true,
   requests: {
-    where: { status: { in: ['SUBMITTED', 'MANUAL_QUEUED', 'BALE_NOT_IMPLEMENTED'] as Array<'SUBMITTED' | 'MANUAL_QUEUED' | 'BALE_NOT_IMPLEMENTED'> } },
+    where: { status: { in: inProgressStatuses } },
     select: { id: true },
     orderBy: { createdAt: 'desc' as const },
     take: 1,
   },
-} as const;
+};
 
 @Injectable()
 export class VipRepository {
@@ -269,17 +279,35 @@ export class VipRepository {
     });
   }
 
-  currentOpenRequest(salonId: string, db: Db = this.prisma.client) {
+  findActiveDraft(salonId: string, db: Db = this.prisma.client) {
     return db.vipRequest.findFirst({
-      where: {
-        salonId,
-        status: { in: ['AWAITING_SAMPLE_WORK', 'SUBMITTED', 'MANUAL_QUEUED', 'BALE_NOT_IMPLEMENTED'] },
-      },
+      where: { salonId, status: VIP_ACTIVE_DRAFT_STATUS },
       orderBy: { createdAt: 'desc' },
       include: {
         salon: { select: { name: true } },
         list: { select: { name: true } },
         sampleWorks: { orderBy: { position: 'asc' } },
+      },
+    });
+  }
+
+  listInProgressRequests(salonId: string, take: number, db: Db = this.prisma.client) {
+    return db.vipRequest.findMany({
+      where: { salonId, status: { in: inProgressStatuses } },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take,
+      select: {
+        id: true,
+        salonId: true,
+        listId: true,
+        requestedCount: true,
+        geographicRange: true,
+        status: true,
+        reservedUntil: true,
+        submittedAt: true,
+        createdAt: true,
+        salon: { select: { name: true } },
+        list: { select: { name: true } },
       },
     });
   }
