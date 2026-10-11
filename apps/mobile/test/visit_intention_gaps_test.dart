@@ -157,6 +157,51 @@ AdminQueueItem _queue({
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  testWidgets('empty customer intention history does not reuse the follow-up empty copy', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          visitIntentionRepositoryProvider.overrideWithValue(_Intentions()),
+        ],
+        child: const MaterialApp(home: CustomerIntentionsScreen(customerId: 'c1')),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text(AppStrings.customerVisitIntentionsEmpty), findsOneWidget);
+    expect(find.text(AppStrings.followUpsCustomersEmpty), findsNothing);
+    expect(find.text(AppStrings.followUpsVipEmpty), findsNothing);
+    expect(find.text(AppStrings.markVisited), findsNothing);
+  });
+
+  testWidgets('customer intention history shows open and settled entries', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          visitIntentionRepositoryProvider.overrideWithValue(
+            _Intentions(
+              page: ItemPage(
+                items: [
+                  _intention(id: 'open-1', open: true),
+                  _intention(id: 'closed-1', open: false),
+                ],
+                hasMore: false,
+              ),
+            ),
+          ),
+        ],
+        child: const MaterialApp(home: CustomerIntentionsScreen(customerId: 'c1')),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text(AppStrings.customerVisitIntentionsEmpty), findsNothing);
+    expect(find.text(AppStrings.visitIntentionTitle), findsOneWidget);
+    expect(find.text(AppStrings.recordedVisitLabel), findsOneWidget);
+    expect(find.text(AppStrings.visitIntentionUnknownTime), findsNWidgets(2));
+    expect(find.byKey(const ValueKey('arrive-open-1')), findsOneWidget);
+    expect(find.byKey(const ValueKey('arrive-closed-1')), findsNothing);
+    expect(find.text(AppStrings.markVisited), findsOneWidget);
+  });
+
   testWidgets('an open intention row carries its id into record visit', (tester) async {
     String? seenCustomer;
     String? seenIntention;

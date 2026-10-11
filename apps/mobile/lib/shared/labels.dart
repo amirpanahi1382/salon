@@ -222,6 +222,8 @@ class AppStrings {
   static const openVipVisitIntentionExists =
       'برای این مخاطب VIP یک قصد مراجعهٔ باز از قبل ثبت شده است.';
   static const inspectVisitIntentions = 'قصدهای مراجعه';
+  static const customerVisitIntentionsEmpty =
+      'برای این مشتری قصد مراجعه‌ای ثبت نشده است.';
   static const visitIntentionTitle = 'قصد مراجعه/زمان توافق‌شده';
   static const visitIntentionUnknownTime = 'زمان توافق‌شده مشخص نیست';
   static const visitIntentionTimePassed = 'زمان توافق‌شده گذشته است';

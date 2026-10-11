@@ -522,7 +522,7 @@ class _CustomerIntentionsScreenState extends ConsumerState<CustomerIntentionsScr
                     children: [
                       if (_page!.items.isEmpty)
                         const EmptyStateView(
-                          title: AppStrings.followUpsCustomersEmpty,
+                          title: AppStrings.customerVisitIntentionsEmpty,
                           body: AppStrings.visitIntentionTitle,
                         ),
                       for (final item in _page!.items)
