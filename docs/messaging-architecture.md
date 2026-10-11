@@ -80,4 +80,4 @@ The worker executes **BALE** deliveries only. MANUAL rows are ignored. Legacy `M
 
 `BALE_SAFIR_API_ACCESS_KEY` and `BALE_SAFIR_BOT_ID` stay platform env. Never stored in DB, Flutter, audit, or logs.
 
-Platform admin bootstrap (optional, development only): `PLATFORM_ADMIN_EMAIL` + `PLATFORM_ADMIN_PASSWORD` (both or neither). Password is argon2id hashed into `platform_admins`. API startup never bootstraps when `NODE_ENV=production`. Local command: `pnpm db:bootstrap-admin` (prints the email, never the password).
+Platform admin bootstrap is explicit and development-only: `pnpm db:bootstrap-admin` with `PLATFORM_ADMIN_EMAIL` and `PLATFORM_ADMIN_PASSWORD` both set (or neither). It upserts one `platform_admins` row and prints the email, never the password. API and worker startup do not create or update that row, including when those variables are inherited and the process then fails to bind `API_PORT`. Production refuses the command. An inherited environment variable wins over `.env`, including `API_PORT` and `DATABASE_URL`. The command refuses database `salon` on port 5432 unless that invocation sets `PLATFORM_ADMIN_BOOTSTRAP_CONFIRM=salon`.

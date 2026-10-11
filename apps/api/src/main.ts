@@ -7,6 +7,7 @@ import { isSwaggerEnabled, loadConfig } from '@salon/config';
 import { AppModule } from './app.module';
 import { bindShutdownSignals } from './infrastructure/observability/shutdown';
 import { ShutdownState } from './infrastructure/observability/shutdown-state';
+import { listenApi } from './auth/listen-api';
 
 async function bootstrap(): Promise<void> {
   const config = loadConfig();
@@ -36,7 +37,9 @@ async function bootstrap(): Promise<void> {
     SwaggerModule.setup('docs', app, SwaggerModule.createDocument(app, swagger));
   }
 
-  await app.listen(config.API_PORT);
+  // Process environment wins over env files, so an inherited API_PORT is the bind port.
+  // listenApi performs no credential write before or after a failed bind.
+  await listenApi((port) => app.listen(port), config.API_PORT);
   const server = app.getHttpServer() as {
     timeout?: number;
     headersTimeout?: number;

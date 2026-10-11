@@ -5,8 +5,9 @@ export type PlatformAdminBootstrapResult =
   | { outcome: 'created' | 'updated'; email: string };
 
 /**
- * Idempotent platform-admin upsert from env. Never logs the password.
- * Production must not auto-create or update via this path.
+ * Explicit development upsert. Never logs the password.
+ * API startup must not call this: module init runs before the port binds.
+ * Operator command: `pnpm db:bootstrap-admin` (development only; production refuses).
  */
 export async function bootstrapPlatformAdmin(input: {
   prisma: PrismaClient;

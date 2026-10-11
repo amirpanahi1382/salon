@@ -4,6 +4,7 @@ import * as argon2 from 'argon2';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/infrastructure/database/prisma.service';
+import { createId } from '@salon/shared';
 import { HttpExceptionFilter } from '../src/infrastructure/http/http-exception.filter';
 
 const describeIfDb = process.env.DATABASE_URL ? describe : describe.skip;
@@ -157,24 +158,31 @@ describeIfDb('Salon and users (e2e)', () => {
       .set('Authorization', `Bearer ${staffToken}`)
       .expect(403);
 
-    const adminEmail = process.env.PLATFORM_ADMIN_EMAIL;
-    const adminPassword = process.env.PLATFORM_ADMIN_PASSWORD;
-    if (adminEmail && adminPassword) {
-      const adminLogin = await request(app.getHttpServer())
-        .post('/admin/auth/login')
-        .send({ email: adminEmail, password: adminPassword })
-        .expect(201);
-      const adminToken = adminLogin.body.accessToken as string;
-      expect(adminLogin.body.admin.email).toBe(adminEmail.trim().toLowerCase());
-      await request(app.getHttpServer())
-        .get('/admin/message-queue')
-        .set('Authorization', `Bearer ${adminToken}`)
-        .expect(200);
-      await request(app.getHttpServer())
-        .get('/auth/me')
-        .set('Authorization', `Bearer ${adminToken}`)
-        .expect(403);
-    }
+    const adminEmail = `salon-user-admin-${Date.now()}@example.test`;
+    const adminPassword = password;
+    await prisma.client.platformAdmin.create({
+      data: {
+        id: createId(),
+        email: adminEmail,
+        name: 'Platform Admin',
+        passwordHash: await argon2.hash(adminPassword, { type: argon2.argon2id }),
+        updatedAt: new Date(),
+      },
+    });
+    const adminLogin = await request(app.getHttpServer())
+      .post('/admin/auth/login')
+      .send({ email: adminEmail, password: adminPassword })
+      .expect(201);
+    const adminToken = adminLogin.body.accessToken as string;
+    expect(adminLogin.body.admin.email).toBe(adminEmail);
+    await request(app.getHttpServer())
+      .get('/admin/message-queue')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    await request(app.getHttpServer())
+      .get('/auth/me')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(403);
 
     await request(app.getHttpServer())
       .get('/users')

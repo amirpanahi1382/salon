@@ -49,11 +49,13 @@ pnpm db:migrate
 pnpm build:packages
 ```
 
-Optional development platform admin (never production; never commit a real password):
+Optional development platform admin (never production; never commit a real password). `pnpm dev:api` does not create or update this account:
 
 ```bash
-# Set PLATFORM_ADMIN_EMAIL and PLATFORM_ADMIN_PASSWORD in .env (both or neither)
-pnpm db:bootstrap-admin
+# Set PLATFORM_ADMIN_EMAIL and PLATFORM_ADMIN_PASSWORD in .env (both or neither).
+# An already-exported DATABASE_URL overrides .env. The command refuses database
+# salon on port 5432 unless this confirmation is set for that invocation.
+PLATFORM_ADMIN_BOOTSTRAP_CONFIRM=salon pnpm db:bootstrap-admin
 ```
 
 Starter service catalog for real registrations: Hair Service + Nail Service (skipped for `@example.test`).

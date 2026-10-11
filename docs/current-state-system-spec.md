@@ -52,7 +52,7 @@ Flutter → NestJS API → PostgreSQL/Prisma
 | JWT salon | `sub`, `tid`, `role`; `JWT_EXPIRES_IN` default 8h; no refresh |
 | Passwords | Argon2id |
 | `POST /admin/auth/login` `GET /admin/auth/me` | **Implemented** — `scp=platform`, no tid |
-| `pnpm db:bootstrap-admin` | **Implemented** — dev only; both env vars or neither; skipped in production bootstrap |
+| `pnpm db:bootstrap-admin` | **Implemented** — dev-only explicit upsert; both env vars or neither; refused in production and for database `salon` on port 5432 unless `PLATFORM_ADMIN_BOOTSTRAP_CONFIRM=salon`. API startup does not run it |
 | Logout | Client token clear |
 | Suspended salon / DISABLED user | Login and subsequent JWT checks fail closed |
 

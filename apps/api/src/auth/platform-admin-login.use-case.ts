@@ -1,10 +1,8 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as argon2 from 'argon2';
-import { UnauthenticatedError, createId } from '@salon/shared';
-import { AppConfigService } from '../infrastructure/config/app-config.service';
+import { UnauthenticatedError } from '@salon/shared';
 import { PrismaService } from '../infrastructure/database/prisma.service';
-import { bootstrapPlatformAdmin } from './bootstrap-platform-admin';
 import type { LoginDto } from './auth.dto';
 
 @Injectable()
@@ -14,12 +12,13 @@ export class PlatformAdminLoginUseCase implements OnModuleInit {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
-    private readonly config: AppConfigService,
   ) {}
 
   async onModuleInit(): Promise<void> {
+    // Timing hash only. Do not upsert platform admins here: module init runs before
+    // the HTTP port binds, so a failed listen would already have rotated a credential.
+    // Development upsert is the explicit command `pnpm db:bootstrap-admin`.
     await this.timingHash();
-    await this.bootstrapFromEnv();
   }
 
   private async timingHash(): Promise<string> {
@@ -29,17 +28,6 @@ export class PlatformAdminLoginUseCase implements OnModuleInit {
       });
     }
     return this.dummyPasswordHash;
-  }
-
-  private async bootstrapFromEnv(): Promise<void> {
-    await bootstrapPlatformAdmin({
-      prisma: this.prisma.client,
-      nodeEnv: this.config.values.NODE_ENV,
-      email: this.config.values.PLATFORM_ADMIN_EMAIL,
-      password: this.config.values.PLATFORM_ADMIN_PASSWORD,
-      hashPassword: (password) => argon2.hash(password, { type: argon2.argon2id }),
-      createId,
-    });
   }
 
   async execute(input: LoginDto) {
