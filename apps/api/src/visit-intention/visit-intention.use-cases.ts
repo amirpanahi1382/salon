@@ -133,6 +133,9 @@ export class CreateSalonVipVisitIntentionUseCase {
     const time = parseVisitIntentionTime(input.time);
     const disclosedDisplayName = parseDisclosedDisplayName(input.disclosedDisplayName);
     const disclosedPhone = parseDisclosedPhone(input.disclosedPhone);
+    if (!disclosedDisplayName && !disclosedPhone) {
+      throw new ValidationError('A salon VIP intention needs the name or phone the prospect gave the salon');
+    }
     const idempotencyKey = requireIdempotencyKey(rawKey);
     const requestHash = visitIntentionRequestHash(
       VISIT_INTENTION_CREATE_VIP_SALON,
@@ -164,6 +167,7 @@ export class CreateSalonVipVisitIntentionUseCase {
           vipRequestRecipientId: null,
           disclosedDisplayName,
           disclosedPhone,
+          contactBasis: 'SALON_SUPPLIED',
           time,
           reportChannel: 'INBOUND_TO_SALON',
           actor: { kind: 'SALON_USER', userId: principal.userId },
@@ -188,6 +192,18 @@ export class AdminCreateVipVisitIntentionUseCase {
     input: CreateAdminVipVisitIntentionDto,
     rawKey: string | string[] | undefined,
   ) {
+    const legacyTimeOnly =
+      input.disclosedDisplayName === undefined &&
+      input.disclosedPhone === undefined &&
+      input.prospectAuthorizedSharingWithSalon === undefined;
+    if (!legacyTimeOnly && input.prospectAuthorizedSharingWithSalon !== true) {
+      throw new ValidationError('The prospect must authorize sharing this name and phone with the salon');
+    }
+    const disclosedDisplayName = legacyTimeOnly ? null : parseDisclosedDisplayName(input.disclosedDisplayName);
+    const disclosedPhone = legacyTimeOnly ? null : parseDisclosedPhone(input.disclosedPhone);
+    if (!legacyTimeOnly && (!disclosedDisplayName || !disclosedPhone)) {
+      throw new ValidationError('Admin disclosure needs both the name and phone the prospect authorized for this salon');
+    }
     const request = await this.prisma.client.vipRequest.findUnique({
       where: { id: vipRequestId },
       select: { id: true, salonId: true },
@@ -197,7 +213,9 @@ export class AdminCreateVipVisitIntentionUseCase {
     const idempotencyKey = requireIdempotencyKey(rawKey);
     const requestHash = visitIntentionRequestHash(
       VISIT_INTENTION_CREATE_VIP_ADMIN,
-      `${request.id}:${recipientId}:${timeCanonical(time)}`,
+      legacyTimeOnly
+        ? `${request.id}:${recipientId}:${timeCanonical(time)}`
+        : `${request.id}:${recipientId}:${timeCanonical(time)}:${disclosedDisplayName}:${disclosedPhone}:authorized`,
     );
     return writeIntention({
       prisma: this.prisma,
@@ -223,8 +241,9 @@ export class AdminCreateVipVisitIntentionUseCase {
           sourceMessageRequestId: null,
           vipRequestId: request.id,
           vipRequestRecipientId: recipient.id,
-          disclosedDisplayName: null,
-          disclosedPhone: null,
+          disclosedDisplayName,
+          disclosedPhone,
+          contactBasis: legacyTimeOnly ? 'WITHHELD' : 'ADMIN_AUTHORIZED',
           time,
           reportChannel: 'REPORTED_DURING_MANUAL_HANDLING',
           actor: { kind: 'PLATFORM_ADMIN', adminId: admin.adminId },
@@ -232,6 +251,34 @@ export class AdminCreateVipVisitIntentionUseCase {
         });
       },
     });
+  }
+}
+
+@Injectable()
+export class ListSalonVipVisitIntentionsUseCase {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly intentions: VisitIntentionRepository,
+  ) {}
+
+  async execute(principal: AuthenticatedPrincipal, vipRequestId: string, query: ListVisitIntentionsQueryDto) {
+    const request = await this.prisma.client.vipRequest.findFirst({
+      where: { id: vipRequestId, salonId: principal.tenantId },
+      select: { id: true },
+    });
+    if (!request) throw new NotFoundError('VIP request not found');
+    const page = await this.intentions.listForVipRequest(
+      principal.tenantId,
+      request.id,
+      query.cursor,
+      query.limit ?? PAGE_DEFAULT,
+    );
+    const now = new Date();
+    return {
+      items: page.items.map((row) => toVisitIntentionReadModel(row, 'SALON', now)),
+      hasMore: page.hasMore,
+      nextCursor: page.nextCursor,
+    };
   }
 }
 
@@ -564,6 +611,7 @@ async function createCustomerIntention(
         vipRequestRecipientId: null,
         disclosedDisplayName: null,
         disclosedPhone: null,
+        contactBasis: 'WITHHELD',
         time,
         reportChannel: input.reportChannel,
         actor: input.actor,
@@ -588,10 +636,18 @@ async function correctTime(
 ) {
   const time = parseVisitIntentionTime(input.input.time);
   const expectedUpdatedAt = parseAbsoluteInstant(input.input.updatedAt, 'updatedAt');
+  const correctContact = input.input.correctDisclosedContact === true;
+  const disclosedDisplayName = correctContact
+    ? parseDisclosedDisplayName(input.input.disclosedDisplayName)
+    : null;
+  const disclosedPhone = correctContact ? parseDisclosedPhone(input.input.disclosedPhone) : null;
   const idempotencyKey = requireIdempotencyKey(input.rawKey);
+  const contactAttestation = input.input.prospectAuthorizedSharingWithSalon === true ? 'authorized' : 'unattested';
   const requestHash = visitIntentionRequestHash(
     VISIT_INTENTION_UPDATE,
-    `${input.id}:${timeCanonical(time)}:${expectedUpdatedAt.toISOString()}`,
+    correctContact
+      ? `${input.id}:${timeCanonical(time)}:${expectedUpdatedAt.toISOString()}:contact:${disclosedDisplayName ?? ''}:${disclosedPhone ?? ''}:${contactAttestation}`
+      : `${input.id}:${timeCanonical(time)}:${expectedUpdatedAt.toISOString()}`,
   );
   const now = new Date();
   try {
@@ -611,6 +667,13 @@ async function correctTime(
       }
       const locked = await intentions.lockById(tx, input.salonId, input.id);
       if (!locked) throw new NotFoundError('Visit intention not found');
+      if (
+        correctContact &&
+        locked.contactBasis === 'ADMIN_AUTHORIZED' &&
+        input.input.prospectAuthorizedSharingWithSalon !== true
+      ) {
+        throw new ValidationError('The prospect must authorize sharing the corrected name and phone with the salon');
+      }
       const corrected = await intentions.correctTime(tx, {
         salonId: input.salonId,
         id: input.id,
@@ -622,6 +685,19 @@ async function correctTime(
       });
       if (!corrected) {
         throw new ConflictError('Visit intention was updated by someone else');
+      }
+      if (correctContact) {
+        const current = await intentions.findById(input.salonId, input.id, tx);
+        if (!current) throw new NotFoundError('Visit intention not found');
+        await intentions.correctDisclosedContact(tx, {
+          salonId: input.salonId,
+          id: input.id,
+          disclosedDisplayName,
+          disclosedPhone,
+          actor: input.actor,
+          now,
+          previous: current,
+        });
       }
       const row = await intentions.findById(input.salonId, input.id, tx);
       if (!row) throw new NotFoundError('Visit intention not found');

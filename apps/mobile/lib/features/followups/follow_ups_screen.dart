@@ -273,9 +273,15 @@ class _FollowUpList extends StatelessWidget {
                         style: Theme.of(context).textTheme.titleMedium,
                       ),
                       if (vip) Text(AppStrings.vipReportedOrigin),
-                      if (vip && item.identityDisclosure != 'SALON_SUPPLIED')
+                      if (vip && item.identityDisclosure == 'WITHHELD')
                         const Text(AppStrings.vipIdentityWithheld),
-                      if (vip && item.disclosedPhone != null) LtrText(item.disclosedPhone!),
+                      if (vip && item.identityDisclosure == 'ADMIN_AUTHORIZED')
+                        const Text(AppStrings.reportedByPlatformAdmin),
+                      if (vip &&
+                          (item.identityDisclosure == 'SALON_SUPPLIED' ||
+                              item.identityDisclosure == 'ADMIN_AUTHORIZED') &&
+                          item.disclosedPhone != null)
+                        LtrText(item.disclosedPhone!),
                       Text(_reporter(item)),
                       Text(_time(item)),
                       Align(
@@ -324,6 +330,88 @@ class _VisitIntentionFormScreenState extends ConsumerState<VisitIntentionFormScr
   bool _saving = false;
   String? _error;
   final _idempotency = StableIdempotencyKey();
+  List<VisitIntention> _existing = const [];
+  bool _listLoading = false;
+  bool _listLoadingMore = false;
+  bool _listLoaded = false;
+  Object? _listError;
+  bool _hasMore = false;
+  String? _nextCursor;
+  int _listGeneration = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.vipRequest) {
+      Future<void>.microtask(_loadExisting);
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant VisitIntentionFormScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.vipRequest && oldWidget.targetId != widget.targetId) {
+      setState(() {
+        _existing = const [];
+        _listLoaded = false;
+        _listError = null;
+        _hasMore = false;
+        _nextCursor = null;
+      });
+      _loadExisting();
+    }
+  }
+
+  Future<void> _loadExisting({bool more = false}) async {
+    if (!widget.vipRequest) return;
+    if (more) {
+      if (_listLoadingMore || !_hasMore || _nextCursor == null) return;
+    } else {
+      _listGeneration += 1;
+    }
+    final generation = _listGeneration;
+    final cursor = more ? _nextCursor : null;
+    setState(() {
+      if (more) {
+        _listLoadingMore = true;
+      } else {
+        _listLoading = true;
+        _listError = null;
+      }
+    });
+    try {
+      final page = await ref.read(visitIntentionRepositoryProvider).listForVipRequest(
+            widget.targetId,
+            cursor: cursor,
+          );
+      if (!mounted || generation != _listGeneration) return;
+      setState(() {
+        if (more) {
+          final seen = _existing.map((item) => item.id).toSet();
+          _existing = [
+            ..._existing,
+            ...page.items.where((item) => seen.add(item.id)),
+          ];
+        } else {
+          _existing = page.items;
+        }
+        _hasMore = page.hasMore;
+        _nextCursor = page.nextCursor;
+        _listLoading = false;
+        _listLoadingMore = false;
+        _listLoaded = true;
+        _listError = null;
+      });
+    } catch (error) {
+      if (!mounted || generation != _listGeneration) return;
+      setState(() {
+        _listError = error;
+        _listLoading = false;
+        _listLoadingMore = false;
+        _listLoaded = true;
+      });
+    }
+  }
 
   @override
   void dispose() {
@@ -363,6 +451,10 @@ class _VisitIntentionFormScreenState extends ConsumerState<VisitIntentionFormScr
     }
     final name = _name.text.trim();
     final phone = _phone.text.trim();
+    if (widget.vipRequest && name.isEmpty && phone.isEmpty) {
+      setState(() => _error = AppStrings.vipContactRequired);
+      return;
+    }
     final signature = '${visitIntentionTimeSignature(time)}|$name|$phone';
     final idempotencyKey = _idempotency.forPayload(signature);
     setState(() {
@@ -405,6 +497,49 @@ class _VisitIntentionFormScreenState extends ConsumerState<VisitIntentionFormScr
       body: ListView(
         padding: const EdgeInsets.all(AppTokens.space16),
         children: [
+          if (widget.vipRequest) ...[
+            if (_listLoading && !_listLoaded) const LoadingSkeleton(lines: 2),
+            if (_listLoaded && _listError == null && _existing.isEmpty)
+              const Text(AppStrings.vipRequestIntentionsEmpty),
+            for (final item in _existing) ...[
+              Text(_intentionContactTitle(item), key: Key('vip-intention-${item.id}')),
+              if (item.identityDisclosure == 'WITHHELD')
+                const Text(AppStrings.vipIdentityWithheld),
+              if (item.identityDisclosure == 'ADMIN_AUTHORIZED')
+                const Text(AppStrings.reportedByPlatformAdmin),
+              if (item.identityDisclosure == 'SALON_SUPPLIED')
+                const Text(AppStrings.reportedBySalonInbound),
+              if (item.identityDisclosure == 'SALON_SUPPLIED' ||
+                  item.identityDisclosure == 'ADMIN_AUTHORIZED')
+                if (item.disclosedPhone != null) LtrText(item.disclosedPhone!),
+              Text(_precisionLabel(item.timePrecision)),
+              const SizedBox(height: AppTokens.space8),
+            ],
+            if (_listError != null) ...[
+              Text(friendlyError(_listError!)),
+              Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: TextButton(
+                  onPressed: () => _loadExisting(more: _existing.isNotEmpty && _hasMore),
+                  child: const Text(AppStrings.retry),
+                ),
+              ),
+            ],
+            if (_hasMore && _listError == null)
+              TextButton(
+                key: const Key('vip-request-intentions-more'),
+                onPressed: _listLoading || _listLoadingMore ? null : () => _loadExisting(more: true),
+                child: _listLoadingMore
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text(AppStrings.loadMore),
+              ),
+            if (_listLoaded && _listError == null && _existing.isNotEmpty && !_hasMore && !_listLoadingMore)
+              const Text(AppStrings.vipRequestIntentionsEnd),
+          ],
           const Text(AppStrings.visitIntentionTitle),
           const SizedBox(height: AppTokens.space8),
           SegmentedButton<String>(
@@ -440,10 +575,12 @@ class _VisitIntentionFormScreenState extends ConsumerState<VisitIntentionFormScr
             const SizedBox(height: AppTokens.space16),
             const Text(AppStrings.vipDisclosedHint),
             TextField(
+              key: const Key('vip-disclosed-name'),
               controller: _name,
               decoration: const InputDecoration(labelText: AppStrings.firstName),
             ),
             TextField(
+              key: const Key('vip-disclosed-phone'),
               controller: _phone,
               keyboardType: TextInputType.phone,
               decoration: const InputDecoration(labelText: AppStrings.phoneNumber),
@@ -731,9 +868,34 @@ class _VipArrivalCustomerScreenState extends ConsumerState<VipArrivalCustomerScr
   }
 }
 
+String _intentionContactTitle(VisitIntention item) {
+  final name = item.disclosedDisplayName?.trim();
+  if ((item.identityDisclosure == 'SALON_SUPPLIED' ||
+          item.identityDisclosure == 'ADMIN_AUTHORIZED') &&
+      name != null &&
+      name.isNotEmpty) {
+    return name;
+  }
+  return 'مخاطب VIP';
+}
+
+String _precisionLabel(String precision) {
+  switch (precision) {
+    case 'DATE':
+      return AppStrings.timeDateOnly;
+    case 'INSTANT':
+      return AppStrings.timeInstant;
+    default:
+      return AppStrings.visitIntentionUnknownTime;
+  }
+}
+
 String _vipTitle(FollowUpItem item) {
   final name = item.disclosedDisplayName?.trim();
-  if (item.identityDisclosure == 'SALON_SUPPLIED' && name != null && name.isNotEmpty) {
+  if ((item.identityDisclosure == 'SALON_SUPPLIED' ||
+          item.identityDisclosure == 'ADMIN_AUTHORIZED') &&
+      name != null &&
+      name.isNotEmpty) {
     return name;
   }
   return 'مخاطب VIP';

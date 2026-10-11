@@ -78,6 +78,8 @@ class _AdminIntentionRetry extends VisitIntentionRepository {
   _AdminIntentionRetry() : super(_client());
 
   final List<String> keys = [];
+  String? lastName;
+  String? lastPhone;
 
   @override
   Future<VisitIntention> createAdminVip({
@@ -85,8 +87,13 @@ class _AdminIntentionRetry extends VisitIntentionRepository {
     required String recipientId,
     required Map<String, dynamic> time,
     required String idempotencyKey,
+    required String disclosedDisplayName,
+    required String disclosedPhone,
+    required bool prospectAuthorizedSharingWithSalon,
   }) async {
     keys.add(idempotencyKey);
+    lastName = disclosedDisplayName;
+    lastPhone = disclosedPhone;
     if (keys.length == 1) throw const NetworkException();
     if (keys.toSet().length != 1) {
       throw const ApiException(
@@ -439,17 +446,48 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text(AppStrings.recordVisitIntention));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text(AppStrings.timeUnknown));
+    await _submitAdminDisclosure(tester);
     await tester.pumpAndSettle();
     expect(find.text(AppStrings.networkError), findsOneWidget);
-    await tester.tap(find.text(AppStrings.recordVisitIntention));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text(AppStrings.timeUnknown));
+    expect(intentions.lastName, 'نگار');
+    expect(intentions.lastPhone, '09120000000');
+    expect(intentions.lastName, isNot('مینا'));
+    expect(intentions.lastPhone, isNot('09121111111'));
+    await _submitAdminDisclosure(tester);
     await tester.pumpAndSettle();
     expect(intentions.keys, hasLength(2));
     expect(intentions.keys.first, intentions.keys.last);
     expect(find.text('An open visit intention already exists for this VIP recipient'), findsNothing);
   });
+
+  testWidgets('admin disclosure requires an explicit sharing confirmation', (tester) async {
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    final intentions = _AdminIntentionRetry();
+    await tester.pumpWidget(const MaterialApp(home: AdminVipIntentionDialog()));
+    await tester.pumpAndSettle();
+    expect(find.text('مینا'), findsNothing);
+    expect(find.text('09121111111'), findsNothing);
+    await tester.enterText(find.byKey(const Key('admin-disclosed-name')), 'نگار');
+    await tester.enterText(find.byKey(const Key('admin-disclosed-phone')), '09120000000');
+    await tester.tap(find.widgetWithText(FilledButton, AppStrings.recordVisitIntention));
+    await tester.pumpAndSettle();
+    expect(find.text(AppStrings.adminShareConfirm), findsOneWidget);
+    expect(find.text(AppStrings.adminShareConfirmHint), findsWidgets);
+    expect(intentions.keys, isEmpty);
+  });
+}
+
+Future<void> _submitAdminDisclosure(WidgetTester tester) async {
+  await tester.tap(find.text(AppStrings.recordVisitIntention));
+  await tester.pumpAndSettle();
+  await tester.tap(find.text(AppStrings.timeUnknown));
+  await tester.pumpAndSettle();
+  await tester.enterText(find.byKey(const Key('admin-disclosed-name')), 'نگار');
+  await tester.enterText(find.byKey(const Key('admin-disclosed-phone')), '09120000000');
+  await tester.tap(find.byKey(const Key('admin-share-confirm')));
+  await tester.pumpAndSettle();
+  await tester.tap(find.widgetWithText(FilledButton, AppStrings.recordVisitIntention));
+  await tester.pumpAndSettle();
 }

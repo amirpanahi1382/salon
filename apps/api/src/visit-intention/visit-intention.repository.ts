@@ -8,6 +8,7 @@ type VisitIntentionReportChannel =
   | 'TOLD_PLATFORM_ADMIN'
   | 'INBOUND_TO_SALON'
   | 'REPORTED_DURING_MANUAL_HANDLING';
+type VisitIntentionContactBasis = 'WITHHELD' | 'SALON_SUPPLIED' | 'ADMIN_AUTHORIZED';
 import { createId, ValidationError } from '@salon/shared';
 import { PrismaService } from '../infrastructure/database/prisma.service';
 import {
@@ -39,6 +40,7 @@ export type VisitIntentionRecord = {
   vipRequestRecipientId: string | null;
   disclosedDisplayName: string | null;
   disclosedPhone: string | null;
+  contactBasis: VisitIntentionContactBasis;
   timePrecision: VisitIntentionTimePrecision;
   agreedDate: Date | null;
   agreedInstant: Date | null;
@@ -65,6 +67,7 @@ const intentionSelect = {
   vipRequestRecipientId: true,
   disclosedDisplayName: true,
   disclosedPhone: true,
+  contactBasis: true,
   timePrecision: true,
   agreedDate: true,
   agreedInstant: true,
@@ -118,6 +121,7 @@ export class VisitIntentionRepository {
       vipRequestRecipientId: string | null;
       disclosedDisplayName: string | null;
       disclosedPhone: string | null;
+      contactBasis: VisitIntentionContactBasis;
       time: ParsedVisitIntentionTime;
       reportChannel: VisitIntentionReportChannel;
       actor: WriteActor;
@@ -137,6 +141,7 @@ export class VisitIntentionRepository {
         vipRequestRecipientId: input.vipRequestRecipientId,
         disclosedDisplayName: input.disclosedDisplayName,
         disclosedPhone: input.disclosedPhone,
+        contactBasis: input.contactBasis,
         timePrecision: input.time.precision,
         agreedDate: input.time.precision === 'DATE' ? agreedDateAsUtcNoon(input.time.agreedDate) : null,
         agreedInstant: input.time.precision === 'INSTANT' ? input.time.agreedInstant : null,
@@ -149,6 +154,22 @@ export class VisitIntentionRepository {
         updatedAt: input.now,
       },
     });
+    if (input.subject === 'VIP_PROSPECT') {
+      await tx.visitIntentionContactRevision.create({
+        data: {
+          id: createId(),
+          visitIntentionId: input.id,
+          salonId: input.salonId,
+          revision: 1,
+          contactBasis: input.contactBasis,
+          disclosedDisplayName: input.disclosedDisplayName,
+          disclosedPhone: input.disclosedPhone,
+          recordedByUserId: userId,
+          recordedByPlatformAdminId: adminId,
+          createdAt: input.now,
+        },
+      });
+    }
     await tx.auditLog.create({
       data: {
         id: createId(),
@@ -165,6 +186,7 @@ export class VisitIntentionRepository {
           vipRequestRecipientId: input.vipRequestRecipientId,
           sourceMessageRequestId: input.sourceMessageRequestId,
           reportChannel: input.reportChannel,
+          contactBasis: input.contactBasis,
           timePrecision: input.time.precision,
           agreedDate: input.time.precision === 'DATE' ? input.time.agreedDate : null,
           agreedInstant: input.time.precision === 'INSTANT' ? input.time.agreedInstant.toISOString() : null,
@@ -223,6 +245,121 @@ export class VisitIntentionRepository {
       },
     });
     return true;
+  }
+
+  async correctDisclosedContact(
+    tx: Prisma.TransactionClient,
+    input: {
+      salonId: string;
+      id: string;
+      disclosedDisplayName: string | null;
+      disclosedPhone: string | null;
+      actor: WriteActor;
+      now: Date;
+      previous: VisitIntentionRecord;
+    },
+  ): Promise<number> {
+    const basis = input.previous.contactBasis;
+    if (basis === 'WITHHELD') {
+      throw new ValidationError('A withheld intention cannot gain contact details through correction');
+    }
+    if (basis === 'SALON_SUPPLIED' && input.actor.kind !== 'SALON_USER') {
+      throw new ValidationError('Only the salon can correct contact details it recorded');
+    }
+    if (basis === 'ADMIN_AUTHORIZED' && input.actor.kind !== 'PLATFORM_ADMIN') {
+      throw new ValidationError('Only Platform Admin can correct contact details it disclosed');
+    }
+    if (basis === 'SALON_SUPPLIED' && !input.disclosedDisplayName && !input.disclosedPhone) {
+      throw new ValidationError('A salon VIP intention needs the name or phone the prospect gave the salon');
+    }
+    if (basis === 'ADMIN_AUTHORIZED' && (!input.disclosedDisplayName || !input.disclosedPhone)) {
+      throw new ValidationError('Admin disclosure needs both the name and phone the prospect authorized for this salon');
+    }
+    const latest = await tx.visitIntentionContactRevision.aggregate({
+      where: { visitIntentionId: input.id, salonId: input.salonId },
+      _max: { revision: true },
+    });
+    const revision = (latest._max.revision ?? 1) + 1;
+    const userId = input.actor.kind === 'SALON_USER' ? input.actor.userId : null;
+    const adminId = input.actor.kind === 'PLATFORM_ADMIN' ? input.actor.adminId : null;
+    await tx.visitIntentionContactRevision.create({
+      data: {
+        id: createId(),
+        visitIntentionId: input.id,
+        salonId: input.salonId,
+        revision,
+        contactBasis: basis,
+        disclosedDisplayName: input.disclosedDisplayName,
+        disclosedPhone: input.disclosedPhone,
+        recordedByUserId: userId,
+        recordedByPlatformAdminId: adminId,
+        createdAt: input.now,
+      },
+    });
+    const updated = await tx.visitIntention.updateMany({
+      where: { id: input.id, salonId: input.salonId, contactBasis: basis },
+      data: {
+        disclosedDisplayName: input.disclosedDisplayName,
+        disclosedPhone: input.disclosedPhone,
+        updatedByUserId: userId,
+        updatedByPlatformAdminId: adminId,
+        updatedAt: input.now,
+      },
+    });
+    if (updated.count !== 1) {
+      throw new ValidationError('Visit intention contact could not be corrected');
+    }
+    await tx.auditLog.create({
+      data: {
+        id: createId(),
+        tenantId: input.salonId,
+        actorId: userId ?? adminId,
+        action: 'VISIT_INTENTION_CONTACT_CORRECTED',
+        resource: 'visit_intention',
+        resourceId: input.id,
+        result: 'SUCCESS',
+        metadata: {
+          contactBasis: basis,
+          revision,
+        },
+      },
+    });
+    return revision;
+  }
+
+  async listForVipRequest(
+    salonId: string,
+    vipRequestId: string,
+    cursor: string | undefined,
+    limit = PAGE_DEFAULT,
+  ): Promise<ListPage<VisitIntentionRecord>> {
+    const parsed = decodeCursor(cursor, 3);
+    if (parsed && parsed[0] !== vipRequestId) throw new ValidationError('Invalid cursor');
+    const cursorDate = parsed ? new Date(parsed[1]!) : undefined;
+    const cursorId = parsed ? parseCursorUuid(parsed[2]!) : undefined;
+    if (parsed && (Number.isNaN(cursorDate!.getTime()) || cursorDate!.toISOString() !== parsed[1])) {
+      throw new ValidationError('Invalid cursor');
+    }
+    const rows = await this.prisma.client.visitIntention.findMany({
+      where: {
+        salonId,
+        vipRequestId,
+        ...(cursorDate && cursorId
+          ? {
+              OR: [
+                { createdAt: { lt: cursorDate } },
+                { createdAt: cursorDate, id: { lt: cursorId } },
+              ],
+            }
+          : {}),
+      },
+      select: intentionSelect,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: limit + 1,
+    });
+    return toListPage(rows, limit, (row) =>
+      encodeCursor([vipRequestId, row.createdAt.toISOString(), row.id]),
+    );
   }
 
   async linkVisit(
@@ -320,6 +457,7 @@ export class VisitIntentionRepository {
           NULL::uuid AS "vipRequestId",
           NULL::text AS "disclosedDisplayName",
           NULL::text AS "disclosedPhone",
+          NULL::text AS "contactBasis",
           'RECORD_VISIT'::text AS "nextAction",
           0 AS sort_group,
           to_char(rc.expected_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS sort_value
@@ -345,6 +483,7 @@ export class VisitIntentionRepository {
           (vi.time_precision::text = 'INSTANT' AND vi.agreed_instant < ${now}::timestamptz),
           vi.source_message_request_id,
           NULL::uuid,
+          NULL::text,
           NULL::text,
           NULL::text,
           'RECORD_VISIT'::text,
@@ -387,8 +526,15 @@ export class VisitIntentionRepository {
           (vi.time_precision::text = 'INSTANT' AND vi.agreed_instant < ${now}::timestamptz) AS "agreedTimePassed",
           NULL::uuid AS "sourceMessageRequestId",
           vi.vip_request_id AS "vipRequestId",
-          vi.disclosed_display_name AS "disclosedDisplayName",
-          vi.disclosed_phone AS "disclosedPhone",
+          CASE
+            WHEN vi.contact_basis::text IN ('SALON_SUPPLIED', 'ADMIN_AUTHORIZED') THEN vi.disclosed_display_name
+            ELSE NULL
+          END AS "disclosedDisplayName",
+          CASE
+            WHEN vi.contact_basis::text IN ('SALON_SUPPLIED', 'ADMIN_AUTHORIZED') THEN vi.disclosed_phone
+            ELSE NULL
+          END AS "disclosedPhone",
+          vi.contact_basis::text AS "contactBasis",
           'SELECT_CUSTOMER_THEN_RECORD_VISIT'::text AS "nextAction",
           CASE vi.time_precision::text WHEN 'INSTANT' THEN 0 WHEN 'DATE' THEN 1 ELSE 2 END AS sort_group,
           CASE vi.time_precision::text
@@ -490,13 +636,18 @@ type FollowUpSqlRow = {
   vipRequestId: string | null;
   disclosedDisplayName: string | null;
   disclosedPhone: string | null;
+  contactBasis: string | null;
   nextAction: string;
   sort_group: number;
   sort_value: string;
 };
 
+function authorizedContact(basis: string | null | undefined) {
+  return basis === 'SALON_SUPPLIED' || basis === 'ADMIN_AUTHORIZED';
+}
+
 function mapFollowUpRow(row: FollowUpSqlRow) {
-  const disclosed = Boolean(row.disclosedDisplayName || row.disclosedPhone);
+  const showContact = row.kind === 'VIP_VISIT_INTENTION' && authorizedContact(row.contactBasis);
   return {
     kind: row.kind,
     id: row.id,
@@ -512,9 +663,10 @@ function mapFollowUpRow(row: FollowUpSqlRow) {
     agreedTimePassed: row.timeKnown ? row.agreedTimePassed : false,
     sourceMessageRequestId: row.sourceMessageRequestId,
     vipRequestId: row.vipRequestId,
-    identityDisclosure: row.kind === 'VIP_VISIT_INTENTION' ? (disclosed ? 'SALON_SUPPLIED' : 'WITHHELD') : null,
-    disclosedDisplayName: row.kind === 'VIP_VISIT_INTENTION' ? row.disclosedDisplayName : null,
-    disclosedPhone: row.kind === 'VIP_VISIT_INTENTION' ? row.disclosedPhone : null,
+    identityDisclosure:
+      row.kind === 'VIP_VISIT_INTENTION' ? (showContact ? row.contactBasis : 'WITHHELD') : null,
+    disclosedDisplayName: showContact ? row.disclosedDisplayName : null,
+    disclosedPhone: showContact ? row.disclosedPhone : null,
     nextAction: row.nextAction,
     sortGroup: row.sort_group,
     sortValue: row.sort_value,
@@ -527,14 +679,13 @@ export function toVisitIntentionReadModel(
   now: Date,
 ) {
   const timeKnown = row.timePrecision === 'INSTANT';
-  const disclosed = Boolean(row.disclosedDisplayName || row.disclosedPhone);
-  const salonSafe = audience === 'SALON';
+  const showContact = row.subject === 'VIP_PROSPECT' && authorizedContact(row.contactBasis);
   return {
     id: row.id,
     subject: row.subject,
     customerId: row.customerId,
     vipRequestId: row.vipRequestId,
-    ...(salonSafe ? {} : { vipRequestRecipientId: row.vipRequestRecipientId }),
+    ...(audience === 'SALON' ? {} : { vipRequestRecipientId: row.vipRequestRecipientId }),
     reportedBy: row.createdByPlatformAdminId ? 'PLATFORM_ADMIN' : 'SALON_USER',
     reportChannel: row.reportChannel,
     reportedAt: row.createdAt.toISOString(),
@@ -544,9 +695,9 @@ export function toVisitIntentionReadModel(
     agreedInstant: row.agreedInstant?.toISOString() ?? null,
     agreedTimePassed: timeKnown && row.agreedInstant !== null && row.agreedInstant.getTime() < now.getTime(),
     sourceMessageRequestId: row.sourceMessageRequestId,
-    identityDisclosure: row.subject === 'VIP_PROSPECT' ? (disclosed ? 'SALON_SUPPLIED' : 'WITHHELD') : null,
-    disclosedDisplayName: salonSafe || row.subject === 'VIP_PROSPECT' ? row.disclosedDisplayName : null,
-    disclosedPhone: salonSafe || row.subject === 'VIP_PROSPECT' ? row.disclosedPhone : null,
+    identityDisclosure: row.subject === 'VIP_PROSPECT' ? (showContact ? row.contactBasis : 'WITHHELD') : null,
+    disclosedDisplayName: showContact ? row.disclosedDisplayName : null,
+    disclosedPhone: showContact ? row.disclosedPhone : null,
     linkedVisitId: row.linkedVisitId,
     linkedCustomerId: row.linkedCustomerId,
     operationallyOpen: row.linkedVisitId === null,

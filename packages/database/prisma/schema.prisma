@@ -134,6 +134,14 @@ enum VisitIntentionReportChannel {
   REPORTED_DURING_MANUAL_HANDLING
 }
 
+/// Why contact details may be shown to the salon. WITHHELD is not consent.
+/// Existing rows stay WITHHELD. A later correction cannot promote WITHHELD to authorized.
+enum VisitIntentionContactBasis {
+  WITHHELD
+  SALON_SUPPLIED
+  ADMIN_AUTHORIZED
+}
+
 model Salon {
   id        String      @id @db.Uuid
   name      String
@@ -794,6 +802,8 @@ model VisitIntention {
   vipRequestRecipient      VipRequestRecipient?         @relation(fields: [vipRequestRecipientId, vipRequestId], references: [id, vipRequestId], onDelete: Restrict)
   disclosedDisplayName     String?                      @map("disclosed_display_name")
   disclosedPhone           String?                      @map("disclosed_phone")
+  contactBasis             VisitIntentionContactBasis   @default(WITHHELD) @map("contact_basis")
+  contactRevisions         VisitIntentionContactRevision[]
   timePrecision            VisitIntentionTimePrecision  @map("time_precision")
   agreedDate               DateTime?                    @map("agreed_date") @db.Date
   agreedInstant            DateTime?                    @map("agreed_instant") @db.Timestamptz(3)
@@ -816,5 +826,26 @@ model VisitIntention {
   @@unique([id, salonId])
   @@index([salonId, customerId, createdAt, id])
   @@index([salonId, subject, createdAt, id])
+  @@index([salonId, vipRequestId, createdAt, id])
   @@map("visit_intentions")
+}
+
+/// Each version of disclosed VIP contact details. Revision 1 is the original claim.
+/// Audit logs do not copy these name or phone values.
+model VisitIntentionContactRevision {
+  id                        String                     @id @db.Uuid
+  visitIntentionId          String                     @map("visit_intention_id") @db.Uuid
+  salonId                   String                     @map("salon_id") @db.Uuid
+  visitIntention            VisitIntention             @relation(fields: [visitIntentionId, salonId], references: [id, salonId], onDelete: Restrict)
+  revision                  Int
+  contactBasis              VisitIntentionContactBasis @map("contact_basis")
+  disclosedDisplayName      String?                    @map("disclosed_display_name")
+  disclosedPhone            String?                    @map("disclosed_phone")
+  recordedByUserId          String?                    @map("recorded_by_user_id") @db.Uuid
+  recordedByPlatformAdminId String?                    @map("recorded_by_platform_admin_id") @db.Uuid
+  createdAt                 DateTime                   @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@unique([visitIntentionId, revision])
+  @@index([salonId, visitIntentionId, revision])
+  @@map("visit_intention_contact_revisions")
 }

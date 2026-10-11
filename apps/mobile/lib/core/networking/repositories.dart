@@ -1282,13 +1282,35 @@ class VisitIntentionRepository {
     required String recipientId,
     required Map<String, dynamic> time,
     required String idempotencyKey,
+    required String disclosedDisplayName,
+    required String disclosedPhone,
+    required bool prospectAuthorizedSharingWithSalon,
   }) async {
     final data = await _api.post(
       '/admin/vip-requests/$vipRequestId/recipients/$recipientId/visit-intentions',
-      data: {'time': time},
+      data: {
+        'time': time,
+        'disclosedDisplayName': disclosedDisplayName,
+        'disclosedPhone': disclosedPhone,
+        'prospectAuthorizedSharingWithSalon': prospectAuthorizedSharingWithSalon,
+      },
       headers: {'Idempotency-Key': idempotencyKey},
     ) as Map<String, dynamic>;
     return VisitIntention.fromJson(data);
+  }
+
+  Future<ItemPage<VisitIntention>> listForVipRequest(
+    String vipRequestId, {
+    String? cursor,
+  }) async {
+    final data = await _api.get(
+      '/vip/requests/$vipRequestId/visit-intentions',
+      query: {
+        'limit': '20',
+        if (cursor != null && cursor.isNotEmpty) 'cursor': cursor,
+      },
+    );
+    return parseItemPage(data, VisitIntention.fromJson);
   }
 
   Future<VisitIntention> arrive({

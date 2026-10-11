@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:salon_mobile/core/widgets/app_widgets.dart';
 import 'package:salon_mobile/core/errors/api_exception.dart';
 import 'package:salon_mobile/core/networking/api_client.dart';
 import 'package:salon_mobile/core/networking/repositories.dart';
@@ -51,7 +52,7 @@ Customer _customer(String id, String first, String phone) {
 }
 
 class _Intentions extends VisitIntentionRepository {
-  _Intentions({this.page, this.onCreate, this.onAdmin}) : super(_client());
+  _Intentions({this.page, this.onCreate, this.onAdmin, this.vipItems = const []}) : super(_client());
 
   final ItemPage<VisitIntention>? page;
   final Future<VisitIntention> Function(String key, Map<String, dynamic> time)? onCreate;
@@ -62,6 +63,9 @@ class _Intentions extends VisitIntentionRepository {
     String? sourceMessageRequestId,
   })? onAdmin;
   final List<String> keys = [];
+  String? lastVipName;
+  String? lastVipPhone;
+  final List<VisitIntention> vipItems;
 
   @override
   Future<ItemPage<VisitIntention>> listForCustomer(String customerId, {String? cursor}) async {
@@ -88,7 +92,17 @@ class _Intentions extends VisitIntentionRepository {
     String? disclosedPhone,
   }) {
     keys.add(idempotencyKey);
+    lastVipName = disclosedDisplayName;
+    lastVipPhone = disclosedPhone;
     return onCreate!(idempotencyKey, time);
+  }
+
+  @override
+  Future<ItemPage<VisitIntention>> listForVipRequest(
+    String vipRequestId, {
+    String? cursor,
+  }) async {
+    return ItemPage(items: vipItems, hasMore: false);
   }
 
   @override
@@ -569,4 +583,194 @@ void main() {
     expect(find.text(AppStrings.recordCustomerIntentionToldToAdmin), findsNothing);
     expect(find.text(AppStrings.recordAgreedReturn), findsNothing);
   });
+
+  testWidgets('salon VIP intention requires a prospect-supplied name or phone', (tester) async {
+    final repo = _Intentions(
+      onCreate: (key, time) async => VisitIntention(
+        id: 'vip-1',
+        subject: 'VIP_PROSPECT',
+        reportedBy: 'SALON_USER',
+        reportChannel: 'INBOUND_TO_SALON',
+        reportedAt: DateTime.utc(2026, 10, 11),
+        timePrecision: 'UNKNOWN',
+        timeKnown: false,
+        operationallyOpen: true,
+        updatedAt: DateTime.utc(2026, 10, 11),
+        identityDisclosure: 'SALON_SUPPLIED',
+      ),
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [visitIntentionRepositoryProvider.overrideWithValue(repo)],
+        child: const MaterialApp(
+          home: VisitIntentionFormScreen(targetId: 'request-1', vipRequest: true),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('save-visit-intention')));
+    await tester.pumpAndSettle();
+    expect(find.text(AppStrings.vipContactRequired), findsOneWidget);
+    expect(repo.keys, isEmpty);
+
+    await tester.enterText(find.byKey(const Key('vip-disclosed-phone')), '09123334444');
+    await tester.tap(find.byKey(const Key('save-visit-intention')));
+    await tester.pumpAndSettle();
+    expect(repo.lastVipPhone, '09123334444');
+    expect(repo.lastVipName, isNull);
+    expect(repo.keys, hasLength(1));
+  });
+
+  testWidgets('salon request detail shows authorized contact and hides withheld identity', (tester) async {
+    final repo = _Intentions(
+      vipItems: [
+        VisitIntention(
+          id: 'admin-1',
+          subject: 'VIP_PROSPECT',
+          reportedBy: 'PLATFORM_ADMIN',
+          reportChannel: 'REPORTED_DURING_MANUAL_HANDLING',
+          reportedAt: DateTime.utc(2026, 10, 11),
+          timePrecision: 'DATE',
+          timeKnown: false,
+          operationallyOpen: true,
+          updatedAt: DateTime.utc(2026, 10, 11),
+          identityDisclosure: 'ADMIN_AUTHORIZED',
+          disclosedDisplayName: 'نگار',
+          disclosedPhone: '09120000000',
+        ),
+        VisitIntention(
+          id: 'legacy-1',
+          subject: 'VIP_PROSPECT',
+          reportedBy: 'PLATFORM_ADMIN',
+          reportChannel: 'REPORTED_DURING_MANUAL_HANDLING',
+          reportedAt: DateTime.utc(2026, 10, 10),
+          timePrecision: 'UNKNOWN',
+          timeKnown: false,
+          operationallyOpen: true,
+          updatedAt: DateTime.utc(2026, 10, 10),
+          identityDisclosure: 'WITHHELD',
+          disclosedDisplayName: 'فهرست',
+          disclosedPhone: '09129998877',
+        ),
+      ],
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [visitIntentionRepositoryProvider.overrideWithValue(repo)],
+        child: const MaterialApp(
+          home: VisitIntentionFormScreen(targetId: 'request-1', vipRequest: true),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('نگار'), findsOneWidget);
+    expect(find.text('09120000000'), findsOneWidget);
+    expect(find.text(AppStrings.reportedByPlatformAdmin), findsOneWidget);
+    expect(find.text(AppStrings.timeDateOnly), findsWidgets);
+    expect(find.text(AppStrings.vipIdentityWithheld), findsOneWidget);
+    expect(find.text('فهرست'), findsNothing);
+    expect(find.text('09129998877'), findsNothing);
+    expect(find.text(AppStrings.vipRequestIntentionsEnd), findsOneWidget);
+    expect(find.byKey(const Key('vip-request-intentions-more')), findsNothing);
+  });
+
+  testWidgets('VIP request intentions append the next page and ignore a stale screen', (tester) async {
+    final first = Completer<ItemPage<VisitIntention>>();
+    final second = Completer<ItemPage<VisitIntention>>();
+    final slow = Completer<ItemPage<VisitIntention>>();
+    final fresh = Completer<ItemPage<VisitIntention>>();
+    var calls = 0;
+    final repo = _CursorIntentions((cursor) {
+      calls += 1;
+      if (calls == 1) return first.future;
+      if (calls == 2) return second.future;
+      if (calls == 3) return slow.future;
+      return fresh.future;
+    });
+    Future<void> pumpScreen(String targetId) {
+      return tester.pumpWidget(
+        ProviderScope(
+          overrides: [visitIntentionRepositoryProvider.overrideWithValue(repo)],
+          child: MaterialApp(home: VisitIntentionFormScreen(targetId: targetId, vipRequest: true)),
+        ),
+      );
+    }
+
+    await pumpScreen('request-1');
+    await tester.pump();
+    expect(find.byType(LoadingSkeleton), findsOneWidget);
+    expect(find.text(AppStrings.vipRequestIntentionsEmpty), findsNothing);
+    first.complete(ItemPage(items: [_listed('one', 'صفحه اول')], hasMore: true, nextCursor: 'cursor-2'));
+    await tester.pumpAndSettle();
+    expect(find.text('صفحه اول'), findsOneWidget);
+    expect(find.text(AppStrings.vipRequestIntentionsEnd), findsNothing);
+
+    await tester.tap(find.byKey(const Key('vip-request-intentions-more')));
+    await tester.pump();
+    second.complete(ItemPage(items: [_listed('two', 'صفحه دوم')], hasMore: false));
+    await tester.pumpAndSettle();
+    expect(find.text('صفحه اول'), findsOneWidget);
+    expect(find.text('صفحه دوم'), findsOneWidget);
+    expect(find.text(AppStrings.vipRequestIntentionsEnd), findsOneWidget);
+    expect(find.byKey(const Key('vip-request-intentions-more')), findsNothing);
+    expect(repo.cursors, [null, 'cursor-2']);
+
+    await pumpScreen('request-2');
+    await tester.pump();
+    await pumpScreen('request-3');
+    await tester.pump();
+    fresh.complete(ItemPage(items: [_listed('fresh', 'تازه')], hasMore: false));
+    await tester.pumpAndSettle();
+    slow.complete(ItemPage(items: [_listed('stale', 'کهنه')], hasMore: false));
+    await tester.pumpAndSettle();
+    expect(find.text('تازه'), findsOneWidget);
+    expect(find.text('کهنه'), findsNothing);
+    expect(find.text('صفحه اول'), findsNothing);
+  });
+
+  testWidgets('VIP request intentions keep an error distinct from an empty list', (tester) async {
+    final repo = _CursorIntentions((cursor) async => throw Exception('boom'));
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [visitIntentionRepositoryProvider.overrideWithValue(repo)],
+        child: const MaterialApp(home: VisitIntentionFormScreen(targetId: 'request-1', vipRequest: true)),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text(AppStrings.genericError), findsOneWidget);
+    expect(find.text(AppStrings.vipRequestIntentionsEmpty), findsNothing);
+    expect(find.text(AppStrings.vipRequestIntentionsEnd), findsNothing);
+  });
+}
+
+VisitIntention _listed(String id, String name) {
+  return VisitIntention(
+    id: id,
+    subject: 'VIP_PROSPECT',
+    reportedBy: 'SALON_USER',
+    reportChannel: 'INBOUND_TO_SALON',
+    reportedAt: DateTime.utc(2026, 10, 11),
+    timePrecision: 'UNKNOWN',
+    timeKnown: false,
+    operationallyOpen: true,
+    updatedAt: DateTime.utc(2026, 10, 11),
+    identityDisclosure: 'SALON_SUPPLIED',
+    disclosedDisplayName: name,
+  );
+}
+
+class _CursorIntentions extends VisitIntentionRepository {
+  _CursorIntentions(this.onList) : super(_client());
+
+  final Future<ItemPage<VisitIntention>> Function(String? cursor) onList;
+  final List<String?> cursors = [];
+
+  @override
+  Future<ItemPage<VisitIntention>> listForVipRequest(
+    String vipRequestId, {
+    String? cursor,
+  }) {
+    cursors.add(cursor);
+    return onList(cursor);
+  }
 }

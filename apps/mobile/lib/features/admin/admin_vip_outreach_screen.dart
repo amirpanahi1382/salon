@@ -14,6 +14,99 @@ import '../followups/intention_idempotency.dart';
 import 'admin_message_queue_screen.dart';
 import 'admin_messaging_shell.dart';
 
+class AdminVipIntentionResult {
+  const AdminVipIntentionResult({
+    required this.disclosedDisplayName,
+    required this.disclosedPhone,
+  });
+
+  final String disclosedDisplayName;
+  final String disclosedPhone;
+}
+
+class AdminVipIntentionDialog extends StatefulWidget {
+  const AdminVipIntentionDialog({super.key});
+
+  @override
+  State<AdminVipIntentionDialog> createState() => AdminVipIntentionDialogState();
+}
+
+class AdminVipIntentionDialogState extends State<AdminVipIntentionDialog> {
+  final _name = TextEditingController();
+  final _phone = TextEditingController();
+  bool _authorized = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _phone.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    final name = _name.text.trim();
+    final phone = _phone.text.trim();
+    if (name.isEmpty || phone.isEmpty) {
+      setState(() => _error = AppStrings.adminContactBothRequired);
+      return;
+    }
+    if (!_authorized) {
+      setState(() => _error = AppStrings.adminShareConfirmHint);
+      return;
+    }
+    Navigator.pop(
+      context,
+      AdminVipIntentionResult(
+        disclosedDisplayName: name,
+        disclosedPhone: phone,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text(AppStrings.visitIntentionTitle),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(AppStrings.adminIntentionNotDelivery),
+            const SizedBox(height: 12),
+            TextField(
+              key: const Key('admin-disclosed-name'),
+              controller: _name,
+              decoration: const InputDecoration(labelText: 'نام'),
+            ),
+            TextField(
+              key: const Key('admin-disclosed-phone'),
+              controller: _phone,
+              keyboardType: TextInputType.phone,
+              decoration: const InputDecoration(labelText: 'موبایل'),
+            ),
+            CheckboxListTile(
+              key: const Key('admin-share-confirm'),
+              contentPadding: EdgeInsets.zero,
+              value: _authorized,
+              onChanged: (value) => setState(() => _authorized = value ?? false),
+              title: const Text(AppStrings.adminShareConfirm),
+              subtitle: const Text(AppStrings.adminShareConfirmHint),
+            ),
+            if (_error != null)
+              Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('انصراف')),
+        FilledButton(onPressed: _save, child: const Text(AppStrings.recordVisitIntention)),
+      ],
+    );
+  }
+}
+
 class AdminVipOutreachFoldersScreen extends ConsumerStatefulWidget {
   const AdminVipOutreachFoldersScreen({super.key});
 
@@ -462,8 +555,13 @@ class _AdminVipOutreachRequestScreenState
     if (request == null) return;
     final time = await promptVisitIntentionTime(context);
     if (time == null || !mounted) return;
+    final disclosure = await showDialog<AdminVipIntentionResult>(
+      context: context,
+      builder: (context) => const AdminVipIntentionDialog(),
+    );
+    if (disclosure == null || !mounted) return;
     final idempotencyKey = _intentionKey.forPayload(
-      '${row.id}|${visitIntentionTimeSignature(time)}',
+      '${row.id}|${visitIntentionTimeSignature(time)}|${disclosure.disclosedDisplayName}|${disclosure.disclosedPhone}|authorized',
     );
     setState(() => _busyRecipientId = row.id);
     try {
@@ -472,6 +570,9 @@ class _AdminVipOutreachRequestScreenState
             recipientId: row.id,
             time: time,
             idempotencyKey: idempotencyKey,
+            disclosedDisplayName: disclosure.disclosedDisplayName,
+            disclosedPhone: disclosure.disclosedPhone,
+            prospectAuthorizedSharingWithSalon: true,
           );
       _intentionKey.succeed();
       if (!mounted) return;

@@ -102,6 +102,63 @@ void main() {
     expect(find.text(AppStrings.reportedByAdminHandling), findsOneWidget);
   });
 
+  testWidgets('VIP follow-up shows admin-authorized contact and keeps withheld rows blank', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          visitIntentionRepositoryProvider.overrideWithValue(
+            _FakeVisitIntentions(
+              vip: FollowUpPage(
+                items: [
+                  FollowUpItem(
+                    kind: 'VIP_VISIT_INTENTION',
+                    id: 'authorized',
+                    reportedBy: 'PLATFORM_ADMIN',
+                    reportChannel: 'REPORTED_DURING_MANUAL_HANDLING',
+                    reportedAt: DateTime.utc(2026, 10, 11),
+                    timeKnown: false,
+                    timePrecision: 'UNKNOWN',
+                    agreedTimePassed: false,
+                    nextAction: 'SELECT_CUSTOMER_THEN_RECORD_VISIT',
+                    identityDisclosure: 'ADMIN_AUTHORIZED',
+                    disclosedDisplayName: 'نگار',
+                    disclosedPhone: '09120000000',
+                  ),
+                  FollowUpItem(
+                    kind: 'VIP_VISIT_INTENTION',
+                    id: 'legacy',
+                    reportedBy: 'PLATFORM_ADMIN',
+                    reportChannel: 'REPORTED_DURING_MANUAL_HANDLING',
+                    reportedAt: DateTime.utc(2026, 10, 10),
+                    timeKnown: true,
+                    timePrecision: 'INSTANT',
+                    agreedInstant: DateTime.utc(2026, 10, 11, 12),
+                    agreedTimePassed: false,
+                    nextAction: 'SELECT_CUSTOMER_THEN_RECORD_VISIT',
+                    identityDisclosure: 'WITHHELD',
+                  ),
+                ],
+                hasMore: false,
+                openCount: 2,
+              ),
+            ),
+          ),
+        ],
+        child: const MaterialApp(home: FollowUpsScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(AppStrings.followUpsVipTab));
+    await tester.pumpAndSettle();
+    expect(find.text('نگار'), findsOneWidget);
+    expect(find.text('09120000000'), findsOneWidget);
+    expect(find.text(AppStrings.reportedByPlatformAdmin), findsOneWidget);
+    expect(find.text(AppStrings.vipIdentityWithheld), findsOneWidget);
+    expect(find.text(AppStrings.markVisited), findsNWidgets(2));
+    expect(find.text('مشتری جذب شد'), findsNothing);
+    expect(find.text('مراجعه انجام شد'), findsNothing);
+  });
+
   testWidgets('follow-ups shows an error state without inventing rows', (tester) async {
     await tester.pumpWidget(
       ProviderScope(

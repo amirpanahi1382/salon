@@ -14,6 +14,7 @@ import {
   LinkVisitIntentionUseCase,
   ListCustomerVisitIntentionsUseCase,
   ListFollowUpsUseCase,
+  ListSalonVipVisitIntentionsUseCase,
   UpdateVisitIntentionUseCase,
 } from './visit-intention.use-cases';
 
@@ -25,6 +26,7 @@ import {
     CreateCustomerVisitIntentionUseCase,
     AdminCreateCustomerVisitIntentionUseCase,
     CreateSalonVipVisitIntentionUseCase,
+    ListSalonVipVisitIntentionsUseCase,
     AdminCreateVipVisitIntentionUseCase,
     UpdateVisitIntentionUseCase,
     AdminUpdateVisitIntentionUseCase,

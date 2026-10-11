@@ -230,8 +230,19 @@ class AppStrings {
   static const recordedVisitLabel = 'مراجعهٔ ثبت‌شده';
   static const vipReportedOrigin = 'منشأ گزارش‌شدهٔ VIP';
   static const vipIdentityWithheld = 'هویت این مخاطب برای سالن قابل نمایش نیست';
+  static const vipRequestIntentionsEmpty = 'برای این فهرست هنوز قصد مراجعه‌ای ثبت نشده است.';
+  static const vipRequestIntentionsEnd = 'قصد مراجعهٔ دیگری برای این فهرست نیست.';
   static const vipDisclosedHint =
       'فقط اطلاعاتی را بنویسید که خود مخاطب مستقیم به سالن داده است.';
+  static const vipContactRequired =
+      'نام یا شمارهٔ موبایلی را وارد کنید که خود مخاطب به سالن داده است.';
+  static const adminContactBothRequired =
+      'نام و شمارهٔ موبایل هر دو لازم است. آن‌ها را از فهرست مخاطبان کپی نکنید.';
+  static const adminShareConfirm =
+      'مخاطب این نام و شماره را خودش گفته، یا اجازه داده این جزئیات فقط با همین سالن برای پیگیری به اشتراک گذاشته شود.';
+  static const adminShareConfirmHint =
+      'بدون این تأیید، قصد مراجعه برای سالن با نام و شماره ثبت نمی‌شود.';
+  static const reportedByPlatformAdmin = 'گزارش‌شده توسط پشتیبانی پلتفرم';
   static const markVisited = 'مراجعه کرد';
   static const chooseCustomerForVisit = 'انتخاب مشتری برای ثبت مراجعه';
   static const chooseCustomerHint =

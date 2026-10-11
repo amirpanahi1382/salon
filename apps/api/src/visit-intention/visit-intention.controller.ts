@@ -27,6 +27,7 @@ import {
   LinkVisitIntentionUseCase,
   ListCustomerVisitIntentionsUseCase,
   ListFollowUpsUseCase,
+  ListSalonVipVisitIntentionsUseCase,
   UpdateVisitIntentionUseCase,
 } from './visit-intention.use-cases';
 
@@ -39,6 +40,7 @@ export class VisitIntentionController {
   constructor(
     private readonly createCustomer: CreateCustomerVisitIntentionUseCase,
     private readonly createVip: CreateSalonVipVisitIntentionUseCase,
+    private readonly listVip: ListSalonVipVisitIntentionsUseCase,
     private readonly updateIntention: UpdateVisitIntentionUseCase,
     private readonly listForCustomer: ListCustomerVisitIntentionsUseCase,
     private readonly followUps: ListFollowUpsUseCase,
@@ -110,6 +112,19 @@ export class VisitIntentionController {
     @Headers('idempotency-key') idempotencyKey?: string | string[],
   ) {
     return this.createVip.execute(user, vipRequestId, body, idempotencyKey);
+  }
+
+  @Get('vip/requests/:vipRequestId/visit-intentions')
+  @ApiOperation({
+    summary:
+      'Salon-safe VIP intentions for one request. Withheld rows omit contact details and never include the recipient id.',
+  })
+  listForVip(
+    @CurrentUser() user: AuthenticatedPrincipal,
+    @Param('vipRequestId', UuidParam) vipRequestId: string,
+    @Query() query: ListVisitIntentionsQueryDto,
+  ) {
+    return this.listVip.execute(user, vipRequestId, query);
   }
 
   @Patch('visit-intentions/:id')

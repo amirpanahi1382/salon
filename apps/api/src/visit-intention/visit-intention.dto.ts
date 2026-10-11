@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+  IsBoolean,
   IsIn,
   IsInt,
   IsOptional,
@@ -73,6 +74,31 @@ export class CreateAdminVipVisitIntentionDto {
   @ValidateNested()
   @Type(() => VisitIntentionTimeDto)
   time!: VisitIntentionTimeDto;
+
+  @ApiPropertyOptional({
+    description:
+      'Name the prospect authorized the salon to see. Omit every contact field to record the legacy time-only withheld intention.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  disclosedDisplayName?: string;
+
+  @ApiPropertyOptional({
+    description: 'Phone the prospect authorized the salon to see. Not copied from the target list.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(11)
+  disclosedPhone?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Required and true when name or phone is sent. A time-only legacy body omits this field.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  prospectAuthorizedSharingWithSalon?: boolean;
 }
 
 export class UpdateVisitIntentionDto {
@@ -84,6 +110,33 @@ export class UpdateVisitIntentionDto {
   @ApiProperty()
   @IsAbsoluteInstant()
   updatedAt!: string;
+
+  @ApiPropertyOptional({
+    description: 'Set true only to record a new contact revision. A time-only correction leaves contact details unchanged.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  correctDisclosedContact?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  disclosedDisplayName?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(11)
+  disclosedPhone?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Required again when correcting Admin-authorized contact. A time-only correction does not use this field.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  prospectAuthorizedSharingWithSalon?: boolean;
 }
 
 export class ArriveVisitIntentionDto {
