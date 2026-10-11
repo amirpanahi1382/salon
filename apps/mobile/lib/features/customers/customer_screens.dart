@@ -170,8 +170,8 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
                 FloatingActionButton.extended(
                   heroTag: 'add-customer',
                   onPressed: () async {
-                    final created = await context.push<bool>('/customers/new');
-                    if (created == true) {
+                    final created = await context.push<Object?>('/customers/new');
+                    if (created == true || created is Customer) {
                       _load();
                     }
                   },
@@ -255,8 +255,8 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
                                     FilledButton(
                                       onPressed: () async {
                                         final created = await context
-                                            .push<bool>('/customers/new');
-                                        if (created == true) {
+                                            .push<Object?>('/customers/new');
+                                        if (created == true || created is Customer) {
                                           _load();
                                         }
                                       },
@@ -359,6 +359,7 @@ class _CustomerFormScreenState extends ConsumerState<CustomerFormScreen> {
   String? _error;
   bool _loading = false;
   bool _created = false;
+  Customer? _createdCustomer;
 
   @override
   void initState() {
@@ -379,8 +380,9 @@ class _CustomerFormScreenState extends ConsumerState<CustomerFormScreen> {
   bool get _isCreate => widget.customer == null;
 
   void _returnToCustomers() {
+    final result = _createdCustomer ?? _created;
     if (context.canPop()) {
-      context.pop(_created);
+      context.pop(result);
       return;
     }
     context.go('/customers');
@@ -403,7 +405,7 @@ class _CustomerFormScreenState extends ConsumerState<CustomerFormScreen> {
     });
     try {
       if (_isCreate) {
-        await ref
+        final created = await ref
             .read(customerRepositoryProvider)
             .create(
               firstName: _first.text.trim(),
@@ -414,6 +416,7 @@ class _CustomerFormScreenState extends ConsumerState<CustomerFormScreen> {
           return;
         }
         setState(() {
+          _createdCustomer = created;
           _created = true;
           _loading = false;
         });
@@ -1033,11 +1036,11 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
         actions: [
           TextButton(
             onPressed: () async {
-              final created = await context.push<bool>('/customers/new');
+              final created = await context.push<Object?>('/customers/new');
               if (!context.mounted) {
                 return;
               }
-              if (created == true) {
+              if (created == true || created is Customer) {
                 context.go('/customers');
               }
             },
@@ -1077,6 +1080,15 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
         icon: const Icon(Icons.event_available_outlined),
         label: const Text(AppStrings.recordVisit),
       ),
+      bottomNavigationBar: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: OutlinedButton(
+            onPressed: () => context.push('/customers/${customer.id}/visit-intention'),
+            child: const Text(AppStrings.recordVisitIntention),
+          ),
+        ),
+      ),
       body: RefreshIndicator(
         onRefresh: _load,
         child: PagedNotificationListener(
@@ -1100,6 +1112,13 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                   ),
                   const SizedBox(height: 8),
                   LtrText(customer.phoneNumber),
+                  Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: TextButton(
+                      onPressed: () => context.push('/customers/${customer.id}/visit-intentions'),
+                      child: const Text(AppStrings.inspectVisitIntentions),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -1298,10 +1317,12 @@ class RecordVisitScreen extends ConsumerStatefulWidget {
     super.key,
     required this.customerId,
     this.commitment,
+    this.visitIntentionId,
   });
 
   final String customerId;
   final ReturnCommitment? commitment;
+  final String? visitIntentionId;
 
   @override
   ConsumerState<RecordVisitScreen> createState() => _RecordVisitScreenState();
@@ -1450,6 +1471,15 @@ class _RecordVisitScreenState extends ConsumerState<RecordVisitScreen> {
               serviceId: wantsSale ? _serviceId : null,
               amount: wantsSale ? amount : null,
             );
+      } else if (widget.visitIntentionId != null) {
+        await ref.read(visitIntentionRepositoryProvider).arrive(
+              id: widget.visitIntentionId!,
+              visitedAt: _visitedAt,
+              customerId: widget.customerId,
+              idempotencyKey: _idempotencyKey!,
+              serviceId: wantsSale ? _serviceId : null,
+              amount: wantsSale ? amount : null,
+            );
       } else if (wantsSale) {
         await ref.read(visitRepositoryProvider).recordCompletedWithSale(
               customerId: widget.customerId,
@@ -1532,7 +1562,7 @@ class _RecordVisitScreenState extends ConsumerState<RecordVisitScreen> {
   @override
   Widget build(BuildContext context) {
     final captureSale = _canCaptureSale;
-    final arriving = widget.commitment != null;
+    final arriving = widget.commitment != null || widget.visitIntentionId != null;
     return Scaffold(
       appBar: AppBar(
         title: Text(arriving ? AppStrings.markArrived : AppStrings.recordVisit),
@@ -1544,7 +1574,7 @@ class _RecordVisitScreenState extends ConsumerState<RecordVisitScreen> {
             arriving ? AppStrings.arrivalHint : AppStrings.recordVisitHint,
             style: const TextStyle(height: 1.65),
           ),
-          if (arriving) ...[
+          if (widget.commitment != null) ...[
             const SizedBox(height: 16),
             Text(
               '${AppStrings.agreedAtLabel}: ${formatJalaliDateTime(widget.commitment!.expectedAt)}',

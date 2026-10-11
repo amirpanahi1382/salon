@@ -113,6 +113,27 @@ enum VipSampleCleanupStatus {
   PROCESSED
 }
 
+/// Who the reported intention is about. Not a delivery or acquisition status.
+enum VisitIntentionSubject {
+  CUSTOMER
+  VIP_PROSPECT
+}
+
+/// How much of an agreed time was actually reported. DATE is a calendar date, not an instant.
+enum VisitIntentionTimePrecision {
+  UNKNOWN
+  DATE
+  INSTANT
+}
+
+/// Provenance of the report. Not a workflow state.
+enum VisitIntentionReportChannel {
+  SALON_STAFF
+  TOLD_PLATFORM_ADMIN
+  INBOUND_TO_SALON
+  REPORTED_DURING_MANUAL_HANDLING
+}
+
 model Salon {
   id        String      @id @db.Uuid
   name      String
@@ -134,6 +155,7 @@ model Salon {
   reservedVipLists    VipTargetList[]      @relation("VipListReservedBySalon")
   returnCommitments   ReturnCommitment[]
   supportConversations SupportConversation[]
+  visitIntentions      VisitIntention[]
 
   @@map("salons")
 }
@@ -153,6 +175,8 @@ model Customer {
   messageRequests    MessageRequest[]
   messageDeliveries  MessageDelivery[]
   returnCommitments  ReturnCommitment[]
+  visitIntentions    VisitIntention[] @relation("VisitIntentionSubjectCustomer")
+  linkedVisitIntentions VisitIntention[] @relation("VisitIntentionLinkedCustomer")
 
   @@unique([id, salonId])
   @@unique([salonId, phoneNumber])
@@ -172,6 +196,7 @@ model Visit {
   updatedAt    DateTime             @updatedAt @map("updated_at") @db.Timestamptz(3)
   transactions       LedgerTransaction[]
   returnCommitments  ReturnCommitment[]
+  visitIntentions    VisitIntention[]
 
   @@unique([id, salonId])
   @@index([salonId, visitedAt])
@@ -253,6 +278,8 @@ model User {
   createdVipRequests        VipRequest[]
   createdReturnCommitments  ReturnCommitment[] @relation("ReturnCommitmentCreatedBy")
   updatedReturnCommitments  ReturnCommitment[] @relation("ReturnCommitmentUpdatedBy")
+  createdVisitIntentions    VisitIntention[] @relation("VisitIntentionCreatedBy")
+  updatedVisitIntentions    VisitIntention[] @relation("VisitIntentionUpdatedBy")
   supportConversation       SupportConversation?
   authoredSupportMessages   SupportMessage[] @relation("SupportMessageAuthorUser")
 
@@ -308,6 +335,8 @@ model PlatformAdmin {
   revokedVipEntitlements VipSalonEntitlement[] @relation("VipEntitlementRevokedBy")
   createdReturnCommitments ReturnCommitment[] @relation("ReturnCommitmentCreatedByAdmin")
   updatedReturnCommitments ReturnCommitment[] @relation("ReturnCommitmentUpdatedByAdmin")
+  createdVisitIntentions   VisitIntention[] @relation("VisitIntentionCreatedByAdmin")
+  updatedVisitIntentions   VisitIntention[] @relation("VisitIntentionUpdatedByAdmin")
   supportMessages          SupportMessage[]
 
   @@map("platform_admins")
@@ -348,6 +377,7 @@ model MessageRequest {
   /// cardinality physically, so avoid a redundant composite index here.
   vipRequestRecipients VipRequestRecipient[]
   returnCommitment    ReturnCommitment?
+  visitIntentions     VisitIntention[]
 
   @@unique([id, salonId])
   /// SQL CHECKs:
@@ -628,6 +658,7 @@ model VipRequest {
   sampleWorks        VipSampleWork[]
   sampleWorkUploads  VipSampleWorkUpload[]
   messageRequests    MessageRequest[]
+  visitIntentions    VisitIntention[]
 
   @@unique([id, salonId])
   @@index([salonId, createdAt, id])
@@ -655,8 +686,11 @@ model VipRequestRecipient {
   messageRequestId String?        @unique @map("message_request_id") @db.Uuid
   messageRequest   MessageRequest? @relation(fields: [messageRequestId, salonId], references: [id, salonId], onDelete: Restrict, onUpdate: Restrict)
   createdAt        DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  visitIntentions  VisitIntention[]
 
   @@unique([vipRequestId, sortOrder])
+  @@unique([id, salonId])
+  @@unique([id, vipRequestId])
   @@index([vipRequestId, sortOrder, id])
   @@index([salonId])
   @@map("vip_request_recipients")
@@ -737,4 +771,50 @@ model VipSampleWorkCleanup {
   @@index([status, availableAt, lockedUntil, id])
   @@index([uploadId, uploadGeneration])
   @@map("vip_sample_work_cleanups")
+}
+
+/// Reported intention to visit. Not a ReturnCommitment, booking, Visit, Customer, or revenue.
+/// CUSTOMER rows may exist without a SENT message. VIP_PROSPECT rows do not create a Customer.
+/// Time precision UNKNOWN/DATE never stores a fabricated instant. DATE is a calendar date.
+/// Salon reads must not join VIP target-list phone or display name.
+/// Database CHECKs and partial uniques live in migration 20261010230000.
+/// Extra FK visit_intentions_recipient_salon_fkey (recipient_id, salon_id) is database-only.
+model VisitIntention {
+  id                       String                       @id @db.Uuid
+  salonId                  String                       @map("salon_id") @db.Uuid
+  salon                    Salon                        @relation(fields: [salonId], references: [id], onDelete: Restrict)
+  subject                  VisitIntentionSubject
+  customerId               String?                      @map("customer_id") @db.Uuid
+  customer                 Customer?                    @relation("VisitIntentionSubjectCustomer", fields: [customerId, salonId], references: [id, salonId], onDelete: Restrict)
+  sourceMessageRequestId   String?                      @map("source_message_request_id") @db.Uuid
+  sourceMessageRequest     MessageRequest?              @relation(fields: [sourceMessageRequestId, salonId], references: [id, salonId], onDelete: Restrict)
+  vipRequestId             String?                      @map("vip_request_id") @db.Uuid
+  vipRequest               VipRequest?                  @relation(fields: [vipRequestId, salonId], references: [id, salonId], onDelete: Restrict)
+  vipRequestRecipientId    String?                      @map("vip_request_recipient_id") @db.Uuid
+  vipRequestRecipient      VipRequestRecipient?         @relation(fields: [vipRequestRecipientId, vipRequestId], references: [id, vipRequestId], onDelete: Restrict)
+  disclosedDisplayName     String?                      @map("disclosed_display_name")
+  disclosedPhone           String?                      @map("disclosed_phone")
+  timePrecision            VisitIntentionTimePrecision  @map("time_precision")
+  agreedDate               DateTime?                    @map("agreed_date") @db.Date
+  agreedInstant            DateTime?                    @map("agreed_instant") @db.Timestamptz(3)
+  reportChannel            VisitIntentionReportChannel  @map("report_channel")
+  createdByUserId          String?                      @map("created_by_user_id") @db.Uuid
+  createdByUser            User?                        @relation("VisitIntentionCreatedBy", fields: [createdByUserId, salonId], references: [id, salonId], onDelete: Restrict)
+  createdByPlatformAdminId String?                      @map("created_by_platform_admin_id") @db.Uuid
+  createdByPlatformAdmin   PlatformAdmin?               @relation("VisitIntentionCreatedByAdmin", fields: [createdByPlatformAdminId], references: [id], onDelete: Restrict)
+  updatedByUserId          String?                      @map("updated_by_user_id") @db.Uuid
+  updatedByUser            User?                        @relation("VisitIntentionUpdatedBy", fields: [updatedByUserId, salonId], references: [id, salonId], onDelete: Restrict)
+  updatedByPlatformAdminId String?                      @map("updated_by_platform_admin_id") @db.Uuid
+  updatedByPlatformAdmin   PlatformAdmin?               @relation("VisitIntentionUpdatedByAdmin", fields: [updatedByPlatformAdminId], references: [id], onDelete: Restrict)
+  linkedVisitId            String?                      @map("linked_visit_id") @db.Uuid
+  linkedVisit              Visit?                       @relation(fields: [linkedVisitId, salonId], references: [id, salonId], onDelete: Restrict)
+  linkedCustomerId         String?                      @map("linked_customer_id") @db.Uuid
+  linkedCustomer           Customer?                    @relation("VisitIntentionLinkedCustomer", fields: [linkedCustomerId, salonId], references: [id, salonId], onDelete: Restrict)
+  createdAt                DateTime                     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt                DateTime                     @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([id, salonId])
+  @@index([salonId, customerId, createdAt, id])
+  @@index([salonId, subject, createdAt, id])
+  @@map("visit_intentions")
 }

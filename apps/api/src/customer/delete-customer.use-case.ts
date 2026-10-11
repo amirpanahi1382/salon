@@ -38,6 +38,15 @@ export class DeleteCustomerUseCase {
         if (messageCount > 0) {
           throw new ConflictError('Customer cannot be deleted while message history exists');
         }
+        const intentionCount = await tx.visitIntention.count({
+          where: {
+            salonId: principal.tenantId,
+            OR: [{ customerId: existing.id }, { linkedCustomerId: existing.id }],
+          },
+        });
+        if (intentionCount > 0) {
+          throw new ConflictError('Customer cannot be deleted while a reported visit intention references them');
+        }
         const removedActions = await tx.opportunityAction.deleteMany({
             where: { salonId: principal.tenantId, customerId: existing.id },
           });

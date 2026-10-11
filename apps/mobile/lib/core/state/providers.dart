@@ -57,6 +57,12 @@ final opportunitiesRepositoryProvider = Provider<OpportunitiesRepository>((ref) 
   return OpportunitiesRepository(ref.watch(apiClientProvider));
 });
 
+final visitIntentionRepositoryProvider = Provider<VisitIntentionRepository>((
+  ref,
+) {
+  return VisitIntentionRepository(ref.watch(apiClientProvider));
+});
+
 final returnCommitmentRepositoryProvider = Provider<ReturnCommitmentRepository>((
   ref,
 ) {

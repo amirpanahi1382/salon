@@ -12,6 +12,7 @@ import '../../features/customers/customer_edit_loader.dart';
 import '../../features/customers/customer_import_screen.dart';
 import '../../features/customers/customer_screens.dart';
 import '../../features/dashboard/dashboard_screen.dart';
+import '../../features/followups/follow_ups_screen.dart';
 import '../../features/opportunities/opportunities_screen.dart';
 import '../../features/recovery/open_agreed_returns_screen.dart';
 import '../../features/recovery/recovery_outcomes_screen.dart';
@@ -160,6 +161,10 @@ final routerProvider = Provider<GoRouter>((ref) {
             builder: (context, state) => const OpenAgreedReturnsScreen(),
           ),
           GoRoute(
+            path: '/follow-ups',
+            builder: (context, state) => const FollowUpsScreen(),
+          ),
+          GoRoute(
             path: '/profile/support',
             builder: (context, state) => const SupportConversationScreen(),
           ),
@@ -210,11 +215,40 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/customers/:id/record-visit',
         builder: (context, state) {
           final extra = state.extra;
+          final link = extra is RecordVisitLink ? extra : null;
           return RecordVisitScreen(
             customerId: state.pathParameters['id']!,
-            commitment: extra is ReturnCommitment ? extra : null,
+            commitment: extra is ReturnCommitment
+                ? extra
+                : link?.commitment,
+            visitIntentionId: link?.visitIntentionId,
           );
         },
+      ),
+      GoRoute(
+        path: '/customers/:id/visit-intention',
+        builder: (context, state) => VisitIntentionFormScreen(
+          targetId: state.pathParameters['id']!,
+        ),
+      ),
+      GoRoute(
+        path: '/customers/:id/visit-intentions',
+        builder: (context, state) => CustomerIntentionsScreen(
+          customerId: state.pathParameters['id']!,
+        ),
+      ),
+      GoRoute(
+        path: '/vip/requests/:id/visit-intention',
+        builder: (context, state) => VisitIntentionFormScreen(
+          targetId: state.pathParameters['id']!,
+          vipRequest: true,
+        ),
+      ),
+      GoRoute(
+        path: '/visit-intentions/:id/choose-customer',
+        builder: (context, state) => VipArrivalCustomerScreen(
+          intentionId: state.pathParameters['id']!,
+        ),
       ),
     ],
   );

@@ -204,6 +204,51 @@ class AppStrings {
   static const recoveryRevenueNone = 'برای این مراجعه درآمدی ثبت نشده است.';
   static const recoveryRevenueRecorded =
       'در این مراجعه {amount} درآمد ثبت شده است.';
+  static const followUpsTitle = 'پیگیری‌ها';
+  static const followUpsHint =
+      'قصد مراجعهٔ گزارش‌شده. این فهرست مراجعهٔ ثبت‌شده، تحویل پیام، یا درآمد منتسب نیست.';
+  static const followUpsCustomersTab = 'مشتریان قبلی';
+  static const followUpsVipTab = 'مراجعه‌های VIP';
+  static const followUpsCustomersEmpty = 'پیگیری بازی برای مشتریان قبلی نیست.';
+  static const followUpsVipEmpty = 'پیگیری بازی برای مراجعه‌های VIP نیست.';
+  static const recordVisitIntention = 'ثبت قصد مراجعه';
+  static const recordCustomerIntentionToldToAdmin =
+      'ثبت قصد مراجعه‌ای که به پشتیبانی گفته شده';
+  static const customerIntentionNotReturnCommitment =
+      'این ثبت، توافق بازگشت پس از پیام ارسال‌شده نیست.';
+  static const customerIntentionRecorded = 'قصد مراجعه ثبت شد.';
+  static const openCustomerVisitIntentionExists =
+      'برای این مشتری یک قصد مراجعهٔ باز از قبل ثبت شده است.';
+  static const openVipVisitIntentionExists =
+      'برای این مخاطب VIP یک قصد مراجعهٔ باز از قبل ثبت شده است.';
+  static const inspectVisitIntentions = 'قصدهای مراجعه';
+  static const visitIntentionTitle = 'قصد مراجعه/زمان توافق‌شده';
+  static const visitIntentionUnknownTime = 'زمان توافق‌شده مشخص نیست';
+  static const visitIntentionTimePassed = 'زمان توافق‌شده گذشته است';
+  static const recordedVisitLabel = 'مراجعهٔ ثبت‌شده';
+  static const vipReportedOrigin = 'منشأ گزارش‌شدهٔ VIP';
+  static const vipIdentityWithheld = 'هویت این مخاطب برای سالن قابل نمایش نیست';
+  static const vipDisclosedHint =
+      'فقط اطلاعاتی را بنویسید که خود مخاطب مستقیم به سالن داده است.';
+  static const markVisited = 'مراجعه کرد';
+  static const chooseCustomerForVisit = 'انتخاب مشتری برای ثبت مراجعه';
+  static const chooseCustomerHint =
+      'مشتری را خودتان انتخاب یا ایجاد کنید. تطبیق با شمارهٔ فهرست VIP انجام نمی‌شود.';
+  static const createdCustomerReady =
+      'مشتری تازه‌ساخته‌شده را برای ثبت مراجعه انتخاب کنید.';
+  static const timeUnknown = 'زمان نامشخص';
+  static const timeDateOnly = 'فقط تاریخ';
+  static const timeInstant = 'تاریخ و ساعت';
+  static const reportedBySalon = 'گزارش‌شده توسط سالن';
+  static const reportedBySupport = 'گزارش‌شده توسط پشتیبانی';
+  static const reportedBySalonInbound = 'گزارش‌شده توسط سالن از تماس ورودی';
+  static const reportedByAdminHandling =
+      'گزارش‌شده توسط پشتیبانی هنگام رسیدگی دستی';
+  static const reportedCommitmentBySalon =
+      'توافق بازگشت پس از پیگیری، گزارش‌شده توسط سالن';
+  static const reportedCommitmentBySupport =
+      'توافق بازگشت پس از پیگیری، گزارش‌شده توسط پشتیبانی';
+  static const adminIntentionNotDelivery = 'این ثبت، تحویل پیام نیست.';
   static const upcomingCommitmentsTitle = 'مراجعه‌های توافق‌شده آینده';
   static const upcomingCommitmentsEmpty =
       'فعلاً زمان مراجعه توافق‌شده‌ای برای روزهای نزدیک ثبت نشده.';
@@ -618,6 +663,10 @@ String localizeUserFacingMessage(String message) {
         AppStrings.arrivalVisitReviewRequired,
     'Visit does not belong to this customer':
         'این مراجعه مربوط به این مشتری نیست.',
+    'An open visit intention already exists for this customer':
+        AppStrings.openCustomerVisitIntentionExists,
+    'An open visit intention already exists for this VIP recipient':
+        AppStrings.openVipVisitIntentionExists,
   };
   final mapped = exact[trimmed];
   if (mapped != null) {

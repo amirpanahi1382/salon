@@ -114,6 +114,24 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               children: [
                 OverallPerformanceCard(performance: performance),
                 const SizedBox(height: AppTokens.space24),
+                AppSurface(
+                  onTap: () => context.push('/follow-ups'),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        AppStrings.followUpsTitle,
+                        style: theme.textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: AppTokens.space8),
+                      Text(
+                        AppStrings.followUpsHint,
+                        style: theme.textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: AppTokens.space16),
                 if (isOwnerOrManager)
                   AppSurface(
                     onTap: () => context.push('/recovery'),

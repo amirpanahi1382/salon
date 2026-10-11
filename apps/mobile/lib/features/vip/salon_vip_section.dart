@@ -1,6 +1,7 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/networking/api_client.dart';
 import '../../core/state/providers.dart';
@@ -520,6 +521,10 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
             title: Text(request.listName),
             subtitle: Text(
               '${vipRequestStatusLabel(request.status)} · ${request.requestedCount}',
+            ),
+            trailing: TextButton(
+              onPressed: () => context.push('/vip/requests/${request.id}/visit-intention'),
+              child: const Text(AppStrings.recordVisitIntention),
             ),
           ),
         ],

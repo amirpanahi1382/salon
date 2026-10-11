@@ -74,6 +74,41 @@ AdminVipOutreachRequest _request({
   );
 }
 
+class _AdminIntentionRetry extends VisitIntentionRepository {
+  _AdminIntentionRetry() : super(_client());
+
+  final List<String> keys = [];
+
+  @override
+  Future<VisitIntention> createAdminVip({
+    required String vipRequestId,
+    required String recipientId,
+    required Map<String, dynamic> time,
+    required String idempotencyKey,
+  }) async {
+    keys.add(idempotencyKey);
+    if (keys.length == 1) throw const NetworkException();
+    if (keys.toSet().length != 1) {
+      throw const ApiException(
+        statusCode: 409,
+        code: 'CONFLICT',
+        message: 'An open visit intention already exists for this VIP recipient',
+      );
+    }
+    return VisitIntention(
+      id: 'saved-vip',
+      subject: 'VIP_PROSPECT',
+      reportedBy: 'PLATFORM_ADMIN',
+      reportChannel: 'REPORTED_DURING_MANUAL_HANDLING',
+      reportedAt: DateTime.utc(2026, 10, 1),
+      timePrecision: 'UNKNOWN',
+      timeKnown: false,
+      operationallyOpen: true,
+      updatedAt: DateTime.utc(2026, 10, 1),
+    );
+  }
+}
+
 class _FakeVipRepository extends VipRepository {
   _FakeVipRepository({
     this.folders = const [],
@@ -371,5 +406,50 @@ void main() {
     expect(find.text(AppStrings.vipOutreachDispatchPrerequisite), findsNWidgets(2));
     expect(find.text(AppStrings.vipOutreachDispatchAllManual), findsOneWidget);
     expect(find.text(AppStrings.adminMarkRecipientSent), findsNothing);
+  });
+
+  testWidgets('admin VIP intention retry keeps the idempotency key for the same time', (tester) async {
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    final repo = _FakeVipRepository(
+      requestsBySalon: {
+        's1': [_request(id: 'r1', salonId: 's1', pending: 0, sent: 0, status: 'MANUAL_QUEUED')],
+      },
+      recipientsByRequest: {
+        'r1': const [
+          AdminVipOutreachRecipient(
+            id: 'recipient-1',
+            sortOrder: 0,
+            displayName: 'مینا',
+            phoneNumber: '09121111111',
+            executionState: 'QUEUED',
+          ),
+        ],
+      },
+    );
+    final intentions = _AdminIntentionRetry();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          vipRepositoryProvider.overrideWithValue(repo),
+          visitIntentionRepositoryProvider.overrideWithValue(intentions),
+        ],
+        child: const MaterialApp(home: AdminVipOutreachRequestScreen(requestId: 'r1')),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(AppStrings.recordVisitIntention));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(AppStrings.timeUnknown));
+    await tester.pumpAndSettle();
+    expect(find.text(AppStrings.networkError), findsOneWidget);
+    await tester.tap(find.text(AppStrings.recordVisitIntention));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(AppStrings.timeUnknown));
+    await tester.pumpAndSettle();
+    expect(intentions.keys, hasLength(2));
+    expect(intentions.keys.first, intentions.keys.last);
+    expect(find.text('An open visit intention already exists for this VIP recipient'), findsNothing);
   });
 }

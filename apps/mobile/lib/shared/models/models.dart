@@ -1830,6 +1830,161 @@ class SupportConversationSummary {
   }
 }
 
+class FollowUpPage {
+  const FollowUpPage({
+    required this.items,
+    required this.hasMore,
+    required this.openCount,
+    this.nextCursor,
+  });
+
+  final List<FollowUpItem> items;
+  final bool hasMore;
+  final int openCount;
+  final String? nextCursor;
+
+  factory FollowUpPage.fromJson(Object? data) {
+    final json = asJsonMap(data);
+    final rawItems = json['items'];
+    return FollowUpPage(
+      items: rawItems is List
+          ? rawItems.map((item) => FollowUpItem.fromJson(asJsonMap(item))).toList()
+          : const [],
+      hasMore: json['hasMore'] == true,
+      openCount: json['openCount'] is int ? json['openCount'] as int : 0,
+      nextCursor: json['nextCursor'] as String?,
+    );
+  }
+}
+
+class FollowUpItem {
+  const FollowUpItem({
+    required this.kind,
+    required this.id,
+    required this.reportedBy,
+    required this.reportedAt,
+    required this.timeKnown,
+    required this.timePrecision,
+    required this.agreedTimePassed,
+    required this.nextAction,
+    this.customerId,
+    this.customerDisplayName,
+    this.reportChannel,
+    this.agreedDate,
+    this.agreedInstant,
+    this.vipRequestId,
+    this.identityDisclosure,
+    this.disclosedDisplayName,
+    this.disclosedPhone,
+  });
+
+  final String kind;
+  final String id;
+  final String? customerId;
+  final String? customerDisplayName;
+  final String reportedBy;
+  final String? reportChannel;
+  final DateTime reportedAt;
+  final bool timeKnown;
+  final String timePrecision;
+  final String? agreedDate;
+  final DateTime? agreedInstant;
+  final bool agreedTimePassed;
+  final String? vipRequestId;
+  final String? identityDisclosure;
+  final String? disclosedDisplayName;
+  final String? disclosedPhone;
+  final String nextAction;
+
+  factory FollowUpItem.fromJson(Map<String, dynamic> json) {
+    return FollowUpItem(
+      kind: json['kind'] as String? ?? '',
+      id: json['id'] as String,
+      customerId: json['customerId'] as String?,
+      customerDisplayName: json['customerDisplayName'] as String?,
+      reportedBy: json['reportedBy'] as String? ?? 'SALON_USER',
+      reportChannel: json['reportChannel'] as String?,
+      reportedAt: DateTime.parse(json['reportedAt'] as String),
+      timeKnown: json['timeKnown'] == true,
+      timePrecision: json['timePrecision'] as String? ?? 'UNKNOWN',
+      agreedDate: json['agreedDate'] as String?,
+      agreedInstant: json['agreedInstant'] is String
+          ? DateTime.parse(json['agreedInstant'] as String)
+          : null,
+      agreedTimePassed: json['agreedTimePassed'] == true,
+      vipRequestId: json['vipRequestId'] as String?,
+      identityDisclosure: json['identityDisclosure'] as String?,
+      disclosedDisplayName: json['disclosedDisplayName'] as String?,
+      disclosedPhone: json['disclosedPhone'] as String?,
+      nextAction: json['nextAction'] as String? ?? '',
+    );
+  }
+}
+
+class VisitIntention {
+  const VisitIntention({
+    required this.id,
+    required this.subject,
+    required this.reportedBy,
+    required this.reportChannel,
+    required this.reportedAt,
+    required this.timePrecision,
+    required this.timeKnown,
+    required this.operationallyOpen,
+    required this.updatedAt,
+    this.customerId,
+    this.vipRequestId,
+    this.agreedDate,
+    this.agreedInstant,
+    this.linkedVisitId,
+    this.disclosedDisplayName,
+    this.disclosedPhone,
+    this.identityDisclosure,
+  });
+
+  final String id;
+  final String subject;
+  final String? customerId;
+  final String? vipRequestId;
+  final String reportedBy;
+  final String reportChannel;
+  final DateTime reportedAt;
+  final String timePrecision;
+  final bool timeKnown;
+  final String? agreedDate;
+  final DateTime? agreedInstant;
+  final String? linkedVisitId;
+  final bool operationallyOpen;
+  final DateTime updatedAt;
+  final String? disclosedDisplayName;
+  final String? disclosedPhone;
+  final String? identityDisclosure;
+
+  factory VisitIntention.fromJson(Map<String, dynamic> json) {
+    return VisitIntention(
+      id: json['id'] as String,
+      subject: json['subject'] as String? ?? 'CUSTOMER',
+      customerId: json['customerId'] as String?,
+      vipRequestId: json['vipRequestId'] as String?,
+      reportedBy: json['reportedBy'] as String? ?? 'SALON_USER',
+      reportChannel: json['reportChannel'] as String? ?? '',
+      reportedAt: DateTime.parse(json['reportedAt'] as String),
+      timePrecision: json['timePrecision'] as String? ?? 'UNKNOWN',
+      timeKnown: json['timeKnown'] == true,
+      agreedDate: json['agreedDate'] as String?,
+      agreedInstant: json['agreedInstant'] is String
+          ? DateTime.parse(json['agreedInstant'] as String)
+          : null,
+      linkedVisitId: json['linkedVisitId'] as String?,
+      operationallyOpen: json['operationallyOpen'] == true,
+      updatedAt: DateTime.parse(json['updatedAt'] as String),
+      disclosedDisplayName: json['disclosedDisplayName'] as String?,
+      disclosedPhone: json['disclosedPhone'] as String?,
+      identityDisclosure: json['identityDisclosure'] as String?,
+    );
+  }
+}
+
 class SupportThread {
   const SupportThread({required this.conversation, required this.messages});
 

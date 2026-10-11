@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/networking/api_client.dart';
 import '../../core/state/providers.dart';
@@ -149,6 +150,20 @@ class _OpportunityActionBarState extends ConsumerState<OpportunityActionBar> {
             runSpacing: AppTokens.space8,
             children: [done, dismiss, bale],
           ),
+        const SizedBox(height: AppTokens.space8),
+        Wrap(
+          spacing: AppTokens.space8,
+          children: [
+            TextButton(
+              onPressed: () => context.push('/customers/${widget.customerId}/visit-intention'),
+              child: const Text(AppStrings.recordVisitIntention),
+            ),
+            TextButton(
+              onPressed: () => context.push('/customers/${widget.customerId}/record-visit'),
+              child: const Text(AppStrings.recordVisit),
+            ),
+          ],
+        ),
         const SizedBox(height: AppTokens.space8),
         Text(
           AppStrings.actionDoesNotCreateVisit,

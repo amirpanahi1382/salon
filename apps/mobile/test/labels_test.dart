@@ -88,6 +88,22 @@ void main() {
       localizeUserFacingMessage('This VIP list is not available'),
       AppStrings.vipListUnavailable,
     );
+    expect(
+      localizeUserFacingMessage(
+        'An open visit intention already exists for this customer',
+      ),
+      AppStrings.openCustomerVisitIntentionExists,
+    );
+    expect(
+      localizeUserFacingMessage(
+        'An open visit intention already exists for this VIP recipient',
+      ),
+      AppStrings.openVipVisitIntentionExists,
+    );
+    expect(
+      localizeUserFacingMessage('A conflicting record already exists'),
+      isNot(AppStrings.openCustomerVisitIntentionExists),
+    );
     expect(AppStrings.createSuitableMessage, 'ایجاد پیام مناسب');
     expect(messageStatusLabel('SENT'), 'پیام با موفقیت ارسال شد.');
     expect(messageStatusLabel('QUEUED'), AppStrings.messageQueued);

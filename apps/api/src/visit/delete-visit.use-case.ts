@@ -45,6 +45,43 @@ export class DeleteVisitUseCase {
         FOR UPDATE
       `;
 
+      const intentions = await tx.$queryRaw<Array<{ id: string; customer_id: string | null }>>`
+        SELECT id, linked_customer_id AS customer_id
+        FROM visit_intentions
+        WHERE salon_id = ${principal.tenantId}::uuid
+          AND linked_visit_id = ${existing.id}::uuid
+        FOR UPDATE
+      `;
+      if (intentions.length > 0) {
+        await tx.visitIntention.updateMany({
+          where: { salonId: principal.tenantId, linkedVisitId: existing.id },
+          data: {
+            linkedVisitId: null,
+            linkedCustomerId: null,
+            updatedByUserId: principal.userId,
+            updatedByPlatformAdminId: null,
+            updatedAt: now,
+          },
+        });
+        for (const intention of intentions) {
+          await tx.auditLog.create({
+            data: {
+              id: createId(),
+              tenantId: principal.tenantId,
+              actorId: principal.userId,
+              action: 'VISIT_INTENTION_UNLINKED_FROM_VISIT',
+              resource: 'visit_intention',
+              resourceId: intention.id,
+              result: 'SUCCESS',
+              metadata: {
+                visitId: existing.id,
+                customerId: intention.customer_id,
+              },
+            },
+          });
+        }
+      }
+
       if (commitments.length > 0) {
         await tx.returnCommitment.updateMany({
           where: {

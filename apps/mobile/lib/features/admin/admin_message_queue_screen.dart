@@ -10,6 +10,8 @@ import '../../core/widgets/app_widgets.dart';
 import '../../shared/jalali.dart';
 import '../../shared/labels.dart';
 import '../../shared/models/models.dart';
+import '../followups/follow_ups_screen.dart';
+import '../followups/intention_idempotency.dart';
 import '../recovery/return_commitment_form.dart';
 import 'admin_messaging_shell.dart';
 
@@ -301,6 +303,7 @@ class _AdminMessageDetailSheetState extends ConsumerState<AdminMessageDetailShee
   AdminQueueItem? _item;
   Object? _error;
   bool _busy = false;
+  final _intentionKey = StableIdempotencyKey();
 
   @override
   void initState() {
@@ -430,6 +433,42 @@ class _AdminMessageDetailSheetState extends ConsumerState<AdminMessageDetailShee
     }
   }
 
+  bool _canRecordCustomerIntention(AdminQueueItem item) {
+    return item.customerId.isNotEmpty && item.vipRequestId == null;
+  }
+
+  Future<void> _recordCustomerIntention(AdminQueueItem item) async {
+    final time = await promptVisitIntentionTime(context);
+    if (time == null || !mounted) return;
+    final idempotencyKey = _intentionKey.forPayload(
+      '${item.customerId}|${item.id}|${visitIntentionTimeSignature(time)}',
+    );
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await ref.read(visitIntentionRepositoryProvider).createAdminCustomer(
+            customerId: item.customerId,
+            time: time,
+            idempotencyKey: idempotencyKey,
+            sourceMessageRequestId: item.id,
+          );
+      _intentionKey.succeed();
+      if (!mounted) return;
+      setState(() => _busy = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text(AppStrings.customerIntentionRecorded)),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _error = error;
+      });
+    }
+  }
+
   bool _canManageCommitment(AdminQueueItem item) {
     if (item.customerId.isEmpty || item.vipRequestId != null) {
       return false;
@@ -503,6 +542,16 @@ class _AdminMessageDetailSheetState extends ConsumerState<AdminMessageDetailShee
                           ? AppStrings.recordAgreedReturn
                           : AppStrings.editAgreedReturn,
                       onPressed: _busy ? null : () => _recordCommitment(item),
+                    ),
+                  ],
+                  if (_canRecordCustomerIntention(item)) ...[
+                    const SizedBox(height: 8),
+                    const Text(AppStrings.adminIntentionNotDelivery),
+                    const Text(AppStrings.customerIntentionNotReturnCommitment),
+                    const SizedBox(height: 8),
+                    AppButton(
+                      label: AppStrings.recordCustomerIntentionToldToAdmin,
+                      onPressed: _busy ? null : () => _recordCustomerIntention(item),
                     ),
                   ],
                   if (item.mode == null &&

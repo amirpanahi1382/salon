@@ -1183,3 +1183,136 @@ class SupportRepository {
     }
   }
 }
+
+class VisitIntentionRepository {
+  VisitIntentionRepository(this._api);
+
+  final ApiClient _api;
+
+  Future<FollowUpPage> customerFollowUps({String? cursor}) async {
+    final data = await _api.get(
+      '/follow-ups/customers',
+      query: {
+        'limit': '20',
+        if (cursor != null) 'cursor': cursor,
+      },
+    );
+    return FollowUpPage.fromJson(data);
+  }
+
+  Future<FollowUpPage> vipFollowUps({String? cursor}) async {
+    final data = await _api.get(
+      '/follow-ups/vip',
+      query: {
+        'limit': '20',
+        if (cursor != null) 'cursor': cursor,
+      },
+    );
+    return FollowUpPage.fromJson(data);
+  }
+
+  Future<ItemPage<VisitIntention>> listForCustomer(
+    String customerId, {
+    String? cursor,
+  }) async {
+    final data = await _api.get(
+      '/customers/$customerId/visit-intentions',
+      query: cursor == null ? null : {'cursor': cursor},
+    );
+    return parseItemPage(data, VisitIntention.fromJson);
+  }
+
+  Future<VisitIntention> createForCustomer({
+    required String customerId,
+    required Map<String, dynamic> time,
+    required String idempotencyKey,
+    String? sourceMessageRequestId,
+  }) async {
+    final data = await _api.post(
+      '/customers/$customerId/visit-intentions',
+      data: {
+        'time': time,
+        if (sourceMessageRequestId != null)
+          'sourceMessageRequestId': sourceMessageRequestId,
+      },
+      headers: {'Idempotency-Key': idempotencyKey},
+    ) as Map<String, dynamic>;
+    return VisitIntention.fromJson(data);
+  }
+
+  Future<VisitIntention> createForVipRequest({
+    required String vipRequestId,
+    required Map<String, dynamic> time,
+    required String idempotencyKey,
+    String? disclosedDisplayName,
+    String? disclosedPhone,
+  }) async {
+    final data = await _api.post(
+      '/vip/requests/$vipRequestId/visit-intentions',
+      data: {
+        'time': time,
+        if (disclosedDisplayName != null)
+          'disclosedDisplayName': disclosedDisplayName,
+        if (disclosedPhone != null) 'disclosedPhone': disclosedPhone,
+      },
+      headers: {'Idempotency-Key': idempotencyKey},
+    ) as Map<String, dynamic>;
+    return VisitIntention.fromJson(data);
+  }
+
+  Future<VisitIntention> createAdminCustomer({
+    required String customerId,
+    required Map<String, dynamic> time,
+    required String idempotencyKey,
+    String? sourceMessageRequestId,
+  }) async {
+    final data = await _api.post(
+      '/admin/customers/$customerId/visit-intentions',
+      data: {
+        'time': time,
+        'sourceMessageRequestId': ?sourceMessageRequestId,
+      },
+      headers: {'Idempotency-Key': idempotencyKey},
+    ) as Map<String, dynamic>;
+    return VisitIntention.fromJson(data);
+  }
+
+  Future<VisitIntention> createAdminVip({
+    required String vipRequestId,
+    required String recipientId,
+    required Map<String, dynamic> time,
+    required String idempotencyKey,
+  }) async {
+    final data = await _api.post(
+      '/admin/vip-requests/$vipRequestId/recipients/$recipientId/visit-intentions',
+      data: {'time': time},
+      headers: {'Idempotency-Key': idempotencyKey},
+    ) as Map<String, dynamic>;
+    return VisitIntention.fromJson(data);
+  }
+
+  Future<VisitIntention> arrive({
+    required String id,
+    required DateTime visitedAt,
+    required String idempotencyKey,
+    String? customerId,
+    String? serviceId,
+    String? amount,
+  }) async {
+    final data = await _api.post(
+      '/visit-intentions/$id/arrive',
+      data: {
+        'visitedAt': toApiInstant(visitedAt),
+        if (customerId != null) 'customerId': customerId,
+        if (serviceId != null && amount != null)
+          'sale': {
+            'serviceId': serviceId,
+            'amount': amount,
+            'currency': 'IRR',
+          },
+      },
+      headers: {'Idempotency-Key': idempotencyKey},
+    ) as Map<String, dynamic>;
+    return VisitIntention.fromJson(data);
+  }
+}

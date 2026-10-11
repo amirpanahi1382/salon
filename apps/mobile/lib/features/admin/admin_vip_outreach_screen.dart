@@ -9,6 +9,8 @@ import '../../core/theme/app_tokens.dart';
 import '../../core/widgets/app_widgets.dart';
 import '../../shared/labels.dart';
 import '../../shared/models/models.dart';
+import '../followups/follow_ups_screen.dart';
+import '../followups/intention_idempotency.dart';
 import 'admin_message_queue_screen.dart';
 import 'admin_messaging_shell.dart';
 
@@ -335,6 +337,7 @@ class _AdminVipOutreachRequestScreenState
   Object? _error;
   String? _busyRecipientId;
   bool _dispatching = false;
+  final _intentionKey = StableIdempotencyKey();
 
   @override
   void initState() {
@@ -454,6 +457,37 @@ class _AdminVipOutreachRequestScreenState
     }
   }
 
+  Future<void> _recordIntention(AdminVipOutreachRecipient row) async {
+    final request = _request;
+    if (request == null) return;
+    final time = await promptVisitIntentionTime(context);
+    if (time == null || !mounted) return;
+    final idempotencyKey = _intentionKey.forPayload(
+      '${row.id}|${visitIntentionTimeSignature(time)}',
+    );
+    setState(() => _busyRecipientId = row.id);
+    try {
+      await ref.read(visitIntentionRepositoryProvider).createAdminVip(
+            vipRequestId: request.id,
+            recipientId: row.id,
+            time: time,
+            idempotencyKey: idempotencyKey,
+          );
+      _intentionKey.succeed();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text(AppStrings.visitIntentionTitle)),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyError(error))),
+      );
+    } finally {
+      if (mounted) setState(() => _busyRecipientId = null);
+    }
+  }
+
   Future<void> _dispatchRequest() async {
     final request = _request;
     if (request == null || !request.canDispatchManual || _dispatching) {
@@ -552,6 +586,16 @@ class _AdminVipOutreachRequestScreenState
                                 Text(vipOutreachExecutionLabel(row.executionState)),
                                 if (row.messageRequestId == null)
                                   const Text(AppStrings.vipOutreachDispatchPrerequisite),
+                                const Text(AppStrings.adminIntentionNotDelivery),
+                                Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: TextButton(
+                                    onPressed: _busyRecipientId == null
+                                        ? () => _recordIntention(row)
+                                        : null,
+                                    child: const Text(AppStrings.recordVisitIntention),
+                                  ),
+                                ),
                                 if (row.canMarkManualSent)
                                   Align(
                                     alignment: Alignment.centerLeft,
