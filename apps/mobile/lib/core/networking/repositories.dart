@@ -673,7 +673,7 @@ class AdminMessageRepository {
       '/admin/message-stops',
       query: {'phone': phone},
     );
-    if (data == null) return null;
+    if (data == null || data == '') return null;
     return PlatformMessageStop.fromJson(data as Map<String, dynamic>);
   }
 
