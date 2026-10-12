@@ -646,7 +646,8 @@ void main() {
           reportedAt: DateTime.utc(2026, 10, 10),
           timePrecision: 'UNKNOWN',
           timeKnown: false,
-          operationallyOpen: true,
+          operationallyOpen: false,
+          linkedVisitId: 'visit-linked',
           updatedAt: DateTime.utc(2026, 10, 10),
           identityDisclosure: 'WITHHELD',
           disclosedDisplayName: 'فهرست',
@@ -670,6 +671,10 @@ void main() {
     expect(find.text(AppStrings.vipIdentityWithheld), findsOneWidget);
     expect(find.text('فهرست'), findsNothing);
     expect(find.text('09129998877'), findsNothing);
+    expect(find.text(AppStrings.recordedVisitLabel), findsOneWidget);
+    expect(find.text('جذب شد'), findsNothing);
+    expect(find.byKey(const ValueKey('arrive-admin-1')), findsOneWidget);
+    expect(find.byKey(const ValueKey('arrive-legacy-1')), findsNothing);
     expect(find.text(AppStrings.vipRequestIntentionsEnd), findsOneWidget);
     expect(find.byKey(const Key('vip-request-intentions-more')), findsNothing);
   });
@@ -707,10 +712,13 @@ void main() {
 
     await tester.tap(find.byKey(const Key('vip-request-intentions-more')));
     await tester.pump();
-    second.complete(ItemPage(items: [_listed('two', 'صفحه دوم')], hasMore: false));
+    second.complete(ItemPage(items: [_listed('two', 'صفحه دوم', open: false)], hasMore: false));
     await tester.pumpAndSettle();
     expect(find.text('صفحه اول'), findsOneWidget);
     expect(find.text('صفحه دوم'), findsOneWidget);
+    expect(find.text(AppStrings.recordedVisitLabel), findsOneWidget);
+    expect(find.byKey(const ValueKey('arrive-one')), findsOneWidget);
+    expect(find.byKey(const ValueKey('arrive-two')), findsNothing);
     expect(find.text(AppStrings.vipRequestIntentionsEnd), findsOneWidget);
     expect(find.byKey(const Key('vip-request-intentions-more')), findsNothing);
     expect(repo.cursors, [null, 'cursor-2']);
@@ -743,7 +751,7 @@ void main() {
   });
 }
 
-VisitIntention _listed(String id, String name) {
+VisitIntention _listed(String id, String name, {bool open = true}) {
   return VisitIntention(
     id: id,
     subject: 'VIP_PROSPECT',
@@ -752,7 +760,8 @@ VisitIntention _listed(String id, String name) {
     reportedAt: DateTime.utc(2026, 10, 11),
     timePrecision: 'UNKNOWN',
     timeKnown: false,
-    operationallyOpen: true,
+    operationallyOpen: open,
+    linkedVisitId: open ? null : 'visit-$id',
     updatedAt: DateTime.utc(2026, 10, 11),
     identityDisclosure: 'SALON_SUPPLIED',
     disclosedDisplayName: name,

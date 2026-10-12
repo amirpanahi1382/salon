@@ -1547,4 +1547,124 @@ describeIfDisposable('visit intentions on a disposable database', () => {
     expect(unknown.body.agreedDate).toBeNull();
     expect(unknown.body.agreedInstant).toBeNull();
   });
+
+  it('shows a linked VIP visit in request history without treating it as acquisition or recovery', async () => {
+    const salon = await registerOwner('vip-linked', { skipLogin: true });
+    const other = await registerOwner('vip-linked-other', { skipLogin: true });
+    const vip = await insertVip(salon);
+    const chosen = await createCustomer(salon.token, 'انتخابی');
+    const saleCustomer = await createCustomer(salon.token, 'فروش');
+    const service = await request(app.getHttpServer())
+      .post('/services')
+      .set('Authorization', `Bearer ${salon.token}`)
+      .send({ name: 'اصلاح' })
+      .expect(201);
+    const admin = await prisma.client.platformAdmin.findFirstOrThrow({ orderBy: { createdAt: 'desc' } });
+    const withheldId = randomUUID();
+    await prisma.client.visitIntention.create({
+      data: {
+        id: withheldId,
+        salonId: salon.tenantId,
+        subject: 'VIP_PROSPECT',
+        vipRequestId: vip.requestId,
+        vipRequestRecipientId: vip.recipientId,
+        timePrecision: 'UNKNOWN',
+        reportChannel: 'REPORTED_DURING_MANUAL_HANDLING',
+        contactBasis: 'WITHHELD',
+        createdByPlatformAdminId: admin.id,
+        updatedByPlatformAdminId: admin.id,
+        updatedAt: new Date('2026-10-01T00:00:00.000Z'),
+        createdAt: new Date('2026-10-01T00:00:00.000Z'),
+      },
+    });
+    const open = await request(app.getHttpServer())
+      .post(`/vip/requests/${vip.requestId}/visit-intentions`)
+      .set('Authorization', `Bearer ${salon.token}`)
+      .set('Idempotency-Key', `vi-open-history-${randomUUID()}`)
+      .send({ time: { precision: 'DATE', agreedDate: '2026-11-03' }, disclosedDisplayName: 'باز' })
+      .expect(201);
+    const noSale = await request(app.getHttpServer())
+      .post(`/vip/requests/${vip.requestId}/visit-intentions`)
+      .set('Authorization', `Bearer ${salon.token}`)
+      .set('Idempotency-Key', `vi-nosale-history-${randomUUID()}`)
+      .send({ time: { precision: 'UNKNOWN' }, disclosedPhone: '09125556677' })
+      .expect(201);
+    const withSale = await request(app.getHttpServer())
+      .post(`/vip/requests/${vip.requestId}/visit-intentions`)
+      .set('Authorization', `Bearer ${salon.token}`)
+      .set('Idempotency-Key', `vi-sale-history-${randomUUID()}`)
+      .send({ time: { precision: 'UNKNOWN' }, disclosedDisplayName: 'فروش' })
+      .expect(201);
+    const recoveryBefore = await request(app.getHttpServer())
+      .get('/recovery/outcomes/summary')
+      .set('Authorization', `Bearer ${salon.token}`)
+      .expect(200);
+    const deliveriesBefore = await prisma.client.messageDelivery.count({ where: { salonId: salon.tenantId } });
+    const visitedAt = new Date(Date.now() - 60_000).toISOString();
+    const plain = await request(app.getHttpServer())
+      .post(`/visit-intentions/${noSale.body.id}/arrive`)
+      .set('Authorization', `Bearer ${salon.token}`)
+      .set('Idempotency-Key', `vi-nosale-arrive-${randomUUID()}`)
+      .send({ visitedAt, customerId: chosen })
+      .expect(201);
+    const sold = await request(app.getHttpServer())
+      .post(`/visit-intentions/${withSale.body.id}/arrive`)
+      .set('Authorization', `Bearer ${salon.token}`)
+      .set('Idempotency-Key', `vi-sale-arrive-${randomUUID()}`)
+      .send({
+        visitedAt,
+        customerId: saleCustomer,
+        sale: { serviceId: service.body.id, amount: '250000.00', currency: 'IRR' },
+      })
+      .expect(201);
+    expect(plain.body.operationallyOpen).toBe(false);
+    expect(sold.body.operationallyOpen).toBe(false);
+    expect(plain.body.linkedVisitId).toBeTruthy();
+    expect(sold.body.linkedVisitId).not.toBe(plain.body.linkedVisitId);
+
+    const history = await request(app.getHttpServer())
+      .get(`/vip/requests/${vip.requestId}/visit-intentions`)
+      .set('Authorization', `Bearer ${salon.token}`)
+      .expect(200);
+    const byId = new Map(history.body.items.map((item: { id: string }) => [item.id, item]));
+    expect(byId.get(open.body.id).operationallyOpen).toBe(true);
+    expect(byId.get(open.body.id).linkedVisitId).toBeNull();
+    expect(byId.get(noSale.body.id).operationallyOpen).toBe(false);
+    expect(byId.get(withSale.body.id).operationallyOpen).toBe(false);
+    const hidden = byId.get(withheldId);
+    expect(hidden.identityDisclosure).toBe('WITHHELD');
+    expect(hidden.operationallyOpen).toBe(true);
+    expect(hidden.disclosedDisplayName).toBeNull();
+    expect(hidden.disclosedPhone).toBeNull();
+    expect(hidden.vipRequestRecipientId).toBeUndefined();
+    const text = JSON.stringify(history.body);
+    expect(text).not.toContain(targetPhone);
+    expect(text).not.toContain(vip.recipientId);
+    expect(text).not.toContain('هدف فهرست');
+    expect(text).not.toContain('جذب شد');
+
+    const followUps = await request(app.getHttpServer())
+      .get('/follow-ups/vip')
+      .set('Authorization', `Bearer ${salon.token}`)
+      .expect(200);
+    const followIds = followUps.body.items.map((item: { id: string }) => item.id);
+    expect(followIds).toContain(open.body.id);
+    expect(followIds).toContain(withheldId);
+    expect(followIds).not.toContain(noSale.body.id);
+    expect(followIds).not.toContain(withSale.body.id);
+
+    const recoveryAfter = await request(app.getHttpServer())
+      .get('/recovery/outcomes/summary')
+      .set('Authorization', `Bearer ${salon.token}`)
+      .expect(200);
+    expect(recoveryAfter.body).toEqual(recoveryBefore.body);
+    expect(await prisma.client.messageDelivery.count({ where: { salonId: salon.tenantId } })).toBe(deliveriesBefore);
+    expect(await prisma.client.vipRequest.findUniqueOrThrow({ where: { id: vip.requestId } })).toMatchObject({
+      status: 'SUBMITTED',
+    });
+    await request(app.getHttpServer())
+      .get(`/vip/requests/${vip.requestId}/visit-intentions`)
+      .set('Authorization', `Bearer ${other.token}`)
+      .expect(404);
+  });
 });

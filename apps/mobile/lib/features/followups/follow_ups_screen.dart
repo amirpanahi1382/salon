@@ -512,7 +512,27 @@ class _VisitIntentionFormScreenState extends ConsumerState<VisitIntentionFormScr
               if (item.identityDisclosure == 'SALON_SUPPLIED' ||
                   item.identityDisclosure == 'ADMIN_AUTHORIZED')
                 if (item.disclosedPhone != null) LtrText(item.disclosedPhone!),
+              Text(
+                item.operationallyOpen
+                    ? AppStrings.visitIntentionTitle
+                    : AppStrings.recordedVisitLabel,
+                key: Key('vip-intention-status-${item.id}'),
+              ),
               Text(_precisionLabel(item.timePrecision)),
+              if (item.operationallyOpen)
+                Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: TextButton(
+                    key: ValueKey('arrive-${item.id}'),
+                    onPressed: () async {
+                      final recorded = await context.push<bool>(
+                        '/visit-intentions/${item.id}/choose-customer',
+                      );
+                      if (recorded == true) await _loadExisting();
+                    },
+                    child: const Text(AppStrings.markVisited),
+                  ),
+                ),
               const SizedBox(height: AppTokens.space8),
             ],
             if (_listError != null) ...[
