@@ -4,6 +4,7 @@ export type AppErrorCode =
   | 'FORBIDDEN'
   | 'NOT_FOUND'
   | 'CONFLICT'
+  | 'CUSTOMER_PHONE_EXISTS'
   | 'MESSAGE_DAILY_LIMIT_REACHED'
   | 'GLOBAL_MESSAGE_STOP'
   | 'RETURN_COMMITMENT_VISIT_REVIEW_REQUIRED'
@@ -63,6 +64,16 @@ export class ConflictError extends AppError {
   constructor(message: string) {
     super('CONFLICT', message, 409);
     this.name = 'ConflictError';
+  }
+}
+
+/** The salon already has this phone. The response does not include the other customer's details. */
+export class CustomerPhoneExistsError extends AppError {
+  constructor(
+    message = 'A customer with this phone number already exists in this salon. Choose that customer explicitly.',
+  ) {
+    super('CUSTOMER_PHONE_EXISTS', message, 409);
+    this.name = 'CustomerPhoneExistsError';
   }
 }
 

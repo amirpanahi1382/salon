@@ -251,9 +251,28 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/visit-intentions/:id/choose-customer',
-        builder: (context, state) => VipArrivalCustomerScreen(
-          intentionId: state.pathParameters['id']!,
-        ),
+        builder: (context, state) {
+          final extra = state.extra;
+          return VipArrivalCustomerScreen(
+            intentionId: state.pathParameters['id']!,
+            link: extra is RecordVisitLink ? extra : null,
+            initialQuery: state.uri.queryParameters['q'] ?? '',
+          );
+        },
+      ),
+      GoRoute(
+        path: '/visit-intentions/:id/record-visit',
+        builder: (context, state) {
+          final extra = state.extra;
+          final link = extra is RecordVisitLink ? extra : null;
+          return RecordVisitScreen(
+            visitIntentionId: state.pathParameters['id']!,
+            createCustomer: link?.createCustomer ?? true,
+            disclosedDisplayName: link?.disclosedDisplayName,
+            disclosedPhone: link?.disclosedPhone,
+            identityDisclosure: link?.identityDisclosure,
+          );
+        },
       ),
     ],
   );

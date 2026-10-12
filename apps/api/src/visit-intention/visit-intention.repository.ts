@@ -673,13 +673,64 @@ function mapFollowUpRow(row: FollowUpSqlRow) {
   };
 }
 
+export type VisitLinkEvidence = {
+  priorVisit: boolean;
+  saleRecorded: boolean;
+};
+
+export async function evidenceForIntentions(
+  db: Prisma.TransactionClient | PrismaService['client'],
+  rows: VisitIntentionRecord[],
+): Promise<Map<string, VisitLinkEvidence>> {
+  const linked = rows.filter((row) => row.linkedVisitId && row.linkedCustomerId);
+  const evidence = new Map<string, VisitLinkEvidence>();
+  if (linked.length === 0) return evidence;
+  const found = await db.$queryRaw<Array<{ id: string; prior_visit: boolean; sale_recorded: boolean }>>`
+    SELECT vi.id::text AS id,
+      EXISTS (
+        SELECT 1
+        FROM visits earlier
+        JOIN visits linked
+          ON linked.id = vi.linked_visit_id
+         AND linked.salon_id = vi.salon_id
+        WHERE earlier.salon_id = vi.salon_id
+          AND earlier.customer_id = vi.linked_customer_id
+          AND earlier.id <> linked.id
+          AND (earlier.visited_at, earlier.created_at, earlier.id)
+            < (linked.visited_at, linked.created_at, linked.id)
+      ) AS prior_visit,
+      EXISTS (
+        SELECT 1
+        FROM transactions sale
+        WHERE sale.salon_id = vi.salon_id
+          AND sale.visit_id = vi.linked_visit_id
+          AND sale.status = 'COMPLETED'
+      ) AS sale_recorded
+    FROM visit_intentions vi
+    WHERE vi.id IN (${Prisma.join(linked.map((row) => Prisma.sql`${row.id}::uuid`))})
+  `;
+  for (const row of found) {
+    evidence.set(row.id, {
+      priorVisit: row.prior_visit === true,
+      saleRecorded: row.sale_recorded === true,
+    });
+  }
+  return evidence;
+}
+
 export function toVisitIntentionReadModel(
   row: VisitIntentionRecord,
   audience: IntentionAudience,
   now: Date,
+  evidence?: VisitLinkEvidence,
 ) {
   const timeKnown = row.timePrecision === 'INSTANT';
   const showContact = row.subject === 'VIP_PROSPECT' && authorizedContact(row.contactBasis);
+  const visitRecorded = row.linkedVisitId !== null;
+  // Current classification against the customer's Visits, ordered by visitedAt, createdAt, id.
+  // A later backdated Visit changes these flags. The intention link stays where it was written.
+  const priorVisit = visitRecorded && evidence?.priorVisit === true;
+  const saleRecorded = visitRecorded && evidence?.saleRecorded === true;
   return {
     id: row.id,
     subject: row.subject,
@@ -701,6 +752,10 @@ export function toVisitIntentionReadModel(
     linkedVisitId: row.linkedVisitId,
     linkedCustomerId: row.linkedCustomerId,
     operationallyOpen: row.linkedVisitId === null,
+    visitRecorded,
+    saleRecorded,
+    existingCustomerReturn: priorVisit,
+    vipAcquisitionByVisit: visitRecorded && row.subject === 'VIP_PROSPECT' && !priorVisit,
     updatedAt: row.updatedAt.toISOString(),
   };
 }

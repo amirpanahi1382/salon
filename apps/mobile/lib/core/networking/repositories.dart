@@ -1343,6 +1343,9 @@ class VisitIntentionRepository {
     required DateTime visitedAt,
     required String idempotencyKey,
     String? customerId,
+    String? firstName,
+    String? lastName,
+    String? phoneNumber,
     String? serviceId,
     String? amount,
   }) async {
@@ -1351,6 +1354,12 @@ class VisitIntentionRepository {
       data: {
         'visitedAt': toApiInstant(visitedAt),
         if (customerId != null) 'customerId': customerId,
+        if (firstName != null && lastName != null && phoneNumber != null)
+          'newCustomer': {
+            'firstName': firstName,
+            'lastName': lastName,
+            'phoneNumber': phoneNumber,
+          },
         if (serviceId != null && amount != null)
           'sale': {
             'serviceId': serviceId,

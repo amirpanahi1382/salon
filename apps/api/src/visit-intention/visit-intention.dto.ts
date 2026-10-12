@@ -139,6 +139,23 @@ export class UpdateVisitIntentionDto {
   prospectAuthorizedSharingWithSalon?: boolean;
 }
 
+export class ArriveNewCustomerDto {
+  @ApiProperty()
+  @IsString()
+  @MaxLength(80)
+  firstName!: string;
+
+  @ApiProperty()
+  @IsString()
+  @MaxLength(80)
+  lastName!: string;
+
+  @ApiProperty({ description: 'Exactly 11 digits starting with 09.' })
+  @IsString()
+  @MaxLength(32)
+  phoneNumber!: string;
+}
+
 export class ArriveVisitIntentionDto {
   @ApiProperty()
   @IsAbsoluteInstant()
@@ -146,11 +163,21 @@ export class ArriveVisitIntentionDto {
 
   @ApiPropertyOptional({
     description:
-      'Required for a VIP intention. The salon must choose an existing customer. Ignored phone matching is not accepted.',
+      'Existing salon customer chosen explicitly. Not inferred from a VIP target-list phone.',
   })
   @IsOptional()
   @IsUUID()
   customerId?: string;
+
+  @ApiPropertyOptional({
+    type: ArriveNewCustomerDto,
+    description:
+      'Creates the customer in the same transaction as the Visit and VIP link. Rejected when customerId is also set.',
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ArriveNewCustomerDto)
+  newCustomer?: ArriveNewCustomerDto;
 
   @ApiPropertyOptional({ type: ArriveReturnCommitmentSaleDto })
   @IsOptional()

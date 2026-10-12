@@ -46,6 +46,9 @@ class ApiException implements Exception {
     if (code == 'RETURN_COMMITMENT_VISIT_REVIEW_REQUIRED') {
       return AppStrings.arrivalVisitReviewRequired;
     }
+    if (code == 'CUSTOMER_PHONE_EXISTS') {
+      return AppStrings.customerPhoneExists;
+    }
     if (message.trim().isNotEmpty) {
       return localizeUserFacingMessage(message);
     }

@@ -61,10 +61,31 @@ class RecordVisitLink {
   const RecordVisitLink({
     this.commitment,
     this.visitIntentionId,
+    this.createCustomer = false,
+    this.disclosedDisplayName,
+    this.disclosedPhone,
+    this.identityDisclosure,
   });
 
   final ReturnCommitment? commitment;
   final String? visitIntentionId;
+  final bool createCustomer;
+  final String? disclosedDisplayName;
+  final String? disclosedPhone;
+  final String? identityDisclosure;
+}
+
+String visitOutcomeLabel({
+  required bool operationallyOpen,
+  required bool saleRecorded,
+  required bool existingCustomerReturn,
+  required bool vipAcquisitionByVisit,
+}) {
+  if (operationallyOpen) return AppStrings.visitIntentionTitle;
+  if (vipAcquisitionByVisit) return AppStrings.vipAcquisitionByVisit;
+  if (existingCustomerReturn) return AppStrings.existingCustomerReturn;
+  if (saleRecorded) return AppStrings.visitWithSale;
+  return AppStrings.visitWithoutSale;
 }
 
 class FollowUpsScreen extends ConsumerStatefulWidget {
@@ -159,7 +180,15 @@ class _FollowUpsScreenState extends ConsumerState<FollowUpsScreen> {
 
   Future<void> _act(FollowUpItem item) async {
     if (item.nextAction == 'SELECT_CUSTOMER_THEN_RECORD_VISIT') {
-      final recorded = await context.push<bool>('/visit-intentions/${item.id}/choose-customer');
+      final recorded = await context.push<bool>(
+        '/visit-intentions/${item.id}/choose-customer',
+        extra: RecordVisitLink(
+          visitIntentionId: item.id,
+          disclosedDisplayName: item.disclosedDisplayName,
+          disclosedPhone: item.disclosedPhone,
+          identityDisclosure: item.identityDisclosure,
+        ),
+      );
       if (recorded == true) await _refresh();
       return;
     }
@@ -513,11 +542,17 @@ class _VisitIntentionFormScreenState extends ConsumerState<VisitIntentionFormScr
                   item.identityDisclosure == 'ADMIN_AUTHORIZED')
                 if (item.disclosedPhone != null) LtrText(item.disclosedPhone!),
               Text(
-                item.operationallyOpen
-                    ? AppStrings.visitIntentionTitle
-                    : AppStrings.recordedVisitLabel,
+                visitOutcomeLabel(
+                  operationallyOpen: item.operationallyOpen,
+                  saleRecorded: item.saleRecorded,
+                  existingCustomerReturn: item.existingCustomerReturn,
+                  vipAcquisitionByVisit: item.vipAcquisitionByVisit,
+                ),
                 key: Key('vip-intention-status-${item.id}'),
               ),
+              if (!item.operationallyOpen &&
+                  (item.vipAcquisitionByVisit || item.existingCustomerReturn))
+                Text(item.saleRecorded ? AppStrings.visitWithSale : AppStrings.visitWithoutSale),
               Text(_precisionLabel(item.timePrecision)),
               if (item.operationallyOpen)
                 Align(
@@ -527,6 +562,12 @@ class _VisitIntentionFormScreenState extends ConsumerState<VisitIntentionFormScr
                     onPressed: () async {
                       final recorded = await context.push<bool>(
                         '/visit-intentions/${item.id}/choose-customer',
+                        extra: RecordVisitLink(
+                          visitIntentionId: item.id,
+                          disclosedDisplayName: item.disclosedDisplayName,
+                          disclosedPhone: item.disclosedPhone,
+                          identityDisclosure: item.identityDisclosure,
+                        ),
                       );
                       if (recorded == true) await _loadExisting();
                     },
@@ -685,9 +726,12 @@ class _CustomerIntentionsScreenState extends ConsumerState<CustomerIntentionsScr
                       for (final item in _page!.items)
                         ListTile(
                           title: Text(
-                            item.operationallyOpen
-                                ? AppStrings.visitIntentionTitle
-                                : AppStrings.recordedVisitLabel,
+                            visitOutcomeLabel(
+                              operationallyOpen: item.operationallyOpen,
+                              saleRecorded: item.saleRecorded,
+                              existingCustomerReturn: item.existingCustomerReturn,
+                              vipAcquisitionByVisit: item.vipAcquisitionByVisit,
+                            ),
                           ),
                           subtitle: Text(_intentionTime(item)),
                           trailing: item.operationallyOpen
@@ -712,19 +756,25 @@ class _CustomerIntentionsScreenState extends ConsumerState<CustomerIntentionsScr
 }
 
 class VipArrivalCustomerScreen extends ConsumerStatefulWidget {
-  const VipArrivalCustomerScreen({super.key, required this.intentionId});
+  const VipArrivalCustomerScreen({
+    super.key,
+    required this.intentionId,
+    this.link,
+    this.initialQuery = '',
+  });
 
   final String intentionId;
+  final RecordVisitLink? link;
+  final String initialQuery;
 
   @override
   ConsumerState<VipArrivalCustomerScreen> createState() => _VipArrivalCustomerScreenState();
 }
 
 class _VipArrivalCustomerScreenState extends ConsumerState<VipArrivalCustomerScreen> {
-  final _search = TextEditingController();
+  late final TextEditingController _search;
   ItemPage<Customer>? _page;
   String _activeQuery = '';
-  Customer? _createdCustomer;
   Object? _error;
   bool _loading = true;
   bool _loadingMore = false;
@@ -733,6 +783,7 @@ class _VipArrivalCustomerScreenState extends ConsumerState<VipArrivalCustomerScr
   @override
   void initState() {
     super.initState();
+    _search = TextEditingController(text: widget.initialQuery);
     _load();
   }
 
@@ -804,18 +855,24 @@ class _VipArrivalCustomerScreenState extends ConsumerState<VipArrivalCustomerScr
     if (recorded == true && mounted) context.pop(true);
   }
 
-  Future<void> _createCustomer() async {
-    final created = await context.push<Object?>('/customers/new');
-    if (created is Customer && mounted) {
-      setState(() => _createdCustomer = created);
-    }
+  Future<void> _recordNewCustomer() async {
+    final link = widget.link ?? RecordVisitLink(visitIntentionId: widget.intentionId);
+    final recorded = await context.push<bool>(
+      '/visit-intentions/${widget.intentionId}/record-visit',
+      extra: RecordVisitLink(
+        visitIntentionId: widget.intentionId,
+        createCustomer: true,
+        disclosedDisplayName: link.disclosedDisplayName,
+        disclosedPhone: link.disclosedPhone,
+        identityDisclosure: link.identityDisclosure,
+      ),
+    );
+    if (recorded == true && mounted) context.pop(true);
   }
 
   @override
   Widget build(BuildContext context) {
     final items = _page?.items ?? const <Customer>[];
-    final pinned = _createdCustomer;
-    final showPinned = pinned != null && items.every((customer) => customer.id != pinned.id);
     return Scaffold(
       appBar: AppBar(title: const Text(AppStrings.chooseCustomerForVisit)),
       body: _loading && _page == null
@@ -846,20 +903,11 @@ class _VipArrivalCustomerScreenState extends ConsumerState<VipArrivalCustomerScr
                         ),
                       ),
                       OutlinedButton(
-                        onPressed: _createCustomer,
-                        child: const Text(AppStrings.addCustomer),
+                        key: const Key('record-new-customer'),
+                        onPressed: _recordNewCustomer,
+                        child: const Text(AppStrings.recordVisitForNewCustomer),
                       ),
-                      if (showPinned) ...[
-                        const SizedBox(height: AppTokens.space8),
-                        Text(AppStrings.createdCustomerReady),
-                        ListTile(
-                          key: ValueKey('created-${pinned.id}'),
-                          title: Text(pinned.fullName),
-                          subtitle: LtrText(pinned.phoneNumber),
-                          onTap: () => _choose(pinned),
-                        ),
-                      ],
-                      if (!_loading && items.isEmpty && !showPinned)
+                      if (!_loading && items.isEmpty)
                         EmptyStateView(
                           title: _activeQuery.isEmpty
                               ? AppStrings.noCustomers

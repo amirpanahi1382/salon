@@ -244,6 +244,14 @@ class AppStrings {
   static const visitIntentionUnknownTime = 'زمان توافق‌شده مشخص نیست';
   static const visitIntentionTimePassed = 'زمان توافق‌شده گذشته است';
   static const recordedVisitLabel = 'مراجعهٔ ثبت‌شده';
+  static const visitWithoutSale = 'مراجعهٔ ثبت‌شده بدون فروش';
+  static const visitWithSale = 'مراجعهٔ ثبت‌شده با فروش';
+  static const existingCustomerReturn = 'بازگشت با مراجعهٔ جدید';
+  static const vipAcquisitionByVisit = 'جذب ثبت‌شده با مراجعه';
+  static const recordVisitForNewCustomer = 'ثبت مراجعه برای مشتری جدید';
+  static const customerPhoneExists =
+      'این شماره در همین سالن مشتری دارد. همان مشتری را خودتان انتخاب کنید.';
+  static const disclosedNameHint = 'نامی که برای این گزارش مجاز به نمایش است';
   static const vipReportedOrigin = 'منشأ گزارش‌شدهٔ VIP';
   static const vipIdentityWithheld = 'هویت این مخاطب برای سالن قابل نمایش نیست';
   static const vipRequestIntentionsEmpty = 'برای این فهرست هنوز قصد مراجعه‌ای ثبت نشده است.';
@@ -262,9 +270,7 @@ class AppStrings {
   static const markVisited = 'مراجعه کرد';
   static const chooseCustomerForVisit = 'انتخاب مشتری برای ثبت مراجعه';
   static const chooseCustomerHint =
-      'مشتری را خودتان انتخاب یا ایجاد کنید. تطبیق با شمارهٔ فهرست VIP انجام نمی‌شود.';
-  static const createdCustomerReady =
-      'مشتری تازه‌ساخته‌شده را برای ثبت مراجعه انتخاب کنید.';
+      'اگر این شخص از قبل مشتری سالن است، همان را انتخاب کنید. مشتری جدید فقط با ذخیرهٔ مراجعه ساخته می‌شود.';
   static const timeUnknown = 'زمان نامشخص';
   static const timeDateOnly = 'فقط تاریخ';
   static const timeInstant = 'تاریخ و ساعت';

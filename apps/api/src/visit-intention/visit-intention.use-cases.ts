@@ -1,9 +1,11 @@
+import { createHash } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@salon/database';
 import {
   assertCurrencyIrr,
   ConflictError,
   createId,
+  CustomerPhoneExistsError,
   ForbiddenError,
   formatMoneyString,
   NotFoundError,
@@ -12,6 +14,7 @@ import {
   type AuthenticatedPrincipal,
   type PlatformAdminPrincipal,
 } from '@salon/shared';
+import { createCustomerInTransaction, requireCustomerIdentity } from '../customer/create-customer-record';
 import { CustomerRepository } from '../customer/customer.repository';
 import { PrismaService } from '../infrastructure/database/prisma.service';
 import {
@@ -44,6 +47,7 @@ import {
   visitIntentionRequestHash,
 } from './visit-intention.idempotency';
 import {
+  evidenceForIntentions,
   VisitIntentionRepository,
   toVisitIntentionReadModel,
   type IntentionAudience,
@@ -275,7 +279,7 @@ export class ListSalonVipVisitIntentionsUseCase {
     );
     const now = new Date();
     return {
-      items: page.items.map((row) => toVisitIntentionReadModel(row, 'SALON', now)),
+      items: await presentRows(this.prisma.client, page.items, 'SALON', now),
       hasMore: page.hasMore,
       nextCursor: page.nextCursor,
     };
@@ -358,7 +362,7 @@ export class ListCustomerVisitIntentionsUseCase {
     );
     const now = new Date();
     return {
-      items: page.items.map((row) => toVisitIntentionReadModel(row, 'SALON', now)),
+      items: await presentRows(this.prisma.client, page.items, 'SALON', now),
       hasMore: page.hasMore,
       nextCursor: page.nextCursor,
     };
@@ -415,9 +419,16 @@ export class ArriveVisitIntentionUseCase {
     if (sale && principal.role === 'STAFF') {
       throw new ForbiddenError();
     }
+    if (input.customerId && input.newCustomer) {
+      throw new ValidationError('Choose an existing customer or enter a new one, not both');
+    }
+    const newCustomer = input.newCustomer ? requireCustomerIdentity(input.newCustomer) : null;
+    const customerCanon = newCustomer
+      ? `new:${createHash('sha256').update(`${newCustomer.firstName}\n${newCustomer.lastName}\n${newCustomer.phoneNumber}`).digest('hex')}`
+      : (input.customerId ?? '');
     const requestHash = visitIntentionRequestHash(
       VISIT_INTENTION_ARRIVE,
-      `${id}:${input.customerId ?? ''}:${visitedAt.toISOString()}:${sale ? `${sale.serviceId}:${sale.amount}:${sale.currency}` : 'none'}`,
+      `${id}:${customerCanon}:${visitedAt.toISOString()}:${sale ? `${sale.serviceId}:${sale.amount}:${sale.currency}` : 'none'}`,
     );
     const visitId = createId();
     const transactionId = createId();
@@ -442,7 +453,7 @@ export class ArriveVisitIntentionUseCase {
         if (locked.linkedVisitId) {
           throw new ConflictError('This visit intention is already linked to a recorded visit');
         }
-        const customerId = customerForArrival(locked, input.customerId);
+        const customerId = await customerForArrival(tx, principal, locked, input.customerId, newCustomer);
         const customer = await this.customers.lockByIdForUpdate(tx, principal.tenantId, customerId);
         if (!customer) throw new NotFoundError('Customer not found');
         if (sale) {
@@ -479,9 +490,10 @@ export class ArriveVisitIntentionUseCase {
         }
         const row = await this.intentions.findById(principal.tenantId, id, tx);
         if (!row) throw new NotFoundError('Visit intention not found');
-        return toVisitIntentionReadModel(row, 'SALON', now);
+        return presentRow(tx, row, 'SALON', now);
       });
     } catch (error: unknown) {
+      if (error instanceof CustomerPhoneExistsError) throw error;
       rethrowIntentionError(error);
     }
   }
@@ -522,7 +534,7 @@ export class LinkVisitIntentionUseCase {
         const locked = await this.intentions.lockById(tx, principal.tenantId, id);
         if (!locked) throw new NotFoundError('Visit intention not found');
         if (locked.linkedVisitId === input.visitId) {
-          return toVisitIntentionReadModel(locked, 'SALON', now);
+          return presentRow(tx, locked, 'SALON', now);
         }
         if (locked.linkedVisitId) {
           throw new ConflictError('This visit intention is already linked to a recorded visit');
@@ -545,7 +557,7 @@ export class LinkVisitIntentionUseCase {
         }
         const row = await this.intentions.findById(principal.tenantId, id, tx);
         if (!row) throw new NotFoundError('Visit intention not found');
-        return toVisitIntentionReadModel(row, 'SALON', now);
+        return presentRow(tx, row, 'SALON', now);
       });
     } catch (error: unknown) {
       rethrowIntentionError(error);
@@ -701,7 +713,7 @@ async function correctTime(
       }
       const row = await intentions.findById(input.salonId, input.id, tx);
       if (!row) throw new NotFoundError('Visit intention not found');
-      return toVisitIntentionReadModel(row, input.audience, now);
+      return presentRow(tx, row, input.audience, now);
     });
   } catch (error: unknown) {
     rethrowIntentionError(error);
@@ -749,7 +761,7 @@ async function writeIntention(input: {
       await input.insert(tx, id, now);
       const row = await input.intentions.findById(input.salonId, id, tx);
       if (!row) throw new NotFoundError('Visit intention not found');
-      return toVisitIntentionReadModel(row, input.audience, now);
+      return presentRow(tx, row, input.audience, now);
     });
   } catch (error: unknown) {
     rethrowIntentionError(error);
@@ -771,20 +783,54 @@ async function replay(
   assertSameIdempotentRequest(existing.requestHash, requestHash);
   const row = await intentions.findById(salonId, existing.resourceId, tx);
   if (!row) throw new NotFoundError('Visit intention not found');
-  return toVisitIntentionReadModel(row, audience, new Date());
+  return presentRow(tx, row, audience, new Date());
 }
 
-function customerForArrival(row: VisitIntentionRecord, requestedCustomerId: string | undefined): string {
+async function presentRows(
+  db: Prisma.TransactionClient | PrismaService['client'],
+  rows: VisitIntentionRecord[],
+  audience: IntentionAudience,
+  now: Date,
+) {
+  const evidence = await evidenceForIntentions(db, rows);
+  return rows.map((row) => toVisitIntentionReadModel(row, audience, now, evidence.get(row.id)));
+}
+
+function presentRow(
+  db: Prisma.TransactionClient | PrismaService['client'],
+  row: VisitIntentionRecord,
+  audience: IntentionAudience,
+  now: Date,
+) {
+  return presentRows(db, [row], audience, now).then((items) => items[0]!);
+}
+
+async function customerForArrival(
+  tx: Prisma.TransactionClient,
+  principal: AuthenticatedPrincipal,
+  row: VisitIntentionRecord,
+  requestedCustomerId: string | undefined,
+  newCustomer: { firstName: string; lastName: string; phoneNumber: string } | null,
+): Promise<string> {
   if (row.subject === 'CUSTOMER') {
+    if (newCustomer) throw new ValidationError('This intention already belongs to a customer');
     if (requestedCustomerId && requestedCustomerId !== row.customerId) {
       throw new ValidationError('Customer does not match this visit intention');
     }
     return row.customerId!;
   }
-  if (!requestedCustomerId) {
-    throw new ValidationError('Choose an existing customer before recording the visit');
+  if (requestedCustomerId) return requestedCustomerId;
+  if (!newCustomer) {
+    throw new ValidationError('Choose an existing customer or enter the customer details with the visit');
   }
-  return requestedCustomerId;
+  const created = await createCustomerInTransaction(tx, {
+    salonId: principal.tenantId,
+    actorId: principal.userId,
+    identity: newCustomer,
+    now: new Date(),
+    phoneConflict: 'explicit-choice',
+  });
+  return created.id;
 }
 
 function prismaUniqueHint(error: Prisma.PrismaClientKnownRequestError): string {
@@ -803,6 +849,9 @@ export function rethrowIntentionError(error: unknown): never {
     error.code === 'P2002'
   ) {
     const hint = prismaUniqueHint(error);
+    if (hint.includes('phone_number') || hint.includes('phonenumber')) {
+      throw new CustomerPhoneExistsError();
+    }
     if (
       hint.includes('one_open_customer') ||
       (hint.includes('customer_id') && !hint.includes('linked_visit') && !hint.includes('vip_request_recipient'))

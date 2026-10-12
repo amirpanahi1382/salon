@@ -1951,6 +1951,10 @@ class VisitIntention {
     this.agreedDate,
     this.agreedInstant,
     this.linkedVisitId,
+    this.visitRecorded = false,
+    this.saleRecorded = false,
+    this.existingCustomerReturn = false,
+    this.vipAcquisitionByVisit = false,
     this.disclosedDisplayName,
     this.disclosedPhone,
     this.identityDisclosure,
@@ -1968,6 +1972,10 @@ class VisitIntention {
   final String? agreedDate;
   final DateTime? agreedInstant;
   final String? linkedVisitId;
+  final bool visitRecorded;
+  final bool saleRecorded;
+  final bool existingCustomerReturn;
+  final bool vipAcquisitionByVisit;
   final bool operationallyOpen;
   final DateTime updatedAt;
   final String? disclosedDisplayName;
@@ -1990,6 +1998,10 @@ class VisitIntention {
           ? DateTime.parse(json['agreedInstant'] as String)
           : null,
       linkedVisitId: json['linkedVisitId'] as String?,
+      visitRecorded: json['visitRecorded'] == true,
+      saleRecorded: json['saleRecorded'] == true,
+      existingCustomerReturn: json['existingCustomerReturn'] == true,
+      vipAcquisitionByVisit: json['vipAcquisitionByVisit'] == true,
       operationallyOpen: json['operationallyOpen'] == true,
       updatedAt: DateTime.parse(json['updatedAt'] as String),
       disclosedDisplayName: json['disclosedDisplayName'] as String?,

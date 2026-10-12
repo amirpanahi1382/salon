@@ -209,7 +209,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text(AppStrings.customerVisitIntentionsEmpty), findsNothing);
     expect(find.text(AppStrings.visitIntentionTitle), findsOneWidget);
-    expect(find.text(AppStrings.recordedVisitLabel), findsOneWidget);
+    expect(find.text(AppStrings.visitWithoutSale), findsOneWidget);
     expect(find.text(AppStrings.visitIntentionUnknownTime), findsNWidgets(2));
     expect(find.byKey(const ValueKey('arrive-open-1')), findsOneWidget);
     expect(find.byKey(const ValueKey('arrive-closed-1')), findsNothing);
@@ -373,10 +373,10 @@ void main() {
     expect(find.text(AppStrings.genericError), findsNothing);
   });
 
-  testWidgets('VIP arrival can select a later page and a newly created customer', (tester) async {
+  testWidgets('VIP arrival selects an existing customer and opens record visit for a new one', (tester) async {
     String? chosenCustomer;
     String? chosenIntention;
-    final created = _customer('created-9', 'تازه', '09129990000');
+    var openedNewCustomerVisit = false;
     final repo = _Customers({
       '|': Future.value(ItemPage(
         items: [_customer('page-1', 'اول', '09120000001')],
@@ -395,13 +395,13 @@ void main() {
           builder: (context, state) => const VipArrivalCustomerScreen(intentionId: 'vip-i'),
         ),
         GoRoute(
-          path: '/customers/new',
-          builder: (context, state) => Scaffold(
-            body: TextButton(
-              onPressed: () => context.pop(created),
-              child: const Text('finish-create'),
-            ),
-          ),
+          path: '/visit-intentions/:id/record-visit',
+          builder: (context, state) {
+            final extra = state.extra;
+            final link = extra is RecordVisitLink ? extra : null;
+            openedNewCustomerVisit = link?.createCustomer == true && link?.visitIntentionId == 'vip-i';
+            return const Text('new-customer-visit');
+          },
         ),
         GoRoute(
           path: '/customers/:id/record-visit',
@@ -434,16 +434,11 @@ void main() {
     expect(find.text('recording page-2 vip-i'), findsOneWidget);
     router.pop(false);
     await tester.pumpAndSettle();
-    await tester.tap(find.text(AppStrings.addCustomer));
+    await tester.tap(find.byKey(const Key('record-new-customer')));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('finish-create'));
-    await tester.pumpAndSettle();
-    expect(find.text(AppStrings.createdCustomerReady), findsOneWidget);
-    expect(find.text('تازه تست'), findsOneWidget);
-    await tester.tap(find.text('تازه تست'));
-    await tester.pumpAndSettle();
-    expect(chosenCustomer, 'created-9');
-    expect(chosenIntention, 'vip-i');
+    expect(openedNewCustomerVisit, isTrue);
+    expect(find.text('new-customer-visit'), findsOneWidget);
+    expect(find.text(AppStrings.addCustomer), findsNothing);
   });
 
   testWidgets('VIP arrival distinguishes an empty salon from a search miss and ignores a stale page', (tester) async {
@@ -671,7 +666,7 @@ void main() {
     expect(find.text(AppStrings.vipIdentityWithheld), findsOneWidget);
     expect(find.text('فهرست'), findsNothing);
     expect(find.text('09129998877'), findsNothing);
-    expect(find.text(AppStrings.recordedVisitLabel), findsOneWidget);
+    expect(find.text(AppStrings.visitWithoutSale), findsOneWidget);
     expect(find.text('جذب شد'), findsNothing);
     expect(find.byKey(const ValueKey('arrive-admin-1')), findsOneWidget);
     expect(find.byKey(const ValueKey('arrive-legacy-1')), findsNothing);
@@ -716,7 +711,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('صفحه اول'), findsOneWidget);
     expect(find.text('صفحه دوم'), findsOneWidget);
-    expect(find.text(AppStrings.recordedVisitLabel), findsOneWidget);
+    expect(find.text(AppStrings.visitWithoutSale), findsOneWidget);
     expect(find.byKey(const ValueKey('arrive-one')), findsOneWidget);
     expect(find.byKey(const ValueKey('arrive-two')), findsNothing);
     expect(find.text(AppStrings.vipRequestIntentionsEnd), findsOneWidget);
@@ -748,6 +743,42 @@ void main() {
     expect(find.text(AppStrings.genericError), findsOneWidget);
     expect(find.text(AppStrings.vipRequestIntentionsEmpty), findsNothing);
     expect(find.text(AppStrings.vipRequestIntentionsEnd), findsNothing);
+  });
+
+  testWidgets('a linked first VIP visit is acquisition by visit, not a caused conversion', (tester) async {
+    final repo = _CursorIntentions((cursor) async => ItemPage(
+          items: [
+            VisitIntention(
+              id: 'acquired',
+              subject: 'VIP_PROSPECT',
+              reportedBy: 'SALON_USER',
+              reportChannel: 'INBOUND_TO_SALON',
+              reportedAt: DateTime.utc(2026, 10, 11),
+              timePrecision: 'UNKNOWN',
+              timeKnown: false,
+              operationallyOpen: false,
+              visitRecorded: true,
+              saleRecorded: true,
+              vipAcquisitionByVisit: true,
+              updatedAt: DateTime.utc(2026, 10, 12),
+              identityDisclosure: 'SALON_SUPPLIED',
+              disclosedDisplayName: 'نگار',
+              disclosedPhone: '09120000000',
+            ),
+          ],
+          hasMore: false,
+        ));
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [visitIntentionRepositoryProvider.overrideWithValue(repo)],
+        child: const MaterialApp(home: VisitIntentionFormScreen(targetId: 'request-1', vipRequest: true)),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text(AppStrings.vipAcquisitionByVisit), findsOneWidget);
+    expect(find.text(AppStrings.visitWithSale), findsOneWidget);
+    expect(find.text('جذب شد'), findsNothing);
+    expect(find.byKey(const ValueKey('arrive-acquired')), findsNothing);
   });
 }
 

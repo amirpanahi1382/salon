@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/errors/api_exception.dart';
 import '../../core/state/providers.dart';
 import '../../core/state/cursor_page_state.dart';
 import '../../core/theme/app_tokens.dart';
@@ -1315,14 +1316,22 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
 class RecordVisitScreen extends ConsumerStatefulWidget {
   const RecordVisitScreen({
     super.key,
-    required this.customerId,
+    this.customerId,
     this.commitment,
     this.visitIntentionId,
+    this.createCustomer = false,
+    this.disclosedDisplayName,
+    this.disclosedPhone,
+    this.identityDisclosure,
   });
 
-  final String customerId;
+  final String? customerId;
   final ReturnCommitment? commitment;
   final String? visitIntentionId;
+  final bool createCustomer;
+  final String? disclosedDisplayName;
+  final String? disclosedPhone;
+  final String? identityDisclosure;
 
   @override
   ConsumerState<RecordVisitScreen> createState() => _RecordVisitScreenState();
@@ -1333,21 +1342,33 @@ final _amountPattern = RegExp(r'^(0|[1-9]\d*)(\.\d{1,2})?$');
 class _RecordVisitScreenState extends ConsumerState<RecordVisitScreen> {
   DateTime _visitedAt = DateTime.now();
   String? _error;
+  bool _phoneExists = false;
   bool _loading = false;
   String? _idempotencyKey;
   List<SalonService> _services = const [];
   String? _serviceId;
   bool _loadingServices = false;
   final _amount = TextEditingController();
+  final _firstName = TextEditingController();
+  final _lastName = TextEditingController();
+  final _phone = TextEditingController();
 
   bool get _canCaptureSale {
     final role = ref.read(authControllerProvider).user?.role;
     return role == 'OWNER' || role == 'MANAGER';
   }
 
+  bool get _mayShowDisclosure {
+    final basis = widget.identityDisclosure;
+    return basis == 'SALON_SUPPLIED' || basis == 'ADMIN_AUTHORIZED';
+  }
+
   @override
   void initState() {
     super.initState();
+    if (widget.createCustomer && _mayShowDisclosure && CustomerFieldValidation.isValidPhone(widget.disclosedPhone ?? '')) {
+      _phone.text = widget.disclosedPhone!;
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_canCaptureSale) {
         _loadServices();
@@ -1358,6 +1379,9 @@ class _RecordVisitScreenState extends ConsumerState<RecordVisitScreen> {
   @override
   void dispose() {
     _amount.dispose();
+    _firstName.dispose();
+    _lastName.dispose();
+    _phone.dispose();
     super.dispose();
   }
 
@@ -1456,6 +1480,15 @@ class _RecordVisitScreenState extends ConsumerState<RecordVisitScreen> {
       setState(() => _error = AppStrings.selectActiveService);
       return;
     }
+    if (widget.createCustomer) {
+      final nameError = CustomerFieldValidation.firstNameError(_firstName.text);
+      final lastError = CustomerFieldValidation.lastNameError(_lastName.text);
+      final phoneError = CustomerFieldValidation.phoneError(_phone.text.trim());
+      if (nameError != null || lastError != null || phoneError != null) {
+        setState(() => _error = nameError ?? lastError ?? phoneError);
+        return;
+      }
+    }
 
     _loading = true;
     setState(() {
@@ -1475,14 +1508,17 @@ class _RecordVisitScreenState extends ConsumerState<RecordVisitScreen> {
         await ref.read(visitIntentionRepositoryProvider).arrive(
               id: widget.visitIntentionId!,
               visitedAt: _visitedAt,
-              customerId: widget.customerId,
+              customerId: widget.createCustomer ? null : widget.customerId,
+              firstName: widget.createCustomer ? _firstName.text.trim() : null,
+              lastName: widget.createCustomer ? _lastName.text.trim() : null,
+              phoneNumber: widget.createCustomer ? _phone.text.trim() : null,
               idempotencyKey: _idempotencyKey!,
               serviceId: wantsSale ? _serviceId : null,
               amount: wantsSale ? amount : null,
             );
       } else if (wantsSale) {
         await ref.read(visitRepositoryProvider).recordCompletedWithSale(
-              customerId: widget.customerId,
+              customerId: widget.customerId!,
               visitedAt: _visitedAt,
               serviceId: _serviceId!,
               amount: amount,
@@ -1490,7 +1526,7 @@ class _RecordVisitScreenState extends ConsumerState<RecordVisitScreen> {
             );
       } else {
         await ref.read(visitRepositoryProvider).record(
-              customerId: widget.customerId,
+              customerId: widget.customerId!,
               visitedAt: _visitedAt,
               idempotencyKey: _idempotencyKey!,
             );
@@ -1500,7 +1536,10 @@ class _RecordVisitScreenState extends ConsumerState<RecordVisitScreen> {
       }
       context.pop(true);
     } catch (error) {
-      setState(() => _error = friendlyError(error));
+      setState(() {
+        _error = friendlyError(error);
+        _phoneExists = error is ApiException && error.code == 'CUSTOMER_PHONE_EXISTS';
+      });
     } finally {
       if (mounted) {
         setState(() => _loading = false);
@@ -1574,6 +1613,30 @@ class _RecordVisitScreenState extends ConsumerState<RecordVisitScreen> {
             arriving ? AppStrings.arrivalHint : AppStrings.recordVisitHint,
             style: const TextStyle(height: 1.65),
           ),
+          if (widget.createCustomer) ...[
+            const SizedBox(height: 16),
+            if (_mayShowDisclosure && (widget.disclosedDisplayName?.trim().isNotEmpty ?? false))
+              Text('${AppStrings.disclosedNameHint}: ${widget.disclosedDisplayName}'),
+            TextField(
+              key: const Key('new-customer-first-name'),
+              controller: _firstName,
+              decoration: const InputDecoration(labelText: AppStrings.firstName),
+              onChanged: (_) => _idempotencyKey = null,
+            ),
+            TextField(
+              key: const Key('new-customer-last-name'),
+              controller: _lastName,
+              decoration: const InputDecoration(labelText: AppStrings.lastName),
+              onChanged: (_) => _idempotencyKey = null,
+            ),
+            TextField(
+              key: const Key('new-customer-phone'),
+              controller: _phone,
+              keyboardType: TextInputType.phone,
+              decoration: const InputDecoration(labelText: AppStrings.phoneNumber),
+              onChanged: (_) => _idempotencyKey = null,
+            ),
+          ],
           if (widget.commitment != null) ...[
             const SizedBox(height: 16),
             Text(
@@ -1624,6 +1687,16 @@ class _RecordVisitScreenState extends ConsumerState<RecordVisitScreen> {
               _error!,
               style: TextStyle(color: Theme.of(context).colorScheme.error),
             ),
+            if (_phoneExists && widget.visitIntentionId != null)
+              Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: TextButton(
+                  onPressed: () => context.push(
+                    '/visit-intentions/${widget.visitIntentionId}/choose-customer?q=${Uri.encodeQueryComponent(_phone.text.trim())}',
+                  ),
+                  child: const Text(AppStrings.chooseCustomerForVisit),
+                ),
+              ),
           ],
           const SizedBox(height: 24),
             AppButton(
