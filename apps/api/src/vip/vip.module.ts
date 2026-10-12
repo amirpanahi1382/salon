@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
+import { ContactPolicyModule } from '../contact-policy/contact-policy.module';
 import { AppConfigService } from '../infrastructure/config/app-config.service';
 import { MemoryObjectStorage } from '../infrastructure/storage/memory.object-storage';
 import { OBJECT_STORAGE } from '../infrastructure/storage/object-storage';
@@ -35,7 +36,7 @@ import {
 } from './vip.use-cases';
 
 @Module({
-  imports: [AuthModule],
+  imports: [AuthModule, ContactPolicyModule],
   controllers: [AdminVipController, SalonVipController],
   providers: [
     VipRepository,

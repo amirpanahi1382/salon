@@ -50,6 +50,8 @@ void main() {
     expect(vipOutreachExecutionLabel('IN_PIPELINE'), AppStrings.outreachStatusDispatched);
     expect(vipOutreachExecutionLabel('SENT'), AppStrings.outreachStatusSent);
     expect(vipOutreachExecutionLabel('FAILED'), AppStrings.outreachStatusFailed);
+    expect(vipOutreachExecutionLabel('GLOBALLY_STOPPED'), AppStrings.vipGloballyStopped);
+    expect(vipOutreachExecutionLabel('GLOBALLY_STOPPED'), isNot(AppStrings.adminStopActive));
     expect(AppStrings.vipSalonRange, 'محدوده سالن');
     expect(AppStrings.vipDesiredRegion, 'محدوده موردنظر');
     expect(

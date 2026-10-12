@@ -43,6 +43,14 @@ export {
   markOutboxRetry,
 } from './outbox.js';
 export {
+  blockUnsentMessagesForPhone,
+  isActivePlatformMessageStop,
+  lockPlatformMessagePhone,
+  PLATFORM_MESSAGE_STOP_REASON,
+  platformMessagePhoneLockKeys,
+  recordVipRecipientGlobalStop,
+} from './platform-message-stop.js';
+export {
   deleteExpiredIdempotencyBatch,
   deleteProcessedOutboxBatch,
 } from './retention.js';

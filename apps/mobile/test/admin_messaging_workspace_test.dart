@@ -234,6 +234,26 @@ void main() {
     expect(find.text('شماره: ${AppStrings.adminUnknownDestination}'), findsOneWidget);
     expect(find.text(AppStrings.selectBale), findsNothing);
     expect(find.text(AppStrings.adminMarkRecipientSent), findsNothing);
+    expect(find.text(AppStrings.adminStopMessages), findsNothing);
     expect(find.text(AppStrings.adminRemoveFromQueue), findsOneWidget);
+  });
+
+  testWidgets('verified destination offers a platform stop', (tester) async {
+    final item = AdminQueueItem(
+      id: 'q2', salonId: 's1', salonName: 'گل', customerId: 'c1',
+      customerName: 'سارا', customerPhone: '09121111111', messageText: 'سلام',
+      requestedAt: DateTime.utc(2026, 9, 22), status: 'QUEUED', attempts: 0,
+      providerReady: false,
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          adminMessageRepositoryProvider.overrideWithValue(_FakeFolders(const [], item: item)),
+        ],
+        child: const MaterialApp(home: AdminMessageDetailSheet(itemId: 'q2')),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text(AppStrings.adminStopMessages), findsOneWidget);
   });
 }

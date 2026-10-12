@@ -164,6 +164,7 @@ model Salon {
   returnCommitments   ReturnCommitment[]
   supportConversations SupportConversation[]
   visitIntentions      VisitIntention[]
+  globalStopOutcomes   MessageGlobalStopOutcome[]
 
   @@map("salons")
 }
@@ -346,6 +347,9 @@ model PlatformAdmin {
   createdVisitIntentions   VisitIntention[] @relation("VisitIntentionCreatedByAdmin")
   updatedVisitIntentions   VisitIntention[] @relation("VisitIntentionUpdatedByAdmin")
   supportMessages          SupportMessage[]
+  registeredMessageStops   PlatformMessageStop[] @relation("PlatformMessageStopRegisteredBy")
+  liftedMessageStops       PlatformMessageStop[] @relation("PlatformMessageStopLiftedBy")
+  messageStopEvents        PlatformMessageStopEvent[]
 
   @@map("platform_admins")
 }
@@ -386,6 +390,7 @@ model MessageRequest {
   vipRequestRecipients VipRequestRecipient[]
   returnCommitment    ReturnCommitment?
   visitIntentions     VisitIntention[]
+  globalStopOutcomes  MessageGlobalStopOutcome[]
 
   @@unique([id, salonId])
   /// SQL CHECKs:
@@ -695,6 +700,7 @@ model VipRequestRecipient {
   messageRequest   MessageRequest? @relation(fields: [messageRequestId, salonId], references: [id, salonId], onDelete: Restrict, onUpdate: Restrict)
   createdAt        DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
   visitIntentions  VisitIntention[]
+  globalStopOutcome MessageGlobalStopOutcome?
 
   @@unique([vipRequestId, sortOrder])
   @@unique([id, salonId])
@@ -848,4 +854,66 @@ model VisitIntentionContactRevision {
   @@unique([visitIntentionId, revision])
   @@index([salonId, visitIntentionId, revision])
   @@map("visit_intention_contact_revisions")
+}
+
+/// Platform-wide stop for one canonical destination phone. Not consent proof.
+/// One current row per phone. History is append-only in PlatformMessageStopEvent.
+model PlatformMessageStop {
+  id                   String    @id @db.Uuid
+  phoneNumber          String    @unique @map("phone_number")
+  active               Boolean
+  reasonCode           String    @map("reason_code")
+  registeredByAdminId  String    @map("registered_by_admin_id") @db.Uuid
+  registeredByAdmin    PlatformAdmin @relation("PlatformMessageStopRegisteredBy", fields: [registeredByAdminId], references: [id], onDelete: Restrict)
+  registeredAt         DateTime  @map("registered_at") @db.Timestamptz(3)
+  liftedByAdminId      String?   @map("lifted_by_admin_id") @db.Uuid
+  liftedByAdmin        PlatformAdmin? @relation("PlatformMessageStopLiftedBy", fields: [liftedByAdminId], references: [id], onDelete: Restrict)
+  liftedAt             DateTime? @map("lifted_at") @db.Timestamptz(3)
+  updatedAt            DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  events               PlatformMessageStopEvent[]
+
+  @@index([active, phoneNumber])
+  @@map("platform_message_stops")
+}
+
+enum PlatformMessageStopAction {
+  REGISTERED
+  LIFTED
+}
+
+/// Immutable register/lift history. Does not store message text or free-text notes.
+model PlatformMessageStopEvent {
+  id            String                     @id @db.Uuid
+  stopId        String                     @map("stop_id") @db.Uuid
+  stop          PlatformMessageStop        @relation(fields: [stopId], references: [id], onDelete: Restrict)
+  phoneNumber   String                     @map("phone_number")
+  action        PlatformMessageStopAction
+  reasonCode    String                     @map("reason_code")
+  actorAdminId  String                     @map("actor_admin_id") @db.Uuid
+  actorAdmin    PlatformAdmin              @relation(fields: [actorAdminId], references: [id], onDelete: Restrict)
+  createdAt     DateTime                   @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([stopId, createdAt])
+  @@map("platform_message_stop_events")
+}
+
+/// Durable skip/block of unsent work after a global stop. Not a SENT or provider failure.
+model MessageGlobalStopOutcome {
+  id                    String    @id @db.Uuid
+  salonId               String    @map("salon_id") @db.Uuid
+  salon                 Salon     @relation(fields: [salonId], references: [id], onDelete: Restrict)
+  phoneNumber           String    @map("phone_number")
+  reasonCode            String    @map("reason_code")
+  messageRequestId      String?   @map("message_request_id") @db.Uuid
+  messageRequest        MessageRequest? @relation(fields: [messageRequestId, salonId], references: [id, salonId], onDelete: Restrict)
+  vipRequestRecipientId String?   @map("vip_request_recipient_id") @db.Uuid
+  vipRequestRecipient   VipRequestRecipient? @relation(fields: [vipRequestRecipientId, salonId], references: [id, salonId], onDelete: Restrict)
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@unique([messageRequestId, salonId])
+  @@unique([vipRequestRecipientId, salonId])
+
+  @@index([salonId, createdAt])
+  @@index([phoneNumber])
+  @@map("message_global_stop_outcomes")
 }

@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ActionModule } from '../action/action.module';
 import { AuthModule } from '../auth/auth.module';
+import { ContactPolicyModule } from '../contact-policy/contact-policy.module';
 import { CustomerModule } from '../customer/customer.module';
 import { ReturnCommitmentModule } from '../return-commitment/return-commitment.module';
 import { AdminMessageQueueController } from './admin-message-queue.controller';
@@ -27,7 +28,7 @@ import {
 } from './admin-normal-messages.use-cases';
 
 @Module({
-  imports: [AuthModule, ActionModule, CustomerModule, ReturnCommitmentModule],
+  imports: [AuthModule, ActionModule, CustomerModule, ReturnCommitmentModule, ContactPolicyModule],
   controllers: [MessagingController, AdminMessageQueueController, AdminNormalMessagesController],
   providers: [
     MessageRepository,

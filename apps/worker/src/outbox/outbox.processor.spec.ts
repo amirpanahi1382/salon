@@ -19,6 +19,9 @@ jest.mock('@salon/database', () => ({
   markOutboxDeadLetter: jest.fn(),
   markOutboxProcessed: jest.fn(),
   markOutboxRetry: jest.fn(),
+  lockPlatformMessagePhone: jest.fn(async () => undefined),
+  isActivePlatformMessageStop: jest.fn(async () => false),
+  blockUnsentMessagesForPhone: jest.fn(async () => 0),
 }));
 
 const claim = claimOutboxEvents as jest.MockedFunction<typeof claimOutboxEvents>;
@@ -363,6 +366,8 @@ type FakePrismaClient = {
     create: () => Promise<unknown>;
   };
   auditLog: { create: () => Promise<unknown> };
+  $queryRaw: () => Promise<unknown>;
+  $executeRaw: () => Promise<unknown>;
   $transaction: (fn: (tx: FakePrismaClient) => Promise<unknown>) => Promise<unknown>;
 };
 
@@ -403,6 +408,8 @@ function fakePrisma(rows: DeliveryRow[]) {
       create: async () => ({}),
     },
     auditLog: { create: async () => ({}) },
+    $queryRaw: async () => [{ id: 'event' }],
+    $executeRaw: async () => 0,
     $transaction: async (fn: (tx: FakePrismaClient) => Promise<unknown>) => {
       const snapshot = rows.map((row) => ({ ...row }));
       try {
@@ -462,8 +469,9 @@ describe('OutboxProcessor MessageSendRequested dead-letter', () => {
 
     try {
       const done = processor.processOne(messageEvent());
-      await Promise.resolve();
-      await Promise.resolve();
+      for (let attempt = 0; attempt < 12 && row.status !== 'PROCESSING'; attempt += 1) {
+        await Promise.resolve();
+      }
       expect(row.status).toBe('PROCESSING');
       await jest.advanceTimersByTimeAsync(handlerTimeoutMs(baseConfig.values.OUTBOX_LEASE_MS));
       await done;

@@ -797,6 +797,7 @@ class AdminQueueItem {
     this.executionState,
     this.canCancel = false,
     this.canMarkManualSent = false,
+    this.globalMessageStopActive = false,
   });
 
   final String id;
@@ -822,6 +823,7 @@ class AdminQueueItem {
   final String? executionState;
   final bool canCancel;
   final bool canMarkManualSent;
+  final bool globalMessageStopActive;
 
   factory AdminQueueItem.fromJson(Map<String, dynamic> json) {
     return AdminQueueItem(
@@ -847,6 +849,7 @@ class AdminQueueItem {
       executionState: json['executionState'] as String?,
       canCancel: json['canCancel'] as bool? ?? false,
       canMarkManualSent: json['canMarkManualSent'] as bool? ?? false,
+      globalMessageStopActive: json['globalMessageStopActive'] == true,
       returnCommitment: json['returnCommitment'] is Map
           ? ReturnCommitmentSummary.fromJson(asJsonMap(json['returnCommitment']))
           : null,
@@ -931,6 +934,7 @@ class VipTargetList {
     required this.name,
     required this.status,
     required this.contactCount,
+    this.sendableContactCount,
     this.regionCode,
     this.regionName,
     this.createdAt,
@@ -944,6 +948,7 @@ class VipTargetList {
   final String name;
   final String status;
   final int contactCount;
+  final int? sendableContactCount;
   final String? regionCode;
   final String? regionName;
   final DateTime? createdAt;
@@ -954,12 +959,15 @@ class VipTargetList {
 
   bool get needsAttention => attentionRequestId != null;
 
+  int get sendableCount => sendableContactCount ?? contactCount;
+
   factory VipTargetList.fromJson(Map<String, dynamic> json) {
     return VipTargetList(
       id: json['id'] as String,
       name: json['name'] as String,
       status: json['status'] as String,
       contactCount: json['contactCount'] as int? ?? 0,
+      sendableContactCount: json['sendableContactCount'] as int?,
       regionCode: json['regionCode'] as String?,
       regionName: json['regionName'] as String?,
       createdAt: json['createdAt'] is String
@@ -1479,6 +1487,7 @@ class AdminVipOutreachRequest {
     this.displayTitle,
     this.requestOrdinal = 0,
     this.cancelledCount = 0,
+    this.globallyStoppedCount = 0,
     this.createdAt,
     this.submittedAt,
   });
@@ -1500,6 +1509,7 @@ class AdminVipOutreachRequest {
   final int sentCount;
   final int failedCount;
   final int cancelledCount;
+  final int globallyStoppedCount;
   final int sampleWorkCount;
   final bool canDispatchManual;
   final String? displayTitle;
@@ -1526,6 +1536,7 @@ class AdminVipOutreachRequest {
       sentCount: json['sentCount'] as int? ?? 0,
       failedCount: json['failedCount'] as int? ?? 0,
       cancelledCount: json['cancelledCount'] as int? ?? 0,
+      globallyStoppedCount: json['globallyStoppedCount'] as int? ?? 0,
       sampleWorkCount: json['sampleWorkCount'] as int? ?? 0,
       canDispatchManual: json['canDispatchManual'] as bool? ?? false,
       displayTitle: json['displayTitle'] as String?,
@@ -1549,6 +1560,7 @@ class AdminVipOutreachRecipient {
     this.submittedAt,
     this.canCancel = false,
     this.canMarkManualSent = false,
+    this.globalMessageStopActive = false,
   });
 
   final String id;
@@ -1562,6 +1574,7 @@ class AdminVipOutreachRecipient {
   final String executionState;
   final bool canCancel;
   final bool canMarkManualSent;
+  final bool globalMessageStopActive;
 
   factory AdminVipOutreachRecipient.fromJson(Map<String, dynamic> json) {
     return AdminVipOutreachRecipient(
@@ -1576,6 +1589,7 @@ class AdminVipOutreachRecipient {
       executionState: json['executionState'] as String? ?? 'NOT_YET_QUEUED',
       canCancel: json['canCancel'] as bool? ?? false,
       canMarkManualSent: json['canMarkManualSent'] as bool? ?? false,
+      globalMessageStopActive: json['globalMessageStopActive'] == true,
     );
   }
 }
@@ -1981,6 +1995,38 @@ class VisitIntention {
       disclosedDisplayName: json['disclosedDisplayName'] as String?,
       disclosedPhone: json['disclosedPhone'] as String?,
       identityDisclosure: json['identityDisclosure'] as String?,
+    );
+  }
+}
+
+class PlatformMessageStop {
+  const PlatformMessageStop({
+    required this.phoneNumber,
+    required this.active,
+    required this.reasonCode,
+    required this.registeredAt,
+    this.liftedAt,
+    this.blockedRequestCount = 0,
+    this.skippedRecipientCount = 0,
+  });
+
+  final String phoneNumber;
+  final bool active;
+  final String reasonCode;
+  final DateTime registeredAt;
+  final DateTime? liftedAt;
+  final int blockedRequestCount;
+  final int skippedRecipientCount;
+
+  factory PlatformMessageStop.fromJson(Map<String, dynamic> json) {
+    return PlatformMessageStop(
+      phoneNumber: json['phoneNumber'] as String,
+      active: json['active'] == true,
+      reasonCode: json['reasonCode'] as String? ?? '',
+      registeredAt: DateTime.parse(json['registeredAt'] as String),
+      liftedAt: json['liftedAt'] is String ? DateTime.parse(json['liftedAt'] as String) : null,
+      blockedRequestCount: json['blockedRequestCount'] as int? ?? 0,
+      skippedRecipientCount: json['skippedRecipientCount'] as int? ?? 0,
     );
   }
 }

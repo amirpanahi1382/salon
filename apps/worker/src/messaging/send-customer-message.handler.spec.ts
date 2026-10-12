@@ -1,6 +1,22 @@
 import type { OutboxEvent } from '@salon/database';
 import { DOMAIN_EVENT_TYPES } from '@salon/shared';
-import { SendCustomerMessageHandler } from './send-customer-message.handler';
+import { messageSendBudget, SendCustomerMessageHandler } from './send-customer-message.handler';
+
+describe('message send budget', () => {
+  it('keeps the 60s provider maximum only when the lease can hold it', () => {
+    expect(messageSendBudget(90_000, 60_000)).toEqual({
+      providerBudgetMs: 60_000,
+      transactionTimeoutMs: 63_000,
+      canCallProvider: true,
+    });
+    expect(messageSendBudget(30_000, 60_000)).toEqual({
+      providerBudgetMs: 19_000,
+      transactionTimeoutMs: 22_000,
+      canCallProvider: true,
+    });
+    expect(messageSendBudget(5_000, 60_000).canCallProvider).toBe(false);
+  });
+});
 
 type DeliveryRow = {
   id: string;
@@ -75,8 +91,15 @@ function fakePrisma(rows: DeliveryRow[]) {
         $queryRaw: () => Promise<Array<{ id: string }>>;
         outboxEvent: { findFirst: () => Promise<unknown>; create: () => Promise<unknown> };
         auditLog: { create: () => Promise<unknown> };
+        $executeRaw: () => Promise<number>;
       }) => Promise<unknown>,
-    ) => fn({ messageDelivery, messageRequest, $queryRaw: ownerLock, ...extras }),
+    ) => fn({
+      messageDelivery,
+      messageRequest,
+      $queryRaw: ownerLock,
+      $executeRaw: async () => 0,
+      ...extras,
+    }),
   };
   return { client, ownerLock };
 }

@@ -668,6 +668,31 @@ class AdminMessageRepository {
     return AdminQueueItem.fromJson(data);
   }
 
+  Future<PlatformMessageStop?> findStop(String phone) async {
+    final data = await _api.get(
+      '/admin/message-stops',
+      query: {'phone': phone},
+    );
+    if (data == null) return null;
+    return PlatformMessageStop.fromJson(data as Map<String, dynamic>);
+  }
+
+  Future<PlatformMessageStop> registerStop(String phone) async {
+    final data = await _api.post(
+      '/admin/message-stops',
+      data: {'phoneNumber': phone, 'confirmed': true},
+    ) as Map<String, dynamic>;
+    return PlatformMessageStop.fromJson(data);
+  }
+
+  Future<PlatformMessageStop> liftStop(String phone) async {
+    final data = await _api.post(
+      '/admin/message-stops/lift',
+      data: {'phoneNumber': phone, 'confirmed': true},
+    ) as Map<String, dynamic>;
+    return PlatformMessageStop.fromJson(data);
+  }
+
   Future<AdminQueueItem> selectBale(String id) async {
     final data =
         await _api.post('/admin/message-queue/$id/select-bale') as Map<String, dynamic>;

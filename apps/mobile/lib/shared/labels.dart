@@ -113,6 +113,7 @@ class AppStrings {
   static const messageSending = 'در حال ثبت درخواست…';
   static const messageDailyLimit =
       'برای این مشتری امروز قبلاً پیام ثبت شده است.';
+  static const globalMessageStop = 'ارسال پیام به این شماره مجاز نیست';
   static const platformAdminLogin = 'ورود مدیر پلتفرم';
   static const adminQueueTitle = 'ارسال پیام عادی';
   static const adminVipMessagingTitle = 'ارسال پیام VIP';
@@ -123,6 +124,21 @@ class AppStrings {
       'سالنی مطابق جستجو در پیام‌های عادی پیدا نشد.';
   static const adminNormalFolderEmpty = 'برای این سالن پیام عادی ثبت نشده.';
   static const adminRemoveFromQueue = 'حذف از صف';
+  static const adminStopMessages = 'توقف ارسال پیام';
+  static const adminStopMessagesBody =
+      'ارسال بعدی به این شماره در همه سالن‌ها و فهرست‌های ویژه متوقف می‌شود. پیام‌های ارسال‌شده قبلی تغییر نمی‌کنند.';
+  static const adminStopActive = 'توقف ارسال برای این شماره فعال است';
+  static const vipGloballyStopped =
+      'این گیرنده در این درخواست به‌خاطر توقف سراسری ارسال نمی‌شود';
+  static const vipGloballyStoppedCount = 'ردشده به‌خاطر توقف سراسری';
+  static const adminMessageStops = 'توقف ارسال';
+  static const adminLiftStop = 'برداشتن توقف';
+  static const adminLiftStopBody =
+      'توقف برداشته می‌شود. پیام‌های قبلی که به‌خاطر توقف ارسال نشده‌اند دوباره فرستاده نمی‌شوند.';
+  static const adminStopSearch = 'جستجوی شماره';
+  static const adminStopNone = 'توقفی برای این شماره ثبت نشده است';
+  static const adminStopResult =
+      'درخواست‌های متوقف‌شده و گیرنده‌های ردشده در نتیجه نشان داده می‌شوند. متن پیام نمایش داده نمی‌شود.';
   static const adminRemoveFromQueueBody =
       'این پیام از صف ارسال فعال خارج می‌شود. سابقه آن پاک نمی‌شود.';
   static const adminCancelled = 'لغو شده';
@@ -845,6 +861,8 @@ String vipOutreachExecutionLabel(String? state) {
       return AppStrings.outreachStatusFailed;
     case 'CANCELLED':
       return AppStrings.adminCancelled;
+    case 'GLOBALLY_STOPPED':
+      return AppStrings.vipGloballyStopped;
     default:
       return '';
   }

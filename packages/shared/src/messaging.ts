@@ -25,6 +25,7 @@ export const MESSAGE_EXECUTION_STATES = [
   'SENT',
   'FAILED',
   'CANCELLED',
+  'GLOBALLY_STOPPED',
 ] as const;
 export type MessageExecutionState = (typeof MESSAGE_EXECUTION_STATES)[number];
 

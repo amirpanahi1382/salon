@@ -13,6 +13,7 @@ import {
 } from '@salon/shared';
 import { CustomerRepository } from '../customer/customer.repository';
 import { PrismaService } from '../infrastructure/database/prisma.service';
+import { PlatformMessageStopService } from '../contact-policy/platform-message-stop.service';
 import {
   assertSameIdempotentRequest,
   claimIdempotencyKey,
@@ -33,6 +34,7 @@ export class SendManualOutreachMessageUseCase {
     private readonly prisma: PrismaService,
     private readonly messages: MessageRepository,
     private readonly customers: CustomerRepository,
+    private readonly stops: PlatformMessageStopService,
   ) {}
 
   async execute(
@@ -93,6 +95,7 @@ export class SendManualOutreachMessageUseCase {
         const destination = await this.messages.lockCustomerDestination(tx, principal.tenantId, customerId);
         if (!destination) throw new NotFoundError('Customer not found');
         if (!isUsableCustomerPhone(destination)) throw new ValidationError('Customer phone is invalid');
+        await this.stops.assertSendable(tx, destination);
 
         const inserted = await this.messages.insertEnforceableIfAbsent(tx, {
           id: requestId,

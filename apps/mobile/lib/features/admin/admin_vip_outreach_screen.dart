@@ -369,7 +369,7 @@ class _AdminVipOutreachSalonScreenState
                                   AppStrings.sentOfTotal(request.sentCount, request.recipientCount),
                                 ),
                                 Text(
-                                  '${AppStrings.vipOutreachPending} ${request.notYetQueuedCount + request.queuedCount + request.inPipelineCount} · ${AppStrings.vipOutreachFailed} ${request.failedCount}',
+                                  '${AppStrings.vipOutreachPending} ${request.notYetQueuedCount + request.queuedCount + request.inPipelineCount} · ${AppStrings.vipOutreachFailed} ${request.failedCount} · ${AppStrings.vipGloballyStoppedCount} ${request.globallyStoppedCount}',
                                 ),
                                 if (request.canDispatchManual)
                                   Align(
@@ -465,6 +465,39 @@ class _AdminVipOutreachRequestScreenState
         _error = error;
         _loading = false;
       });
+    }
+  }
+
+  Future<void> _stopRecipient(AdminVipOutreachRecipient row) async {
+    if (!RegExp(r'^09\d{9}$').hasMatch(row.phoneNumber)) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text(AppStrings.adminStopMessages),
+        content: const Text(AppStrings.adminStopMessagesBody),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text(AppStrings.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text(AppStrings.adminStopMessages),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _busyRecipientId = row.id);
+    try {
+      await ref.read(adminMessageRepositoryProvider).registerStop(row.phoneNumber);
+      await _load();
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _error = error);
+      await _load();
+    } finally {
+      if (mounted) setState(() => _busyRecipientId = null);
     }
   }
 
@@ -685,6 +718,19 @@ class _AdminVipOutreachRequestScreenState
                                 ),
                                 LtrText(row.phoneNumber),
                                 Text(vipOutreachExecutionLabel(row.executionState)),
+                                if (row.globalMessageStopActive)
+                                  Text(AppStrings.adminStopActive),
+                                if (RegExp(r'^09\d{9}$').hasMatch(row.phoneNumber) &&
+                                    row.executionState != 'GLOBALLY_STOPPED')
+                                  Align(
+                                    alignment: Alignment.centerRight,
+                                    child: TextButton(
+                                      onPressed: _busyRecipientId == null
+                                          ? () => _stopRecipient(row)
+                                          : null,
+                                      child: const Text(AppStrings.adminStopMessages),
+                                    ),
+                                  ),
                                 if (row.messageRequestId == null)
                                   const Text(AppStrings.vipOutreachDispatchPrerequisite),
                                 const Text(AppStrings.adminIntentionNotDelivery),

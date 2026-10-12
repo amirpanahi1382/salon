@@ -192,7 +192,7 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
     if (count > capability.remainingQuota) {
       return false;
     }
-    if (selectedList.contactCount < count) {
+    if (selectedList.sendableCount < count) {
       return false;
     }
     return true;
@@ -320,6 +320,7 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
                         for (final region in _regions)
                           ListTile(
                             title: Text('${region.regionCode} — ${region.regionName}'),
+                            subtitle: Text('${region.availableContactCount}'),
                             selected: region.regionCode == _regionCode,
                             onTap: () => Navigator.of(context).pop(region),
                           ),
@@ -393,7 +394,7 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
       }
     }
     final visibleLists = _lists.where((list) {
-      return count == null || list.contactCount >= count;
+      return count == null || list.sendableCount >= count;
     }).toList();
     final region = _selectedRegion;
 
@@ -425,11 +426,11 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
                 label: Text('$value'),
                 selected: count == value,
                 onSelected: value > capability.remainingQuota ||
-                        (selectedList != null && selectedList.contactCount < value)
+                        (selectedList != null && selectedList.sendableCount < value)
                     ? null
                     : (_) {
                         ref.read(vipSelectedCountProvider.notifier).setValue(value);
-                        if (selectedList != null && selectedList.contactCount < value) {
+                        if (selectedList != null && selectedList.sendableCount < value) {
                           setState(() => _listId = null);
                         }
                       },
@@ -468,7 +469,7 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
                       Text(list.regionName!),
                     ],
                     const SizedBox(height: 4),
-                    Text('${AppStrings.vipContactCountLabel}: ${list.contactCount}'),
+                    Text('${AppStrings.vipContactCountLabel}: ${list.sendableCount}'),
                   ],
                 ),
               ),

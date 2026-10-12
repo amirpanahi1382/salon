@@ -96,7 +96,7 @@ Legacy orphan inventory is deliberately non-destructive. Export committed `vip_s
 ## Timeouts
 
 - Outbound HTTP helper `fetchWithTimeout` uses `HTTP_TIMEOUT_MS` (default 5s). No automatic retries.
-- Worker outbound HTTP: Bale Safir send (`BALE_SAFIR_TIMEOUT_MS`, default 10s) when a BALE delivery is activated. VIP Bale is not implemented.
+- Worker outbound HTTP: Bale Safir send. The effective wait is the smaller of `BALE_SAFIR_TIMEOUT_MS` (configured maximum 60s) and the lease-derived budget above. VIP Bale is not implemented. A VIP Excel file already downloaded cannot be pulled back. A newly generated export locks the recipient phones in sorted order and omits an active stop or a durable skip that is committed before that lock; the summary sheet contains only the omitted count.
 - S3-compatible requests use `MINIO_REQUEST_TIMEOUT_MS` (default 10s). A timeout is an unknown outcome, so ownership remains recoverable rather than declaring the PUT absent.
 - PostgreSQL readiness uses `HEALTH_CHECK_TIMEOUT_MS` (default 2s).
 - Inbound HTTP socket idle timeout is 120s (Excel import client timeout is 90s).

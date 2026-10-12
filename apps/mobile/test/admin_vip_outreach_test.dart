@@ -477,6 +477,43 @@ void main() {
     expect(find.text(AppStrings.adminShareConfirmHint), findsWidgets);
     expect(intentions.keys, isEmpty);
   });
+
+  testWidgets('a lifted global skip does not claim the stop is still active', (tester) async {
+    final repo = _FakeVipRepository(
+      requestsBySalon: {
+        's1': [_request(id: 'r1', salonId: 's1', status: 'MANUAL_QUEUED')],
+      },
+      recipientsByRequest: {
+        'r1': const [
+          AdminVipOutreachRecipient(
+            id: 'lifted',
+            sortOrder: 0,
+            displayName: 'مینا',
+            phoneNumber: '09121111111',
+            executionState: 'GLOBALLY_STOPPED',
+          ),
+          AdminVipOutreachRecipient(
+            id: 'active',
+            sortOrder: 1,
+            displayName: 'سارا',
+            phoneNumber: '09121111112',
+            executionState: 'GLOBALLY_STOPPED',
+            globalMessageStopActive: true,
+          ),
+        ],
+      },
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [vipRepositoryProvider.overrideWithValue(repo)],
+        child: const MaterialApp(home: AdminVipOutreachRequestScreen(requestId: 'r1')),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text(AppStrings.vipGloballyStopped), findsNWidgets(2));
+    expect(find.text(AppStrings.adminStopActive), findsOneWidget);
+    expect(find.text(AppStrings.adminStopMessages), findsNothing);
+  });
 }
 
 Future<void> _submitAdminDisclosure(WidgetTester tester) async {

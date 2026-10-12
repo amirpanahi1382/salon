@@ -3,12 +3,14 @@ import { getBaleSafirSettings } from '@salon/config';
 import { Prisma } from '@salon/database';
 import {
   ConflictError,
+  GlobalMessageStopError,
   NotFoundError,
   ValidationError,
   VIP_BALE_NOT_AVAILABLE_MESSAGE,
   createId,
   DOMAIN_EVENT_TYPES,
   isCanonicalMessageSent,
+  isUsableCustomerPhone,
   type PlatformAdminPrincipal,
 } from '@salon/shared';
 import { AppConfigService } from '../infrastructure/config/app-config.service';
@@ -24,6 +26,7 @@ import {
   parseAdminCursor,
 } from './admin-message.repository';
 import { PrismaService } from '../infrastructure/database/prisma.service';
+import { PlatformMessageStopService } from '../contact-policy/platform-message-stop.service';
 
 @Injectable()
 export class ListAdminMessageQueueUseCase {
@@ -63,6 +66,7 @@ export class GetAdminMessageUseCase {
     private readonly messages: AdminMessageRepository,
     private readonly commitments: ReturnCommitmentRepository,
     private readonly config: AppConfigService,
+    private readonly prisma: PrismaService,
   ) {}
 
   async execute(id: string) {
@@ -71,10 +75,15 @@ export class GetAdminMessageUseCase {
       throw new NotFoundError('Message not found');
     }
     const commitment = await this.commitments.findBySourceRequestId(row.salonId, row.id);
+    const phone = row.recipientPhoneNumber;
+    const stop = phone && isUsableCustomerPhone(phone)
+      ? await this.prisma.client.platformMessageStop.findUnique({ where: { phoneNumber: phone } })
+      : null;
     return toAdminMessageItem(
       row as AdminMessageRow,
       this.config.values,
       commitment ? toReturnCommitmentSummary(commitment as ReturnCommitmentRow) : null,
+      stop?.active === true,
     );
   }
 }
@@ -85,6 +94,7 @@ export class SelectMessageDeliveryModeUseCase {
     private readonly prisma: PrismaService,
     private readonly messages: AdminMessageRepository,
     private readonly config: AppConfigService,
+    private readonly stops: PlatformMessageStopService,
   ) {}
 
   async execute(admin: PlatformAdminPrincipal, id: string, mode: 'BALE' | 'MANUAL') {
@@ -100,6 +110,9 @@ export class SelectMessageDeliveryModeUseCase {
         }
         if (!existing.recipientPhoneNumber) {
           throw new ConflictError('Message destination cannot be verified');
+        }
+        if (await this.stops.active(tx, existing.recipientPhoneNumber)) {
+          throw new GlobalMessageStopError();
         }
         if (mode === 'BALE' && existing.vipRequestId) {
           throw new ConflictError(VIP_BALE_NOT_AVAILABLE_MESSAGE);
@@ -173,7 +186,7 @@ export class SelectMessageDeliveryModeUseCase {
         });
       });
     } catch (error: unknown) {
-      if (error instanceof NotFoundError || error instanceof ConflictError) {
+      if (error instanceof NotFoundError || error instanceof ConflictError || error instanceof GlobalMessageStopError) {
         throw error;
       }
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
@@ -200,12 +213,23 @@ export class MarkManualMessageSentUseCase {
     private readonly prisma: PrismaService,
     private readonly messages: AdminMessageRepository,
     private readonly config: AppConfigService,
+    private readonly stops: PlatformMessageStopService,
   ) {}
 
   async execute(admin: PlatformAdminPrincipal, id: string) {
     const now = new Date();
     try {
       await this.prisma.client.$transaction(async (tx) => {
+        const preview = await tx.messageRequest.findFirst({
+          where: { id },
+          select: { recipientPhoneNumber: true },
+        });
+        if (!preview) {
+          throw new NotFoundError('Message not found');
+        }
+        if (preview.recipientPhoneNumber && isUsableCustomerPhone(preview.recipientPhoneNumber)) {
+          await this.stops.active(tx, preview.recipientPhoneNumber);
+        }
         await tx.$queryRaw`SELECT id FROM message_requests WHERE id = ${id}::uuid FOR UPDATE`;
         const request = await tx.messageRequest.findFirst({ where: { id } });
         if (!request) {
@@ -219,6 +243,9 @@ export class MarkManualMessageSentUseCase {
         }
         if (!request.recipientPhoneNumber) {
           throw new ConflictError('Message destination cannot be verified');
+        }
+        if (await this.stops.active(tx, request.recipientPhoneNumber)) {
+          throw new GlobalMessageStopError();
         }
         if (request.status === 'CANCELLED') {
           throw new ConflictError('Message is not in a state that allows this action');
@@ -355,7 +382,7 @@ export class MarkManualMessageSentUseCase {
         });
       });
     } catch (error: unknown) {
-      if (error instanceof NotFoundError || error instanceof ConflictError) {
+      if (error instanceof NotFoundError || error instanceof ConflictError || error instanceof GlobalMessageStopError) {
         throw error;
       }
       const mapped = mapPrismaError(error);
@@ -438,7 +465,7 @@ export class CancelAdminMessageUseCase {
         });
       });
     } catch (error: unknown) {
-      if (error instanceof NotFoundError || error instanceof ConflictError) {
+      if (error instanceof NotFoundError || error instanceof ConflictError || error instanceof GlobalMessageStopError) {
         throw error;
       }
       const mapped = mapPrismaError(error);
@@ -462,6 +489,7 @@ export class RetryBaleMessageUseCase {
     private readonly prisma: PrismaService,
     private readonly messages: AdminMessageRepository,
     private readonly config: AppConfigService,
+    private readonly stops: PlatformMessageStopService,
   ) {}
 
   async execute(admin: PlatformAdminPrincipal, id: string) {
@@ -488,6 +516,9 @@ export class RetryBaleMessageUseCase {
         }
         if (!request.recipientPhoneNumber) {
           throw new ConflictError('Message destination cannot be verified');
+        }
+        if (await this.stops.active(tx, request.recipientPhoneNumber)) {
+          throw new GlobalMessageStopError();
         }
         const delivery = await tx.messageDelivery.findFirst({
           where: { messageRequestId: id, salonId: request.salonId },
@@ -563,7 +594,7 @@ export class RetryBaleMessageUseCase {
         });
       });
     } catch (error: unknown) {
-      if (error instanceof NotFoundError || error instanceof ConflictError) {
+      if (error instanceof NotFoundError || error instanceof ConflictError || error instanceof GlobalMessageStopError) {
         throw error;
       }
       const mapped = mapPrismaError(error);

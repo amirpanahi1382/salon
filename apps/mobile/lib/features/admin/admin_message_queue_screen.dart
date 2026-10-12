@@ -86,6 +86,11 @@ class _AdminMessageQueueScreenState extends ConsumerState<AdminMessageQueueScree
           title: const Text(AppStrings.adminQueueTitle),
           actions: [
             IconButton(
+              tooltip: AppStrings.adminMessageStops,
+              onPressed: () => context.push('/admin/message-stops'),
+              icon: const Icon(Icons.do_not_disturb_on_outlined),
+            ),
+            IconButton(
               onPressed: () => ref.read(authControllerProvider.notifier).logout(),
               icon: const Icon(Icons.logout),
             ),
@@ -357,6 +362,44 @@ class _AdminMessageDetailSheetState extends ConsumerState<AdminMessageDetailShee
     }
   }
 
+  Future<void> _registerStop(AdminQueueItem item) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text(AppStrings.adminStopMessages),
+        content: const Text(AppStrings.adminStopMessagesBody),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text(AppStrings.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text(AppStrings.adminStopMessages),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await ref.read(adminMessageRepositoryProvider).registerStop(item.customerPhone);
+      await _reload();
+      if (!mounted) return;
+      setState(() => _busy = false);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = error;
+        _busy = false;
+      });
+      await _reload();
+    }
+  }
+
   Future<void> _cancel(AdminQueueItem item) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -501,6 +544,21 @@ class _AdminMessageDetailSheetState extends ConsumerState<AdminMessageDetailShee
                   Text(
                     'شماره: ${item.customerPhone.isEmpty ? AppStrings.adminUnknownDestination : item.customerPhone}',
                   ),
+                  if (RegExp(r'^09\d{9}$').hasMatch(item.customerPhone) &&
+                      item.globalMessageStopActive)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 8),
+                      child: Text(AppStrings.adminStopActive),
+                    ),
+                  if (RegExp(r'^09\d{9}$').hasMatch(item.customerPhone) &&
+                      !item.globalMessageStopActive) ...[
+                    const SizedBox(height: 8),
+                    AppButton(
+                      label: AppStrings.adminStopMessages,
+                      loading: _busy,
+                      onPressed: () => _registerStop(item),
+                    ),
+                  ],
                   const SizedBox(height: 8),
                   if (item.messageBusinessDate != null) ...[
                     Text('تاریخ کسب‌وکار: ${item.messageBusinessDate}'),

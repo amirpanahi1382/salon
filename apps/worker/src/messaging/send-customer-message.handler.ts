@@ -1,21 +1,39 @@
-import { Injectable } from '@nestjs/common';
-import { Prisma, type OutboxEvent } from '@salon/database';
+import { Injectable, Optional } from '@nestjs/common';
+import { Prisma, type OutboxEvent, blockUnsentMessagesForPhone, isActivePlatformMessageStop, lockPlatformMessagePhone } from '@salon/database';
 import { createId, DOMAIN_EVENT_TYPES, isUsableCustomerPhone, type MessageFailureCode } from '@salon/shared';
 import { PrismaService } from '../infrastructure/database/prisma.service';
+import { AppConfigService } from '../infrastructure/config/app-config.service';
 import { BaleSafirMessageSender } from './bale-safir.sender';
 import { RetryableMessageSendError } from './message-sender';
 
 type MessageDb = Prisma.TransactionClient | PrismaService['client'];
 
 export type DeliveryExecutionResult = {
-  outcome: 'completed' | 'terminal_failure' | 'obsolete' | 'stale';
+  outcome: 'completed' | 'terminal_failure' | 'obsolete' | 'stale' | 'blocked';
 };
+
+export function messageSendBudget(leaseMs: number, providerTimeoutMs: number): {
+  providerBudgetMs: number;
+  transactionTimeoutMs: number;
+  canCallProvider: boolean;
+} {
+  const handlerBudgetMs = Math.max(1_000, Math.floor(leaseMs * 0.8));
+  const maxTransactionMs = handlerBudgetMs - 2_000;
+  const maxProviderMs = maxTransactionMs - 3_000;
+  const providerBudgetMs = Math.min(providerTimeoutMs, maxProviderMs);
+  return {
+    providerBudgetMs,
+    transactionTimeoutMs: Math.max(1_000, providerBudgetMs + 3_000),
+    canCallProvider: providerBudgetMs >= 1_000,
+  };
+}
 
 @Injectable()
 export class SendCustomerMessageHandler {
   constructor(
     private readonly prisma: PrismaService,
     private readonly sender: BaleSafirMessageSender,
+    @Optional() private readonly config?: AppConfigService,
   ) {}
 
   async handle(event: OutboxEvent, maxAttempts: number, signal?: AbortSignal): Promise<DeliveryExecutionResult> {
@@ -73,128 +91,155 @@ export class SendCustomerMessageHandler {
     const now = new Date();
     const lockedUntil = event.lockedUntil ?? new Date(now.getTime() + 30_000);
 
-    const claimed = await db.messageDelivery.updateMany({
-      where: {
-        id: delivery.id,
-        salonId: delivery.salonId,
-        mode: 'BALE',
-        executionGeneration: requestedGeneration,
-        OR: [
-          { status: 'PENDING' },
-          { status: 'PROCESSING', executionLockedUntil: null },
-          { status: 'PROCESSING', executionLockedUntil: { lt: now } },
-        ],
-        messageRequest: { status: { not: 'CANCELLED' } },
-      },
-      data: {
-        status: 'PROCESSING',
-        executionToken,
-        executionLockedUntil: lockedUntil,
-        attempts: { increment: 1 },
-        updatedAt: now,
-      },
-    });
-    if (claimed.count === 0) {
-      throw new LostDeliveryExecutionError();
-    }
+    const budget = messageSendBudget(
+      this.config?.values.OUTBOX_LEASE_MS ?? 30_000,
+      this.config?.values.BALE_SAFIR_TIMEOUT_MS ?? 10_000,
+    );
+    const sendSignal = budget.canCallProvider
+      ? AbortSignal.any([
+          ...(signal ? [signal] : []),
+          AbortSignal.timeout(budget.providerBudgetMs),
+        ])
+      : signal;
 
-    const outboxOwner = await db.outboxEvent.findFirst({
-      where: {
-        id: event.id,
-        claimGeneration: event.claimGeneration,
-        status: 'PROCESSING',
-        lockedUntil: { gt: new Date() },
-      },
-      select: { id: true },
-    });
-    const owned = outboxOwner && await db.messageDelivery.findFirst({
-      where: { id: delivery.id, salonId: delivery.salonId, status: 'PROCESSING', executionToken },
-      select: { id: true },
-    });
-    if (!owned) throw new LostDeliveryExecutionError();
+    return db.$transaction(async (tx) => {
+      const phoneNumber = delivery.messageRequest.recipientPhoneNumber;
+      if (phoneNumber && isUsableCustomerPhone(phoneNumber)) {
+        await lockPlatformMessagePhone(tx, phoneNumber);
+        if (await isActivePlatformMessageStop(tx, phoneNumber)) {
+          await blockUnsentMessagesForPhone(tx, phoneNumber, now);
+          return { outcome: 'blocked' as const };
+        }
+      }
+      if (!budget.canCallProvider) {
+        throw new RetryableMessageSendError('PROVIDER_TEMPORARY');
+      }
 
-    if (delivery.messageRequest.vipRequestId) {
-      await this.markFailed(
-        delivery.id,
-        delivery.salonId,
-        delivery.messageRequest.id,
-        'PROVIDER_INVALID_REQUEST',
-        delivery.createdBy,
-        executionToken,
-        event,
-      );
-      return { outcome: 'terminal_failure' };
-    }
+      const claimed = await tx.messageDelivery.updateMany({
+        where: {
+          id: delivery.id,
+          salonId: delivery.salonId,
+          mode: 'BALE',
+          executionGeneration: requestedGeneration,
+          OR: [
+            { status: 'PENDING' },
+            { status: 'PROCESSING', executionLockedUntil: null },
+            { status: 'PROCESSING', executionLockedUntil: { lt: now } },
+          ],
+          messageRequest: { status: { not: 'CANCELLED' } },
+        },
+        data: {
+          status: 'PROCESSING',
+          executionToken,
+          executionLockedUntil: lockedUntil,
+          attempts: { increment: 1 },
+          updatedAt: now,
+        },
+      });
+      if (claimed.count === 0) {
+        throw new LostDeliveryExecutionError();
+      }
 
-    const phoneNumber = delivery.messageRequest.recipientPhoneNumber;
-    if (!phoneNumber || !isUsableCustomerPhone(phoneNumber)) {
-      await this.markFailed(
-        delivery.id,
-        delivery.salonId,
-        delivery.messageRequest.id,
-        'DESTINATION_UNVERIFIED',
-        delivery.createdBy,
-        executionToken,
-        event,
-      );
-      return { outcome: 'terminal_failure' };
-    }
+      const outboxOwner = await tx.outboxEvent.findFirst({
+        where: {
+          id: event.id,
+          claimGeneration: event.claimGeneration,
+          status: 'PROCESSING',
+          lockedUntil: { gt: new Date() },
+        },
+        select: { id: true },
+      });
+      if (!outboxOwner || !(await lockCurrentOutboxOwner(tx, event))) {
+        throw new LostDeliveryExecutionError();
+      }
 
-    const result = await this.sender.sendText({
-      requestId: delivery.providerRequestId,
-      phoneNumber,
-      text: delivery.messageRequest.messageText,
-      signal,
-    });
+      if (delivery.messageRequest.vipRequestId) {
+        await this.markFailed(
+          delivery.id,
+          delivery.salonId,
+          delivery.messageRequest.id,
+          'PROVIDER_INVALID_REQUEST',
+          delivery.createdBy,
+          executionToken,
+          event,
+          tx,
+        );
+        return { outcome: 'terminal_failure' as const };
+      }
 
-    if (result.outcome === 'sent') {
-      await this.markSent(
-        delivery.id,
-        delivery.salonId,
-        delivery.messageRequest.id,
-        result.providerMessageId,
-        delivery.createdBy,
-        executionToken,
-        event,
-      );
-      return { outcome: 'completed' };
-    }
+      if (!phoneNumber || !isUsableCustomerPhone(phoneNumber)) {
+        await this.markFailed(
+          delivery.id,
+          delivery.salonId,
+          delivery.messageRequest.id,
+          'DESTINATION_UNVERIFIED',
+          delivery.createdBy,
+          executionToken,
+          event,
+          tx,
+        );
+        return { outcome: 'terminal_failure' as const };
+      }
 
-    if (signal?.aborted) {
-      throw new RetryableMessageSendError('PROVIDER_UNKNOWN');
-    }
+      const result = await this.sender.sendText({
+        requestId: delivery.providerRequestId,
+        phoneNumber,
+        text: delivery.messageRequest.messageText,
+        signal: sendSignal,
+      });
 
-    if (result.outcome === 'failed') {
-      await this.markFailed(
-        delivery.id,
-        delivery.salonId,
-        delivery.messageRequest.id,
-        result.code,
-        delivery.createdBy,
-        executionToken,
-        event,
-      );
-      return { outcome: 'terminal_failure' };
-    }
+      if (result.outcome === 'sent') {
+        await this.markSent(
+          delivery.id,
+          delivery.salonId,
+          delivery.messageRequest.id,
+          result.providerMessageId,
+          delivery.createdBy,
+          executionToken,
+          event,
+          tx,
+        );
+        return { outcome: 'completed' as const };
+      }
 
-    if (event.attemptCount >= maxAttempts) {
-      await this.markFailed(
-        delivery.id,
-        delivery.salonId,
-        delivery.messageRequest.id,
-        result.code,
-        delivery.createdBy,
-        executionToken,
-        event,
-      );
+      if (sendSignal?.aborted) {
+        throw new RetryableMessageSendError('PROVIDER_UNKNOWN');
+      }
+
+      if (result.outcome === 'failed') {
+        await this.markFailed(
+          delivery.id,
+          delivery.salonId,
+          delivery.messageRequest.id,
+          result.code,
+          delivery.createdBy,
+          executionToken,
+          event,
+          tx,
+        );
+        return { outcome: 'terminal_failure' as const };
+      }
+
+      if (event.attemptCount >= maxAttempts) {
+        await this.markFailed(
+          delivery.id,
+          delivery.salonId,
+          delivery.messageRequest.id,
+          result.code,
+          delivery.createdBy,
+          executionToken,
+          event,
+          tx,
+        );
+        throw new RetryableMessageSendError(result.code, result.retryAfterMs);
+      }
+      const released = await tx.messageDelivery.updateMany({
+        where: { id: delivery.id, salonId: delivery.salonId, status: 'PROCESSING', executionToken },
+        data: { status: 'PENDING', executionToken: null, executionLockedUntil: null, updatedAt: new Date() },
+      });
+      if (released.count === 0) throw new LostDeliveryExecutionError();
       throw new RetryableMessageSendError(result.code, result.retryAfterMs);
-    }
-    const released = await db.messageDelivery.updateMany({
-      where: { id: delivery.id, salonId: delivery.salonId, status: 'PROCESSING', executionToken },
-      data: { status: 'PENDING', executionToken: null, executionLockedUntil: null, updatedAt: new Date() },
-    });
-    if (released.count === 0) throw new LostDeliveryExecutionError();
-    throw new RetryableMessageSendError(result.code, result.retryAfterMs);
+    }, { timeout: budget.transactionTimeoutMs });
   }
 
   /**
@@ -286,9 +331,10 @@ export class SendCustomerMessageHandler {
     actorId: string,
     executionToken: string,
     event: OutboxEvent,
+    existing?: Prisma.TransactionClient,
   ): Promise<void> {
     const now = new Date();
-    await this.prisma.client.$transaction(async (tx) => {
+    const run = async (tx: Prisma.TransactionClient) => {
       if (!(await lockCurrentOutboxOwner(tx, event))) throw new LostDeliveryExecutionError();
       const request = await tx.messageRequest.updateMany({
         where: { id: messageRequestId, salonId, status: { in: ['QUEUED', 'DISPATCHED'] } },
@@ -334,7 +380,12 @@ export class SendCustomerMessageHandler {
           metadata: { provider: 'BALE_SAFIR', status: 'SENT', mode: 'BALE' },
         },
       });
-    });
+    };
+    if (existing) {
+      await run(existing);
+      return;
+    }
+    await this.prisma.client.$transaction(run);
   }
 
   private async markFailed(
@@ -345,9 +396,10 @@ export class SendCustomerMessageHandler {
     actorId: string,
     executionToken: string,
     event: OutboxEvent,
+    existing?: Prisma.TransactionClient,
   ): Promise<void> {
     const now = new Date();
-    await this.prisma.client.$transaction(async (tx) => {
+    const run = async (tx: Prisma.TransactionClient) => {
       if (!(await lockCurrentOutboxOwner(tx, event))) throw new LostDeliveryExecutionError();
       const request = await tx.messageRequest.updateMany({
         where: { id: messageRequestId, salonId, status: { in: ['QUEUED', 'DISPATCHED'] } },
@@ -393,7 +445,12 @@ export class SendCustomerMessageHandler {
           metadata: { provider: 'BALE_SAFIR', status: 'FAILED', failureCode: code, mode: 'BALE' },
         },
       });
-    });
+    };
+    if (existing) {
+      await run(existing);
+      return;
+    }
+    await this.prisma.client.$transaction(run);
   }
 }
 

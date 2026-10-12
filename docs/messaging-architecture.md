@@ -72,7 +72,7 @@ Tenant isolation, JWT tenant authority, actor identity, idempotency, SHA256 fing
 
 ## Worker
 
-The worker executes **BALE** deliveries only. MANUAL rows are ignored. Legacy `MessageSendRequested` events remain consumable after migration. `MessageRequested` / `MessageSent` / `MessageFailed` are facts; unknown handling stays no-op for known types other than Bale activation.
+The worker executes **BALE** deliveries only. MANUAL rows are ignored. Before `sendText`, the handler takes the same platform phone advisory lock used by stop registration and re-reads the stop. An active stop cancels the unsent request, records a global-stop outcome, and does not call the provider. The lock is held until that transaction commits. The provider wait is `min(BALE_SAFIR_TIMEOUT_MS, 80% of OUTBOX_LEASE_MS − 5s)`. The transaction timeout is that wait plus 3s, which stays 2s inside the handler abort. A configured 60s provider timeout cannot run past the lease. If the remaining budget is under 1s, the worker does not call the provider. This is not exactly-once delivery: an accepted call whose transaction then rolls back is not recorded as `SENT` and is not recalled. A durable VIP skip stays excluded after the stop is lifted. A newly generated Excel file omits phones whose stop or skip committed before that export acquired the phone lock; a file already downloaded cannot be recalled.
 
 `SENT` means the provider **accepted** the send request, not delivered or read. No webhooks.
 

@@ -138,7 +138,21 @@ export class VipRepository {
         c.code AS "regionCode",
         c.name AS "regionName",
         COUNT(l.id)::int AS "availableListCount",
-        COALESCE(SUM(l.contact_count), 0)::int AS "availableContactCount"
+        COALESCE((
+          SELECT COUNT(*)::int
+          FROM vip_target_contacts ct
+          JOIN vip_target_lists listed ON listed.id = ct.list_id
+          WHERE listed.region_code = c.code
+            AND listed.status = 'ACTIVE'
+            AND listed.catalog_membership = 'ORIGINAL_TEHRAN'::"VipCatalogMembership"
+            AND listed.reserved_by_salon_id IS NULL
+            AND NOT EXISTS (
+              SELECT 1
+              FROM platform_message_stops s
+              WHERE s.phone_number = ct.phone_number
+                AND s.active = true
+            )
+        ), 0) AS "availableContactCount"
       FROM catalog c
       LEFT JOIN vip_target_lists l
         ON l.region_code = c.code
@@ -159,12 +173,46 @@ export class VipRepository {
   }
 
   selectContacts(listId: string, count: number, db: Db = this.prisma.client) {
-    return db.vipTargetContact.findMany({
-      where: { listId },
-      orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
-      take: count,
-      select: { id: true, displayName: true, phoneNumber: true, sortOrder: true },
-    });
+    return db.$queryRaw<Array<{
+      id: string;
+      displayName: string | null;
+      phoneNumber: string;
+      sortOrder: number;
+    }>>`
+      SELECT c.id,
+             c.display_name AS "displayName",
+             c.phone_number AS "phoneNumber",
+             c.sort_order AS "sortOrder"
+      FROM vip_target_contacts c
+      WHERE c.list_id = ${listId}::uuid
+        AND NOT EXISTS (
+          SELECT 1
+          FROM platform_message_stops s
+          WHERE s.phone_number = c.phone_number
+            AND s.active = true
+        )
+      ORDER BY c.sort_order ASC, c.id ASC
+      LIMIT ${count}
+    `;
+  }
+
+  async sendableContactCounts(listIds: string[], db: Db = this.prisma.client): Promise<Map<string, number>> {
+    const counts = new Map<string, number>();
+    if (listIds.length === 0) return counts;
+    const rows = await db.$queryRaw<Array<{ listId: string; sendable: number }>>`
+      SELECT c.list_id AS "listId", COUNT(*)::int AS sendable
+      FROM vip_target_contacts c
+      WHERE c.list_id IN (${Prisma.join(listIds.map((id) => Prisma.sql`${id}::uuid`))})
+        AND NOT EXISTS (
+          SELECT 1
+          FROM platform_message_stops s
+          WHERE s.phone_number = c.phone_number
+            AND s.active = true
+        )
+      GROUP BY c.list_id
+    `;
+    for (const row of rows) counts.set(row.listId, row.sendable);
+    return counts;
   }
 
   async expireStaleReservations(now: Date, db: Db): Promise<void> {

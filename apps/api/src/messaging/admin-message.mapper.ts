@@ -75,6 +75,7 @@ export function toAdminMessageItem(
   row: AdminMessageRow,
   config: AppConfig,
   returnCommitment: ReturnCommitmentSummaryDto | null = null,
+  globalMessageStopActive = false,
 ): AdminMessageQueueItemDto {
   const delivery = row.deliveries[0];
   const capabilities = messageAdminCapabilities({
@@ -92,6 +93,7 @@ export function toAdminMessageItem(
       ? `${row.customer.firstName} ${row.customer.lastName}`.trim()
       : vipRecipientDisplayName(row),
     customerPhone: row.recipientPhoneNumber ?? '',
+    globalMessageStopActive,
     messageText: row.messageText,
     opportunityType: row.opportunityType,
     requestedAt: row.requestedAt.toISOString(),

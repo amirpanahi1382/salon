@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/admin/admin_message_queue_screen.dart';
+import '../../features/admin/admin_message_stops_screen.dart';
 import '../../features/admin/admin_support_screen.dart';
 import '../../features/profile/support_conversation_screen.dart';
 import '../../features/admin/admin_vip_screen.dart';
@@ -82,6 +83,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/admin/messages',
         builder: (context, state) => const AdminMessageQueueScreen(),
+      ),
+      GoRoute(
+        path: '/admin/message-stops',
+        builder: (context, state) => const AdminMessageStopsScreen(),
       ),
       GoRoute(
         path: '/admin/messages/salons/:salonId',

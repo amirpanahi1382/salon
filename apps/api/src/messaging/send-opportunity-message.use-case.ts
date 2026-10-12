@@ -17,6 +17,7 @@ import { findLastVisitId } from '../action/opportunity-suppression';
 import { type ActionRow } from '../action/action.mapper';
 import { CurrentOpportunityService } from '../action/current-opportunity.service';
 import { PrismaService } from '../infrastructure/database/prisma.service';
+import { PlatformMessageStopService } from '../contact-policy/platform-message-stop.service';
 import {
   assertSameIdempotentRequest,
   claimIdempotencyKey,
@@ -35,6 +36,7 @@ export class SendOpportunityMessageUseCase {
     private readonly messages: MessageRepository,
     private readonly actions: ActionRepository,
     private readonly opportunities: CurrentOpportunityService,
+    private readonly stops: PlatformMessageStopService,
   ) {}
 
   async execute(
@@ -99,6 +101,7 @@ export class SendOpportunityMessageUseCase {
         const destination = await this.messages.lockCustomerDestination(tx, principal.tenantId, customerId);
         if (!destination) throw new NotFoundError('Customer not found');
         if (!isUsableCustomerPhone(destination)) throw new ValidationError('Customer phone is invalid');
+        await this.stops.assertSendable(tx, destination);
 
         const inserted = await this.messages.insertEnforceableIfAbsent(tx, {
           id: requestId,

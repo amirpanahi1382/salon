@@ -27,7 +27,8 @@ import {
   type PlatformAdminPrincipal,
   type VipCatalogMembership,
 } from '@salon/shared';
-import { Prisma } from '@salon/database';
+import { Prisma, lockPlatformMessagePhone, recordVipRecipientGlobalStop } from '@salon/database';
+import { PlatformMessageStopService } from '../contact-policy/platform-message-stop.service';
 import { PrismaService } from '../infrastructure/database/prisma.service';
 import { AppConfigService } from '../infrastructure/config/app-config.service';
 import {
@@ -683,6 +684,7 @@ export class ListActiveVipListsUseCase {
     }
     await this.vip.expireStaleReservations(new Date(), this.vip.client);
     const items = await this.vip.listActiveListsByRegion(regionCode);
+    const sendable = await this.vip.sendableContactCounts(items.map((row) => row.id));
     return {
       items: items.map((row) => ({
         id: row.id,
@@ -691,6 +693,7 @@ export class ListActiveVipListsUseCase {
         regionName: vipRegionName(regionCode),
         status: row.status,
         contactCount: row.contactCount,
+        sendableContactCount: sendable.get(row.id) ?? 0,
         createdAt: row.createdAt.toISOString(),
       })),
     };
@@ -745,6 +748,17 @@ export class CreateVipRequestUseCase {
           );
           if (used + body.requestedCount > VIP_QUOTA_MAX) {
             throw new ConflictError(VIP_QUOTA_EXCEEDED_MESSAGE);
+          }
+          const listPhones = await tx.$queryRaw<Array<{ phoneNumber: string }>>`
+            SELECT DISTINCT phone_number AS "phoneNumber"
+            FROM vip_target_contacts
+            WHERE list_id = ${body.listId}::uuid
+            ORDER BY phone_number ASC
+          `;
+          for (const row of listPhones) {
+            if (isUsableCustomerPhone(row.phoneNumber)) {
+              await lockPlatformMessagePhone(tx, row.phoneNumber);
+            }
           }
           const reserved = await this.vip.tryReserveList(tx, body.listId, principal.tenantId, now);
           if (!reserved) {
@@ -1348,7 +1362,10 @@ export class ExportVipRequestExcelUseCase {
     const request = await this.prisma.client.vipRequest.findUnique({
       where: { id: requestId },
       include: {
-        recipients: { orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }] },
+        recipients: {
+          orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+          include: { globalStopOutcome: { select: { id: true } } },
+        },
       },
     });
     if (!request) {
@@ -1357,19 +1374,46 @@ export class ExportVipRequestExcelUseCase {
     if (request.status === 'AWAITING_SAMPLE_WORK' || request.status === 'CANCELLED') {
       throw new ConflictError('Export is available after the salon submits sample work');
     }
-    const workbook = new ExcelJS.Workbook();
-    workbook.creator = 'Salon Attention';
-    const sheet = workbook.addWorksheet(VIP_EXPORT_SHEET_NAME);
-    sheet.views = [{ rightToLeft: true, state: 'frozen', ySplit: 1 }];
-    sheet.addRow([...VIP_EXPORT_HEADERS]);
-    for (const recipient of request.recipients) {
-      sheet.addRow([
-        excelSafeText(recipient.displayName),
-        recipient.phoneNumber,
-        excelSafeText(recipient.messageText),
-      ]);
-    }
-    sheet.getRow(1).font = { bold: true, name: 'Tahoma' };
+    const phones = [...new Set(request.recipients.map((row) => row.phoneNumber))].sort();
+    const workbook = await this.prisma.client.$transaction(async (tx) => {
+      for (const phone of phones) {
+        if (isUsableCustomerPhone(phone)) {
+          await lockPlatformMessagePhone(tx, phone);
+        }
+      }
+      const activeStops = await tx.platformMessageStop.findMany({
+        where: { active: true, phoneNumber: { in: phones } },
+        select: { phoneNumber: true },
+      });
+      const activePhones = new Set(activeStops.map((row) => row.phoneNumber));
+      const skipped = await tx.messageGlobalStopOutcome.findMany({
+        where: { vipRequestRecipientId: { in: request.recipients.map((row) => row.id) } },
+        select: { vipRequestRecipientId: true },
+      });
+      const skippedIds = new Set(skipped.map((row) => row.vipRequestRecipientId));
+      const book = new ExcelJS.Workbook();
+      book.creator = 'Salon Attention';
+      const sheet = book.addWorksheet(VIP_EXPORT_SHEET_NAME);
+      sheet.views = [{ rightToLeft: true, state: 'frozen', ySplit: 1 }];
+      sheet.addRow([...VIP_EXPORT_HEADERS]);
+      let omittedCount = 0;
+      for (const recipient of request.recipients) {
+        if (skippedIds.has(recipient.id) || activePhones.has(recipient.phoneNumber)) {
+          omittedCount += 1;
+          continue;
+        }
+        sheet.addRow([
+          excelSafeText(recipient.displayName),
+          recipient.phoneNumber,
+          excelSafeText(recipient.messageText),
+        ]);
+      }
+      const summary = book.addWorksheet('خلاصه');
+      summary.views = [{ rightToLeft: true }];
+      summary.addRow(['تعداد ردیف‌های حذف‌شده', omittedCount]);
+      sheet.getRow(1).font = { bold: true, name: 'Tahoma' };
+      return book;
+    }, { timeout: 15_000 });
     const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
     return { buffer, filename: VIP_EXPORT_FILENAME };
   }
@@ -1380,6 +1424,7 @@ export class DispatchVipRequestUseCase {
   constructor(
     private readonly prisma: PrismaService,
     private readonly vip: VipRepository,
+    private readonly stops: PlatformMessageStopService,
   ) {}
 
   async execute(
@@ -1409,7 +1454,12 @@ export class DispatchVipRequestUseCase {
           await tx.$queryRaw`SELECT id FROM vip_requests WHERE id = ${requestId}::uuid FOR UPDATE`;
           const request = await tx.vipRequest.findUnique({
             where: { id: requestId },
-            include: { recipients: { orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }] } },
+            include: {
+              recipients: {
+                orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+                include: { globalStopOutcome: { select: { id: true } } },
+              },
+            },
           });
           if (!request) {
             throw new NotFoundError('VIP request not found');
@@ -1452,12 +1502,40 @@ export class DispatchVipRequestUseCase {
             throw new ConflictError('This VIP request cannot be dispatched');
           }
 
+          let queuedCount = 0;
+          let globallyStoppedCount = 0;
+          const phones = [...new Set(request.recipients.map((row) => row.phoneNumber))]
+            .filter((phone) => isUsableCustomerPhone(phone))
+            .sort();
+          for (const phone of phones) {
+            await lockPlatformMessagePhone(tx, phone);
+          }
           for (const recipient of request.recipients) {
             if (recipient.messageRequestId) {
               continue;
             }
             if (!isUsableCustomerPhone(recipient.phoneNumber)) {
               throw new ValidationError('A stored VIP recipient phone is invalid');
+            }
+            const active = await this.stops.active(tx, recipient.phoneNumber);
+            const durableSkip = recipient.globalStopOutcome
+              ?? await tx.messageGlobalStopOutcome.findFirst({
+                where: { vipRequestRecipientId: recipient.id },
+                select: { id: true },
+              });
+            if (durableSkip) {
+              globallyStoppedCount += 1;
+              continue;
+            }
+            if (active) {
+              await recordVipRecipientGlobalStop(tx, {
+                recipientId: recipient.id,
+                salonId: request.salonId,
+                phone: recipient.phoneNumber,
+                now,
+              });
+              globallyStoppedCount += 1;
+              continue;
             }
             const messageRequestId = createId();
             await tx.messageRequest.create({
@@ -1495,6 +1573,7 @@ export class DispatchVipRequestUseCase {
                 },
               },
             });
+            queuedCount += 1;
           }
           await tx.auditLog.create({
             data: {
@@ -1505,7 +1584,7 @@ export class DispatchVipRequestUseCase {
               resource: 'vip_request',
               resourceId: requestId,
               result: 'SUCCESS',
-              metadata: { mode: 'MANUAL', messageCount: request.recipients.length },
+              metadata: { mode: 'MANUAL', queuedCount, globallyStoppedCount },
             },
           });
         },

@@ -5,6 +5,7 @@ export type AppErrorCode =
   | 'NOT_FOUND'
   | 'CONFLICT'
   | 'MESSAGE_DAILY_LIMIT_REACHED'
+  | 'GLOBAL_MESSAGE_STOP'
   | 'RETURN_COMMITMENT_VISIT_REVIEW_REQUIRED'
   | 'RATE_LIMITED'
   | 'BUSINESS_RULE'
@@ -69,6 +70,16 @@ export class MessageDailyLimitError extends AppError {
   constructor(message = 'A message was already requested for this customer today') {
     super('MESSAGE_DAILY_LIMIT_REACHED', message, 409);
     this.name = 'MessageDailyLimitError';
+  }
+}
+
+/** Salon-facing refusal. Does not name another salon, list, or the stop reason. */
+export const GLOBAL_MESSAGE_STOP_MESSAGE = 'ارسال پیام به این شماره مجاز نیست';
+
+export class GlobalMessageStopError extends AppError {
+  constructor(message = GLOBAL_MESSAGE_STOP_MESSAGE) {
+    super('GLOBAL_MESSAGE_STOP', message, 409);
+    this.name = 'GlobalMessageStopError';
   }
 }
 

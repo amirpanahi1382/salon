@@ -63,6 +63,9 @@ export class AdminMessageQueueItemDto {
   @ApiProperty({ description: 'Snapshotted execution phone for manual fulfillment; empty when unproven historical destination' })
   customerPhone!: string;
 
+  @ApiProperty({ description: 'True when this canonical destination has an active platform-wide stop' })
+  globalMessageStopActive!: boolean;
+
   @ApiProperty()
   messageText!: string;
 

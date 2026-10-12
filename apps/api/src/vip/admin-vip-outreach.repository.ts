@@ -8,13 +8,24 @@ export const ADMIN_VIP_OUTREACH_LIST_LIMIT = 50;
 
 const EXECUTION_SQL = Prisma.sql`
   CASE
-    WHEN rec.message_request_id IS NULL THEN 'NOT_YET_QUEUED'
     WHEN d.status = 'SENT' AND d.submitted_at IS NOT NULL THEN 'SENT'
+    WHEN stop_out.id IS NOT NULL THEN 'GLOBALLY_STOPPED'
+    WHEN rec.message_request_id IS NULL THEN 'NOT_YET_QUEUED'
     WHEN mr.status = 'CANCELLED' THEN 'CANCELLED'
     WHEN mr.status = 'FAILED' OR d.status = 'FAILED' THEN 'FAILED'
     WHEN mr.status = 'DISPATCHED' OR d.status IN ('PENDING', 'PROCESSING') THEN 'IN_PIPELINE'
     ELSE 'QUEUED'
   END
+`;
+
+const STOP_OUTCOME_JOIN = Prisma.sql`
+  LEFT JOIN LATERAL (
+    SELECT o.id
+    FROM message_global_stop_outcomes o
+    WHERE o.vip_request_recipient_id = rec.id
+       OR (rec.message_request_id IS NOT NULL AND o.message_request_id = rec.message_request_id)
+    LIMIT 1
+  ) stop_out ON true
 `;
 
 type FolderRow = {
@@ -49,6 +60,7 @@ type RequestRow = {
   sentCount: number;
   failedCount: number;
   cancelledCount: number;
+  globallyStoppedCount: number;
   requestOrdinal: number;
 };
 
@@ -63,6 +75,7 @@ type RecipientRow = {
   deliveryMode: string | null;
   submittedAt: Date | null;
   executionState: string;
+  globalMessageStopActive: boolean;
 };
 
 function parseActivityCursor(value: string | undefined): { at: Date; salonId: string } | undefined {
@@ -127,6 +140,7 @@ export class AdminVipOutreachRepository {
         FROM vip_request_recipients rec
         LEFT JOIN message_requests mr ON mr.id = rec.message_request_id
         LEFT JOIN message_deliveries d ON d.message_request_id = mr.id
+        ${STOP_OUTCOME_JOIN}
         GROUP BY rec.salon_id
       ),
       req_stats AS (
@@ -219,6 +233,7 @@ export class AdminVipOutreachRepository {
         COUNT(*) FILTER (WHERE ${EXECUTION_SQL} = 'SENT')::int AS "sentCount",
         COUNT(*) FILTER (WHERE ${EXECUTION_SQL} = 'FAILED')::int AS "failedCount",
         COUNT(*) FILTER (WHERE ${EXECUTION_SQL} = 'CANCELLED')::int AS "cancelledCount",
+        COUNT(*) FILTER (WHERE ${EXECUTION_SQL} = 'GLOBALLY_STOPPED')::int AS "globallyStoppedCount",
         (
           SELECT COUNT(*)::int
           FROM vip_requests older
@@ -231,6 +246,7 @@ export class AdminVipOutreachRepository {
       LEFT JOIN vip_request_recipients rec ON rec.vip_request_id = r.id
       LEFT JOIN message_requests mr ON mr.id = rec.message_request_id
       LEFT JOIN message_deliveries d ON d.message_request_id = mr.id
+      ${STOP_OUTCOME_JOIN}
       WHERE r.salon_id = ${salonId}::uuid
         ${cursorClause}
       GROUP BY r.id, s.name, l.name, l.region_code
@@ -273,6 +289,7 @@ export class AdminVipOutreachRepository {
         COUNT(*) FILTER (WHERE ${EXECUTION_SQL} = 'SENT')::int AS "sentCount",
         COUNT(*) FILTER (WHERE ${EXECUTION_SQL} = 'FAILED')::int AS "failedCount",
         COUNT(*) FILTER (WHERE ${EXECUTION_SQL} = 'CANCELLED')::int AS "cancelledCount",
+        COUNT(*) FILTER (WHERE ${EXECUTION_SQL} = 'GLOBALLY_STOPPED')::int AS "globallyStoppedCount",
         (
           SELECT COUNT(*)::int
           FROM vip_requests older
@@ -285,6 +302,7 @@ export class AdminVipOutreachRepository {
       LEFT JOIN vip_request_recipients rec ON rec.vip_request_id = r.id
       LEFT JOIN message_requests mr ON mr.id = rec.message_request_id
       LEFT JOIN message_deliveries d ON d.message_request_id = mr.id
+      ${STOP_OUTCOME_JOIN}
       WHERE r.id = ${requestId}::uuid
       GROUP BY r.id, s.name, l.name, l.region_code
     `;
@@ -311,10 +329,17 @@ export class AdminVipOutreachRepository {
         d.status AS "deliveryStatus",
         d.mode AS "deliveryMode",
         d.submitted_at AS "submittedAt",
-        ${EXECUTION_SQL} AS "executionState"
+        ${EXECUTION_SQL} AS "executionState",
+        EXISTS (
+          SELECT 1
+          FROM platform_message_stops s
+          WHERE s.phone_number = rec.phone_number
+            AND s.active = true
+        ) AS "globalMessageStopActive"
       FROM vip_request_recipients rec
       LEFT JOIN message_requests mr ON mr.id = rec.message_request_id
       LEFT JOIN message_deliveries d ON d.message_request_id = mr.id
+      ${STOP_OUTCOME_JOIN}
       WHERE rec.vip_request_id = ${requestId}::uuid
         ${cursorClause}
       ORDER BY rec.sort_order ASC, rec.id ASC
@@ -357,6 +382,7 @@ export function toOutreachRequestDto(row: RequestRow) {
     sentCount: row.sentCount,
     failedCount: row.failedCount,
     cancelledCount: row.cancelledCount,
+    globallyStoppedCount: row.globallyStoppedCount,
     canDispatchManual: row.status === 'SUBMITTED' || row.status === 'BALE_NOT_IMPLEMENTED',
   };
 }

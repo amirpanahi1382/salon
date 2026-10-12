@@ -62,6 +62,7 @@ export class GetAdminVipOutreachRequestUseCase {
           deliveryStatus: row.deliveryStatus,
           submittedAt: row.submittedAt?.toISOString() ?? null,
           executionState: row.executionState,
+          globalMessageStopActive: row.globalMessageStopActive,
           canCancel: capabilities.canCancel,
           canMarkManualSent: capabilities.canMarkManualSent,
         };

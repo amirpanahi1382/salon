@@ -40,6 +40,9 @@ class ApiException implements Exception {
     if (code == 'MESSAGE_DAILY_LIMIT_REACHED') {
       return AppStrings.messageDailyLimit;
     }
+    if (code == 'GLOBAL_MESSAGE_STOP') {
+      return AppStrings.globalMessageStop;
+    }
     if (code == 'RETURN_COMMITMENT_VISIT_REVIEW_REQUIRED') {
       return AppStrings.arrivalVisitReviewRequired;
     }

@@ -60,7 +60,7 @@ Excel imports take tenant from JWT, never from the file.
 - Global throttle 60/min/process; tighter on login/register
 - Helmet on API
 
-Consent/opt-out for messaging is **not implemented**.
+Consent to be contacted is **not implemented** and is not claimed. A Platform Admin can register or lift a platform-wide stop for one canonical phone (`platform_message_stops`, append-only `platform_message_stop_events`, reason `RECIPIENT_REQUEST`). Salon roles cannot list or change it. The salon-facing 409 does not include the phone or any other tenant. Admin audit metadata stores the reason code and blocked/skipped counts, not the phone or message text. Admin search/register responses echo the phone the admin submitted.
 
 ---
 
