@@ -9,6 +9,7 @@ import '../../core/theme/app_tokens.dart';
 import '../../core/widgets/app_widgets.dart';
 import '../../shared/labels.dart';
 import '../../shared/models/models.dart';
+import '../vip/vip_progress_card.dart';
 import '../followups/follow_ups_screen.dart';
 import '../followups/intention_idempotency.dart';
 import 'admin_message_queue_screen.dart';
@@ -270,6 +271,7 @@ class _AdminVipOutreachSalonScreenState
   bool _loading = true;
   Object? _error;
   bool _busy = false;
+  int _loadGeneration = 0;
 
   @override
   void initState() {
@@ -278,6 +280,7 @@ class _AdminVipOutreachSalonScreenState
   }
 
   Future<void> _load({bool more = false}) async {
+    final generation = ++_loadGeneration;
     setState(() {
       _loading = true;
       _error = null;
@@ -287,7 +290,7 @@ class _AdminVipOutreachSalonScreenState
             widget.salonId,
             cursor: more ? _cursor : null,
           );
-      if (!mounted) {
+      if (!mounted || generation != _loadGeneration) {
         return;
       }
       setState(() {
@@ -297,7 +300,7 @@ class _AdminVipOutreachSalonScreenState
         _loading = false;
       });
     } catch (error) {
-      if (!mounted) {
+      if (!mounted || generation != _loadGeneration) {
         return;
       }
       setState(() {
@@ -343,7 +346,9 @@ class _AdminVipOutreachSalonScreenState
                       title: AppStrings.vipOutreachEmptyTitle,
                       body: AppStrings.vipOutreachEmptyBody,
                     )
-                  : ListView(
+                  : RefreshIndicator(
+                      onRefresh: () => _load(),
+                      child: ListView(
                       padding: const EdgeInsets.all(AppTokens.space16),
                       children: [
                         for (final request in _items) ...[
@@ -364,14 +369,29 @@ class _AdminVipOutreachSalonScreenState
                                 ),
                                 Text('${AppStrings.vipListNameLabel}: ${request.listName}'),
                                 const SizedBox(height: 4),
-                                Text(_requestStatus(request.status)),
-                                Text(
-                                  AppStrings.sentOfTotal(request.sentCount, request.recipientCount),
-                                ),
-                                Text(
-                                  '${AppStrings.vipOutreachPending} ${request.notYetQueuedCount + request.queuedCount + request.inPipelineCount} · ${AppStrings.vipOutreachFailed} ${request.failedCount} · ${AppStrings.vipGloballyStoppedCount} ${request.globallyStoppedCount}',
-                                ),
-                                if (request.canDispatchManual)
+                                if (request.progress != null)
+                                  VipProgressCard(
+                                    progress: request.progress!,
+                                    action: request.canDispatchManual
+                                        ? Align(
+                                            alignment: Alignment.centerRight,
+                                            child: TextButton(
+                                              onPressed: _busy ? null : () => _dispatch(request),
+                                              child: const Text(AppStrings.vipSendManual),
+                                            ),
+                                          )
+                                        : null,
+                                  )
+                                else ...[
+                                  Text(_requestStatus(request.status)),
+                                  Text(
+                                    AppStrings.sentOfTotal(request.sentCount, request.recipientCount),
+                                  ),
+                                  Text(
+                                    '${AppStrings.vipOutreachPending} ${request.notYetQueuedCount + request.queuedCount + request.inPipelineCount} · ${AppStrings.vipOutreachFailed} ${request.failedCount} · ${AppStrings.vipGloballyStoppedCount} ${request.globallyStoppedCount}',
+                                  ),
+                                ],
+                                if (request.progress == null && request.canDispatchManual)
                                   Align(
                                     alignment: Alignment.centerRight,
                                     child: TextButton(
@@ -390,6 +410,7 @@ class _AdminVipOutreachSalonScreenState
                             child: const Text(AppStrings.vipOutreachLoadMore),
                           ),
                       ],
+                    ),
                     ),
       ),
     );
@@ -431,6 +452,7 @@ class _AdminVipOutreachRequestScreenState
   String? _busyRecipientId;
   bool _dispatching = false;
   final _intentionKey = StableIdempotencyKey();
+  int _loadGeneration = 0;
 
   @override
   void initState() {
@@ -439,6 +461,7 @@ class _AdminVipOutreachRequestScreenState
   }
 
   Future<void> _load({bool more = false}) async {
+    final generation = ++_loadGeneration;
     setState(() {
       _loading = true;
       _error = null;
@@ -448,7 +471,7 @@ class _AdminVipOutreachRequestScreenState
             widget.requestId,
             cursor: more ? _cursor : null,
           );
-      if (!mounted) {
+      if (!mounted || generation != _loadGeneration) {
         return;
       }
       setState(() {
@@ -458,7 +481,7 @@ class _AdminVipOutreachRequestScreenState
         _loading = false;
       });
     } catch (error) {
-      if (!mounted) {
+      if (!mounted || generation != _loadGeneration) {
         return;
       }
       setState(() {
@@ -665,7 +688,9 @@ class _AdminVipOutreachRequestScreenState
             ? ErrorView(message: friendlyError(_error!), onRetry: _load)
             : _loading && request == null
                 ? const LoadingSkeleton(lines: 6)
-                : ListView(
+                : RefreshIndicator(
+                    onRefresh: () => _load(),
+                    child: ListView(
                     padding: const EdgeInsets.all(AppTokens.space16),
                     children: [
                       if (request != null) ...[
@@ -677,10 +702,22 @@ class _AdminVipOutreachRequestScreenState
                           style: Theme.of(context).textTheme.titleMedium,
                         ),
                         Text('${AppStrings.vipListNameLabel}: ${request.listName}'),
-                        Text(
-                          AppStrings.sentOfTotal(request.sentCount, request.recipientCount),
-                        ),
-                        if (request.canDispatchManual) ...[
+                        if (request.progress != null)
+                          VipProgressCard(
+                            progress: request.progress!,
+                            action: request.canDispatchManual
+                                ? AppButton(
+                                    label: AppStrings.vipOutreachDispatchAllManual,
+                                    onPressed: _dispatching ? null : _dispatchRequest,
+                                    loading: _dispatching,
+                                  )
+                                : null,
+                          )
+                        else
+                          Text(
+                            AppStrings.sentOfTotal(request.sentCount, request.recipientCount),
+                          ),
+                        if (request.progress == null && request.canDispatchManual) ...[
                           const SizedBox(height: AppTokens.space8),
                           const Text(AppStrings.vipOutreachDispatchPrerequisite),
                           const SizedBox(height: AppTokens.space8),
@@ -717,7 +754,10 @@ class _AdminVipOutreachRequestScreenState
                                       : AppStrings.vipUnnamedContact,
                                 ),
                                 LtrText(row.phoneNumber),
-                                Text(vipOutreachExecutionLabel(row.executionState)),
+                                Text(vipOutreachExecutionLabel(
+                                  row.executionState,
+                                  deliveryMode: row.deliveryMode,
+                                )),
                                 if (row.globalMessageStopActive)
                                   Text(AppStrings.adminStopActive),
                                 if (RegExp(r'^09\d{9}$').hasMatch(row.phoneNumber) &&
@@ -773,6 +813,7 @@ class _AdminVipOutreachRequestScreenState
                           child: const Text(AppStrings.vipOutreachLoadMore),
                         ),
                     ],
+                  ),
                   ),
       ),
     );

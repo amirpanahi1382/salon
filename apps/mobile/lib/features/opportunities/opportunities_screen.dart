@@ -388,7 +388,11 @@ class _WorkspaceRowTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final status = workspaceMessageStateLabel(row.messageState);
+    final status = workspaceMessageStateLabel(
+      row.messageState,
+      deliveryMode: row.deliveryMode,
+      vip: row.isVip,
+    );
     final subtitle = [
       if (row.isVip) AppStrings.workspaceVipBadge,
       if (status.isNotEmpty) status,

@@ -25,4 +25,9 @@ describe('opportunities workspace serving path', () => {
     expect(repositorySource).toContain('observedReturnCtes');
     expect(repositorySource).toContain('eligible-message-evidence.sql');
   });
+
+  it('selects delivery mode for labeling and does not derive a new message state from it', () => {
+    expect(repositorySource.match(/d\.mode::text AS delivery_mode/g)).toHaveLength(2);
+    expect(useCaseSource).not.toContain('deliveryMode');
+  });
 });

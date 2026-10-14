@@ -9,6 +9,7 @@ import '../../core/theme/app_tokens.dart';
 import '../../core/widgets/app_widgets.dart';
 import '../../shared/labels.dart';
 import '../../shared/models/models.dart';
+import 'vip_progress_card.dart';
 
 class VipSelectedCount extends Notifier<int?> {
   @override
@@ -505,50 +506,94 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
   }
 
   Widget _history(VipCapability capability) {
-    if (capability.inProgressRequests.isEmpty && !capability.inProgressRequestsHasMore) {
+    final cancelled = capability.latestCancelledRequest;
+    final hasInProgress =
+        capability.inProgressRequests.isNotEmpty || capability.inProgressRequestsHasMore;
+    if (!hasInProgress && cancelled == null) {
       return const SizedBox.shrink();
     }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          AppStrings.vipInProgressRequests,
-          style: Theme.of(context).textTheme.titleMedium,
-        ),
-        const SizedBox(height: 8),
-        for (final request in capability.inProgressRequests) ...[
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            title: Text(request.listName),
-            subtitle: Text(
-              '${vipRequestStatusLabel(request.status)} · ${request.requestedCount}',
-            ),
-            trailing: TextButton(
-              onPressed: () => context.push('/vip/requests/${request.id}/visit-intention'),
-              child: const Text(AppStrings.recordVisitIntention),
-            ),
+        if (hasInProgress) ...[
+          Text(
+            AppStrings.vipInProgressRequests,
+            style: Theme.of(context).textTheme.titleMedium,
           ),
+          const SizedBox(height: 8),
+          for (final request in capability.inProgressRequests)
+            _associatedRequest(request),
+          if (capability.inProgressRequestsHasMore) ...[
+            const SizedBox(height: 4),
+            const Text(AppStrings.vipInProgressRequestsTruncated),
+          ],
         ],
-        if (capability.inProgressRequestsHasMore) ...[
-          const SizedBox(height: 4),
-          const Text(AppStrings.vipInProgressRequestsTruncated),
-        ],
+        if (cancelled != null) _associatedRequest(cancelled, intention: false),
         const SizedBox(height: 16),
       ],
     );
   }
 
+  Widget _associatedRequest(VipRequest request, {bool intention = true}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text('${AppStrings.vipListNameLabel}: ${request.listName}'),
+          Text(AppStrings.vipRequestedRecipientCount(request.requestedCount)),
+          const SizedBox(height: 8),
+          if (request.progress != null)
+            VipProgressCard(progress: request.progress!)
+          else
+            Text('${vipRequestStatusLabel(request.status)} · ${request.requestedCount}'),
+          if (intention)
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: () => context.push('/vip/requests/${request.id}/visit-intention'),
+                child: const Text(AppStrings.recordVisitIntention),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _currentRequestView(VipCapability capability, VipRequest current) {
-    final awaiting = current.status == 'AWAITING_SAMPLE_WORK';
+    final awaiting = current.progress == null
+        ? current.status == 'AWAITING_SAMPLE_WORK'
+        : current.progress!.reservationStillValid;
+    final sampleActions = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(AppStrings.vipSampleProgress(current.sampleWorks.length)),
+        const SizedBox(height: 12),
+        FilledButton(
+          onPressed: _busy ? null : () => _addSample(current),
+          child: const Text(AppStrings.vipAddSample),
+        ),
+        const SizedBox(height: 8),
+        FilledButton(
+          onPressed: _busy || current.sampleWorks.isEmpty ? null : () => _submitExisting(current),
+          child: const Text(AppStrings.vipSubmit),
+        ),
+      ],
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _history(capability),
-        ListTile(
-          contentPadding: EdgeInsets.zero,
-          title: Text(current.listName),
-          subtitle: Text('${vipRequestStatusLabel(current.status)} · ${current.requestedCount}'),
-        ),
+        Text('${AppStrings.vipListNameLabel}: ${current.listName}'),
+        Text(AppStrings.vipRequestedRecipientCount(current.requestedCount)),
+        const SizedBox(height: 8),
+        if (current.progress != null)
+          VipProgressCard(
+            progress: current.progress!,
+            action: awaiting ? sampleActions : null,
+          )
+        else
+          Text('${vipRequestStatusLabel(current.status)} · ${current.requestedCount}'),
         if (capability.remainingQuota == 0) ...[
           const SizedBox(height: 8),
           Text(
@@ -556,21 +601,9 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
             style: TextStyle(color: Theme.of(context).colorScheme.error),
           ),
         ],
-        if (awaiting) ...[
+        if (current.progress == null && awaiting) ...[
           const SizedBox(height: 12),
-          Text(AppStrings.vipSampleProgress(current.sampleWorks.length)),
-          const SizedBox(height: 12),
-          FilledButton(
-            onPressed: _busy ? null : () => _addSample(current),
-            child: const Text(AppStrings.vipAddSample),
-          ),
-          const SizedBox(height: 8),
-          FilledButton(
-            onPressed: _busy || current.sampleWorks.isEmpty
-                ? null
-                : () => _submitExisting(current),
-            child: const Text(AppStrings.vipSubmit),
-          ),
+          sampleActions,
         ],
       ],
     );

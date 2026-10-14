@@ -215,6 +215,13 @@ export class VipRequestDto {
 
   @ApiProperty({ type: [VipSampleWorkDto] })
   sampleWorks!: VipSampleWorkDto[];
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Server-owned progress. Null only when this response was built without the read model. Counts are recipient buckets, not a new VipRequest status.',
+  })
+  progress!: Record<string, unknown> | null;
 }
 
 export class VipCapabilityDto {
@@ -260,6 +267,13 @@ export class VipCapabilityDto {
     description: 'Same as activeDraft. Submitted and processing requests are not returned here.',
   })
   currentRequest!: VipRequestDto | null;
+
+  @ApiProperty({
+    nullable: true,
+    type: () => VipRequestDto,
+    description: 'The single most recently cancelled draft for this salon. Not a history page.',
+  })
+  latestCancelledRequest!: VipRequestDto | null;
 }
 
 export class VipEntitlementDto {

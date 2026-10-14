@@ -19,7 +19,9 @@ describe('admin VIP outreach serving path', () => {
 
   it('aggregates folder counts in SQL instead of loading recipients in Node', () => {
     expect(repositorySource).toContain('$queryRaw');
-    expect(repositorySource).toContain("FILTER (WHERE ${EXECUTION_SQL} = 'SENT')");
+    expect(repositorySource).toContain('VIP_RECIPIENT_PROGRESS_COUNTS');
+    const progressSource = readFileSync(join(__dirname, 'vip-recipient-execution.sql.ts'), 'utf8');
+    expect(progressSource).toContain("FILTER (WHERE ${VIP_RECIPIENT_EXECUTION_SQL} = 'SENT')");
     expect(repositorySource).not.toContain('findMany({');
     expect(useCaseSource).not.toContain('listContacts');
   });

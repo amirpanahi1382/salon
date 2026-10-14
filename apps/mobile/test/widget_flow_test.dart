@@ -960,6 +960,7 @@ OpportunityWorkspaceRow _workspaceRow({
   String? customerId = 'c1',
   String? messageState = 'QUEUED',
   String? messageRequestId = 'm1',
+  String? deliveryMode,
   DateTime? previousVisitAt,
 }) {
   return OpportunityWorkspaceRow(
@@ -968,6 +969,7 @@ OpportunityWorkspaceRow _workspaceRow({
     displayName: displayName,
     customerId: customerId,
     messageState: messageState,
+    deliveryMode: deliveryMode,
     messageRequestId: messageRequestId,
     previousVisitAt: previousVisitAt,
   );
@@ -1455,6 +1457,7 @@ void main() {
             customerId: null,
             messageState: 'SENT',
             messageRequestId: 'm-vip',
+            deliveryMode: 'MANUAL',
           ),
         ],
         'SALON_MESSAGES': [_workspaceRow(messageState: 'FAILED')],
@@ -1466,6 +1469,16 @@ void main() {
             customerId: null,
             messageState: 'SENT',
             messageRequestId: 'm-vip',
+            deliveryMode: 'MANUAL',
+          ),
+          _workspaceRow(
+            rowKind: 'VIP_RECIPIENT',
+            stableId: 'VIP_RECIPIENT:m-bale',
+            displayName: 'VIP Provider',
+            customerId: null,
+            messageState: 'SENT',
+            messageRequestId: 'm-bale',
+            deliveryMode: 'BALE',
           ),
         ],
         'REVENUE_DROP': [
@@ -1510,7 +1523,8 @@ void main() {
     await tester.tap(find.widgetWithText(ChoiceChip, 'ارسال پیام vip'));
     await tester.pumpAndSettle();
     expect(find.text('VIP Guest'), findsOneWidget);
-    expect(find.textContaining('ارسال شده'), findsOneWidget);
+    expect(find.textContaining('ارسال دستی ثبت شده'), findsOneWidget);
+    expect(find.textContaining('VIP · ارسال شده'), findsOneWidget);
 
     await tester.tap(find.widgetWithText(ChoiceChip, 'افت درآمد'));
     await tester.pumpAndSettle();

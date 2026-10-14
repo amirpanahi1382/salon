@@ -40,7 +40,7 @@ void main() {
     expect(AppStrings.adminRemoveFromQueue, 'حذف از صف');
     expect(AppStrings.adminMarkRecipientSent, 'ارسال دستی شد');
     expect(AppStrings.adminCancelled, 'لغو شده');
-    expect(AppStrings.sentOfTotal(24, 37), 'ارسال شده 24 از 37');
+    expect(AppStrings.sentOfTotal(24, 37), 'ارسال ثبت‌شده 24 از 37');
     expect(vipOutreachExecutionLabel('CANCELLED'), AppStrings.adminCancelled);
     expect(workspaceMessageStateLabel('CANCELLED'), AppStrings.adminCancelled);
     expect(AppStrings.vipOutreachFolders, 'پوشه ارسال VIP سالن‌ها');
@@ -48,7 +48,12 @@ void main() {
     expect(vipOutreachExecutionLabel('NOT_YET_QUEUED'), AppStrings.vipOutreachNotQueued);
     expect(vipOutreachExecutionLabel('QUEUED'), AppStrings.outreachStatusQueued);
     expect(vipOutreachExecutionLabel('IN_PIPELINE'), AppStrings.outreachStatusDispatched);
-    expect(vipOutreachExecutionLabel('SENT'), AppStrings.outreachStatusSent);
+    expect(vipOutreachExecutionLabel('SENT'), AppStrings.vipRecordedSent);
+    expect(
+      vipOutreachExecutionLabel('SENT', deliveryMode: 'MANUAL'),
+      AppStrings.vipManuallyMarkedSent,
+    );
+    expect(AppStrings.vipManuallyMarkedSent, isNot(contains('تحویل')));
     expect(vipOutreachExecutionLabel('FAILED'), AppStrings.outreachStatusFailed);
     expect(vipOutreachExecutionLabel('GLOBALLY_STOPPED'), AppStrings.vipGloballyStopped);
     expect(vipOutreachExecutionLabel('GLOBALLY_STOPPED'), isNot(AppStrings.adminStopActive));
@@ -117,6 +122,19 @@ void main() {
     expect(workspaceMessageStateLabel('QUEUED'), AppStrings.outreachStatusQueued);
     expect(workspaceMessageStateLabel('IN_PIPELINE'), AppStrings.outreachStatusDispatched);
     expect(workspaceMessageStateLabel('SENT'), AppStrings.workspaceMessageSent);
+    expect(
+      workspaceMessageStateLabel('SENT', deliveryMode: 'MANUAL', vip: true),
+      AppStrings.workspaceVipManualRecorded,
+    );
+    expect(
+      workspaceMessageStateLabel('SENT', deliveryMode: 'BALE', vip: true),
+      AppStrings.workspaceMessageSent,
+    );
+    expect(
+      workspaceMessageStateLabel('SENT', deliveryMode: 'MANUAL'),
+      AppStrings.workspaceMessageSent,
+    );
+    expect(AppStrings.workspaceVipManualRecorded, 'ارسال دستی ثبت شده');
     expect(
       workspaceMessageStateLabel('SENT_WITH_RETURN_COMMITMENT'),
       AppStrings.workspaceMessageAgreed,

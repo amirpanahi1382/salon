@@ -10,6 +10,7 @@ import 'package:salon_mobile/core/networking/repositories.dart';
 import 'package:salon_mobile/core/state/providers.dart';
 import 'package:salon_mobile/core/storage/session_store.dart';
 import 'package:salon_mobile/features/admin/admin_vip_outreach_screen.dart';
+import 'package:salon_mobile/features/vip/vip_progress_card.dart';
 import 'package:salon_mobile/shared/labels.dart';
 import 'package:salon_mobile/shared/models/models.dart';
 
@@ -48,6 +49,7 @@ AdminVipOutreachRequest _request({
   int sent = 0,
   int pending = 30,
   String status = 'SUBMITTED',
+  VipRequestProgress? progress,
 }) {
   return AdminVipOutreachRequest(
     id: id,
@@ -67,10 +69,38 @@ AdminVipOutreachRequest _request({
     sentCount: sent,
     failedCount: 0,
     sampleWorkCount: 1,
-    canDispatchManual: status == 'SUBMITTED',
+    canDispatchManual: status == 'SUBMITTED' || status == 'BALE_NOT_IMPLEMENTED',
     displayTitle: regionName == null
         ? 'Salon A — درخواست VIP شماره 1 — ${pending + sent} مخاطب'
         : 'Salon A — $regionName — ${pending + sent} مخاطب',
+    progress: progress,
+  );
+}
+
+VipRequestProgress _progress({
+  required String headline,
+  required String explanation,
+  String nextActor = 'PLATFORM_ADMIN',
+  String nextActorLabel = 'اقدام بعدی با پلتفرم است',
+  List<VipProgressCountLine> countLines = const [],
+  String? activeStopNote,
+}) {
+  return VipRequestProgress(
+    headline: headline,
+    explanation: explanation,
+    nextActor: nextActor,
+    nextActorLabel: nextActorLabel,
+    reservationStillValid: false,
+    countLines: countLines,
+    activeStopNote: activeStopNote,
+  );
+}
+
+AdminVipOutreachSalonPage _salonPage(AdminVipOutreachRequest request) {
+  return AdminVipOutreachSalonPage(
+    salonId: request.salonId,
+    salonName: request.salonName,
+    page: ItemPage(items: [request], hasMore: false),
   );
 }
 
@@ -123,6 +153,8 @@ class _FakeVipRepository extends VipRepository {
     this.recipientsByRequest = const {},
     this.foldersError,
     this.queryResponses = const {},
+    this.salonScript,
+    this.requestScript,
   }) : super(_client());
 
   final List<AdminVipOutreachFolder> folders;
@@ -130,8 +162,12 @@ class _FakeVipRepository extends VipRepository {
   final Map<String, List<AdminVipOutreachRecipient>> recipientsByRequest;
   final Object? foldersError;
   final Map<String, Future<ItemPage<AdminVipOutreachFolder>>> queryResponses;
+  final List<Future<AdminVipOutreachSalonPage>>? salonScript;
+  final List<Future<AdminVipOutreachRequestPage>>? requestScript;
   final List<String> folderQueries = [];
   final List<String> salonLoads = [];
+  int _salonScriptIndex = 0;
+  int _requestScriptIndex = 0;
 
   @override
   Future<AdminVipInventoryPage> adminLists({
@@ -180,6 +216,10 @@ class _FakeVipRepository extends VipRepository {
     String? cursor,
   }) async {
     salonLoads.add(salonId);
+    final script = salonScript;
+    if (script != null) {
+      return script[_salonScriptIndex++];
+    }
     return AdminVipOutreachSalonPage(
       salonId: salonId,
       salonName: folders
@@ -197,6 +237,10 @@ class _FakeVipRepository extends VipRepository {
     String requestId, {
     String? cursor,
   }) async {
+    final script = requestScript;
+    if (script != null) {
+      return script[_requestScriptIndex++];
+    }
     final request = requestsBySalon.values
         .expand((rows) => rows)
         .firstWhere((row) => row.id == requestId);
@@ -348,6 +392,7 @@ void main() {
             displayName: 'مینا',
             phoneNumber: '09121111111',
             executionState: 'SENT',
+            deliveryMode: 'MANUAL',
             messageRequestId: 'm1',
           ),
           const AdminVipOutreachRecipient(
@@ -380,7 +425,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('مینا'), findsOneWidget);
     expect(find.text('09121111111'), findsOneWidget);
-    expect(find.text(AppStrings.outreachStatusSent), findsOneWidget);
+    expect(find.text(AppStrings.vipManuallyMarkedSent), findsOneWidget);
+    expect(find.text(AppStrings.outreachStatusSent), findsNothing);
     expect(find.text(AppStrings.vipOutreachNotQueued), findsOneWidget);
     expect(find.text(AppStrings.vipUnnamedContact), findsOneWidget);
     expect(find.text(AppStrings.adminMarkRecipientSent), findsOneWidget);
@@ -513,6 +559,172 @@ void main() {
     expect(find.text(AppStrings.vipGloballyStopped), findsNWidgets(2));
     expect(find.text(AppStrings.adminStopActive), findsOneWidget);
     expect(find.text(AppStrings.adminStopMessages), findsNothing);
+  });
+
+  testWidgets('manual folder progress stays per recipient and is not labeled sent', (
+    tester,
+  ) async {
+    final request = _request(
+      id: 'r1',
+      salonId: 's1',
+      status: 'MANUAL_QUEUED',
+      progress: _progress(
+        headline: 'رسیدگی دستی شروع شده',
+        explanation: 'کل درخواست ارسال‌شده نیست',
+        countLines: const [
+          VipProgressCountLine(key: 'inHandling', label: 'در صف یا در حال رسیدگی', count: 2),
+          VipProgressCountLine(
+            key: 'manuallyMarkedSent',
+            label: 'علامت‌خورده به‌عنوان ارسال دستی',
+            count: 1,
+          ),
+        ],
+      ),
+    );
+    final repo = _FakeVipRepository(
+      folders: [_folder(salonId: 's1', name: 'Salon A')],
+      requestsBySalon: {'s1': [request]},
+    );
+    tester.view.physicalSize = const Size(800, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [vipRepositoryProvider.overrideWithValue(repo)],
+        child: const MaterialApp(home: AdminVipOutreachSalonScreen(salonId: 's1')),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('رسیدگی دستی شروع شده'), findsOneWidget);
+    expect(find.text('در صف یا در حال رسیدگی: ۲'), findsOneWidget);
+    expect(find.text('علامت‌خورده به‌عنوان ارسال دستی: ۱'), findsOneWidget);
+    expect(find.text(AppStrings.vipSendManual), findsNothing);
+    expect(find.textContaining('0912'), findsNothing);
+    expect(
+      tester.widget<Directionality>(find.descendant(
+        of: find.byType(VipProgressCard),
+        matching: find.byType(Directionality),
+      )).textDirection,
+      TextDirection.rtl,
+    );
+  });
+
+  testWidgets('a stale salon folder cannot replace the newer progress', (tester) async {
+    final stale = Completer<AdminVipOutreachSalonPage>();
+    final fresh = Completer<AdminVipOutreachSalonPage>();
+    final first = _request(
+      id: 'r1',
+      salonId: 's1',
+      progress: _progress(headline: 'اول', explanation: 'شروع'),
+    );
+    final repo = _FakeVipRepository(
+      salonScript: [
+        Future.value(_salonPage(first)),
+        stale.future,
+        fresh.future,
+      ],
+    );
+    tester.view.physicalSize = const Size(800, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [vipRepositoryProvider.overrideWithValue(repo)],
+        child: const MaterialApp(home: AdminVipOutreachSalonScreen(salonId: 's1')),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('اول'), findsOneWidget);
+    final indicator = tester.widget<RefreshIndicator>(find.byType(RefreshIndicator));
+    final older = indicator.onRefresh();
+    final newer = indicator.onRefresh();
+    fresh.complete(_salonPage(_request(
+      id: 'r1',
+      salonId: 's1',
+      progress: _progress(headline: 'تازه', explanation: 'جدید'),
+    )));
+    await newer;
+    await tester.pumpAndSettle();
+    stale.complete(_salonPage(_request(
+      id: 'r1',
+      salonId: 's1',
+      progress: _progress(headline: 'کهنه', explanation: 'قدیمی'),
+    )));
+    await older;
+    await tester.pumpAndSettle();
+    expect(find.text('تازه'), findsOneWidget);
+    expect(find.text('کهنه'), findsNothing);
+  });
+
+  testWidgets('a stale request detail cannot replace the newer progress', (tester) async {
+    final stale = Completer<AdminVipOutreachRequestPage>();
+    final fresh = Completer<AdminVipOutreachRequestPage>();
+    AdminVipOutreachRequestPage page(String headline) {
+      final request = _request(
+        id: 'r1',
+        salonId: 's1',
+        progress: _progress(headline: headline, explanation: headline),
+      );
+      return AdminVipOutreachRequestPage(
+        request: request,
+        page: const ItemPage(items: [], hasMore: false),
+      );
+    }
+    final repo = _FakeVipRepository(
+      requestScript: [Future.value(page('اول')), stale.future, fresh.future],
+    );
+    tester.view.physicalSize = const Size(800, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [vipRepositoryProvider.overrideWithValue(repo)],
+        child: const MaterialApp(home: AdminVipOutreachRequestScreen(requestId: 'r1')),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final indicator = tester.widget<RefreshIndicator>(find.byType(RefreshIndicator));
+    final older = indicator.onRefresh();
+    final newer = indicator.onRefresh();
+    fresh.complete(page('تازه'));
+    await newer;
+    await tester.pumpAndSettle();
+    stale.complete(page('کهنه'));
+    await older;
+    await tester.pumpAndSettle();
+    expect(find.text('تازه'), findsWidgets);
+    expect(find.text('کهنه'), findsNothing);
+  });
+
+  testWidgets('request detail shows Bale as unavailable and offers manual handling', (
+    tester,
+  ) async {
+    final repo = _FakeVipRepository(
+      requestsBySalon: {
+        's1': [
+          _request(
+            id: 'r1',
+            salonId: 's1',
+            status: 'BALE_NOT_IMPLEMENTED',
+            progress: _progress(
+              headline: 'ارسال با بله در دسترس نیست',
+              explanation: 'رسیدگی دستی همچنان ممکن است.',
+            ),
+          ),
+        ],
+      },
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [vipRepositoryProvider.overrideWithValue(repo)],
+        child: const MaterialApp(home: AdminVipOutreachRequestScreen(requestId: 'r1')),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('ارسال با بله در دسترس نیست'), findsOneWidget);
+    expect(find.text('رسیدگی دستی همچنان ممکن است.'), findsOneWidget);
+    expect(find.text(AppStrings.vipOutreachDispatchAllManual), findsOneWidget);
+    expect(find.text(AppStrings.vipOutreachDispatchPrerequisite), findsNothing);
   });
 }
 

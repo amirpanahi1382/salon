@@ -8,6 +8,10 @@ import {
   VIP_RESERVATION_TTL_MS,
 } from '@salon/shared';
 import { PrismaService } from '../infrastructure/database/prisma.service';
+import {
+  VIP_RECIPIENT_PROGRESS_COUNTS,
+  VIP_RECIPIENT_STOP_JOIN,
+} from './vip-recipient-execution.sql';
 
 type Db = Prisma.TransactionClient | PrismaService['client'];
 
@@ -339,6 +343,26 @@ export class VipRepository {
     });
   }
 
+  findLatestCancelledRequest(salonId: string, db: Db = this.prisma.client) {
+    return db.vipRequest.findFirst({
+      where: { salonId, status: 'CANCELLED' },
+      orderBy: [{ cancelledAt: 'desc' }, { id: 'desc' }],
+      select: {
+        id: true,
+        salonId: true,
+        listId: true,
+        requestedCount: true,
+        geographicRange: true,
+        status: true,
+        reservedUntil: true,
+        submittedAt: true,
+        createdAt: true,
+        salon: { select: { name: true } },
+        list: { select: { name: true } },
+      },
+    });
+  }
+
   listInProgressRequests(salonId: string, take: number, db: Db = this.prisma.client) {
     return db.vipRequest.findMany({
       where: { salonId, status: { in: inProgressStatuses } },
@@ -360,9 +384,56 @@ export class VipRepository {
     });
   }
 
+  async recipientProgressFacts(salonId: string, requestIds: string[], db: Db = this.prisma.client) {
+    const facts = new Map<string, SalonVipProgressFact>();
+    if (requestIds.length === 0) return facts;
+    const rows = await db.$queryRaw<SalonVipProgressFact[]>`
+      SELECT
+        r.id,
+        r.status,
+        r.created_at AS "createdAt",
+        r.reserved_until AS "reservedUntil",
+        r.submitted_at AS "submittedAt",
+        r.cancelled_at AS "cancelledAt",
+        r.requested_count AS "requestedCount",
+        ${VIP_RECIPIENT_PROGRESS_COUNTS}
+      FROM vip_requests r
+      LEFT JOIN vip_request_recipients rec ON rec.vip_request_id = r.id AND rec.salon_id = r.salon_id
+      LEFT JOIN message_requests mr ON mr.id = rec.message_request_id AND mr.salon_id = r.salon_id
+      LEFT JOIN message_deliveries d ON d.message_request_id = mr.id AND d.salon_id = r.salon_id
+      ${VIP_RECIPIENT_STOP_JOIN}
+      WHERE r.salon_id = ${salonId}::uuid
+        AND r.id IN (${Prisma.join(requestIds.map((id) => Prisma.sql`${id}::uuid`))})
+      GROUP BY r.id
+    `;
+    for (const row of rows) facts.set(row.id, row);
+    return facts;
+  }
+
   findActiveEntitlement(salonId: string, db: Db = this.prisma.client) {
     return db.vipSalonEntitlement.findFirst({
       where: { salonId, revokedAt: null },
     });
   }
 }
+
+export type SalonVipProgressFact = {
+  id: string;
+  status: string;
+  createdAt: Date;
+  reservedUntil: Date;
+  submittedAt: Date | null;
+  cancelledAt: Date | null;
+  requestedCount: number;
+  recipientCount: number;
+  notYetQueuedCount: number;
+  queuedCount: number;
+  inPipelineCount: number;
+  sentCount: number;
+  manualSentCount: number;
+  failedCount: number;
+  cancelledCount: number;
+  globallyStoppedCount: number;
+  activeStopWithoutDurableSkipCount: number;
+  latestManualSentAt: Date | null;
+};

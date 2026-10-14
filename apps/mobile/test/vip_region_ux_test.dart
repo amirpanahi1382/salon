@@ -307,7 +307,7 @@ void main() {
     );
     await _pump(tester, repo);
     expect(find.text(AppStrings.vipInProgressRequests), findsOneWidget);
-    expect(find.text('VIP-03-01'), findsOneWidget);
+    expect(find.text('${AppStrings.vipListNameLabel}: VIP-03-01'), findsOneWidget);
     expect(find.text('${AppStrings.vipNeedsReview} · 100'), findsOneWidget);
     expect(find.textContaining('SUBMITTED'), findsNothing);
     expect(find.text(AppStrings.vipRemainingQuota(400)), findsOneWidget);
@@ -404,7 +404,7 @@ void main() {
     await tester.pump();
     expect(calls, 2);
     expect(find.text(AppStrings.vipDesiredRegion), findsOneWidget);
-    expect(find.text('VIP-03-01'), findsOneWidget);
+    expect(find.text('${AppStrings.vipListNameLabel}: VIP-03-01'), findsOneWidget);
     expect(find.text(AppStrings.vipAddSample), findsNothing);
   });
 
@@ -506,7 +506,7 @@ void main() {
     );
     await _pump(tester, repo);
     expect(find.text(AppStrings.vipInProgressRequestsTruncated), findsOneWidget);
-    expect(find.text('VIP-03-01'), findsOneWidget);
+    expect(find.text('${AppStrings.vipListNameLabel}: VIP-03-01'), findsOneWidget);
     expect(find.text(AppStrings.vipDesiredRegion), findsOneWidget);
   });
 
@@ -525,7 +525,7 @@ void main() {
     );
     await _pump(tester, repo);
     expect(find.text(AppStrings.vipInProgressRequests), findsOneWidget);
-    expect(find.text('VIP-03-01'), findsOneWidget);
+    expect(find.text('${AppStrings.vipListNameLabel}: VIP-03-01'), findsOneWidget);
     expect(find.text(AppStrings.vipInProgressRequestsTruncated), findsNothing);
   });
 }

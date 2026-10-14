@@ -41,6 +41,9 @@ export class OpportunityWorkspaceRowDto {
   @ApiPropertyOptional({ enum: OPPORTUNITY_WORKSPACE_MESSAGE_STATES, nullable: true })
   messageState?: OpportunityWorkspaceMessageState | null;
 
+  @ApiPropertyOptional({ nullable: true, type: String, description: 'MessageDelivery.mode. Labeling only; not a status.' })
+  deliveryMode?: string | null;
+
   @ApiPropertyOptional({ nullable: true, type: String })
   messageRequestId?: string | null;
 

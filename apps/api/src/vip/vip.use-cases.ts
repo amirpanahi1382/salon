@@ -70,7 +70,7 @@ import {
 } from './vip-idempotency';
 import { detectVipImageContentType, assertSafeObjectFileName } from './image-signature';
 import { parseVipTargetExcel } from './parse-vip-excel';
-import { toListSummary, toVipRequest } from './vip.mapper';
+import { progressFromFact, progressWithoutRecipients, toListSummary, toVipRequest } from './vip.mapper';
 import { VipRepository } from './vip.repository';
 import { readVerifiedVipSampleObject } from './vip-sample-work-integrity';
 import type { CreateVipRequestDto, PatchVipListDto } from './vip.dto';
@@ -348,7 +348,9 @@ export class GetVipListUseCase {
         phoneNumber: row.phoneNumber,
         sortOrder: row.sortOrder,
       })),
-      request: latestRequest ? toVipRequest(latestRequest) : null,
+      request: latestRequest
+        ? await presentSalonVipRequest(this.vip, latestRequest.salonId, latestRequest, new Date())
+        : null,
     };
   }
 }
@@ -632,12 +634,37 @@ export class GetVipCapabilityUseCase {
             VIP_CAPABILITY_IN_PROGRESS_LIMIT + 1,
             tx,
           );
-          return { usedQuota, activeDraft, inProgressRows };
+          const latestCancelled = await this.vip.findLatestCancelledRequest(principal.tenantId, tx);
+          const visible = [
+            ...(activeDraft ? [activeDraft] : []),
+            ...inProgressRows.slice(0, VIP_CAPABILITY_IN_PROGRESS_LIMIT),
+            ...(latestCancelled ? [latestCancelled] : []),
+          ];
+          const presented = await presentSalonVipRequests(
+            this.vip,
+            principal.tenantId,
+            visible,
+            evaluatedAt,
+            tx,
+          );
+          return { usedQuota, activeDraft, inProgressRows, latestCancelled, presented };
         })
-      : { usedQuota: 0, activeDraft: null, inProgressRows: [] };
-    const activeDraft = snapshot.activeDraft ? toVipRequest(snapshot.activeDraft) : null;
+      : {
+          usedQuota: 0,
+          activeDraft: null,
+          inProgressRows: [],
+          latestCancelled: null,
+          presented: [],
+        };
+    const presentedById = new Map(snapshot.presented.map((row) => [row.id, row]));
+    const activeDraft = snapshot.activeDraft
+      ? presentedById.get(snapshot.activeDraft.id) ?? null
+      : null;
     const inProgressRequestsHasMore =
       snapshot.inProgressRows.length > VIP_CAPABILITY_IN_PROGRESS_LIMIT;
+    const latestCancelled = snapshot.latestCancelled
+      ? presentedById.get(snapshot.latestCancelled.id) ?? null
+      : null;
     return {
       entitled,
       usedQuota: snapshot.usedQuota,
@@ -650,9 +677,13 @@ export class GetVipCapabilityUseCase {
       activeDraft,
       inProgressRequests: snapshot.inProgressRows
         .slice(0, VIP_CAPABILITY_IN_PROGRESS_LIMIT)
-        .map((row) => toVipRequest({ ...row, sampleWorks: [] })),
+        .flatMap((row) => {
+          const presented = presentedById.get(row.id);
+          return presented ? [presented] : [];
+        }),
       inProgressRequestsHasMore,
       currentRequest: activeDraft,
+      latestCancelledRequest: latestCancelled,
     };
   }
 }
@@ -858,7 +889,7 @@ export class CreateVipRequestUseCase {
     if (!created) {
       throw new NotFoundError('VIP request not found');
     }
-    return toVipRequest(created);
+    return presentSalonVipRequest(this.vip, principal.tenantId, created);
   }
 }
 
@@ -919,7 +950,7 @@ export class UploadVipSampleWorkUseCase {
       if (verified.count !== 1) throw new NotFoundError('Sample work not found');
       const request = await this.vip.findRequestForSalon(principal.tenantId, requestId);
       if (!request) throw new NotFoundError('VIP request not found');
-      return toVipRequest(request);
+      return presentSalonVipRequest(this.vip, principal.tenantId, request);
     }
     const now = new Date();
     const execution = await this.prisma.client.$transaction(async (tx) => {
@@ -1090,7 +1121,7 @@ export class UploadVipSampleWorkUseCase {
     if (!request) {
       throw new NotFoundError('VIP request not found');
     }
-    return toVipRequest(request);
+    return presentSalonVipRequest(this.vip, principal.tenantId, request);
   }
 }
 
@@ -1157,7 +1188,7 @@ export class SubmitVipRequestUseCase {
       assertSameIdempotentRequest(existing.requestHash, requestHash);
       const replay = await this.vip.findRequestForSalon(principal.tenantId, existing.resourceId);
       if (!replay) throw new NotFoundError('VIP request not found');
-      return toVipRequest(replay);
+      return presentSalonVipRequest(this.vip, principal.tenantId, replay);
     }
 
     const now = new Date();
@@ -1289,7 +1320,7 @@ export class SubmitVipRequestUseCase {
     if (!request) {
       throw new NotFoundError('VIP request not found');
     }
-    return toVipRequest(request);
+    return presentSalonVipRequest(this.vip, principal.tenantId, request);
   }
 }
 
@@ -1302,7 +1333,7 @@ export class GetSalonVipRequestUseCase {
     if (!request) {
       throw new NotFoundError('VIP request not found');
     }
-    return toVipRequest(request);
+    return presentSalonVipRequest(this.vip, principal.tenantId, request);
   }
 }
 
@@ -1603,6 +1634,41 @@ export class DispatchVipRequestUseCase {
     if (!request) {
       throw new NotFoundError('VIP request not found');
     }
-    return toVipRequest(request);
+    return presentSalonVipRequest(this.vip, request.salonId, request);
   }
+}
+
+type PresentableVipRequest = Omit<Parameters<typeof toVipRequest>[0], 'sampleWorks'> & {
+  sampleWorks?: Parameters<typeof toVipRequest>[0]['sampleWorks'];
+};
+
+async function presentSalonVipRequests(
+  vip: VipRepository,
+  salonId: string,
+  rows: PresentableVipRequest[],
+  now: Date,
+  db?: Parameters<VipRepository['recipientProgressFacts']>[2],
+) {
+  const facts = await vip.recipientProgressFacts(
+    salonId,
+    rows.map((row) => row.id),
+    db,
+  );
+  return rows.map((row) => {
+    const fact = facts.get(row.id);
+    return toVipRequest(
+      { ...row, sampleWorks: row.sampleWorks ?? [] },
+      fact ? progressFromFact(fact, now) : progressWithoutRecipients(row, now),
+    );
+  });
+}
+
+function presentSalonVipRequest(
+  vip: VipRepository,
+  salonId: string,
+  row: PresentableVipRequest,
+  now = new Date(),
+  db?: Parameters<VipRepository['recipientProgressFacts']>[2],
+) {
+  return presentSalonVipRequests(vip, salonId, [row], now, db).then((items) => items[0]!);
 }

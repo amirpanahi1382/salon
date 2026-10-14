@@ -60,6 +60,7 @@ export class GetAdminVipOutreachRequestUseCase {
           messageRequestId: row.messageRequestId,
           messageRequestStatus: row.messageRequestStatus,
           deliveryStatus: row.deliveryStatus,
+          deliveryMode: row.deliveryMode,
           submittedAt: row.submittedAt?.toISOString() ?? null,
           executionState: row.executionState,
           globalMessageStopActive: row.globalMessageStopActive,

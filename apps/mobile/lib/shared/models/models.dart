@@ -1044,6 +1044,7 @@ class VipRequest {
     required this.geographicRange,
     required this.status,
     this.sampleWorks = const [],
+    this.progress,
   });
 
   final String id;
@@ -1055,6 +1056,7 @@ class VipRequest {
   final String geographicRange;
   final String status;
   final List<VipSampleWork> sampleWorks;
+  final VipRequestProgress? progress;
 
   factory VipRequest.fromJson(Map<String, dynamic> json) {
     return VipRequest(
@@ -1072,6 +1074,81 @@ class VipRequest {
               .map((row) => VipSampleWork.fromJson(asJsonMap(row)))
               .toList()
           : const [],
+      progress: json['progress'] is Map
+          ? VipRequestProgress.fromJson(asJsonMap(json['progress']))
+          : null,
+    );
+  }
+}
+
+class VipProgressCountLine {
+  const VipProgressCountLine({
+    required this.key,
+    required this.label,
+    required this.count,
+  });
+
+  final String key;
+  final String label;
+  final int count;
+
+  factory VipProgressCountLine.fromJson(Map<String, dynamic> json) {
+    return VipProgressCountLine(
+      key: json['key'] as String? ?? '',
+      label: json['label'] as String? ?? '',
+      count: json['count'] as int? ?? 0,
+    );
+  }
+}
+
+class VipRequestProgress {
+  const VipRequestProgress({
+    required this.headline,
+    required this.explanation,
+    required this.nextActor,
+    required this.nextActorLabel,
+    required this.reservationStillValid,
+    this.latestActionLabel,
+    this.latestActionAt,
+    this.countLines = const [],
+    this.countsOmittedReason,
+    this.activeStopNote,
+    this.listReservationNote,
+    this.requestedCountNote,
+  });
+
+  final String headline;
+  final String explanation;
+  final String nextActor;
+  final String nextActorLabel;
+  final bool reservationStillValid;
+  final String? latestActionLabel;
+  final DateTime? latestActionAt;
+  final List<VipProgressCountLine> countLines;
+  final String? countsOmittedReason;
+  final String? activeStopNote;
+  final String? listReservationNote;
+  final String? requestedCountNote;
+
+  factory VipRequestProgress.fromJson(Map<String, dynamic> json) {
+    return VipRequestProgress(
+      headline: json['headline'] as String? ?? '',
+      explanation: json['explanation'] as String? ?? '',
+      nextActor: json['nextActor'] as String? ?? 'NONE',
+      nextActorLabel: json['nextActorLabel'] as String? ?? '',
+      reservationStillValid: json['reservationStillValid'] == true,
+      latestActionLabel: json['latestActionLabel'] as String?,
+      latestActionAt: _parseDate(json['latestActionAt']),
+      countLines: json['countLines'] is List
+          ? (json['countLines'] as List)
+              .whereType<Map>()
+              .map((row) => VipProgressCountLine.fromJson(asJsonMap(row)))
+              .toList()
+          : const [],
+      countsOmittedReason: json['countsOmittedReason'] as String?,
+      activeStopNote: json['activeStopNote'] as String?,
+      listReservationNote: json['listReservationNote'] as String?,
+      requestedCountNote: json['requestedCountNote'] as String?,
     );
   }
 }
@@ -1111,6 +1188,7 @@ class VipCapability {
     this.inProgressRequests = const [],
     this.inProgressRequestsHasMore = false,
     this.currentRequest,
+    this.latestCancelledRequest,
   });
 
   final bool entitled;
@@ -1125,6 +1203,7 @@ class VipCapability {
 
   /// Unfinished sample-work draft only. Submitted requests are not a blocker.
   final VipRequest? currentRequest;
+  final VipRequest? latestCancelledRequest;
 
   factory VipCapability.fromJson(Map<String, dynamic> json) {
     final current = json['currentRequest'] is Map
@@ -1152,6 +1231,9 @@ class VipCapability {
       inProgressRequests: history,
       inProgressRequestsHasMore: json['inProgressRequestsHasMore'] as bool? ?? false,
       currentRequest: active,
+      latestCancelledRequest: json['latestCancelledRequest'] is Map
+          ? VipRequest.fromJson(asJsonMap(json['latestCancelledRequest']))
+          : null,
     );
   }
 }
@@ -1490,6 +1572,7 @@ class AdminVipOutreachRequest {
     this.globallyStoppedCount = 0,
     this.createdAt,
     this.submittedAt,
+    this.progress,
   });
 
   final String id;
@@ -1516,6 +1599,7 @@ class AdminVipOutreachRequest {
   final int requestOrdinal;
   final DateTime? createdAt;
   final DateTime? submittedAt;
+  final VipRequestProgress? progress;
 
   factory AdminVipOutreachRequest.fromJson(Map<String, dynamic> json) {
     return AdminVipOutreachRequest(
@@ -1543,6 +1627,9 @@ class AdminVipOutreachRequest {
       requestOrdinal: json['requestOrdinal'] as int? ?? 0,
       createdAt: _parseDate(json['createdAt']),
       submittedAt: _parseDate(json['submittedAt']),
+      progress: json['progress'] is Map
+          ? VipRequestProgress.fromJson(asJsonMap(json['progress']))
+          : null,
     );
   }
 }
@@ -1557,6 +1644,7 @@ class AdminVipOutreachRecipient {
     this.messageRequestId,
     this.messageRequestStatus,
     this.deliveryStatus,
+    this.deliveryMode,
     this.submittedAt,
     this.canCancel = false,
     this.canMarkManualSent = false,
@@ -1570,6 +1658,7 @@ class AdminVipOutreachRecipient {
   final String? messageRequestId;
   final String? messageRequestStatus;
   final String? deliveryStatus;
+  final String? deliveryMode;
   final DateTime? submittedAt;
   final String executionState;
   final bool canCancel;
@@ -1585,6 +1674,7 @@ class AdminVipOutreachRecipient {
       messageRequestId: json['messageRequestId'] as String?,
       messageRequestStatus: json['messageRequestStatus'] as String?,
       deliveryStatus: json['deliveryStatus'] as String?,
+      deliveryMode: json['deliveryMode'] as String?,
       submittedAt: _parseDate(json['submittedAt']),
       executionState: json['executionState'] as String? ?? 'NOT_YET_QUEUED',
       canCancel: json['canCancel'] as bool? ?? false,
@@ -1738,6 +1828,7 @@ class OpportunityWorkspaceRow {
     this.customerId,
     this.phoneNumber,
     this.messageState,
+    this.deliveryMode,
     this.messageRequestId,
     this.requestedAt,
     this.submittedAt,
@@ -1752,6 +1843,7 @@ class OpportunityWorkspaceRow {
   final String? customerId;
   final String? phoneNumber;
   final String? messageState;
+  final String? deliveryMode;
   final String? messageRequestId;
   final DateTime? requestedAt;
   final DateTime? submittedAt;
@@ -1769,6 +1861,7 @@ class OpportunityWorkspaceRow {
       customerId: json['customerId'] as String?,
       phoneNumber: json['phoneNumber'] as String?,
       messageState: json['messageState'] as String?,
+      deliveryMode: json['deliveryMode'] as String?,
       messageRequestId: json['messageRequestId'] as String?,
       requestedAt: _parseDate(json['requestedAt']),
       submittedAt: _parseDate(json['submittedAt']),

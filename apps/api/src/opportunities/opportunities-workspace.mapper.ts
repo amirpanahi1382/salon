@@ -34,6 +34,7 @@ export function toOpportunityWorkspaceRow(row: OpportunityWorkspaceSqlRow): Oppo
     displayName: row.displayName,
     phoneNumber: row.phoneNumber,
     messageState,
+    deliveryMode: row.deliveryMode,
     messageRequestId: row.messageRequestId,
     requestedAt: row.requestedAt?.toISOString() ?? null,
     submittedAt: row.submittedAt?.toISOString() ?? null,

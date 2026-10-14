@@ -1,32 +1,23 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@salon/database';
-import { isVipRegionCode, vipOutreachRequestDisplayTitle, vipRegionName } from '@salon/shared';
+import {
+  deriveVipRequestProgress,
+  isVipRegionCode,
+  vipOutreachRequestDisplayTitle,
+  vipRegionName,
+} from '@salon/shared';
+import {
+  VIP_RECIPIENT_EXECUTION_SQL,
+  VIP_RECIPIENT_PROGRESS_COUNTS,
+  VIP_RECIPIENT_STOP_JOIN,
+} from './vip-recipient-execution.sql';
 import { decodeCursor, encodeCursor, parseCursorInstant, parseCursorInteger, parseCursorUuid, toListPage } from '../infrastructure/http/list-page';
 import { PrismaService } from '../infrastructure/database/prisma.service';
 
 export const ADMIN_VIP_OUTREACH_LIST_LIMIT = 50;
 
-const EXECUTION_SQL = Prisma.sql`
-  CASE
-    WHEN d.status = 'SENT' AND d.submitted_at IS NOT NULL THEN 'SENT'
-    WHEN stop_out.id IS NOT NULL THEN 'GLOBALLY_STOPPED'
-    WHEN rec.message_request_id IS NULL THEN 'NOT_YET_QUEUED'
-    WHEN mr.status = 'CANCELLED' THEN 'CANCELLED'
-    WHEN mr.status = 'FAILED' OR d.status = 'FAILED' THEN 'FAILED'
-    WHEN mr.status = 'DISPATCHED' OR d.status IN ('PENDING', 'PROCESSING') THEN 'IN_PIPELINE'
-    ELSE 'QUEUED'
-  END
-`;
-
-const STOP_OUTCOME_JOIN = Prisma.sql`
-  LEFT JOIN LATERAL (
-    SELECT o.id
-    FROM message_global_stop_outcomes o
-    WHERE o.vip_request_recipient_id = rec.id
-       OR (rec.message_request_id IS NOT NULL AND o.message_request_id = rec.message_request_id)
-    LIMIT 1
-  ) stop_out ON true
-`;
+const EXECUTION_SQL = VIP_RECIPIENT_EXECUTION_SQL;
+const STOP_OUTCOME_JOIN = VIP_RECIPIENT_STOP_JOIN;
 
 type FolderRow = {
   salonId: string;
@@ -58,9 +49,14 @@ type RequestRow = {
   queuedCount: number;
   inPipelineCount: number;
   sentCount: number;
+  manualSentCount: number;
   failedCount: number;
   cancelledCount: number;
   globallyStoppedCount: number;
+  activeStopWithoutDurableSkipCount: number;
+  latestManualSentAt: Date | null;
+  reservedUntil: Date;
+  cancelledAt: Date | null;
   requestOrdinal: number;
 };
 
@@ -222,18 +218,12 @@ export class AdminVipOutreachRepository {
         r.status,
         r.created_at AS "createdAt",
         r.submitted_at AS "submittedAt",
+        r.reserved_until AS "reservedUntil",
+        r.cancelled_at AS "cancelledAt",
         (
           SELECT COUNT(*)::int FROM vip_sample_works w WHERE w.vip_request_id = r.id
         ) AS "sampleWorkCount",
-        COUNT(rec.id)::int AS "recipientCount",
-        COUNT(*) FILTER (WHERE rec.id IS NOT NULL AND ${EXECUTION_SQL} = 'NOT_YET_QUEUED')::int
-          AS "notYetQueuedCount",
-        COUNT(*) FILTER (WHERE ${EXECUTION_SQL} = 'QUEUED')::int AS "queuedCount",
-        COUNT(*) FILTER (WHERE ${EXECUTION_SQL} = 'IN_PIPELINE')::int AS "inPipelineCount",
-        COUNT(*) FILTER (WHERE ${EXECUTION_SQL} = 'SENT')::int AS "sentCount",
-        COUNT(*) FILTER (WHERE ${EXECUTION_SQL} = 'FAILED')::int AS "failedCount",
-        COUNT(*) FILTER (WHERE ${EXECUTION_SQL} = 'CANCELLED')::int AS "cancelledCount",
-        COUNT(*) FILTER (WHERE ${EXECUTION_SQL} = 'GLOBALLY_STOPPED')::int AS "globallyStoppedCount",
+        ${VIP_RECIPIENT_PROGRESS_COUNTS},
         (
           SELECT COUNT(*)::int
           FROM vip_requests older
@@ -278,18 +268,12 @@ export class AdminVipOutreachRepository {
         r.status,
         r.created_at AS "createdAt",
         r.submitted_at AS "submittedAt",
+        r.reserved_until AS "reservedUntil",
+        r.cancelled_at AS "cancelledAt",
         (
           SELECT COUNT(*)::int FROM vip_sample_works w WHERE w.vip_request_id = r.id
         ) AS "sampleWorkCount",
-        COUNT(rec.id)::int AS "recipientCount",
-        COUNT(*) FILTER (WHERE rec.id IS NOT NULL AND ${EXECUTION_SQL} = 'NOT_YET_QUEUED')::int
-          AS "notYetQueuedCount",
-        COUNT(*) FILTER (WHERE ${EXECUTION_SQL} = 'QUEUED')::int AS "queuedCount",
-        COUNT(*) FILTER (WHERE ${EXECUTION_SQL} = 'IN_PIPELINE')::int AS "inPipelineCount",
-        COUNT(*) FILTER (WHERE ${EXECUTION_SQL} = 'SENT')::int AS "sentCount",
-        COUNT(*) FILTER (WHERE ${EXECUTION_SQL} = 'FAILED')::int AS "failedCount",
-        COUNT(*) FILTER (WHERE ${EXECUTION_SQL} = 'CANCELLED')::int AS "cancelledCount",
-        COUNT(*) FILTER (WHERE ${EXECUTION_SQL} = 'GLOBALLY_STOPPED')::int AS "globallyStoppedCount",
+        ${VIP_RECIPIENT_PROGRESS_COUNTS},
         (
           SELECT COUNT(*)::int
           FROM vip_requests older
@@ -384,5 +368,25 @@ export function toOutreachRequestDto(row: RequestRow) {
     cancelledCount: row.cancelledCount,
     globallyStoppedCount: row.globallyStoppedCount,
     canDispatchManual: row.status === 'SUBMITTED' || row.status === 'BALE_NOT_IMPLEMENTED',
+    progress: deriveVipRequestProgress({
+      status: row.status,
+      now: new Date(),
+      createdAt: row.createdAt,
+      reservedUntil: row.reservedUntil,
+      submittedAt: row.submittedAt,
+      cancelledAt: row.cancelledAt,
+      requestedCount: Number(row.requestedCount),
+      recipientCount: Number(row.recipientCount),
+      notYetQueuedCount: Number(row.notYetQueuedCount),
+      queuedCount: Number(row.queuedCount),
+      inPipelineCount: Number(row.inPipelineCount),
+      sentCount: Number(row.sentCount),
+      manualSentCount: Number(row.manualSentCount),
+      failedCount: Number(row.failedCount),
+      cancelledMessageCount: Number(row.cancelledCount),
+      durablySkippedCount: Number(row.globallyStoppedCount),
+      activeStopWithoutDurableSkipCount: Number(row.activeStopWithoutDurableSkipCount),
+      latestManualSentAt: row.latestManualSentAt,
+    }, 'PLATFORM_ADMIN'),
   };
 }

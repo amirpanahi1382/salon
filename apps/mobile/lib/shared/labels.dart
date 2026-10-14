@@ -206,8 +206,8 @@ class AppStrings {
   static const recoveryOutcomesOpen = 'دیدن نتیجه ارسال پیام‌ها';
   static const overallPerformanceTitle = 'عملکرد کلی';
   static const metricSalonCustomers = 'مشتریان سالن';
-  static const metricSalonCustomerSentMessages = 'پیام ارسال شده مشتریان سالن';
-  static const metricVipSentMessages = 'پیام ارسال شده VIP';
+  static const metricSalonCustomerSentMessages = 'پیام مشتریان سالن با ثبت ارسال';
+  static const metricVipSentMessages = 'پیام VIP با ثبت ارسال';
   static const metricAgreedReturns = 'وقت توافق شده';
   static const metricMessageAssociatedReturns = 'مشتری برگشتی توسط پیام';
   static const metricReturningSalonCustomers = 'مشتری برگشتی سالن';
@@ -317,6 +317,7 @@ class AppStrings {
   static const outreachStatusSent = 'ارسال شد';
   static const outreachStatusFailed = 'ارسال ناموفق';
   static const workspaceMessageSent = 'ارسال شده';
+  static const workspaceVipManualRecorded = 'ارسال دستی ثبت شده';
   static const workspaceMessageAgreed =
       'ارسال شده — زمان مراجعه توافق شده';
   static const workspaceMessageReturned = 'ارسال شده — مراجعه ثبت شده';
@@ -369,7 +370,7 @@ class AppStrings {
       'برای فعال شدن اقدام‌های گیرنده، ابتدا همه گیرندگان این درخواست را وارد صف دستی کنید.';
   static const vipOutreachDispatchAllManual =
       'قرار دادن همه گیرندگان در صف دستی';
-  static const vipInUse = 'در حال استفاده';
+  static const vipInUse = 'رزرو شده، نه در حال ارسال';
   static const vipActive = 'فعال';
   static const vipInactive = 'غیرفعال';
   static const vipPending = 'در انتظار';
@@ -416,10 +417,16 @@ class AppStrings {
   static String vipRemainingQuota(int remaining) =>
       'سهمیه باقی‌مانده این هفته: $remaining';
 
-  static String sentOfTotal(int sent, int total) => 'ارسال شده $sent از $total';
+  static String sentOfTotal(int sent, int total) => 'ارسال ثبت‌شده $sent از $total';
   static const vipSampleNeeded = 'نمونه کار لازم است';
 
   static String vipSampleProgress(int count) => 'نمونه کارها: $count از 3';
+
+  static String vipRequestedRecipientCount(int count) =>
+      'تعداد درخواستی: ${toPersianDigits(count.toString())}';
+
+  static const vipManuallyMarkedSent = 'علامت ارسال دستی';
+  static const vipRecordedSent = 'ارسال ثبت‌شده';
 
   static String vipListCardTitle(String name) => name;
   static const customerCreated = 'مشتری با موفقیت اضافه شد';
@@ -832,7 +839,14 @@ String outreachLifecycleLabel(String status) {
   }
 }
 
-String workspaceMessageStateLabel(String? state) {
+String workspaceMessageStateLabel(
+  String? state, {
+  String? deliveryMode,
+  bool vip = false,
+}) {
+  if (vip && state == 'SENT' && deliveryMode == 'MANUAL') {
+    return AppStrings.workspaceVipManualRecorded;
+  }
   switch (state) {
     case 'QUEUED':
       return AppStrings.outreachStatusQueued;
@@ -853,7 +867,7 @@ String workspaceMessageStateLabel(String? state) {
   }
 }
 
-String vipOutreachExecutionLabel(String? state) {
+String vipOutreachExecutionLabel(String? state, {String? deliveryMode}) {
   switch (state) {
     case 'NOT_YET_QUEUED':
       return AppStrings.vipOutreachNotQueued;
@@ -862,7 +876,9 @@ String vipOutreachExecutionLabel(String? state) {
     case 'IN_PIPELINE':
       return AppStrings.outreachStatusDispatched;
     case 'SENT':
-      return AppStrings.outreachStatusSent;
+      return deliveryMode == 'MANUAL'
+          ? AppStrings.vipManuallyMarkedSent
+          : AppStrings.vipRecordedSent;
     case 'FAILED':
       return AppStrings.outreachStatusFailed;
     case 'CANCELLED':

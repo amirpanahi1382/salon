@@ -16,6 +16,7 @@ export type OpportunityWorkspaceSqlRow = {
   requestedAt: Date | null;
   requestStatus: string | null;
   deliveryStatus: string | null;
+  deliveryMode: string | null;
   submittedAt: Date | null;
   hasReturnCommitment: boolean;
   commitmentExpectedAt: Date | null;
@@ -68,6 +69,7 @@ export class OpportunitiesWorkspaceRepository {
           o.requested_at,
           o.request_status,
           d.status::text AS delivery_status,
+          d.mode::text AS delivery_mode,
           d.submitted_at,
           (rc.id IS NOT NULL) AS has_return_commitment,
           rc.expected_at AS commitment_expected_at,
@@ -112,6 +114,7 @@ export class OpportunitiesWorkspaceRepository {
           r.requested_at,
           r.status AS request_status,
           d.status::text AS delivery_status,
+          d.mode::text AS delivery_mode,
           d.submitted_at,
           FALSE AS has_return_commitment,
           NULL::timestamptz AS commitment_expected_at,
@@ -140,6 +143,7 @@ export class OpportunitiesWorkspaceRepository {
         requested_at AS "requestedAt",
         request_status AS "requestStatus",
         delivery_status AS "deliveryStatus",
+        delivery_mode AS "deliveryMode",
         submitted_at AS "submittedAt",
         has_return_commitment AS "hasReturnCommitment",
         commitment_expected_at AS "commitmentExpectedAt",
@@ -177,6 +181,7 @@ export class OpportunitiesWorkspaceRepository {
         NULL::timestamptz AS "requestedAt",
         NULL::text AS "requestStatus",
         NULL::text AS "deliveryStatus",
+        NULL::text AS "deliveryMode",
         NULL::timestamptz AS "submittedAt",
         FALSE AS "hasReturnCommitment",
         NULL::timestamptz AS "commitmentExpectedAt",

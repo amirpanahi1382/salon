@@ -1,4 +1,11 @@
-import { isVipRegionCode, vipRegionName } from '@salon/shared';
+import {
+  deriveVipRequestProgress,
+  isVipRegionCode,
+  vipRegionName,
+  type VipProgressFacts,
+  type VipRequestProgress,
+} from '@salon/shared';
+import type { SalonVipProgressFact } from './vip.repository';
 import type { VipRequestDto, VipSampleWorkDto, VipTargetListSummaryDto } from './vip.dto';
 
 export function toListSummary(row: {
@@ -63,7 +70,7 @@ export function toVipRequest(row: {
     contentType: string;
     byteSize: number;
   }>;
-}): VipRequestDto {
+}, progress?: VipRequestProgress): VipRequestDto {
   return {
     id: row.id,
     salonId: row.salonId,
@@ -77,5 +84,66 @@ export function toVipRequest(row: {
     submittedAt: row.submittedAt?.toISOString() ?? null,
     createdAt: row.createdAt.toISOString(),
     sampleWorks: row.sampleWorks.map(toSampleWork),
+    progress: progress ?? null,
   };
+}
+
+function count(value: number | bigint | null | undefined): number {
+  return Number(value ?? 0);
+}
+
+export function progressFromFact(fact: SalonVipProgressFact, now: Date): VipRequestProgress {
+  return deriveVipRequestProgress({
+    status: fact.status,
+    now,
+    createdAt: fact.createdAt,
+    reservedUntil: fact.reservedUntil,
+    submittedAt: fact.submittedAt,
+    cancelledAt: fact.cancelledAt,
+    requestedCount: count(fact.requestedCount),
+    recipientCount: count(fact.recipientCount),
+    notYetQueuedCount: count(fact.notYetQueuedCount),
+    queuedCount: count(fact.queuedCount),
+    inPipelineCount: count(fact.inPipelineCount),
+    sentCount: count(fact.sentCount),
+    manualSentCount: count(fact.manualSentCount),
+    failedCount: count(fact.failedCount),
+    cancelledMessageCount: count(fact.cancelledCount),
+    durablySkippedCount: count(fact.globallyStoppedCount),
+    activeStopWithoutDurableSkipCount: count(fact.activeStopWithoutDurableSkipCount),
+    latestManualSentAt: fact.latestManualSentAt,
+  }, 'SALON');
+}
+
+export function progressWithoutRecipients(
+  row: {
+    status: string;
+    createdAt: Date;
+    reservedUntil: Date;
+    submittedAt?: Date | null;
+    requestedCount: number;
+  },
+  now: Date,
+): VipRequestProgress {
+  const facts: VipProgressFacts = {
+    status: row.status,
+    now,
+    createdAt: row.createdAt,
+    reservedUntil: row.reservedUntil,
+    submittedAt: row.submittedAt ?? null,
+    cancelledAt: null,
+    requestedCount: row.requestedCount,
+    recipientCount: -1,
+    notYetQueuedCount: 0,
+    queuedCount: 0,
+    inPipelineCount: 0,
+    sentCount: 0,
+    manualSentCount: 0,
+    failedCount: 0,
+    cancelledMessageCount: 0,
+    durablySkippedCount: 0,
+    activeStopWithoutDurableSkipCount: 0,
+    latestManualSentAt: null,
+  };
+  return deriveVipRequestProgress(facts, 'SALON');
 }
