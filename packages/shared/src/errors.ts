@@ -17,6 +17,7 @@ export type AppErrorCode =
   | 'SIGNUP_PROOF_ALREADY_ISSUED'
   | 'SIGNUP_CHALLENGE_SUPERSEDED'
   | 'SIGNUP_CHALLENGE_EXPIRED'
+  | 'AGREEMENT_PHONE_UNVERIFIED'
   | 'BUSINESS_RULE'
   | 'INFRASTRUCTURE_ERROR'
   | 'INTERNAL_ERROR';
@@ -72,6 +73,18 @@ export class ConflictError extends AppError {
   constructor(message: string) {
     super('CONFLICT', message, 409);
     this.name = 'ConflictError';
+  }
+}
+
+/** The submitted phone is not the OTP-verified account phone. This is not a phone-change flow. */
+export class AgreementPhoneUnverifiedError extends AppError {
+  constructor() {
+    super(
+      'AGREEMENT_PHONE_UNVERIFIED',
+      'This number is not the verified account number. A different number has to be verified before it can be used.',
+      409,
+    );
+    this.name = 'AgreementPhoneUnverifiedError';
   }
 }
 

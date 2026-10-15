@@ -1,5 +1,6 @@
 import { ForbiddenError } from '@salon/shared';
 import { enforceSalonSessionAccess } from './salon-session-access';
+import { resolveSalonSession } from './salon-session';
 
 function contextWith(user: unknown) {
   return {
@@ -45,5 +46,14 @@ describe('salon session access', () => {
         contextWith(onboarding),
       ),
     ).not.toThrow();
+  });
+
+  it('keeps an onboarding token from becoming a product token', () => {
+    expect(resolveSalonSession('onboarding', 'AWAITING_AGREEMENT')).toBe('onboarding');
+    expect(resolveSalonSession('onboarding', 'AWAITING_PAYMENT')).toBe('onboarding');
+    expect(resolveSalonSession('onboarding', 'PRODUCT')).toBe('onboarding');
+    expect(resolveSalonSession('product', 'PRODUCT')).toBe('product');
+    expect(resolveSalonSession('product', 'AWAITING_PAYMENT')).toBeNull();
+    expect(resolveSalonSession('product', 'AWAITING_AGREEMENT')).toBeNull();
   });
 });

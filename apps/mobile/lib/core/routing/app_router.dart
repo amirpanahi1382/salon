@@ -8,6 +8,7 @@ import '../../features/admin/admin_support_screen.dart';
 import '../../features/profile/support_conversation_screen.dart';
 import '../../features/admin/admin_vip_screen.dart';
 import '../../features/admin/admin_vip_outreach_screen.dart';
+import '../../features/agreement/agreement_screen.dart';
 import '../../features/auth/auth_screens.dart';
 import '../../features/customers/customer_edit_loader.dart';
 import '../../features/customers/customer_import_screen.dart';
@@ -64,6 +65,13 @@ final routerProvider = Provider<GoRouter>((ref) {
       }
       if (onAdmin) {
         return '/';
+      }
+      final accessRedirect = signedInSalonRedirect(
+        accessState: auth.user?.accessState ?? 'PRODUCT',
+        location: state.matchedLocation,
+      );
+      if (accessRedirect != null) {
+        return accessRedirect;
       }
       if (loggingIn || splashing) {
         return '/';
@@ -133,6 +141,14 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/register',
         builder: (context, state) => const RegisterScreen(),
+      ),
+      GoRoute(
+        path: '/agreement',
+        builder: (context, state) => const AgreementScreen(),
+      ),
+      GoRoute(
+        path: '/agreement/recorded',
+        builder: (context, state) => const AgreementRecordedScreen(),
       ),
       ShellRoute(
         builder: (context, state, child) => AppShell(child: child),
@@ -277,3 +293,22 @@ final routerProvider = Provider<GoRouter>((ref) {
     ],
   );
 });
+
+/// Product salons stay on the product shell. Onboarding states stay on their own screens.
+String? signedInSalonRedirect({
+  required String accessState,
+  required String location,
+}) {
+  const agreement = '/agreement';
+  const recorded = '/agreement/recorded';
+  if (accessState == 'AWAITING_AGREEMENT') {
+    return location == agreement ? null : agreement;
+  }
+  if (accessState == 'AWAITING_PAYMENT') {
+    return location == recorded ? null : recorded;
+  }
+  if (location == agreement || location == recorded) {
+    return '/';
+  }
+  return null;
+}

@@ -24,6 +24,8 @@ class AuthUser {
     required this.role,
     this.name,
     this.email,
+    this.accessState = 'PRODUCT',
+    this.sessionScope = 'product',
   });
 
   final String id;
@@ -31,6 +33,8 @@ class AuthUser {
   final String role;
   final String? name;
   final String? email;
+  final String accessState;
+  final String sessionScope;
 
   bool get isPlatformAdmin => role == 'PLATFORM_ADMIN';
 
@@ -67,6 +71,8 @@ class AuthUser {
       id: json['userId'] as String,
       tenantId: json['tenantId'] as String,
       role: json['role'] as String,
+      accessState: json['accessState'] as String? ?? 'PRODUCT',
+      sessionScope: json['sessionScope'] as String? ?? 'product',
     );
   }
 }
@@ -87,9 +93,18 @@ class AuthSession {
 
   factory AuthSession.fromAuthJson(Object? json) {
     final map = asJsonMap(json);
+    final user = AuthUser.fromLoginJson(asJsonMap(map['user']));
     return AuthSession(
       accessToken: requiredJsonString(map['accessToken'], 'accessToken'),
-      user: AuthUser.fromLoginJson(asJsonMap(map['user'])),
+      user: AuthUser(
+        id: user.id,
+        tenantId: user.tenantId,
+        role: user.role,
+        name: user.name,
+        email: user.email,
+        accessState: map['accessState'] as String? ?? 'PRODUCT',
+        sessionScope: map['sessionScope'] as String? ?? 'product',
+      ),
     );
   }
 }

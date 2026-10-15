@@ -14,10 +14,13 @@ enum SalonStatus {
 
 /// Product entitlement for a salon. Independent of SalonStatus and of VIP entitlement.
 /// PRODUCT is full product access. Existing rows stay PRODUCT.
-/// AWAITING_AGREEMENT is the phone-owned onboarding state before a later agreement slice.
+/// AWAITING_AGREEMENT is phone-owned onboarding before agreement acceptance.
+/// AWAITING_PAYMENT is phone-owned onboarding after acceptance and before a later payment slice.
+/// Neither onboarding state grants product routes.
 enum SalonAccessState {
   PRODUCT
   AWAITING_AGREEMENT
+  AWAITING_PAYMENT
 }
 
 enum UserRole {
@@ -177,6 +180,8 @@ model Salon {
   visitIntentions      VisitIntention[]
   globalStopOutcomes   MessageGlobalStopOutcome[]
   phoneOwnerCompletion PhoneOwnerCompletion?
+  agreementPresentations AgreementPresentation[]
+  agreementAcceptances AgreementAcceptance[]
 
   @@map("salons")
 }
@@ -307,6 +312,8 @@ model User {
   supportConversation       SupportConversation?
   authoredSupportMessages   SupportMessage[] @relation("SupportMessageAuthorUser")
   phoneOwnerCompletion      PhoneOwnerCompletion?
+  agreementPresentations    AgreementPresentation[]
+  agreementAcceptances      AgreementAcceptance[]
 
   @@unique([id, salonId])
   @@index([salonId])
@@ -356,6 +363,7 @@ model PlatformAdmin {
   dispatchedDeliveries MessageDelivery[] @relation("MessageDeliveryDispatchedBy")
   fulfilledDeliveries  MessageDelivery[] @relation("MessageDeliveryFulfilledBy")
   createdVipLists      VipTargetList[]   @relation("VipListCreatedByAdmin")
+  publishedAgreementVersions AgreementVersion[]
   grantedVipEntitlements VipSalonEntitlement[] @relation("VipEntitlementGrantedBy")
   revokedVipEntitlements VipSalonEntitlement[] @relation("VipEntitlementRevokedBy")
   createdReturnCommitments ReturnCommitment[] @relation("ReturnCommitmentCreatedByAdmin")
@@ -1007,7 +1015,92 @@ model PhoneOwnerCompletion {
   userId         String   @unique @map("user_id") @db.Uuid
   user           User     @relation(fields: [userId, salonId], references: [id, salonId], onDelete: Restrict)
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  agreementAcceptances AgreementAcceptance[]
 
   @@unique([userId, salonId])
   @@map("phone_owner_completions")
+}
+
+/// Published agreement text. Ordinary routes cannot update or delete a row.
+/// A wording change inserts a new version key. API startup does not publish one.
+model AgreementVersion {
+  id                 String    @id @db.Uuid
+  versionKey         String    @unique @map("version_key")
+  templateDigest     String    @map("template_digest") @db.Char(64)
+  canonicalText      String    @map("canonical_text") @db.Text
+  checkboxWording    String    @map("checkbox_wording") @db.Text
+  buttonWording      String    @map("button_wording") @db.Text
+  amountIrr          Decimal   @map("amount_irr") @db.Decimal(19, 2)
+  scopeSnapshot      Json      @map("scope_snapshot")
+  publishedAt        DateTime  @default(now()) @map("published_at") @db.Timestamptz(3)
+  publishedByAdminId String    @map("published_by_admin_id") @db.Uuid
+  publishedByAdmin   PlatformAdmin @relation(fields: [publishedByAdminId], references: [id], onDelete: Restrict)
+  presentations      AgreementPresentation[]
+  acceptances        AgreementAcceptance[]
+
+  @@map("agreement_versions")
+}
+
+/// Server rendering shown before acceptance. Immutable after insert.
+model AgreementPresentation {
+  id                         String   @id @db.Uuid
+  salonId                    String   @map("salon_id") @db.Uuid
+  salon                      Salon    @relation(fields: [salonId], references: [id], onDelete: Restrict)
+  userId                     String   @map("user_id") @db.Uuid
+  user                       User     @relation(fields: [userId, salonId], references: [id, salonId], onDelete: Restrict)
+  versionId                  String   @map("version_id") @db.Uuid
+  version                    AgreementVersion @relation(fields: [versionId], references: [id], onDelete: Restrict)
+  renderedDigest             String   @map("rendered_digest") @db.Char(64)
+  evidenceKeyId              String   @map("evidence_key_id")
+  declaredFieldsCiphertext   Bytes    @map("declared_fields_ciphertext")
+  declaredFieldsNonce        Bytes    @map("declared_fields_nonce")
+  renderedDocumentCiphertext Bytes    @map("rendered_document_ciphertext")
+  renderedDocumentNonce      Bytes    @map("rendered_document_nonce")
+  expiresAt                  DateTime @map("expires_at") @db.Timestamptz(3)
+  createdAt                  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  acceptance                 AgreementAcceptance?
+
+  @@index([salonId, userId, createdAt])
+  @@map("agreement_presentations")
+}
+
+/// Explicit acceptance of one presented document. Immutable. National ID and the
+/// filled document live only in the encrypted snapshot.
+model AgreementAcceptance {
+  id                     String   @id @db.Uuid
+  salonId                String   @map("salon_id") @db.Uuid
+  salon                  Salon    @relation(fields: [salonId], references: [id], onDelete: Restrict)
+  userId                 String   @map("user_id") @db.Uuid
+  user                   User     @relation(fields: [userId, salonId], references: [id, salonId], onDelete: Restrict)
+  versionId              String   @map("version_id") @db.Uuid
+  version                AgreementVersion @relation(fields: [versionId], references: [id], onDelete: Restrict)
+  presentationId         String   @unique @map("presentation_id") @db.Uuid
+  presentation           AgreementPresentation @relation(fields: [presentationId], references: [id], onDelete: Restrict)
+  templateDigest         String   @map("template_digest") @db.Char(64)
+  renderedDigest         String   @map("rendered_digest") @db.Char(64)
+  snapshotDigest         String   @map("snapshot_digest") @db.Char(64)
+  checkboxWording        String   @map("checkbox_wording") @db.Text
+  buttonWording          String   @map("button_wording") @db.Text
+  checkboxConfirmed      Boolean  @map("checkbox_confirmed")
+  phoneOwnerCompletionId String?  @map("phone_owner_completion_id") @db.Uuid
+  phoneOwnerCompletion   PhoneOwnerCompletion? @relation(fields: [phoneOwnerCompletionId], references: [id], onDelete: Restrict)
+  acceptedAt             DateTime @map("accepted_at") @db.Timestamptz(3)
+  sessionJti             String   @map("session_jti") @db.Uuid
+  clientIp               String?  @map("client_ip")
+  clientIpSource         String   @map("client_ip_source")
+  userAgent              String?  @map("user_agent")
+  appVersion             String?  @map("app_version")
+  appBuild               String?  @map("app_build")
+  apiRevision            String   @map("api_revision")
+  requestId              String   @map("request_id")
+  correlationId          String   @map("correlation_id")
+  amountIrr              Decimal  @map("amount_irr") @db.Decimal(19, 2)
+  scopeSnapshot          Json     @map("scope_snapshot")
+  evidenceKeyId          String   @map("evidence_key_id")
+  snapshotCiphertext     Bytes    @map("snapshot_ciphertext")
+  snapshotNonce          Bytes    @map("snapshot_nonce")
+  createdAt              DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([salonId, acceptedAt])
+  @@map("agreement_acceptances")
 }

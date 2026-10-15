@@ -1,3 +1,4 @@
+import { isIP } from 'node:net';
 import { z } from 'zod';
 
 const booleanFromString = z
@@ -82,6 +83,57 @@ const envSchema = z.object({
   /** Local deadline cap. The stored deadline is also never later than OTPy's reported TTL. */
   PHONE_SIGNUP_MAX_TTL_SECONDS: z.coerce.number().int().min(30).max(600).default(180),
   PHONE_SIGNUP_PROOF_TTL_SECONDS: z.coerce.number().int().min(60).max(3600).default(600),
+  /**
+   * Agreement presentation and acceptance. Off until an operator enables it.
+   * Does not enable phone signup, payment, or product access.
+   */
+  AGREEMENT_ACCEPTANCE_ENABLED: booleanFromString.default(false),
+  AGREEMENT_EVIDENCE_KEY_ID: z.string().regex(/^[a-z0-9][a-z0-9._-]{0,31}$/).default('env-1'),
+  AGREEMENT_EVIDENCE_KEY: z.preprocess((value) => {
+    if (value === undefined || value === '') {
+      return undefined;
+    }
+    return value;
+  }, z.string().min(1).max(512).optional()),
+  /** Decrypt-only previous keys, `keyId:base64` separated by commas. */
+  AGREEMENT_EVIDENCE_DECRYPT_KEYS: z.preprocess((value) => {
+    if (value === undefined || value === '') {
+      return undefined;
+    }
+    return value;
+  }, z.string().max(8000).optional()),
+  AGREEMENT_PRESENTATION_TTL_SECONDS: z.coerce.number().int().min(60).max(86_400).default(1800),
+  /**
+   * Trusted reverse proxies that append X-Forwarded-For.
+   * Zero ignores that header. There is no reverse proxy in the compose stack,
+   * so the default stays zero and the API records the socket address.
+   * A nonzero count is valid only with TRUSTED_PROXY_IPS. The request peer
+   * must be one of those addresses or the forwarded header is ignored.
+   */
+  TRUSTED_PROXY_HOPS: z.coerce.number().int().min(0).max(5).default(0),
+  /** Exact proxy addresses allowed to append X-Forwarded-For. Empty unless hops is nonzero. */
+  TRUSTED_PROXY_IPS: z.preprocess((value) => {
+    if (value === undefined || value === null || value === '') {
+      return [];
+    }
+    if (Array.isArray(value)) {
+      return value;
+    }
+    if (typeof value !== 'string') {
+      return value;
+    }
+    return value
+      .split(',')
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0);
+  }, z.array(z.string().min(1).max(64)).max(20)).default([]),
+  /** Deployment revision stored on acceptance. Unset is recorded as unknown. */
+  API_REVISION: z.preprocess((value) => {
+    if (value === undefined || value === '') {
+      return 'unknown';
+    }
+    return value;
+  }, z.string().regex(/^[A-Za-z0-9._+\-]{1,80}$/)).default('unknown'),
   OUTBOX_BATCH_SIZE: z.coerce.number().int().min(1).max(100).default(10),
   OUTBOX_LEASE_MS: z.coerce.number().int().min(1000).default(30_000),
   OUTBOX_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(50).default(8),
@@ -168,7 +220,74 @@ export function loadConfig(
       'Invalid configuration: PHONE_SIGNUP_HASH_SECRET is required when PHONE_SIGNUP_ENABLED is true',
     );
   }
-  return parsed.data;
+  const trustedProxyIps = parsed.data.TRUSTED_PROXY_IPS.map((value) => {
+    const normalized = normalizeIpAddress(value);
+    if (!normalized) {
+      throw new Error('Invalid configuration: TRUSTED_PROXY_IPS');
+    }
+    return normalized;
+  });
+  const uniqueProxyIps = [...new Set(trustedProxyIps)];
+  if (parsed.data.TRUSTED_PROXY_HOPS > 0 && uniqueProxyIps.length === 0) {
+    throw new Error(
+      'Invalid configuration: TRUSTED_PROXY_IPS is required when TRUSTED_PROXY_HOPS is greater than zero',
+    );
+  }
+  if (parsed.data.TRUSTED_PROXY_HOPS === 0 && uniqueProxyIps.length > 0) {
+    throw new Error(
+      'Invalid configuration: TRUSTED_PROXY_HOPS must be greater than zero when TRUSTED_PROXY_IPS is set',
+    );
+  }
+  if (parsed.data.AGREEMENT_ACCEPTANCE_ENABLED) {
+    assertEvidenceKey(parsed.data.AGREEMENT_EVIDENCE_KEY);
+    if (parsed.data.AGREEMENT_EVIDENCE_DECRYPT_KEYS) {
+      for (const part of parsed.data.AGREEMENT_EVIDENCE_DECRYPT_KEYS.split(',')) {
+        const trimmed = part.trim();
+        if (!trimmed) {
+          continue;
+        }
+        const separator = trimmed.indexOf(':');
+        const keyId = separator > 0 ? trimmed.slice(0, separator) : '';
+        if (!/^[a-z0-9][a-z0-9._-]{0,31}$/.test(keyId)) {
+          throw new Error('Invalid configuration: AGREEMENT_EVIDENCE_DECRYPT_KEYS');
+        }
+        assertEvidenceKey(trimmed.slice(separator + 1));
+      }
+    }
+  }
+  return { ...parsed.data, TRUSTED_PROXY_IPS: uniqueProxyIps };
+}
+
+/** Canonical IP for proxy comparison. IPv4-mapped IPv6 becomes IPv4. Invalid values are null. */
+export function normalizeIpAddress(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > 64) {
+    return null;
+  }
+  const mapped = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i.exec(trimmed);
+  if (mapped?.[1]) {
+    return isIP(mapped[1]) === 4 ? mapped[1] : null;
+  }
+  const kind = isIP(trimmed);
+  if (kind === 4) {
+    return trimmed;
+  }
+  if (kind === 6) {
+    return trimmed.toLowerCase();
+  }
+  return null;
+}
+
+function assertEvidenceKey(value: string | undefined): void {
+  if (!value) {
+    throw new Error(
+      'Invalid configuration: AGREEMENT_EVIDENCE_KEY is required when AGREEMENT_ACCEPTANCE_ENABLED is true',
+    );
+  }
+  const key = Buffer.from(value, 'base64');
+  if (key.length !== 32) {
+    throw new Error('Invalid configuration: AGREEMENT_EVIDENCE_KEY must decode to 32 bytes');
+  }
 }
 
 export function isSwaggerEnabled(config: AppConfig): boolean {

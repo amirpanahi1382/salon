@@ -24,6 +24,19 @@ class AuthRepository {
   final ApiClient api;
   final SessionStore sessionStore;
 
+  Future<AuthSession> loginWithPhone({
+    required String phone,
+    required String password,
+  }) async {
+    final data = await api.post(
+      '/auth/login/phone',
+      data: {'phone': phone.trim(), 'password': password},
+    );
+    final session = AuthSession.fromAuthJson(asJsonMap(data));
+    await _persist(session);
+    return session;
+  }
+
   Future<AuthSession> login({
     required String email,
     required String password,

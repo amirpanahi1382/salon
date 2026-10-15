@@ -6,10 +6,11 @@ export type PlatformAdminId = string;
 export type SessionScope = 'product' | 'onboarding';
 
 /**
- * PRODUCT is full product access. AWAITING_AGREEMENT is the first phone-owned
- * onboarding state. It is not salon suspension and not a VIP entitlement.
+ * PRODUCT is full product access. AWAITING_AGREEMENT and AWAITING_PAYMENT are
+ * phone-owned onboarding states. Neither is salon suspension or a VIP entitlement.
+ * AWAITING_PAYMENT still cannot call product routes.
  */
-export type SalonAccessState = 'PRODUCT' | 'AWAITING_AGREEMENT';
+export type SalonAccessState = 'PRODUCT' | 'AWAITING_AGREEMENT' | 'AWAITING_PAYMENT';
 
 export interface AuthenticatedPrincipal {
   userId: UserId;
@@ -19,6 +20,8 @@ export interface AuthenticatedPrincipal {
   sessionScope?: SessionScope;
   /** Reloaded from the salon on each authenticated request. */
   accessState?: SalonAccessState;
+  /** Non-secret JWT `jti` of this login. Absent on tokens issued before session ids. */
+  sessionId?: string;
 }
 
 /** Platform operator. Never tenant-scoped. Distinct from OWNER/MANAGER/STAFF. */

@@ -65,8 +65,18 @@ class ApiClient {
   final Dio _dio;
   final SessionStore sessionStore;
 
-  Future<dynamic> get(String path, {Map<String, dynamic>? query}) {
-    return _send(() => _dio.get<dynamic>(path, queryParameters: query));
+  Future<dynamic> get(
+    String path, {
+    Map<String, dynamic>? query,
+    Map<String, String>? headers,
+  }) {
+    return _send(
+      () => _dio.get<dynamic>(
+        path,
+        queryParameters: query,
+        options: headers == null ? null : Options(headers: headers),
+      ),
+    );
   }
 
   Future<List<int>> getBytes(String path, {Map<String, dynamic>? query}) async {

@@ -81,6 +81,7 @@ export class PhoneLoginUseCase implements OnModuleInit {
             sessionScope: session.sessionScope,
             accessState: user.salon.accessState,
             method: 'phone',
+            sessionId: session.sessionId,
           },
         },
       });

@@ -55,7 +55,11 @@ VipSalonEntitlement
 
 ### Salon
 
-Tenant. Owns users, customers, services, visits, transactions, actions, messages, VIP requests. Status `ACTIVE` | `SUSPENDED`. Access `PRODUCT` | `AWAITING_AGREEMENT`. Access is not status and not VIP entitlement. `AWAITING_AGREEMENT` can authenticate only an onboarding session. Duplicate names allowed. Phone-owned salons are created with one owner and `additionalUsersAllowed=false`.
+Tenant. Owns users, customers, services, visits, transactions, actions, messages, VIP requests. Status `ACTIVE` | `SUSPENDED`. Access `PRODUCT` | `AWAITING_AGREEMENT` | `AWAITING_PAYMENT`. Access is not status and not VIP entitlement. Both awaiting states authenticate only an onboarding session. Duplicate names allowed. Phone-owned salons are created with one owner and `additionalUsersAllowed=false`.
+
+### Agreement acceptance
+
+A published `AgreementVersion` is an immutable copy of a source-controlled contract. `CONTRACT_V1` is a business-approved draft, not a certified legal text. A presentation is the server rendering of that version with four user-declared fields. An acceptance is a separate fact: the owner explicitly confirmed that rendered document. Acceptance moves the salon from `AWAITING_AGREEMENT` to `AWAITING_PAYMENT`. It does not create a payment, a visit, a transaction, or a message. Corrections are a new version and a new acceptance.
 
 ### User
 

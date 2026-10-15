@@ -43,9 +43,17 @@ Typical splits (see current-state for the full matrix):
 
 `GET /auth/owner` is an OWNER-only probe, not a product feature. It is not available to an onboarding session.
 
-`JwtAuthGuard` is the product-access boundary. An onboarding session (`scp=onboarding`) is forbidden on every JWT route except those marked `AllowOnboardingSession` (`GET /auth/account`, `GET /auth/me`). Future agreement or payment routes opt in there. They do not add a second check in each product module. The salon access state is loaded on every request. VIP entitlement is not that state. `SUSPENDED` is not the onboarding state.
+`JwtAuthGuard` is the product-access boundary. An onboarding session (`scp=onboarding`) is forbidden on every JWT route except those marked `AllowOnboardingSession`. Today those are `GET /auth/account`, `GET /auth/me`, and the agreement read, presentation, acceptance, receipt, and download routes. Product modules do not add a second check. The salon access state is loaded on every request. `AWAITING_AGREEMENT` and `AWAITING_PAYMENT` both stay onboarding. VIP entitlement is not that state. `SUSPENDED` is not the onboarding state. A product token is rejected when access is no longer `PRODUCT`. An onboarding token is not promoted when access changes.
 
 ---
+
+## Agreement evidence
+
+`CONTRACT_V1` is identified by that key and the SHA-256 of its UTF-8 bytes. Acceptance stores the rendered-document digest, a snapshot digest, the server time from `clock_timestamp()`, the login `jti`, and technical context. The API listens directly; Compose has no reverse proxy and Express trust-proxy is off. `TRUSTED_PROXY_HOPS` defaults to 0, so the recorded client IP is the socket address and `X-Forwarded-For` is ignored. A nonzero hop count is rejected unless `TRUSTED_PROXY_IPS` lists the proxy addresses, and the socket peer must be one of those addresses before any forwarded hop is used. The evidence export keeps `observedSocketIp` separate from client-reported user agent, app version, and app build. `AGREEMENT_ACCEPTANCE_ENABLED` closes publish, presentation, and new acceptance. It does not hide an authenticated owner's receipt or accepted document, or a platform admin's audited evidence export. Those reads stay authenticated, tenant-scoped, and dependent on the evidence key for ciphertext. Audit metadata for presentation, acceptance, and evidence export keeps ids and digests only.
+
+Database triggers reject UPDATE and DELETE of versions, presentations, and acceptances. A table owner can disable those triggers, and the tables are not WORM storage. MinIO is not used for this evidence and is not an independent timestamp or retention lock. The export says so. There is no certified signature and no claim of court admissibility.
+
+Launch gates that this slice does not close: Article 1 names party one only as the owner of the application; the text is not a lawyer-certified instrument; the 500 counted-send rule is not an implemented counter; recipient-consent evidence is not implemented.
 
 ## Tenant isolation
 
@@ -70,7 +78,7 @@ Consent to be contacted is **not implemented** and is not claimed. A Platform Ad
 
 ## Data in logs and audit
 
-Do not log: passwords, JWT, Authorization, bodies, phone numbers, message text, MinIO/DB secrets.
+Do not log: passwords, JWT, Authorization, bodies, phone numbers, national IDs, agreement document bodies, message text, MinIO/DB secrets, or agreement evidence keys.
 
 Unexpected exception messages, stacks, causes, connector text, and provider/storage responses are not safe diagnostic fields. API and worker error logs retain request/event IDs, operation, outcome, status, and stable codes/categories instead. Pino field-name redaction remains defense in depth; it cannot sanitize an arbitrary string. Known 4xx client contracts remain unchanged. Unexpected 5xx responses use fixed messages, including `INFRASTRUCTURE_ERROR` responses.
 
@@ -80,4 +88,4 @@ Audit `metadata` must follow the same rule.
 
 ## Out of security scope today
 
-IdP, ABAC, marketplace payments, field-level encryption, RLS, WAF productization. See `docs/technical-debt.md` for hardening backlog (audit retention, multi-instance throttle, creator FKs).
+IdP, ABAC, marketplace payments, general field-level encryption, RLS, WAF productization. Agreement snapshots are the exception: national ID and the filled contract are encrypted with AES-256-GCM and a key id. That key is an environment secret, not an HSM, and rotation is manual. See `docs/technical-debt.md` for hardening backlog (audit retention, multi-instance throttle, creator FKs).

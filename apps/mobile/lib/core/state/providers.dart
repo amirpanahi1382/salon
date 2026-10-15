@@ -125,6 +125,8 @@ class AuthController extends Notifier<AuthState> {
           role: me.role,
           name: stored.name,
           email: stored.email,
+          accessState: me.accessState,
+          sessionScope: me.sessionScope,
         ),
       );
     } catch (_) {
@@ -138,6 +140,32 @@ class AuthController extends Notifier<AuthState> {
         .read(authRepositoryProvider)
         .login(email: email, password: password);
     state = AuthState(status: AuthStatus.signedIn, user: session.user);
+  }
+
+  Future<void> loginWithPhone(String phone, String password) async {
+    final session = await ref
+        .read(authRepositoryProvider)
+        .loginWithPhone(phone: phone, password: password);
+    state = AuthState(status: AuthStatus.signedIn, user: session.user);
+  }
+
+  void noteAccessState(String accessState) {
+    final user = state.user;
+    if (user == null) {
+      return;
+    }
+    state = AuthState(
+      status: state.status,
+      user: AuthUser(
+        id: user.id,
+        tenantId: user.tenantId,
+        role: user.role,
+        name: user.name,
+        email: user.email,
+        accessState: accessState,
+        sessionScope: user.sessionScope,
+      ),
+    );
   }
 
   Future<void> loginPlatformAdmin(String email, String password) async {

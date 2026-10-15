@@ -396,6 +396,7 @@ class AppTextField extends StatelessWidget {
     this.keyboardType,
     this.textInputAction,
     this.textDirection,
+    this.onChanged,
   });
 
   final String label;
@@ -404,6 +405,7 @@ class AppTextField extends StatelessWidget {
   final TextInputType? keyboardType;
   final TextInputAction? textInputAction;
   final TextDirection? textDirection;
+  final ValueChanged<String>? onChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -413,6 +415,7 @@ class AppTextField extends StatelessWidget {
       keyboardType: keyboardType,
       textInputAction: textInputAction,
       textDirection: textDirection,
+      onChanged: onChanged,
       decoration: InputDecoration(labelText: label),
     );
   }

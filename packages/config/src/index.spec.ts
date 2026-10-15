@@ -31,6 +31,12 @@ describe('loadConfig', () => {
     expect(config.PHONE_SIGNUP_MAX_VERIFY_ATTEMPTS).toBe(5);
     expect(config.PHONE_SIGNUP_MAX_TTL_SECONDS).toBe(180);
     expect(config.PHONE_SIGNUP_PROOF_TTL_SECONDS).toBe(600);
+    expect(config.AGREEMENT_ACCEPTANCE_ENABLED).toBe(false);
+    expect(config.AGREEMENT_EVIDENCE_KEY).toBeUndefined();
+    expect(config.AGREEMENT_PRESENTATION_TTL_SECONDS).toBe(1800);
+    expect(config.TRUSTED_PROXY_HOPS).toBe(0);
+    expect(config.TRUSTED_PROXY_IPS).toEqual([]);
+    expect(config.API_REVISION).toBe('unknown');
     expect(config.VIP_UPLOAD_LEASE_MS).toBe(30_000);
     expect(config.VIP_UPLOAD_RECOVERY_INTERVAL_MS).toBe(30_000);
     expect(config.VIP_UPLOAD_CLEANUP_SETTLE_MS).toBe(3_600_000);
@@ -132,6 +138,34 @@ describe('loadConfig', () => {
     expect(
       loadConfig({ ...valid, PUBLIC_REGISTRATION_MODE: 'closed' }).PUBLIC_REGISTRATION_MODE,
     ).toBe('closed');
+  });
+
+  it('requires a 32-byte agreement evidence key only when acceptance is enabled', () => {
+    expect(() => loadConfig({ ...valid, AGREEMENT_ACCEPTANCE_ENABLED: 'true' })).toThrow(
+      /AGREEMENT_EVIDENCE_KEY/,
+    );
+    const key = Buffer.alloc(32, 7).toString('base64');
+    const enabled = loadConfig({
+      ...valid,
+      AGREEMENT_ACCEPTANCE_ENABLED: 'true',
+      AGREEMENT_EVIDENCE_KEY: key,
+      API_REVISION: 'api-test',
+    });
+    expect(enabled.AGREEMENT_ACCEPTANCE_ENABLED).toBe(true);
+    expect(enabled.AGREEMENT_EVIDENCE_KEY).toBe(key);
+    expect(enabled.API_REVISION).toBe('api-test');
+    expect(() => loadConfig({ ...valid, TRUSTED_PROXY_HOPS: '1' })).toThrow(/TRUSTED_PROXY_IPS/);
+    expect(() => loadConfig({ ...valid, TRUSTED_PROXY_IPS: '10.0.0.2' })).toThrow(/TRUSTED_PROXY_HOPS/);
+    expect(() =>
+      loadConfig({ ...valid, TRUSTED_PROXY_HOPS: '1', TRUSTED_PROXY_IPS: 'not-an-ip' }),
+    ).toThrow(/TRUSTED_PROXY_IPS/);
+    const trusted = loadConfig({
+      ...valid,
+      TRUSTED_PROXY_HOPS: '1',
+      TRUSTED_PROXY_IPS: '::ffff:10.0.0.2, 10.0.0.2',
+    });
+    expect(trusted.TRUSTED_PROXY_HOPS).toBe(1);
+    expect(trusted.TRUSTED_PROXY_IPS).toEqual(['10.0.0.2']);
   });
 
   it('treats an empty OTPy project key as unavailable', () => {

@@ -29,6 +29,7 @@ import { OpportunitiesModule } from './opportunities/opportunities.module';
 import { VipModule } from './vip/vip.module';
 import { SupportModule } from './support/support.module';
 import { VisitIntentionModule } from './visit-intention/visit-intention.module';
+import { AgreementModule } from './agreement/agreement.module';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { AppRequest } from './infrastructure/http/request-context';
 
@@ -111,6 +112,7 @@ import type { AppRequest } from './infrastructure/http/request-context';
     VipModule,
     SupportModule,
     VisitIntentionModule,
+    AgreementModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: HttpExceptionFilter },

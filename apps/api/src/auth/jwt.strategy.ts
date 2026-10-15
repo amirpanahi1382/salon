@@ -3,6 +3,7 @@ import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import {
   UnauthenticatedError,
+  isSafeRequestId,
   isUserRole,
   type RequestPrincipal,
   type SalonAccessState,
@@ -10,12 +11,14 @@ import {
 } from '@salon/shared';
 import { AppConfigService } from '../infrastructure/config/app-config.service';
 import { PrismaService } from '../infrastructure/database/prisma.service';
+import { resolveSalonSession } from './salon-session';
 
 interface JwtPayload {
   sub?: string;
   tid?: string;
   role?: string;
   scp?: string;
+  jti?: string;
 }
 
 @Injectable()
@@ -54,7 +57,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthenticatedError('Invalid authentication token');
     }
 
-    const sessionScope: SessionScope = payload.scp === 'onboarding' ? 'onboarding' : 'product';
+    const tokenScope: SessionScope = payload.scp === 'onboarding' ? 'onboarding' : 'product';
+    const sessionId = payload.jti === undefined ? undefined : payload.jti;
+    if (sessionId !== undefined && !isSafeRequestId(sessionId)) {
+      throw new UnauthenticatedError('Invalid authentication token');
+    }
     const user = await this.prisma.client.user.findFirst({
       where: {
         id: payload.sub,
@@ -75,7 +82,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     }
 
     const accessState = user.salon.accessState as SalonAccessState;
-    if (sessionScope === 'product' && accessState !== 'PRODUCT') {
+    const sessionScope = resolveSalonSession(tokenScope, accessState);
+    if (!sessionScope) {
       throw new UnauthenticatedError('Invalid authentication token');
     }
 
@@ -85,6 +93,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       role: user.role,
       sessionScope,
       accessState,
+      sessionId,
     };
   }
 }

@@ -40,21 +40,24 @@ class LoginScreen extends ConsumerStatefulWidget {
 
 class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _email = TextEditingController();
+  final _phone = TextEditingController();
   final _password = TextEditingController();
   String? _error;
   bool _loading = false;
+  bool _phoneLogin = false;
 
   @override
   void dispose() {
     _email.dispose();
+    _phone.dispose();
     _password.dispose();
     super.dispose();
   }
 
   Future<void> _submit() async {
-    final email = _email.text.trim();
     final password = _password.text;
-    if (email.isEmpty || password.isEmpty) {
+    final identity = _phoneLogin ? _phone.text.trim() : _email.text.trim();
+    if (identity.isEmpty || password.isEmpty) {
       setState(() => _error = AppStrings.enterEmailPassword);
       return;
     }
@@ -63,7 +66,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       _error = null;
     });
     try {
-      await ref.read(authControllerProvider.notifier).login(email, password);
+      if (_phoneLogin) {
+        await ref.read(authControllerProvider.notifier).loginWithPhone(identity, password);
+      } else {
+        await ref.read(authControllerProvider.notifier).login(identity, password);
+      }
     } catch (error) {
       setState(() => _error = loginErrorText(error));
     } finally {
@@ -88,12 +95,21 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             const SizedBox(height: 8),
             const Text(AppStrings.attentionQuestion),
             const SizedBox(height: 32),
-            AppTextField(
-              label: AppStrings.email,
-              controller: _email,
-              keyboardType: TextInputType.emailAddress,
-              textDirection: TextDirection.ltr,
-            ),
+            if (_phoneLogin)
+              AppTextField(
+                key: const Key('login-phone'),
+                label: 'شماره موبایل',
+                controller: _phone,
+                keyboardType: TextInputType.phone,
+                textDirection: TextDirection.ltr,
+              )
+            else
+              AppTextField(
+                label: AppStrings.email,
+                controller: _email,
+                keyboardType: TextInputType.emailAddress,
+                textDirection: TextDirection.ltr,
+              ),
             const SizedBox(height: 12),
             AppTextField(
               label: AppStrings.password,
@@ -113,6 +129,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               label: AppStrings.signIn,
               onPressed: _submit,
               loading: _loading,
+            ),
+            TextButton(
+              onPressed: () => setState(() {
+                _phoneLogin = !_phoneLogin;
+                _error = null;
+              }),
+              child: Text(_phoneLogin ? 'ورود با ایمیل' : 'ورود با شماره موبایل'),
             ),
             TextButton(
               onPressed: () => context.go('/register'),

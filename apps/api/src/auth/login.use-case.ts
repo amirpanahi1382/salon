@@ -81,6 +81,7 @@ export class LoginUseCase implements OnModuleInit {
             sessionScope: session.sessionScope,
             accessState: user.salon.accessState,
             method: 'email',
+            sessionId: session.sessionId,
           },
         },
       });
