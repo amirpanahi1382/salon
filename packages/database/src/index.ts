@@ -12,6 +12,8 @@ export {
   VipRequestStatus,
   ServiceStatus,
   TransactionStatus,
+  SignupPhoneChallengeStatus,
+  SignupPhoneVerifyState,
 } from '@prisma/client';
 export type {
   AuditLog,

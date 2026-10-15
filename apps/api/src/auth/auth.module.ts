@@ -12,6 +12,13 @@ import { PlatformAdminAuthController } from './platform-admin-auth.controller';
 import { PlatformAdminLoginUseCase } from './platform-admin-login.use-case';
 import { RegisterSalonOwnerUseCase } from './register-salon-owner.use-case';
 import { PlatformAdminGuard } from '../infrastructure/auth/platform-admin.guard';
+import { OtpyProvider } from './otp-provider';
+import { PhoneSignupEnabledGuard } from './phone-signup-enabled.guard';
+import {
+  ConsumeSignupProofUseCase,
+  StartPhoneSignupUseCase,
+  VerifyPhoneSignupUseCase,
+} from './phone-signup.use-cases';
 
 @Module({
   imports: [
@@ -35,6 +42,11 @@ import { PlatformAdminGuard } from '../infrastructure/auth/platform-admin.guard'
     RegisterSalonOwnerUseCase,
     LoginUseCase,
     PlatformAdminLoginUseCase,
+    OtpyProvider,
+    PhoneSignupEnabledGuard,
+    StartPhoneSignupUseCase,
+    VerifyPhoneSignupUseCase,
+    ConsumeSignupProofUseCase,
   ],
   exports: [JwtAuthGuard, RolesGuard, PlatformAdminGuard],
 })

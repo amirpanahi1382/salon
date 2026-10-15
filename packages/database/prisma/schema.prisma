@@ -917,3 +917,65 @@ model MessageGlobalStopOutcome {
   @@index([phoneNumber])
   @@map("message_global_stop_outcomes")
 }
+
+/// Possession challenge for a future salon-owner signup.
+/// Not a User, Salon, Customer, marketing MessageRequest, or VIP send.
+/// The mobile number and OTP code are not stored. One open row per phone hash.
+enum SignupPhoneChallengeStatus {
+  DISPATCHING
+  SENT
+  AMBIGUOUS
+  INVALIDATED
+  VERIFIED
+  EXPIRED
+}
+
+enum SignupPhoneVerifyState {
+  IN_PROGRESS
+  REJECTED
+  UNCONFIRMED
+  SUCCEEDED
+}
+
+model SignupPhoneChallenge {
+  id                 String                       @id @db.Uuid
+  phoneHash          String                       @map("phone_hash")
+  status             SignupPhoneChallengeStatus
+  idempotencyKey     String                       @unique @map("idempotency_key")
+  requestHash        String                       @map("request_hash")
+  providerRequestId  String?                      @map("provider_request_id")
+  expiresAt          DateTime                     @map("expires_at") @db.Timestamptz(3)
+  verifyAttempts     Int                          @default(0) @map("verify_attempts")
+  proofHash          String?                      @unique @map("proof_hash")
+  proofExpiresAt     DateTime?                    @map("proof_expires_at") @db.Timestamptz(3)
+  proofConsumedAt    DateTime?                    @map("proof_consumed_at") @db.Timestamptz(3)
+  /// Closes the one-open-proof slot after consumption or proof expiry.
+  proofClosedAt      DateTime?                    @map("proof_closed_at") @db.Timestamptz(3)
+  verifiedAt         DateTime?                    @map("verified_at") @db.Timestamptz(3)
+  invalidatedAt      DateTime?                    @map("invalidated_at") @db.Timestamptz(3)
+  createdAt          DateTime                     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime                     @updatedAt @map("updated_at") @db.Timestamptz(3)
+  verifyAttemptsLog  SignupPhoneVerifyAttempt[]
+
+  /// Partial unique index signup_phone_challenges_one_open_phone
+  /// on phone_hash WHERE status IN (DISPATCHING, SENT, AMBIGUOUS).
+  /// Partial unique index signup_phone_challenges_one_open_proof
+  /// on phone_hash WHERE status = VERIFIED AND proof_closed_at IS NULL.
+  @@index([phoneHash, createdAt])
+  @@map("signup_phone_challenges")
+}
+
+/// One verify submission. Stores an HMAC of the request, never the code or proof.
+model SignupPhoneVerifyAttempt {
+  id             String                  @id @db.Uuid
+  challengeId    String                  @map("challenge_id") @db.Uuid
+  challenge      SignupPhoneChallenge    @relation(fields: [challengeId], references: [id], onDelete: Restrict)
+  idempotencyKey String                  @unique @map("idempotency_key")
+  requestHash    String                  @map("request_hash")
+  state          SignupPhoneVerifyState
+  createdAt      DateTime                @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime                @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([challengeId, createdAt])
+  @@map("signup_phone_verify_attempts")
+}

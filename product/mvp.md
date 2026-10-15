@@ -93,6 +93,7 @@ These capabilities exist in the repository (API + schema + tests; Flutter unless
 | Billing | VIP entitlement flag | Subscriptions, invoices, metering |
 | Redis | Compose + required env | Application client |
 | `GET /auth/owner` | Exists | Product surface; leftover auth probe |
+| Phone signup | Disabled-by-default possession challenge and one-time proof | Salon/user creation, password, login, payment, terms, mobile UI |
 
 ---
 

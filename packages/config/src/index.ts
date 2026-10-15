@@ -50,6 +50,30 @@ const envSchema = z.object({
   MINIO_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120_000).default(10_000),
   JWT_SECRET: z.string().min(32),
   JWT_EXPIRES_IN: z.string().min(1).default('8h'),
+  /** Server-side OTPy project key. Unset until phone onboarding is enabled. */
+  OTPY_API_KEY: z.preprocess((value) => value === '' ? undefined : value,
+    z.string().min(1).max(512).optional()),
+  OTPY_BASE_URL: z.string().url().default('https://api.otpy.ir'),
+  OTPY_TIMEOUT_MS: z.coerce.number().int().min(1000).max(30_000).default(10_000),
+  /**
+   * Phone-possession signup challenge. Off until rollout is approved.
+   * This does not create a salon, user, or session.
+   */
+  PHONE_SIGNUP_ENABLED: booleanFromString.default(false),
+  /** HMAC secret for phone hashes, request hashes, and signup-proof hashes. Required only when signup is enabled. */
+  PHONE_SIGNUP_HASH_SECRET: z.preprocess((value) => {
+    if (value === undefined || value === '') {
+      return undefined;
+    }
+    return value;
+  }, z.string().min(32).max(512).optional()),
+  PHONE_SIGNUP_RESEND_COOLDOWN_SECONDS: z.coerce.number().int().min(30).max(3600).default(60),
+  PHONE_SIGNUP_MAX_SENDS: z.coerce.number().int().min(1).max(10).default(3),
+  PHONE_SIGNUP_SEND_WINDOW_SECONDS: z.coerce.number().int().min(60).max(86_400).default(900),
+  PHONE_SIGNUP_MAX_VERIFY_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(5),
+  /** Local deadline cap. The stored deadline is also never later than OTPy's reported TTL. */
+  PHONE_SIGNUP_MAX_TTL_SECONDS: z.coerce.number().int().min(30).max(600).default(180),
+  PHONE_SIGNUP_PROOF_TTL_SECONDS: z.coerce.number().int().min(60).max(3600).default(600),
   OUTBOX_BATCH_SIZE: z.coerce.number().int().min(1).max(100).default(10),
   OUTBOX_LEASE_MS: z.coerce.number().int().min(1000).default(30_000),
   OUTBOX_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(50).default(8),
@@ -121,6 +145,11 @@ export function loadConfig(
   if ((email && !password) || (!email && password)) {
     throw new Error(
       'Invalid configuration: PLATFORM_ADMIN_EMAIL and PLATFORM_ADMIN_PASSWORD must both be set or both omitted',
+    );
+  }
+  if (parsed.data.PHONE_SIGNUP_ENABLED && !parsed.data.PHONE_SIGNUP_HASH_SECRET) {
+    throw new Error(
+      'Invalid configuration: PHONE_SIGNUP_HASH_SECRET is required when PHONE_SIGNUP_ENABLED is true',
     );
   }
   return parsed.data;

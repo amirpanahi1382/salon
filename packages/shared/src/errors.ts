@@ -9,6 +9,14 @@ export type AppErrorCode =
   | 'GLOBAL_MESSAGE_STOP'
   | 'RETURN_COMMITMENT_VISIT_REVIEW_REQUIRED'
   | 'RATE_LIMITED'
+  | 'SIGNUP_SEND_UNCONFIRMED'
+  | 'SIGNUP_VERIFICATION_UNCONFIRMED'
+  | 'SIGNUP_RESEND_COOLDOWN'
+  | 'SIGNUP_SEND_LIMIT'
+  | 'SIGNUP_VERIFICATION_FAILED'
+  | 'SIGNUP_PROOF_ALREADY_ISSUED'
+  | 'SIGNUP_CHALLENGE_SUPERSEDED'
+  | 'SIGNUP_CHALLENGE_EXPIRED'
   | 'BUSINESS_RULE'
   | 'INFRASTRUCTURE_ERROR'
   | 'INTERNAL_ERROR';
@@ -101,6 +109,72 @@ export class ReturnCommitmentVisitReviewRequiredError extends AppError {
   constructor(message = RETURN_COMMITMENT_VISIT_REVIEW_REQUIRED_MESSAGE) {
     super('RETURN_COMMITMENT_VISIT_REVIEW_REQUIRED', message, 409);
     this.name = 'ReturnCommitmentVisitReviewRequiredError';
+  }
+}
+
+export class SignupSendUnconfirmedError extends AppError {
+  constructor(
+    message = 'The signup message was not confirmed. Retrying this same request will not send another message.',
+  ) {
+    super('SIGNUP_SEND_UNCONFIRMED', message, 409);
+    this.name = 'SignupSendUnconfirmedError';
+  }
+}
+
+export class SignupVerificationUnconfirmedError extends AppError {
+  constructor(
+    message = 'The verification result was not confirmed. Retrying this same request will not submit the code again.',
+  ) {
+    super('SIGNUP_VERIFICATION_UNCONFIRMED', message, 409);
+    this.name = 'SignupVerificationUnconfirmedError';
+  }
+}
+
+export class SignupResendCooldownError extends AppError {
+  constructor(retryAfterSeconds: number) {
+    super(
+      'SIGNUP_RESEND_COOLDOWN',
+      `Another signup message cannot be sent yet. Try again in ${retryAfterSeconds} seconds.`,
+      429,
+    );
+    this.name = 'SignupResendCooldownError';
+  }
+}
+
+export class SignupSendLimitError extends AppError {
+  constructor(message = 'Another signup message cannot be sent yet.') {
+    super('SIGNUP_SEND_LIMIT', message, 429);
+    this.name = 'SignupSendLimitError';
+  }
+}
+
+export class SignupVerificationFailedError extends AppError {
+  constructor(message = 'The code could not be verified.') {
+    super('SIGNUP_VERIFICATION_FAILED', message, 400);
+    this.name = 'SignupVerificationFailedError';
+  }
+}
+
+export class SignupProofAlreadyIssuedError extends AppError {
+  constructor(
+    message = 'This verification already returned a signup proof. That proof is not issued again.',
+  ) {
+    super('SIGNUP_PROOF_ALREADY_ISSUED', message, 409);
+    this.name = 'SignupProofAlreadyIssuedError';
+  }
+}
+
+export class SignupChallengeSupersededError extends AppError {
+  constructor(message = 'This signup request was replaced by a later one.') {
+    super('SIGNUP_CHALLENGE_SUPERSEDED', message, 409);
+    this.name = 'SignupChallengeSupersededError';
+  }
+}
+
+export class SignupChallengeExpiredError extends AppError {
+  constructor(message = 'This signup request has expired. It will not send another message.') {
+    super('SIGNUP_CHALLENGE_EXPIRED', message, 409);
+    this.name = 'SignupChallengeExpiredError';
   }
 }
 

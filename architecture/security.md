@@ -21,6 +21,7 @@ Principles that are actually enforced:
 | Salon user | `POST /auth/register`, `POST /auth/login`; Argon2id; JWT `sub`,`tid`,`role` |
 | Platform admin | `POST /admin/auth/login`; JWT `scp=platform` |
 | Public | register, login, `/health`, `/health/ready`, `/metrics` |
+| Phone signup challenge | `POST /auth/signup/phone/start` and `/verify`, off unless `PHONE_SIGNUP_ENABLED`. Possession proof only; no salon, user, or session. Phone and OTP are not stored. Deadline acceptance uses the database clock at the write. The marketing stop does not apply |
 
 No refresh tokens. Logout is discarding the token. JWT secret ≥ 32 characters (`JWT_SECRET`).
 
