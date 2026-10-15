@@ -16,7 +16,7 @@ export type AdminSupportMessageResponse = SalonSupportMessageResponse & {
 export type SupportConversationResponse = {
   id: string;
   userName: string;
-  userEmail: string;
+  userEmail: string | null;
   salonName: string;
   lastMessageAt: string;
   awaitingSupportReply: boolean;

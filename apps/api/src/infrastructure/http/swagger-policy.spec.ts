@@ -20,6 +20,7 @@ function config(overrides: Partial<AppConfig>): AppConfig {
     JWT_EXPIRES_IN: '8h',
     OTPY_BASE_URL: 'https://api.otpy.ir',
     OTPY_TIMEOUT_MS: 10_000,
+    PUBLIC_REGISTRATION_MODE: 'email',
     PHONE_SIGNUP_ENABLED: false,
     PHONE_SIGNUP_RESEND_COOLDOWN_SECONDS: 60,
     PHONE_SIGNUP_MAX_SENDS: 3,

@@ -8,7 +8,7 @@ Principles that are actually enforced:
 2. Authorize via role guards + use-case checks.
 3. Tenant from authenticated salon user; platform admin has **no** salon tenant.
 4. Never trust client `salonId`.
-5. Fail closed on missing/disabled user or suspended salon.
+5. Fail closed on missing/disabled user, suspended salon, or a product token whose salon access is no longer `PRODUCT`.
 6. Audit sensitive mutations (without message bodies / secrets).
 7. Secrets only in env; Pino redact paths from `@salon/shared`.
 
@@ -18,10 +18,11 @@ Principles that are actually enforced:
 
 | Actor | Mechanism |
 | --- | --- |
-| Salon user | `POST /auth/register`, `POST /auth/login`; Argon2id; JWT `sub`,`tid`,`role` |
+| Salon user | `POST /auth/register` only when `PUBLIC_REGISTRATION_MODE=email`; `POST /auth/login`; Argon2id; product JWT `sub`,`tid`,`role` |
+| Phone-owned owner | `POST /auth/login/phone` always. OTP completion only when `PHONE_SIGNUP_ENABLED` and registration mode `phone`. Pending access gets JWT `scp=onboarding`. Password verified is not product access |
 | Platform admin | `POST /admin/auth/login`; JWT `scp=platform` |
-| Public | register, login, `/health`, `/health/ready`, `/metrics` |
-| Phone signup challenge | `POST /auth/signup/phone/start` and `/verify`, off unless `PHONE_SIGNUP_ENABLED`. Possession proof only; no salon, user, or session. Phone and OTP are not stored. Deadline acceptance uses the database clock at the write. The marketing stop does not apply |
+| Public | email register only in `email` registration mode, email login, phone login, `/health`, `/health/ready`, `/metrics` |
+| Phone signup challenge | `POST /auth/signup/phone/start` and `/verify`, off unless `PHONE_SIGNUP_ENABLED`. Possession proof only; no salon, user, or session. Phone and OTP are not stored. Deadline acceptance uses the database clock at the write. The marketing stop does not apply. Completion consumes that proof in the account transaction. The flag stays false. A live send also needs a private `OTPY_API_KEY` and is not authorized by publishing this slice |
 
 No refresh tokens. Logout is discarding the token. JWT secret ≥ 32 characters (`JWT_SECRET`).
 
@@ -40,7 +41,9 @@ Typical splits (see current-state for the full matrix):
 - OWNER: service write, user administration (MANAGER: STAFF only)
 - Platform admin: message queue dispatch, VIP lists/entitlements/export/dispatch
 
-`GET /auth/owner` is an OWNER-only probe, not a product feature.
+`GET /auth/owner` is an OWNER-only probe, not a product feature. It is not available to an onboarding session.
+
+`JwtAuthGuard` is the product-access boundary. An onboarding session (`scp=onboarding`) is forbidden on every JWT route except those marked `AllowOnboardingSession` (`GET /auth/account`, `GET /auth/me`). Future agreement or payment routes opt in there. They do not add a second check in each product module. The salon access state is loaded on every request. VIP entitlement is not that state. `SUSPENDED` is not the onboarding state.
 
 ---
 

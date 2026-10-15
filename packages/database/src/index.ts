@@ -14,6 +14,7 @@ export {
   TransactionStatus,
   SignupPhoneChallengeStatus,
   SignupPhoneVerifyState,
+  SalonAccessState,
 } from '@prisma/client';
 export type {
   AuditLog,
@@ -35,6 +36,7 @@ export {
   DEV_SERVICE_CATALOG,
   STARTER_SERVICE_CATALOG,
   isAutomatedTestOwnerEmail,
+  starterServiceNamesForRegistration,
 } from './dev-catalog.js';
 export { applyDatabasePoolParams, createPrismaClient } from './client.js';
 export type { PrismaPoolOptions } from './client.js';

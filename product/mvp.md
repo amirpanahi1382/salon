@@ -17,8 +17,9 @@ These capabilities exist in the repository (API + schema + tests; Flutter unless
 
 ### Salon & access
 
-- Salon registration (`POST /auth/register`) creates tenant + OWNER
-- Login JWT (salon users and platform admins)
+- Legacy email registration (`POST /auth/register`) creates a `PRODUCT` tenant + OWNER when `PUBLIC_REGISTRATION_MODE=email`. `phone` and `closed` keep that route shut, including while OTP signup is off
+- Phone completion (`POST /auth/signup/phone/complete`) creates one `AWAITING_AGREEMENT` salon and its phone-owning OWNER. Agreement, payment, and activation are not in this slice
+- Login JWT (email for legacy accounts, phone for phone-owned accounts, and platform admins). A pending salon receives an onboarding session only
 - Roles: `OWNER`, `MANAGER`, `STAFF`
 - Salon profile `GET/PATCH /salon`
 - User administration APIs (create, role, status, last-OWNER invariant)

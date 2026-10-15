@@ -1,9 +1,10 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as argon2 from 'argon2';
-import { UnauthenticatedError } from '@salon/shared';
+import { UnauthenticatedError, createId } from '@salon/shared';
 import { PrismaService } from '../infrastructure/database/prisma.service';
 import type { LoginDto } from './auth.dto';
+import { signSalonSession } from './salon-session';
 
 @Injectable()
 export class LoginUseCase implements OnModuleInit {
@@ -39,7 +40,7 @@ export class LoginUseCase implements OnModuleInit {
         role: true,
         status: true,
         passwordHash: true,
-        salon: { select: { status: true } },
+        salon: { select: { status: true, accessState: true } },
       },
     });
 
@@ -60,14 +61,35 @@ export class LoginUseCase implements OnModuleInit {
       throw new UnauthenticatedError('Invalid email or password');
     }
 
-    const accessToken = await this.jwt.signAsync({
-      sub: user.id,
-      tid: user.salonId,
+    const session = await signSalonSession(this.jwt, {
+      id: user.id,
+      salonId: user.salonId,
       role: user.role,
+      accessState: user.salon.accessState,
     });
+    if (session.sessionScope === 'onboarding') {
+      await this.prisma.client.auditLog.create({
+        data: {
+          id: createId(),
+          tenantId: user.salonId,
+          actorId: user.id,
+          action: 'SALON_SESSION_ISSUED',
+          resource: 'user',
+          resourceId: user.id,
+          result: 'SUCCESS',
+          metadata: {
+            sessionScope: session.sessionScope,
+            accessState: user.salon.accessState,
+            method: 'email',
+          },
+        },
+      });
+    }
 
     return {
-      accessToken,
+      accessToken: session.accessToken,
+      sessionScope: session.sessionScope,
+      accessState: user.salon.accessState,
       user: {
         id: user.id,
         tenantId: user.salonId,

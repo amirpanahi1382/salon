@@ -22,6 +22,7 @@ describe('loadConfig', () => {
     expect(config.OTPY_API_KEY).toBeUndefined();
     expect(config.OTPY_BASE_URL).toBe('https://api.otpy.ir');
     expect(config.OTPY_TIMEOUT_MS).toBe(10_000);
+    expect(config.PUBLIC_REGISTRATION_MODE).toBe('email');
     expect(config.PHONE_SIGNUP_ENABLED).toBe(false);
     expect(config.PHONE_SIGNUP_HASH_SECRET).toBeUndefined();
     expect(config.PHONE_SIGNUP_RESEND_COOLDOWN_SECONDS).toBe(60);
@@ -88,16 +89,49 @@ describe('loadConfig', () => {
     expect(() =>
       loadConfig({
         ...valid,
+        PUBLIC_REGISTRATION_MODE: 'phone',
         PHONE_SIGNUP_ENABLED: 'true',
       }),
     ).toThrow(/PHONE_SIGNUP_HASH_SECRET/);
     const enabled = loadConfig({
       ...valid,
+      PUBLIC_REGISTRATION_MODE: 'phone',
       PHONE_SIGNUP_ENABLED: 'true',
       PHONE_SIGNUP_HASH_SECRET: 'phone-signup-hash-secret-at-least-32',
     });
+    expect(enabled.PUBLIC_REGISTRATION_MODE).toBe('phone');
     expect(enabled.PHONE_SIGNUP_ENABLED).toBe(true);
     expect(enabled.PHONE_SIGNUP_HASH_SECRET).toBe('phone-signup-hash-secret-at-least-32');
+  });
+
+  it('rejects OTP signup unless public registration is phone-only', () => {
+    expect(() =>
+      loadConfig({
+        ...valid,
+        PHONE_SIGNUP_ENABLED: 'true',
+        PHONE_SIGNUP_HASH_SECRET: 'phone-signup-hash-secret-at-least-32',
+      }),
+    ).toThrow(/PUBLIC_REGISTRATION_MODE=phone/);
+    expect(() =>
+      loadConfig({
+        ...valid,
+        PUBLIC_REGISTRATION_MODE: 'closed',
+        PHONE_SIGNUP_ENABLED: 'true',
+        PHONE_SIGNUP_HASH_SECRET: 'phone-signup-hash-secret-at-least-32',
+      }),
+    ).toThrow(/PUBLIC_REGISTRATION_MODE=phone/);
+    expect(() =>
+      loadConfig({
+        ...valid,
+        PUBLIC_REGISTRATION_MODE: 'other',
+      }),
+    ).toThrow(/PUBLIC_REGISTRATION_MODE/);
+    expect(
+      loadConfig({ ...valid, PUBLIC_REGISTRATION_MODE: 'phone' }).PHONE_SIGNUP_ENABLED,
+    ).toBe(false);
+    expect(
+      loadConfig({ ...valid, PUBLIC_REGISTRATION_MODE: 'closed' }).PUBLIC_REGISTRATION_MODE,
+    ).toBe('closed');
   });
 
   it('treats an empty OTPy project key as unavailable', () => {

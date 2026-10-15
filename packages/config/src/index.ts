@@ -56,8 +56,16 @@ const envSchema = z.object({
   OTPY_BASE_URL: z.string().url().default('https://api.otpy.ir'),
   OTPY_TIMEOUT_MS: z.coerce.number().int().min(1000).max(30_000).default(10_000),
   /**
-   * Phone-possession signup challenge. Off until rollout is approved.
-   * This does not create a salon, user, or session.
+   * Who may create a salon through a public route.
+   * `email` is the pre-cutover default and opens POST /auth/register.
+   * `phone` closes that route. `closed` closes it as well.
+   * Phone-password login is not this setting.
+   */
+  PUBLIC_REGISTRATION_MODE: z.enum(['email', 'phone', 'closed']).default('email'),
+  /**
+   * OTP start, verify, and phone-signup completion. Off until rollout.
+   * Does not control POST /auth/login/phone or POST /auth/register.
+   * May be true only when PUBLIC_REGISTRATION_MODE is phone.
    */
   PHONE_SIGNUP_ENABLED: booleanFromString.default(false),
   /** HMAC secret for phone hashes, request hashes, and signup-proof hashes. Required only when signup is enabled. */
@@ -145,6 +153,14 @@ export function loadConfig(
   if ((email && !password) || (!email && password)) {
     throw new Error(
       'Invalid configuration: PLATFORM_ADMIN_EMAIL and PLATFORM_ADMIN_PASSWORD must both be set or both omitted',
+    );
+  }
+  if (
+    parsed.data.PHONE_SIGNUP_ENABLED &&
+    parsed.data.PUBLIC_REGISTRATION_MODE !== 'phone'
+  ) {
+    throw new Error(
+      'Invalid configuration: PHONE_SIGNUP_ENABLED requires PUBLIC_REGISTRATION_MODE=phone',
     );
   }
   if (parsed.data.PHONE_SIGNUP_ENABLED && !parsed.data.PHONE_SIGNUP_HASH_SECRET) {

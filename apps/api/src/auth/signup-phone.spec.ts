@@ -1,10 +1,12 @@
 import { NotFoundError } from '@salon/shared';
+import { EmailRegistrationGuard } from './email-registration.guard';
 import { PhoneSignupEnabledGuard } from './phone-signup-enabled.guard';
 import {
   cooldownRemaining,
   normalizeIranianMobile,
   signupDeadline,
   signupPhoneHash,
+  signupCompletionHash,
   signupProofHash,
   signupProofMatches,
 } from './signup-phone';
@@ -38,12 +40,48 @@ describe('signup phone normalization and deadlines', () => {
     expect(signupProofMatches(secret, 'other-proof-token-value', signupProofHash(secret, proof))).toBe(
       false,
     );
+    const completion = signupCompletionHash(secret, {
+      phone,
+      salonName: 'Salon',
+      ownerName: 'Owner',
+      password: 'correct-horse',
+      proof,
+    });
+    expect(completion).toHaveLength(64);
+    expect(completion).not.toContain('correct-horse');
+    expect(completion).not.toBe(
+      signupCompletionHash(secret, {
+        phone,
+        salonName: 'Other',
+        ownerName: 'Owner',
+        password: 'correct-horse',
+        proof,
+      }),
+    );
   });
 
   it('counts a full cooldown second while the window is still open', () => {
     const createdAt = new Date(Date.now() - 59_100);
     expect(cooldownRemaining(createdAt, new Date(), 60)).toBe(1);
     expect(cooldownRemaining(new Date(Date.now() - 61_000), new Date(), 60)).toBe(0);
+  });
+
+  it('opens email registration only in email mode', () => {
+    expect(
+      new EmailRegistrationGuard({
+        values: { PUBLIC_REGISTRATION_MODE: 'email' },
+      } as never).canActivate(),
+    ).toBe(true);
+    expect(() =>
+      new EmailRegistrationGuard({
+        values: { PUBLIC_REGISTRATION_MODE: 'phone' },
+      } as never).canActivate(),
+    ).toThrow(NotFoundError);
+    expect(() =>
+      new EmailRegistrationGuard({
+        values: { PUBLIC_REGISTRATION_MODE: 'closed' },
+      } as never).canActivate(),
+    ).toThrow(NotFoundError);
   });
 
   it('hides the routes when the feature flag is off', () => {

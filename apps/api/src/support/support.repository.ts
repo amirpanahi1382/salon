@@ -26,7 +26,7 @@ export type SupportMessageRecord = {
 export type SupportConversationRecord = {
   id: string;
   userName: string;
-  userEmail: string;
+  userEmail: string | null;
   salonName: string;
   lastMessageAt: Date;
   awaitingSupportReply: boolean;

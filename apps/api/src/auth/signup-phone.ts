@@ -48,6 +48,23 @@ export function signupProofHash(secret: string, proof: string): string {
   return signupMac(secret, `signup-proof:${proof}`);
 }
 
+/** HMAC of the canonical completion. The stored record keeps only this hash. */
+export function signupCompletionHash(
+  secret: string,
+  input: {
+    phone: string;
+    salonName: string;
+    ownerName: string;
+    password: string;
+    proof: string;
+  },
+): string {
+  return signupMac(
+    secret,
+    `signup-complete:${input.phone}\n${input.salonName}\n${input.ownerName}\n${input.password}\n${input.proof}`,
+  );
+}
+
 export function signupProofMatches(secret: string, proof: string, storedHash: string): boolean {
   const actual = Buffer.from(signupProofHash(secret, proof), 'hex');
   const expected = Buffer.from(storedHash, 'hex');

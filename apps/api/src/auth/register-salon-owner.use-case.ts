@@ -1,15 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as argon2 from 'argon2';
-import {
-  ConflictError,
-  createId,
-  DOMAIN_EVENT_TYPES,
-} from '@salon/shared';
-import { STARTER_SERVICE_CATALOG, isAutomatedTestOwnerEmail, Prisma } from '@salon/database';
+import { Prisma } from '@salon/database';
+import { ConflictError, createId } from '@salon/shared';
 import { PrismaService } from '../infrastructure/database/prisma.service';
-import { insertSalonService } from '../service/insert-salon-service';
 import type { RegisterSalonOwnerDto } from './auth.dto';
+import { provisionSalonOwner } from './provision-salon-owner';
+import { signSalonSession } from './salon-session';
 
 @Injectable()
 export class RegisterSalonOwnerUseCase {
@@ -34,70 +31,22 @@ export class RegisterSalonOwnerUseCase {
     const salonId = createId();
     const userId = createId();
     const now = new Date();
+    const ownerName = input.ownerName.trim();
 
     try {
       await this.prisma.client.$transaction(async (tx) => {
-      await tx.salon.create({
-        data: {
-          id: salonId,
-          name: input.salonName.trim(),
-          status: 'ACTIVE',
-          updatedAt: now,
-        },
-      });
-
-      await tx.user.create({
-        data: {
-          id: userId,
+        await provisionSalonOwner(tx, {
           salonId,
-          name: input.ownerName.trim(),
-          email,
+          userId,
+          salonName: input.salonName.trim(),
+          ownerName,
           passwordHash,
-          role: 'OWNER',
-          status: 'ACTIVE',
-          updatedAt: now,
-        },
-      });
-
-      await tx.outboxEvent.createMany({
-        data: [
-          {
-            id: createId(),
-            tenantId: salonId,
-            eventType: DOMAIN_EVENT_TYPES.SalonCreated,
-            payload: { salonId },
-          },
-          {
-            id: createId(),
-            tenantId: salonId,
-            eventType: DOMAIN_EVENT_TYPES.UserCreated,
-            payload: { userId, salonId, role: 'OWNER' },
-          },
-        ],
-      });
-
-      const catalog = isAutomatedTestOwnerEmail(email) ? [] : STARTER_SERVICE_CATALOG;
-      for (const name of catalog) {
-        await insertSalonService(tx, {
-          tenantId: salonId,
-          actorId: userId,
-          name,
+          email,
+          phone: null,
+          accessState: 'PRODUCT',
+          additionalUsersAllowed: true,
           now,
         });
-      }
-
-      await tx.auditLog.create({
-        data: {
-          id: createId(),
-          tenantId: salonId,
-          actorId: userId,
-          action: 'USER_REGISTERED',
-          resource: 'user',
-          resourceId: userId,
-          result: 'SUCCESS',
-          metadata: { role: 'OWNER' },
-        },
-      });
       });
     } catch (error: unknown) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
@@ -106,18 +55,21 @@ export class RegisterSalonOwnerUseCase {
       throw error;
     }
 
-    const accessToken = await this.jwt.signAsync({
-      sub: userId,
-      tid: salonId,
+    const session = await signSalonSession(this.jwt, {
+      id: userId,
+      salonId,
       role: 'OWNER',
+      accessState: 'PRODUCT',
     });
 
     return {
-      accessToken,
+      accessToken: session.accessToken,
+      sessionScope: session.sessionScope,
+      accessState: 'PRODUCT' as const,
       user: {
         id: userId,
         tenantId: salonId,
-        name: input.ownerName.trim(),
+        name: ownerName,
         email,
         role: 'OWNER' as const,
       },

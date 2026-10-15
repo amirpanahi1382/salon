@@ -45,25 +45,29 @@ Flutter → NestJS API → PostgreSQL/Prisma
 
 | Item | Status |
 | --- | --- |
-| `POST /auth/register` | **Implemented** — salon + OWNER + starter services (not `@example.test`); throttle 5/min |
-| `POST /auth/login` | **Implemented** — generic failure copy; throttle 10/min |
-| `POST /auth/signup/phone/start` and `POST /auth/signup/phone/verify` | **Implemented, disabled by default** (`PHONE_SIGNUP_ENABLED=false`). Phone-possession challenge for a future owner signup. Does not create a salon, user, password, session, payment, or terms acceptance. Not a marketing or VIP message, and it does not consult the global marketing stop. One open challenge per phone hash. Resend invalidates the previous local challenge. Cooldown 60s, 3 sends / 15 minutes, 5 verification attempts, local TTL cap 180s and never later than OTPy's reported TTL, proof lifetime 600s. Idempotency-Key required. An unconfirmed send or verify is not retried silently. Successful verify returns a one-time signup proof only if the local deadline is still in the future at the verification write. That check, and the checks for attempt reservation, proof consumption, and send confirmation, use PostgreSQL `clock_timestamp()` in the write itself so a lock wait cannot reuse an earlier timestamp. Only the proof hash is stored. Internal proof consumption requires that same phone and is not an HTTP route. A send whose local deadline has already passed commits `EXPIRED` and its audit event before the error is returned. Account creation is not implemented |
-| `GET /auth/me` | **Implemented** |
-| `GET /auth/owner` | **Implemented** leftover OWNER probe |
-| JWT salon | `sub`, `tid`, `role`; `JWT_EXPIRES_IN` default 8h; no refresh |
+| `POST /auth/register` | **Implemented only when `PUBLIC_REGISTRATION_MODE=email`** (the default) — salon + OWNER + starter services (not `@example.test`); access `PRODUCT`; throttle 5/min. `phone` and `closed` hide the route (404) and do not create a salon, including when OTP signup is off |
+| `POST /auth/login` | **Implemented** — email/password for legacy accounts; generic failure copy; throttle 10/min. A salon whose access is not `PRODUCT` receives an onboarding session |
+| `POST /auth/signup/phone/start` and `POST /auth/signup/phone/verify` | **Implemented, disabled by default** (`PHONE_SIGNUP_ENABLED=false`). Phone-possession challenge for a future owner signup. Does not create a salon, user, password, session, payment, or terms acceptance. Not a marketing or VIP message, and it does not consult the global marketing stop. One open challenge per phone hash. Resend invalidates the previous local challenge. Cooldown 60s, 3 sends / 15 minutes, 5 verification attempts, local TTL cap 180s and never later than OTPy's reported TTL, proof lifetime 600s. Idempotency-Key required. An unconfirmed send or verify is not retried silently. Successful verify returns a one-time signup proof only if the local deadline is still in the future at the verification write. That check, and the checks for attempt reservation, proof consumption, and send confirmation, use PostgreSQL `clock_timestamp()` in the write itself so a lock wait cannot reuse an earlier timestamp. Only the proof hash is stored. The response does not reveal whether the phone already has an account. Internal proof consumption requires that same phone and is not an HTTP route. A send whose local deadline has already passed commits `EXPIRED` and its audit event before the error is returned |
+| `POST /auth/signup/phone/complete` | **Implemented, disabled by default.** Consumes the proof for that normalized phone in the same transaction as the salon, the single phone-owning OWNER, starter services, audit, and outbox rows. Access begins at `AWAITING_AGREEMENT` with `additionalUsersAllowed=false`. No email is invented. No product session is returned. Idempotency-Key required; the same key and body replay the committed account. The phone is globally unique |
+| `POST /auth/login/phone` | **Implemented.** Always available. Argon2id. Unknown phone and wrong password share one failure. Session scope follows current salon access, including when `PHONE_SIGNUP_ENABLED` is false. Throttle 10/min |
+| Public registration | `PUBLIC_REGISTRATION_MODE`: `email` (default), `phone`, or `closed`. `PHONE_SIGNUP_ENABLED` controls OTP start, verify, and completion only and stays false. It may be true only with `PUBLIC_REGISTRATION_MODE=phone` and `PHONE_SIGNUP_HASH_SECRET`. Those three settings are necessary for a later cutover and are not sufficient: live OTP also requires a privately configured `OTPY_API_KEY`. Publishing this slice does not authorize that cutover or a live send. An OTP outage sets `PHONE_SIGNUP_ENABLED=false` and leaves `PUBLIC_REGISTRATION_MODE=phone` |
+| `GET /auth/account` | **Implemented** — current `accessState` and `sessionScope`. Allowed for an onboarding session. Product routes are not |
+| `GET /auth/me` | **Implemented** — identity for product and onboarding sessions |
+| `GET /auth/owner` | **Implemented** leftover OWNER probe. Denied for an onboarding session |
+| JWT salon | Product session: `sub`, `tid`, `role`. Onboarding session adds `scp=onboarding`. `JWT_EXPIRES_IN` default 8h; no refresh. `JwtAuthGuard` reloads access and denies product routes for `scp=onboarding`. A product token is rejected when access is no longer `PRODUCT`. An onboarding token stays onboarding until a new login |
 | Passwords | Argon2id |
 | `POST /admin/auth/login` `GET /admin/auth/me` | **Implemented** — `scp=platform`, no tid |
 | `pnpm db:bootstrap-admin` | **Implemented** — dev-only explicit upsert; both env vars or neither; refused in production and for database `salon` on port 5432 unless `PLATFORM_ADMIN_BOOTSTRAP_CONFIRM=salon`. API startup does not run it |
 | Logout | Client token clear |
 | Suspended salon / DISABLED user | Login and subsequent JWT checks fail closed |
 
-Principal is re-loaded from DB (role/status/salon).
+Principal is re-loaded from DB (role, status, salon status, and salon access).
 
 ---
 
 ## 4. Salon users and RBAC
 
-Roles: `OWNER` | `MANAGER` | `STAFF`. User status `ACTIVE` | `DISABLED`. Salon `ACTIVE` | `SUSPENDED`.
+Roles: `OWNER` | `MANAGER` | `STAFF`. User status `ACTIVE` | `DISABLED`. Salon `ACTIVE` | `SUSPENDED`. Salon access `PRODUCT` | `AWAITING_AGREEMENT` (not suspension, not VIP entitlement). Login identity is exactly one of globally unique email or globally unique canonical phone. Phone-owned salons reject additional users in `POST /users` and by a database insert trigger. Historical staff stay. Agreement text, payment, receipt upload, and admin activation are not implemented.
 
 | Action | OWNER | MANAGER | STAFF | Platform admin |
 | --- | --- | --- | --- | --- |

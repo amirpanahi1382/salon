@@ -39,6 +39,14 @@ export class CreateSalonUserUseCase {
 
     try {
       const created = await this.prisma.client.$transaction(async (tx) => {
+        const salon = await tx.salon.findUnique({
+          where: { id: principal.tenantId },
+          select: { additionalUsersAllowed: true },
+        });
+        if (!salon?.additionalUsersAllowed) {
+          throw new ForbiddenError('This salon has one owner account.');
+        }
+
         const user = await tx.user.create({
           data: {
             id: userId,
@@ -88,6 +96,15 @@ export class CreateSalonUserUseCase {
 
       return toSalonUserResponse(created);
     } catch (error: unknown) {
+      if (error instanceof ForbiddenError) {
+        throw error;
+      }
+      if (
+        error instanceof Prisma.PrismaClientUnknownRequestError &&
+        error.message.includes('additional salon users are not allowed')
+      ) {
+        throw new ForbiddenError('This salon has one owner account.');
+      }
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
         throw new ConflictError('An account with this email already exists');
       }

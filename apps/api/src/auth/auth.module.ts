@@ -12,7 +12,10 @@ import { PlatformAdminAuthController } from './platform-admin-auth.controller';
 import { PlatformAdminLoginUseCase } from './platform-admin-login.use-case';
 import { RegisterSalonOwnerUseCase } from './register-salon-owner.use-case';
 import { PlatformAdminGuard } from '../infrastructure/auth/platform-admin.guard';
+import { CompletePhoneSignupUseCase } from './complete-phone-signup.use-case';
+import { EmailRegistrationGuard } from './email-registration.guard';
 import { OtpyProvider } from './otp-provider';
+import { PhoneLoginUseCase } from './phone-login.use-case';
 import { PhoneSignupEnabledGuard } from './phone-signup-enabled.guard';
 import {
   ConsumeSignupProofUseCase,
@@ -44,9 +47,12 @@ import {
     PlatformAdminLoginUseCase,
     OtpyProvider,
     PhoneSignupEnabledGuard,
+    EmailRegistrationGuard,
     StartPhoneSignupUseCase,
     VerifyPhoneSignupUseCase,
     ConsumeSignupProofUseCase,
+    CompletePhoneSignupUseCase,
+    PhoneLoginUseCase,
   ],
   exports: [JwtAuthGuard, RolesGuard, PlatformAdminGuard],
 })

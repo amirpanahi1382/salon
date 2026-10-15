@@ -47,8 +47,8 @@ export class SalonUserResponseDto {
   @ApiProperty()
   name!: string;
 
-  @ApiProperty()
-  email!: string;
+  @ApiProperty({ nullable: true, type: String })
+  email!: string | null;
 
   @ApiProperty({ enum: USER_ROLES })
   role!: UserRole;

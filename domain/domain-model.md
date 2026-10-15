@@ -55,11 +55,11 @@ VipSalonEntitlement
 
 ### Salon
 
-Tenant. Owns users, customers, services, visits, transactions, actions, messages, VIP requests. Status `ACTIVE` | `SUSPENDED`. Duplicate names allowed.
+Tenant. Owns users, customers, services, visits, transactions, actions, messages, VIP requests. Status `ACTIVE` | `SUSPENDED`. Access `PRODUCT` | `AWAITING_AGREEMENT`. Access is not status and not VIP entitlement. `AWAITING_AGREEMENT` can authenticate only an onboarding session. Duplicate names allowed. Phone-owned salons are created with one owner and `additionalUsersAllowed=false`.
 
 ### User
 
-Salon operator. One salon. Roles `OWNER` | `MANAGER` | `STAFF`. Status `ACTIVE` | `DISABLED`. Email globally unique. Last active OWNER cannot be removed/demoted. MANAGER may create/disable STAFF only. OWNER assigns any role.
+Salon operator. One salon. Roles `OWNER` | `MANAGER` | `STAFF`. Status `ACTIVE` | `DISABLED`. Login identity is exactly one of globally unique email or globally unique canonical phone (`09` + 9 digits). Email accounts keep email and a null phone. A phone-owned owner stores that phone and a null email. `ACTIVE` does not by itself grant product access. Last active OWNER cannot be removed/demoted. MANAGER may create/disable STAFF only where the salon allows additional users. OWNER assigns any role on those salons. A phone-owned salon rejects another user.
 
 `createdBy` on actions/messages/VIP requests points at a same-salon `users(id, salon_id)` through Phase 8 composite FKs. These enforce new writes; historical rows await explicit FK validation. `ReturnCommitment` creator/updater is XOR: composite salon `(userId, salonId)` **or** `platform_admins.id`, never both, never neither.
 

@@ -12,6 +12,14 @@ enum SalonStatus {
   SUSPENDED
 }
 
+/// Product entitlement for a salon. Independent of SalonStatus and of VIP entitlement.
+/// PRODUCT is full product access. Existing rows stay PRODUCT.
+/// AWAITING_AGREEMENT is the phone-owned onboarding state before a later agreement slice.
+enum SalonAccessState {
+  PRODUCT
+  AWAITING_AGREEMENT
+}
+
 enum UserRole {
   OWNER
   MANAGER
@@ -148,6 +156,9 @@ model Salon {
   phone     String?
   address   String?
   status    SalonStatus @default(ACTIVE)
+  accessState            SalonAccessState @default(PRODUCT) @map("access_state")
+  /// False for a phone-owned salon, which has one owner. Existing salons stay true.
+  additionalUsersAllowed Boolean          @default(true) @map("additional_users_allowed")
   createdAt DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
   users     User[]
@@ -165,6 +176,7 @@ model Salon {
   supportConversations SupportConversation[]
   visitIntentions      VisitIntention[]
   globalStopOutcomes   MessageGlobalStopOutcome[]
+  phoneOwnerCompletion PhoneOwnerCompletion?
 
   @@map("salons")
 }
@@ -275,7 +287,10 @@ model User {
   salonId      String     @map("salon_id") @db.Uuid
   salon        Salon      @relation(fields: [salonId], references: [id], onDelete: Restrict)
   name         String
-  email        String     @unique
+  /// Globally unique legacy login. Null for a phone-owned owner. Exactly one of email or phone is set.
+  email        String?    @unique
+  /// Canonical Iranian mobile (`09` + 9 digits). Globally unique permanent login for a phone-owned owner.
+  phone        String?    @unique
   passwordHash String     @map("password_hash")
   role         UserRole
   status       UserStatus @default(ACTIVE)
@@ -291,6 +306,7 @@ model User {
   updatedVisitIntentions    VisitIntention[] @relation("VisitIntentionUpdatedBy")
   supportConversation       SupportConversation?
   authoredSupportMessages   SupportMessage[] @relation("SupportMessageAuthorUser")
+  phoneOwnerCompletion      PhoneOwnerCompletion?
 
   @@unique([id, salonId])
   @@index([salonId])
@@ -978,4 +994,20 @@ model SignupPhoneVerifyAttempt {
 
   @@index([challengeId, createdAt])
   @@map("signup_phone_verify_attempts")
+}
+
+/// Committed phone-owner signup, so a lost HTTP response can be retried by idempotency key.
+/// Does not store the phone, password, signup proof, or OTP.
+model PhoneOwnerCompletion {
+  id             String   @id @db.Uuid
+  idempotencyKey String   @unique @map("idempotency_key")
+  requestHash    String   @map("request_hash")
+  salonId        String   @unique @map("salon_id") @db.Uuid
+  salon          Salon    @relation(fields: [salonId], references: [id], onDelete: Restrict)
+  userId         String   @unique @map("user_id") @db.Uuid
+  user           User     @relation(fields: [userId, salonId], references: [id, salonId], onDelete: Restrict)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@unique([userId, salonId])
+  @@map("phone_owner_completions")
 }

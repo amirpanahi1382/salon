@@ -5,12 +5,23 @@ import type { AuthenticatedPrincipal } from '@salon/shared';
 import { CurrentUser } from '../infrastructure/auth/current-user.decorator';
 import { Roles } from '../infrastructure/auth/roles.decorator';
 import { RolesGuard } from '../infrastructure/auth/roles.guard';
-import { LoginDto, RegisterSalonOwnerDto, StartPhoneSignupDto, VerifyPhoneSignupDto } from './auth.dto';
+import {
+  CompletePhoneSignupDto,
+  LoginDto,
+  PhoneLoginDto,
+  RegisterSalonOwnerDto,
+  StartPhoneSignupDto,
+  VerifyPhoneSignupDto,
+} from './auth.dto';
+import { CompletePhoneSignupUseCase } from './complete-phone-signup.use-case';
+import { EmailRegistrationGuard } from './email-registration.guard';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { LoginUseCase } from './login.use-case';
+import { PhoneLoginUseCase } from './phone-login.use-case';
 import { PhoneSignupEnabledGuard } from './phone-signup-enabled.guard';
 import { StartPhoneSignupUseCase, VerifyPhoneSignupUseCase } from './phone-signup.use-cases';
 import { RegisterSalonOwnerUseCase } from './register-salon-owner.use-case';
+import { AllowOnboardingSession } from './salon-session-access';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -20,6 +31,8 @@ export class AuthController {
     private readonly login: LoginUseCase,
     private readonly startPhoneSignup: StartPhoneSignupUseCase,
     private readonly verifyPhoneSignup: VerifyPhoneSignupUseCase,
+    private readonly completePhoneSignup: CompletePhoneSignupUseCase,
+    private readonly phoneLogin: PhoneLoginUseCase,
   ) {}
 
   @Post('signup/phone/start')
@@ -54,9 +67,34 @@ export class AuthController {
     });
   }
 
-  @Post('register')
+  @Post('signup/phone/complete')
+  @UseGuards(PhoneSignupEnabledGuard)
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
-  @ApiOperation({ summary: 'Register a salon and owner account' })
+  @ApiOperation({
+    summary:
+      'Consume a signup proof and create one phone-owned salon in AWAITING_AGREEMENT. Does not return a product session. Disabled unless PHONE_SIGNUP_ENABLED.',
+  })
+  completePhoneSignupChallenge(
+    @Body() body: CompletePhoneSignupDto,
+    @Headers('idempotency-key') idempotencyKey: string | string[] | undefined,
+  ) {
+    return this.completePhoneSignup.execute({
+      phone: body.phone,
+      signupProof: body.signupProof,
+      salonName: body.salonName,
+      ownerName: body.ownerName,
+      password: body.password,
+      idempotencyKey,
+    });
+  }
+
+  @Post('register')
+  @UseGuards(EmailRegistrationGuard)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @ApiOperation({
+    summary:
+      'Register a salon and owner by email. Available only when PUBLIC_REGISTRATION_MODE=email.',
+  })
   register(@Body() body: RegisterSalonOwnerDto) {
     return this.registerSalonOwner.execute(body);
   }
@@ -68,9 +106,38 @@ export class AuthController {
     return this.login.execute(body);
   }
 
+  @Post('login/phone')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @ApiOperation({
+    summary:
+      'Authenticate a phone-owned owner. Independent of OTP signup. A salon that is not PRODUCT receives an onboarding session.',
+  })
+  signInWithPhone(@Body() body: PhoneLoginDto) {
+    return this.phoneLogin.execute(body);
+  }
+
+  @Get('account')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('OWNER', 'MANAGER', 'STAFF')
+  @AllowOnboardingSession()
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Current salon access state for this session. Allowed for an onboarding session.',
+  })
+  account(@CurrentUser() user: AuthenticatedPrincipal) {
+    return {
+      userId: user.userId,
+      tenantId: user.tenantId,
+      role: user.role,
+      sessionScope: user.sessionScope ?? 'product',
+      accessState: user.accessState ?? 'PRODUCT',
+    };
+  }
+
   @Get('me')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('OWNER', 'MANAGER', 'STAFF')
+  @AllowOnboardingSession()
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Return the authenticated principal (tenant is server-derived)' })
   me(@CurrentUser() user: AuthenticatedPrincipal) {

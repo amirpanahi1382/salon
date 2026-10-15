@@ -5,6 +5,8 @@ import {
   UnauthenticatedError,
   isUserRole,
   type RequestPrincipal,
+  type SalonAccessState,
+  type SessionScope,
 } from '@salon/shared';
 import { AppConfigService } from '../infrastructure/config/app-config.service';
 import { PrismaService } from '../infrastructure/database/prisma.service';
@@ -45,10 +47,14 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       return { kind: 'platform', adminId: admin.id };
     }
 
+    if (payload.scp !== undefined && payload.scp !== 'onboarding') {
+      throw new UnauthenticatedError('Invalid authentication token');
+    }
     if (!payload.tid || !isUserRole(payload.role ?? '')) {
       throw new UnauthenticatedError('Invalid authentication token');
     }
 
+    const sessionScope: SessionScope = payload.scp === 'onboarding' ? 'onboarding' : 'product';
     const user = await this.prisma.client.user.findFirst({
       where: {
         id: payload.sub,
@@ -56,10 +62,20 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         status: 'ACTIVE',
         salon: { status: 'ACTIVE' },
       },
-      select: { id: true, salonId: true, role: true },
+      select: {
+        id: true,
+        salonId: true,
+        role: true,
+        salon: { select: { accessState: true } },
+      },
     });
 
     if (!user) {
+      throw new UnauthenticatedError('Invalid authentication token');
+    }
+
+    const accessState = user.salon.accessState as SalonAccessState;
+    if (sessionScope === 'product' && accessState !== 'PRODUCT') {
       throw new UnauthenticatedError('Invalid authentication token');
     }
 
@@ -67,6 +83,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       userId: user.id,
       tenantId: user.salonId,
       role: user.role,
+      sessionScope,
+      accessState,
     };
   }
 }

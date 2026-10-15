@@ -738,10 +738,11 @@ describeIfDisposable('phone signup challenge on a disposable database', () => {
     expect(otp.sends).toEqual([phone]);
   });
 
-  it('leaves email registration and login intact', async () => {
+  it('keeps email registration closed in phone-only mode when OTP signup is disabled', async () => {
     const email = `owner-${randomUUID()}@example.test`;
     const password = 'salon-owner-password';
-    const registered = await request(app.getHttpServer())
+    const before = await prisma.client.user.count({ where: { email } });
+    await request(app.getHttpServer())
       .post('/auth/register')
       .send({
         salonName: 'Phone signup neighbor',
@@ -749,14 +750,20 @@ describeIfDisposable('phone signup challenge on a disposable database', () => {
         email,
         password,
       })
-      .expect(201);
-    expect(registered.body.accessToken).toEqual(expect.any(String));
-    expect(registered.body.user.email).toBe(email);
-    const signedIn = await request(app.getHttpServer())
-      .post('/auth/login')
-      .send({ email, password })
-      .expect(201);
-    expect(signedIn.body.user.tenantId).toBe(registered.body.user.tenantId);
+      .expect(404);
+    expect(await prisma.client.user.count({ where: { email } })).toBe(before);
+
+    await request(disabled.getHttpServer())
+      .post('/auth/register')
+      .send({
+        salonName: 'Phone signup neighbor',
+        ownerName: 'Owner',
+        email,
+        password,
+      })
+      .expect(404);
+    expect(await prisma.client.user.count({ where: { email } })).toBe(before);
+    expect(app.get(AppConfigService).values.PUBLIC_REGISTRATION_MODE).toBe('phone');
   });
 
   it('keeps phones, codes, proofs, and the hash secret out of stored rows and audit metadata', async () => {

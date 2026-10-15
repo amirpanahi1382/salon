@@ -11,3 +11,11 @@ export const DEV_SERVICE_CATALOG = STARTER_SERVICE_CATALOG;
 export function isAutomatedTestOwnerEmail(email: string) {
   return email.trim().toLowerCase().endsWith('@example.test');
 }
+
+/** Starter catalog for a new owner. Automated test emails skip it. A phone owner has no email. */
+export function starterServiceNamesForRegistration(email: string | null): readonly string[] {
+  if (email !== null && isAutomatedTestOwnerEmail(email)) {
+    return [];
+  }
+  return STARTER_SERVICE_CATALOG;
+}

@@ -58,3 +58,49 @@ export class LoginDto {
   @MaxLength(128)
   password!: string;
 }
+
+export class CompletePhoneSignupDto {
+  @ApiProperty()
+  @IsString()
+  @MinLength(10)
+  @MaxLength(24)
+  phone!: string;
+
+  @ApiProperty({ description: 'One-time signup proof from phone verification. Not a session.' })
+  @IsString()
+  @MinLength(20)
+  @MaxLength(128)
+  signupProof!: string;
+
+  @ApiProperty()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(120)
+  salonName!: string;
+
+  @ApiProperty()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(120)
+  ownerName!: string;
+
+  @ApiProperty()
+  @IsString()
+  @MinLength(8)
+  @MaxLength(128)
+  password!: string;
+}
+
+export class PhoneLoginDto {
+  @ApiProperty()
+  @IsString()
+  @MinLength(10)
+  @MaxLength(24)
+  phone!: string;
+
+  @ApiProperty()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(128)
+  password!: string;
+}

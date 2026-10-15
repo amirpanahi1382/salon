@@ -14,7 +14,7 @@ export const SALON_USER_SELECT = {
 export function toSalonUserResponse(user: {
   id: string;
   name: string;
-  email: string;
+  email: string | null;
   role: UserRole;
   status: 'ACTIVE' | 'DISABLED';
   createdAt: Date;

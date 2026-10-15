@@ -168,7 +168,7 @@ export class StartPhoneSignupUseCase {
   > {
     const phoneHash = signupPhoneHash(input.secret, input.phone);
     const requestHash = signupStartHash(input.secret, input.phone);
-    await lockPhone(tx, phoneHash);
+    await lockSignupPhone(tx, phoneHash);
     await closeExpiredProofs(tx, phoneHash);
     await expireOpenChallenges(tx, phoneHash);
 
@@ -293,7 +293,7 @@ export class StartPhoneSignupUseCase {
       if (!identity) {
         return { kind: 'unconfirmed' as const };
       }
-      await lockPhone(tx, identity.phoneHash);
+      await lockSignupPhone(tx, identity.phoneHash);
       await expireOpenChallenges(tx, identity.phoneHash);
       const cooldown = this.config.values.PHONE_SIGNUP_RESEND_COOLDOWN_SECONDS;
       const sent = await tx.$queryRaw<
@@ -455,7 +455,7 @@ export class VerifyPhoneSignupUseCase {
   > {
     const phoneHash = signupPhoneHash(input.secret, input.phone);
     const requestHash = signupVerifyHash(input.secret, input.phone, input.otpCode);
-    await lockPhone(tx, phoneHash);
+    await lockSignupPhone(tx, phoneHash);
     await closeExpiredProofs(tx, phoneHash);
     await expireOpenChallenges(tx, phoneHash);
 
@@ -532,7 +532,7 @@ export class VerifyPhoneSignupUseCase {
       });
       return false;
     }
-    await lockPhone(tx, identity.phoneHash);
+    await lockSignupPhone(tx, identity.phoneHash);
     const updated = await tx.$queryRaw<Array<{ id: string }>>`
       UPDATE signup_phone_challenges
       SET status = 'VERIFIED',
@@ -601,7 +601,7 @@ export class ConsumeSignupProofUseCase {
     proofHash: string,
     phoneHash: string,
   ): Promise<{ challengeId: string }> {
-    await lockPhone(tx, phoneHash);
+    await lockSignupPhone(tx, phoneHash);
     const rows = await tx.$queryRaw<Array<{ id: string }>>`
       UPDATE signup_phone_challenges
       SET proof_consumed_at = clock_timestamp(),
@@ -697,7 +697,7 @@ async function replayStart(
   };
 }
 
-async function lockPhone(tx: Prisma.TransactionClient, phoneHash: string): Promise<void> {
+export async function lockSignupPhone(tx: Prisma.TransactionClient, phoneHash: string): Promise<void> {
   // Transaction-scoped. now()/CURRENT_TIMESTAMP stay at transaction start and
   // would still show the pre-wait time after this returns. Deadline predicates
   // below use clock_timestamp() in the write that accepts or rejects the row.

@@ -1,4 +1,8 @@
-import { STARTER_SERVICE_CATALOG, isAutomatedTestOwnerEmail } from './dev-catalog';
+import {
+  STARTER_SERVICE_CATALOG,
+  isAutomatedTestOwnerEmail,
+  starterServiceNamesForRegistration,
+} from './dev-catalog';
 
 describe('starter service catalog', () => {
   it('names Hair Service and Nail Service as ordinary starter rows', () => {
@@ -8,5 +12,10 @@ describe('starter service catalog', () => {
   it('skips automated @example.test owners', () => {
     expect(isAutomatedTestOwnerEmail('owner-1@example.test')).toBe(true);
     expect(isAutomatedTestOwnerEmail('mahsapanah@gmail.com')).toBe(false);
+    expect(starterServiceNamesForRegistration('owner-1@example.test')).toEqual([]);
+    expect(starterServiceNamesForRegistration('owner@salon.example')).toEqual([
+      ...STARTER_SERVICE_CATALOG,
+    ]);
+    expect(starterServiceNamesForRegistration(null)).toEqual([...STARTER_SERVICE_CATALOG]);
   });
 });
