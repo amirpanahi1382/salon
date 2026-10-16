@@ -135,23 +135,65 @@ class _SignedInAuth extends AuthController {
 void main() {
   test('routes phone onboarding without sending a product salon through it', () {
     expect(
-      signedInSalonRedirect(accessState: 'AWAITING_AGREEMENT', location: '/'),
+      signedInSalonRedirect(
+        accessState: 'AWAITING_AGREEMENT',
+        sessionScope: 'onboarding',
+        location: '/',
+      ),
       '/agreement',
     );
     expect(
-      signedInSalonRedirect(accessState: 'AWAITING_AGREEMENT', location: '/agreement'),
+      signedInSalonRedirect(
+        accessState: 'AWAITING_AGREEMENT',
+        sessionScope: 'onboarding',
+        location: '/agreement',
+      ),
       isNull,
     );
     expect(
-      signedInSalonRedirect(accessState: 'AWAITING_PAYMENT', location: '/agreement'),
-      '/agreement/recorded',
+      signedInSalonRedirect(
+        accessState: 'AWAITING_PAYMENT',
+        sessionScope: 'onboarding',
+        location: '/customers',
+      ),
+      '/payment',
     );
     expect(
-      signedInSalonRedirect(accessState: 'AWAITING_PAYMENT', location: '/agreement/recorded'),
+      signedInSalonRedirect(
+        accessState: 'AWAITING_PAYMENT',
+        sessionScope: 'onboarding',
+        location: '/payment',
+      ),
       isNull,
     );
-    expect(signedInSalonRedirect(accessState: 'PRODUCT', location: '/'), isNull);
-    expect(signedInSalonRedirect(accessState: 'PRODUCT', location: '/agreement'), '/');
+    expect(
+      signedInSalonRedirect(
+        accessState: 'PRODUCT',
+        sessionScope: 'onboarding',
+        location: '/',
+      ),
+      '/payment',
+    );
+    expect(
+      signedInSalonRedirect(accessState: 'PRODUCT', sessionScope: 'product', location: '/'),
+      isNull,
+    );
+    expect(
+      signedInSalonRedirect(
+        accessState: 'PRODUCT',
+        sessionScope: 'product',
+        location: '/agreement',
+      ),
+      '/',
+    );
+    expect(
+      shouldExchangeProductSession(
+        role: 'OWNER',
+        accessState: 'PRODUCT',
+        sessionScope: 'onboarding',
+      ),
+      isTrue,
+    );
   });
 
   testWidgets('shows the server contract, an unchecked box, and only four fields', (tester) async {

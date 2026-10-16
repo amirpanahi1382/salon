@@ -2,12 +2,14 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../features/admin/admin_activation_receipts_screen.dart';
 import '../../features/admin/admin_message_queue_screen.dart';
 import '../../features/admin/admin_message_stops_screen.dart';
 import '../../features/admin/admin_support_screen.dart';
 import '../../features/profile/support_conversation_screen.dart';
 import '../../features/admin/admin_vip_screen.dart';
 import '../../features/admin/admin_vip_outreach_screen.dart';
+import '../../features/activation/payment_screen.dart';
 import '../../features/agreement/agreement_screen.dart';
 import '../../features/auth/auth_screens.dart';
 import '../../features/customers/customer_edit_loader.dart';
@@ -24,6 +26,9 @@ import '../../features/shell/app_shell.dart';
 import '../../features/visits/visits_screen.dart';
 import '../../shared/models/models.dart';
 import '../state/providers.dart';
+import 'salon_access.dart';
+
+export 'salon_access.dart';
 
 class _AuthRefresh extends ChangeNotifier {
   void ping() => notifyListeners();
@@ -68,6 +73,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       }
       final accessRedirect = signedInSalonRedirect(
         accessState: auth.user?.accessState ?? 'PRODUCT',
+        sessionScope: auth.user?.sessionScope ?? 'product',
         location: state.matchedLocation,
       );
       if (accessRedirect != null) {
@@ -111,6 +117,16 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const AdminVipScreen(),
       ),
       GoRoute(
+        path: '/admin/activation-receipts',
+        builder: (context, state) => const AdminActivationReceiptsScreen(),
+      ),
+      GoRoute(
+        path: '/admin/activation-receipts/:id',
+        builder: (context, state) => AdminActivationReceiptScreen(
+          receiptId: state.pathParameters['id']!,
+        ),
+      ),
+      GoRoute(
         path: '/admin/support',
         builder: (context, state) => const AdminSupportListScreen(),
       ),
@@ -147,8 +163,8 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const AgreementScreen(),
       ),
       GoRoute(
-        path: '/agreement/recorded',
-        builder: (context, state) => const AgreementRecordedScreen(),
+        path: '/payment',
+        builder: (context, state) => const PaymentScreen(),
       ),
       ShellRoute(
         builder: (context, state, child) => AppShell(child: child),
@@ -293,22 +309,3 @@ final routerProvider = Provider<GoRouter>((ref) {
     ],
   );
 });
-
-/// Product salons stay on the product shell. Onboarding states stay on their own screens.
-String? signedInSalonRedirect({
-  required String accessState,
-  required String location,
-}) {
-  const agreement = '/agreement';
-  const recorded = '/agreement/recorded';
-  if (accessState == 'AWAITING_AGREEMENT') {
-    return location == agreement ? null : agreement;
-  }
-  if (accessState == 'AWAITING_PAYMENT') {
-    return location == recorded ? null : recorded;
-  }
-  if (location == agreement || location == recorded) {
-    return '/';
-  }
-  return null;
-}

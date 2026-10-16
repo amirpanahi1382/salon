@@ -113,11 +113,13 @@ class ApiClient {
     String path,
     FormData data, {
     Map<String, String>? headers,
+    void Function(int sent, int total)? onSendProgress,
   }) {
     return _send(
       () => _dio.post<dynamic>(
         path,
         data: data,
+        onSendProgress: onSendProgress,
         options: Options(
           sendTimeout: const Duration(seconds: 90),
           receiveTimeout: const Duration(seconds: 90),

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Headers, HttpCode, Post, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import type { AuthenticatedPrincipal } from '@salon/shared';
@@ -14,6 +14,7 @@ import {
   VerifyPhoneSignupDto,
 } from './auth.dto';
 import { CompletePhoneSignupUseCase } from './complete-phone-signup.use-case';
+import { ExchangeProductSessionUseCase } from './exchange-product-session.use-case';
 import { EmailRegistrationGuard } from './email-registration.guard';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { LoginUseCase } from './login.use-case';
@@ -33,6 +34,7 @@ export class AuthController {
     private readonly verifyPhoneSignup: VerifyPhoneSignupUseCase,
     private readonly completePhoneSignup: CompletePhoneSignupUseCase,
     private readonly phoneLogin: PhoneLoginUseCase,
+    private readonly exchangeProductSession: ExchangeProductSessionUseCase,
   ) {}
 
   @Post('signup/phone/start')
@@ -132,6 +134,21 @@ export class AuthController {
       sessionScope: user.sessionScope ?? 'product',
       accessState: user.accessState ?? 'PRODUCT',
     };
+  }
+
+  @Post('session/product')
+  @HttpCode(201)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('OWNER')
+  @AllowOnboardingSession()
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary:
+      'Issue a product session after the salon access state is PRODUCT. The onboarding token is not promoted.',
+  })
+  exchangeSession(@CurrentUser() user: AuthenticatedPrincipal) {
+    return this.exchangeProductSession.execute(user);
   }
 
   @Get('me')

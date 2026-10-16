@@ -30,6 +30,7 @@ import { VipModule } from './vip/vip.module';
 import { SupportModule } from './support/support.module';
 import { VisitIntentionModule } from './visit-intention/visit-intention.module';
 import { AgreementModule } from './agreement/agreement.module';
+import { ActivationModule } from './activation/activation.module';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { AppRequest } from './infrastructure/http/request-context';
 
@@ -113,6 +114,7 @@ import type { AppRequest } from './infrastructure/http/request-context';
     SupportModule,
     VisitIntentionModule,
     AgreementModule,
+    ActivationModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: HttpExceptionFilter },

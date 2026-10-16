@@ -43,7 +43,7 @@ Typical splits (see current-state for the full matrix):
 
 `GET /auth/owner` is an OWNER-only probe, not a product feature. It is not available to an onboarding session.
 
-`JwtAuthGuard` is the product-access boundary. An onboarding session (`scp=onboarding`) is forbidden on every JWT route except those marked `AllowOnboardingSession`. Today those are `GET /auth/account`, `GET /auth/me`, and the agreement read, presentation, acceptance, receipt, and download routes. Product modules do not add a second check. The salon access state is loaded on every request. `AWAITING_AGREEMENT` and `AWAITING_PAYMENT` both stay onboarding. VIP entitlement is not that state. `SUSPENDED` is not the onboarding state. A product token is rejected when access is no longer `PRODUCT`. An onboarding token is not promoted when access changes.
+`JwtAuthGuard` is the product-access boundary. An onboarding session (`scp=onboarding`) is forbidden on every JWT route except those marked `AllowOnboardingSession`. Today those are `GET /auth/account`, `GET /auth/me`, `POST /auth/session/product`, the agreement read, presentation, acceptance, receipt, and download routes, and the activation status, upload, preview, and submit routes. Product modules do not add a second check. The salon access state is loaded on every request. `AWAITING_AGREEMENT` and `AWAITING_PAYMENT` both stay onboarding. VIP entitlement is not that state. `SUSPENDED` is not the onboarding state. A product token is rejected when access is no longer `PRODUCT`. An onboarding token is not rewritten when access becomes `PRODUCT`. `POST /auth/session/product` issues a separate product token only after the database access state is already `PRODUCT`.
 
 ---
 
@@ -54,6 +54,10 @@ Typical splits (see current-state for the full matrix):
 Database triggers reject UPDATE and DELETE of versions, presentations, and acceptances. A table owner can disable those triggers, and the tables are not WORM storage. MinIO is not used for this evidence and is not an independent timestamp or retention lock. The export says so. There is no certified signature and no claim of court admissibility.
 
 Launch gates that this slice does not close: Article 1 names party one only as the owner of the application; the text is not a lawyer-certified instrument; the 500 counted-send rule is not an implemented counter; recipient-consent evidence is not implemented.
+
+## Activation receipt evidence
+
+`MANUAL_TRANSFER_ENABLED` closes new card instructions, uploads, submissions, and approval or rejection. It does not close an authenticated owner’s payment status, including `PAYMENT_UNAVAILABLE` when no receipt exists and `UNDER_REVIEW` after one was submitted. It does not close a platform admin’s pending list, review detail, or image read. Image reads still check the caller, the tenant embedded in the object key, and the stored digest. The admin view audit is `ACTIVATION_RECEIPT_VIEWED` and does not claim the transfer was verified. Approval requires the request body to repeat «واریز را در حساب بانکی بررسی و با این فیش تطبیق داده‌ام». The database stores that sentence with the admin id, server `decided_at`, receipt id, and digest. A boolean or other wording cannot activate the salon. This is a manual attestation by that platform admin, not a result from a bank or payment provider.
 
 ## Tenant isolation
 
@@ -78,7 +82,7 @@ Consent to be contacted is **not implemented** and is not claimed. A Platform Ad
 
 ## Data in logs and audit
 
-Do not log: passwords, JWT, Authorization, bodies, phone numbers, national IDs, agreement document bodies, message text, MinIO/DB secrets, or agreement evidence keys.
+Do not log: passwords, JWT, Authorization, bodies, phone numbers, national IDs, agreement document bodies, receipt image bytes, card numbers, message text, MinIO/DB secrets, or agreement evidence keys.
 
 Unexpected exception messages, stacks, causes, connector text, and provider/storage responses are not safe diagnostic fields. API and worker error logs retain request/event IDs, operation, outcome, status, and stable codes/categories instead. Pino field-name redaction remains defense in depth; it cannot sanitize an arbitrary string. Known 4xx client contracts remain unchanged. Unexpected 5xx responses use fixed messages, including `INFRASTRUCTURE_ERROR` responses.
 

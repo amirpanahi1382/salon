@@ -27,6 +27,7 @@ Platform-owned: `platform_admins`, `vip_target_lists`, `vip_target_contacts` (li
 | `agreement_versions` | Published contract | Immutable. Unique `version_key`. Startup does not insert one |
 | `agreement_presentations` | Server rendering | Immutable. Declared fields and rendered text are AES-256-GCM ciphertext |
 | `agreement_acceptances` | Explicit acceptance | Immutable. One presentation. Encrypted snapshot. `checkbox_confirmed` must be true |
+| `activation_receipts` | Transfer evidence | Private object `activation-receipts/{salonId}/{id}`. Phases `UPLOADING`, `FAILED`, `STORED`, `SUPERSEDED`, `UNDER_REVIEW`, `APPROVED`, `REJECTED`. One stored, one uploading, and one under-review row per salon. `APPROVED` requires `bank_attestation_wording` to be the admin’s exact manual sentence. Evidence columns and a decided row do not change. Not a ledger payment |
 | `users` | Operator | Unique `email`; `role`, `status`; unique `(id, salon_id)` supports composite creator FKs |
 | `platform_admins` | Platform operator | No tenant |
 | `customers` | Business fact | Unique `(salon_id, phone_number)` |

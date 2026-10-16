@@ -182,6 +182,7 @@ model Salon {
   phoneOwnerCompletion PhoneOwnerCompletion?
   agreementPresentations AgreementPresentation[]
   agreementAcceptances AgreementAcceptance[]
+  activationReceipts ActivationReceipt[]
 
   @@map("salons")
 }
@@ -314,6 +315,7 @@ model User {
   phoneOwnerCompletion      PhoneOwnerCompletion?
   agreementPresentations    AgreementPresentation[]
   agreementAcceptances      AgreementAcceptance[]
+  activationReceipts        ActivationReceipt[]
 
   @@unique([id, salonId])
   @@index([salonId])
@@ -374,6 +376,7 @@ model PlatformAdmin {
   registeredMessageStops   PlatformMessageStop[] @relation("PlatformMessageStopRegisteredBy")
   liftedMessageStops       PlatformMessageStop[] @relation("PlatformMessageStopLiftedBy")
   messageStopEvents        PlatformMessageStopEvent[]
+  decidedActivationReceipts ActivationReceipt[]
 
   @@map("platform_admins")
 }
@@ -1100,7 +1103,57 @@ model AgreementAcceptance {
   snapshotCiphertext     Bytes    @map("snapshot_ciphertext")
   snapshotNonce          Bytes    @map("snapshot_nonce")
   createdAt              DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  activationReceipts     ActivationReceipt[]
 
   @@index([salonId, acceptedAt])
   @@map("agreement_acceptances")
+}
+
+/// Manual card-transfer evidence. A photograph is not confirmed payment.
+/// UPLOADING and FAILED are not reviewable. A STORED row stays STORED until a
+/// verified replacement commits SUPERSEDED and the new STORED row together.
+/// UNDER_REVIEW, APPROVED, REJECTED, and SUPERSEDED are retained.
+/// APPROVED stores the platform admin's manual bank-attestation sentence.
+enum ActivationReceiptPhase {
+  UPLOADING
+  FAILED
+  STORED
+  SUPERSEDED
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+}
+
+model ActivationReceipt {
+  id                       String                  @id @db.Uuid
+  salonId                  String                  @map("salon_id") @db.Uuid
+  salon                    Salon                   @relation(fields: [salonId], references: [id], onDelete: Restrict)
+  userId                   String                  @map("user_id") @db.Uuid
+  user                     User                    @relation(fields: [userId, salonId], references: [id, salonId], onDelete: Restrict)
+  agreementAcceptanceId    String                  @map("agreement_acceptance_id") @db.Uuid
+  agreementAcceptance      AgreementAcceptance     @relation(fields: [agreementAcceptanceId], references: [id], onDelete: Restrict)
+  objectKey                String                  @map("object_key")
+  contentType              String                  @map("content_type")
+  byteSize                 Int                     @map("byte_size")
+  sha256                   String                  @db.Char(64)
+  phase                    ActivationReceiptPhase
+  storedAt                 DateTime?               @map("stored_at") @db.Timestamptz(3)
+  submittedAt              DateTime?               @map("submitted_at") @db.Timestamptz(3)
+  submissionIdempotencyKey String?                 @map("submission_idempotency_key")
+  amountIrr                Decimal?                @map("amount_irr") @db.Decimal(19, 2)
+  instructionSnapshot      Json?                   @map("instruction_snapshot")
+  instructionDigest        String?                 @map("instruction_digest") @db.Char(64)
+  decidedAt                DateTime?               @map("decided_at") @db.Timestamptz(3)
+  decidedByAdminId         String?                 @map("decided_by_admin_id") @db.Uuid
+  decidedByAdmin           PlatformAdmin?          @relation(fields: [decidedByAdminId], references: [id], onDelete: Restrict)
+  decisionIdempotencyKey   String?                 @map("decision_idempotency_key")
+  rejectionReason          String?                 @map("rejection_reason")
+  /// Exact manual attestation. Required for APPROVED and empty for every other phase.
+  bankAttestationWording   String?                 @map("bank_attestation_wording") @db.Text
+  createdAt                DateTime                @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt                DateTime                @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([salonId, createdAt])
+  @@index([phase, submittedAt])
+  @@map("activation_receipts")
 }

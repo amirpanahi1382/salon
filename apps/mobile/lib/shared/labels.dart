@@ -115,6 +115,7 @@ class AppStrings {
       'برای این مشتری امروز قبلاً پیام ثبت شده است.';
   static const globalMessageStop = 'ارسال پیام به این شماره مجاز نیست';
   static const platformAdminLogin = 'ورود مدیر پلتفرم';
+  static const adminActivationReceipts = 'فیش واریز';
   static const adminQueueTitle = 'ارسال پیام عادی';
   static const adminVipMessagingTitle = 'ارسال پیام VIP';
   static const adminMessagingNav = 'پیام‌ها';

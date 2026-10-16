@@ -104,6 +104,12 @@ const envSchema = z.object({
   }, z.string().max(8000).optional()),
   AGREEMENT_PRESENTATION_TTL_SECONDS: z.coerce.number().int().min(60).max(86_400).default(1800),
   /**
+   * Manual card transfer and receipt review. Off until an operator confirms the
+   * destination and enables it. Does not enable signup, agreement acceptance,
+   * an online gateway, or product access by itself.
+   */
+  MANUAL_TRANSFER_ENABLED: booleanFromString.default(false),
+  /**
    * Trusted reverse proxies that append X-Forwarded-For.
    * Zero ignores that header. There is no reverse proxy in the compose stack,
    * so the default stays zero and the API records the socket address.

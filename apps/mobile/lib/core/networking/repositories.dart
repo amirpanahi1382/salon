@@ -88,6 +88,39 @@ class AuthRepository {
     return session;
   }
 
+  Future<AuthSession> exchangeProductSession() async {
+    final stored = await sessionStore.read();
+    final data = await api.post('/auth/session/product');
+    final session = AuthSession.fromAuthJson(asJsonMap(data));
+    await _persist(
+      AuthSession(
+        accessToken: session.accessToken,
+        user: AuthUser(
+          id: session.user.id,
+          tenantId: session.user.tenantId,
+          role: session.user.role,
+          name: session.user.name ?? stored?.name,
+          email: session.user.email ?? stored?.email,
+          accessState: session.user.accessState,
+          sessionScope: session.user.sessionScope,
+        ),
+      ),
+    );
+    final persisted = await sessionStore.read();
+    return AuthSession(
+      accessToken: persisted?.accessToken ?? session.accessToken,
+      user: AuthUser(
+        id: session.user.id,
+        tenantId: session.user.tenantId,
+        role: session.user.role,
+        name: session.user.name ?? stored?.name,
+        email: session.user.email ?? stored?.email,
+        accessState: session.user.accessState,
+        sessionScope: session.user.sessionScope,
+      ),
+    );
+  }
+
   Future<AuthUser> me() async {
     final stored = await sessionStore.read();
     if (stored?.role == 'PLATFORM_ADMIN') {

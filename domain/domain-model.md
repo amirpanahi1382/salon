@@ -126,6 +126,10 @@ Return evidence is selected across the full tenant/customer history before a rep
 
 Quota: 500 contacts per salon per rolling 7 days (temporary product limit), excluding `CANCELLED`.
 
+### ActivationReceipt
+
+Operational evidence that a phone-owned salon uploaded a transfer photograph after accepting `CONTRACT_V1`. The photograph becomes `STORED` only after a full JPEG, PNG, or WebP decode; the persisted bytes and SHA-256 stay the original upload. It is not a `Transaction`, not confirmed payment, and not product access. A replacement stays `UPLOADING` until its object is stored and verified; only then does one database transaction mark the previous `STORED` row `SUPERSEDED` and the new row `STORED`. The earlier object is kept. The salon stays `AWAITING_PAYMENT` until a platform admin approves the current `UNDER_REVIEW` receipt by attesting the exact sentence «واریز را در حساب بانکی بررسی و با این فیش تطبیق داده‌ام». That attestation is the admin’s manual comparison with the bank account. Opening the image does not record it, and a client boolean does not. Rejection keeps the account open and allows another upload while manual transfer is enabled. Earlier receipts and the accepted agreement stay as history.
+
 ### OutboxEvent / AuditLog / IdempotencyRecord
 
 Infrastructure. Outbox is at-least-once transport. Most event types have **no side-effect consumer** (no-op, then PROCESSED). Worker executes Bale for `MessageDeliveryActivated` / legacy `MessageSendRequested`. Audit must not store message bodies or secrets.

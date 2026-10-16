@@ -13,6 +13,7 @@ import { PlatformAdminLoginUseCase } from './platform-admin-login.use-case';
 import { RegisterSalonOwnerUseCase } from './register-salon-owner.use-case';
 import { PlatformAdminGuard } from '../infrastructure/auth/platform-admin.guard';
 import { CompletePhoneSignupUseCase } from './complete-phone-signup.use-case';
+import { ExchangeProductSessionUseCase } from './exchange-product-session.use-case';
 import { EmailRegistrationGuard } from './email-registration.guard';
 import { OtpyProvider } from './otp-provider';
 import { PhoneLoginUseCase } from './phone-login.use-case';
@@ -53,6 +54,7 @@ import {
     ConsumeSignupProofUseCase,
     CompletePhoneSignupUseCase,
     PhoneLoginUseCase,
+    ExchangeProductSessionUseCase,
   ],
   exports: [JwtAuthGuard, RolesGuard, PlatformAdminGuard],
 })

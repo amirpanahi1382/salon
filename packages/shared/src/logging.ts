@@ -45,4 +45,12 @@ export const LOG_REDACT_PATHS = [
   'api-access-key',
   '*.api-access-key',
   'req.headers["api-access-key"]',
+  'cardNumber',
+  '*.cardNumber',
+  'cardNumberCopy',
+  '*.cardNumberCopy',
+  'instructionSnapshot',
+  '*.instructionSnapshot',
+  'rejectionReason',
+  '*.rejectionReason',
 ] as const;

@@ -4,7 +4,9 @@ import '../config/api_config.dart';
 import '../networking/api_client.dart';
 import '../networking/repositories.dart';
 import '../storage/session_store.dart';
+import '../../features/activation/activation_repository.dart';
 import '../../shared/models/models.dart';
+import '../routing/salon_access.dart';
 import '../../shared/platform/excel_file_saver.dart';
 
 final apiConfigProvider = Provider<ApiConfig>(
@@ -93,6 +95,10 @@ final transactionRepositoryProvider = Provider<TransactionRepository>((ref) {
   return TransactionRepository(ref.watch(apiClientProvider));
 });
 
+final activationRepositoryProvider = Provider<ActivationRepository>((ref) {
+  return ActivationRepository(ref.watch(apiClientProvider));
+});
+
 enum AuthStatus { unknown, signedOut, signedIn }
 
 class AuthState {
@@ -117,18 +123,28 @@ class AuthController extends Notifier<AuthState> {
     }
     try {
       final me = await ref.read(authRepositoryProvider).me();
-      state = AuthState(
-        status: AuthStatus.signedIn,
-        user: AuthUser(
-          id: me.id,
-          tenantId: me.tenantId,
-          role: me.role,
-          name: stored.name,
-          email: stored.email,
-          accessState: me.accessState,
-          sessionScope: me.sessionScope,
-        ),
+      final restored = AuthUser(
+        id: me.id,
+        tenantId: me.tenantId,
+        role: me.role,
+        name: stored.name,
+        email: stored.email,
+        accessState: me.accessState,
+        sessionScope: me.sessionScope,
       );
+      if (shouldExchangeProductSession(
+        role: restored.role,
+        accessState: restored.accessState,
+        sessionScope: restored.sessionScope,
+      )) {
+        try {
+          await adoptProductSession();
+        } catch (_) {
+          state = AuthState(status: AuthStatus.signedIn, user: restored);
+        }
+        return;
+      }
+      state = AuthState(status: AuthStatus.signedIn, user: restored);
     } catch (_) {
       await ref.read(authRepositoryProvider).logout();
       state = const AuthState(status: AuthStatus.signedOut);
@@ -164,6 +180,23 @@ class AuthController extends Notifier<AuthState> {
         email: user.email,
         accessState: accessState,
         sessionScope: user.sessionScope,
+      ),
+    );
+  }
+
+  Future<void> adoptProductSession() async {
+    final current = state.user;
+    final session = await ref.read(authRepositoryProvider).exchangeProductSession();
+    state = AuthState(
+      status: AuthStatus.signedIn,
+      user: AuthUser(
+        id: session.user.id,
+        tenantId: session.user.tenantId,
+        role: session.user.role,
+        name: session.user.name ?? current?.name,
+        email: session.user.email ?? current?.email,
+        accessState: session.user.accessState,
+        sessionScope: session.user.sessionScope,
       ),
     );
   }

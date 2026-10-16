@@ -32,6 +32,7 @@ describe('loadConfig', () => {
     expect(config.PHONE_SIGNUP_MAX_TTL_SECONDS).toBe(180);
     expect(config.PHONE_SIGNUP_PROOF_TTL_SECONDS).toBe(600);
     expect(config.AGREEMENT_ACCEPTANCE_ENABLED).toBe(false);
+    expect(config.MANUAL_TRANSFER_ENABLED).toBe(false);
     expect(config.AGREEMENT_EVIDENCE_KEY).toBeUndefined();
     expect(config.AGREEMENT_PRESENTATION_TTL_SECONDS).toBe(1800);
     expect(config.TRUSTED_PROXY_HOPS).toBe(0);
