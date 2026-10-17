@@ -14,6 +14,7 @@ describe('loadConfig', () => {
   it('loads required values and defaults', () => {
     const config = loadConfig(valid);
     expect(config.API_PORT).toBe(3000);
+    expect(config.API_BIND_HOST).toBeUndefined();
     expect(config.OUTBOX_BATCH_SIZE).toBe(10);
     expect(config.OUTBOX_PROCESSED_RETENTION_DAYS).toBe(14);
     expect(config.IDEMPOTENCY_RETENTION_DAYS).toBe(7);
@@ -41,6 +42,14 @@ describe('loadConfig', () => {
     expect(config.VIP_UPLOAD_LEASE_MS).toBe(30_000);
     expect(config.VIP_UPLOAD_RECOVERY_INTERVAL_MS).toBe(30_000);
     expect(config.VIP_UPLOAD_CLEANUP_SETTLE_MS).toBe(3_600_000);
+  });
+
+  it('accepts an explicit loopback bind and rejects other addresses', () => {
+    expect(loadConfig({ ...valid, API_BIND_HOST: '' }).API_BIND_HOST).toBeUndefined();
+    expect(loadConfig({ ...valid, API_BIND_HOST: '127.0.0.1' }).API_BIND_HOST).toBe('127.0.0.1');
+    for (const host of ['0.0.0.0', 'localhost', '::1', '127.0.0.1:3000', ' 127.0.0.1']) {
+      expect(() => loadConfig({ ...valid, API_BIND_HOST: host })).toThrow(/API_BIND_HOST/);
+    }
   });
 
   it('fails fast when JWT_SECRET is too short', () => {

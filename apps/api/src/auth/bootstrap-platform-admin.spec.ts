@@ -135,6 +135,15 @@ describe('API startup leaves existing platform admin credentials unchanged', () 
     expect(admin.create).not.toHaveBeenCalled();
   });
 
+  it('listens on the port alone unless a loopback host is supplied', async () => {
+    const listen = jest.fn(async () => undefined);
+    await listenApi(listen, 3010);
+    expect(listen.mock.calls).toEqual([[3010]]);
+    listen.mockClear();
+    await listenApi(listen, 3011, '127.0.0.1');
+    expect(listen.mock.calls).toEqual([[3011, '127.0.0.1']]);
+  });
+
   it('does not rotate an existing admin when the listen port is already in use', async () => {
     const { admin, useCase } = startup();
     await useCase.onModuleInit();

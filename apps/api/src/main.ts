@@ -39,7 +39,12 @@ async function bootstrap(): Promise<void> {
 
   // Process environment wins over env files, so an inherited API_PORT is the bind port.
   // listenApi performs no credential write before or after a failed bind.
-  await listenApi((port) => app.listen(port), config.API_PORT);
+  // API_PORT does not choose the address. An unset API_BIND_HOST keeps listen(port).
+  await listenApi(
+    (port, host) => (host === undefined ? app.listen(port) : app.listen(port, host)),
+    config.API_PORT,
+    config.API_BIND_HOST,
+  );
   const server = app.getHttpServer() as {
     timeout?: number;
     headersTimeout?: number;
@@ -49,7 +54,12 @@ async function bootstrap(): Promise<void> {
   server.timeout = 120_000;
   server.headersTimeout = 125_000;
   server.keepAliveTimeout = 5_000;
-  Logger.log(`API listening on port ${config.API_PORT}`, 'Bootstrap');
+  Logger.log(
+    config.API_BIND_HOST === undefined
+      ? `API listening on port ${config.API_PORT}`
+      : `API listening on ${config.API_BIND_HOST}:${config.API_PORT}`,
+    'Bootstrap',
+  );
 }
 
 bootstrap().catch(() => {

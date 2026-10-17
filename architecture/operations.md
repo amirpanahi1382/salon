@@ -101,6 +101,10 @@ PostgreSQL and object storage are not one transaction. A replacement does not ma
 
 Backup of `salon` does not include these objects. Restoring PostgreSQL without the bucket keeps the receipt rows and blocks a new approval when the bytes or digest do not match. Restoring the bucket without the rows does not create a review. Operators must back up the private bucket prefix separately and must not put a public read policy on it. Confirm the card number, cardholder, and accepted amount before `MANUAL_TRANSFER_ENABLED=true`. Enabling the flag is not authorization to request live payments.
 
+## API bind
+
+`API_PORT` chooses the port only. `API_BIND_HOST` is optional and defaults to unset. Unset keeps `listen(port)`, which is the existing deployment behavior. The only accepted value is `127.0.0.1`; any other value stops startup before the process accepts connections. Docker Compose does not set this value.
+
 ## Timeouts
 
 - Outbound HTTP helper `fetchWithTimeout` uses `HTTP_TIMEOUT_MS` (default 5s). No automatic retries.
