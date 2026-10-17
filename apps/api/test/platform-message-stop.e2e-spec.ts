@@ -9,6 +9,7 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/infrastructure/database/prisma.service';
 import { HttpExceptionFilter } from '../src/infrastructure/http/http-exception.filter';
+import { syntheticMobile } from './support/phone-account';
 
 const expectedName = process.env.MESSAGE_STOP_E2E_DATABASE_NAME ?? '';
 const expectedPort = process.env.MESSAGE_STOP_E2E_HOST_PORT ?? '';
@@ -92,19 +93,21 @@ describeStop('platform message stop (e2e)', () => {
     await app.init();
     prisma = app.get(PrismaService);
     const adminEmail = `stop-admin-${Date.now()}@example.test`;
+    const adminPhone = syntheticMobile();
     adminId = randomUUID();
     await prisma.client.platformAdmin.create({
       data: {
         id: adminId,
         email: adminEmail,
+        phone: adminPhone,
         name: 'Stop Ops',
         passwordHash: await argon2.hash(adminPassword, { type: argon2.argon2id }),
         updatedAt: new Date(),
       },
     });
     const login = await request(app.getHttpServer())
-      .post('/admin/auth/login')
-      .send({ email: adminEmail, password: adminPassword })
+      .post('/auth/login/phone')
+      .send({ phone: adminPhone, password: adminPassword })
       .expect(201);
     adminToken = login.body.accessToken as string;
   });
@@ -125,6 +128,7 @@ describeStop('platform message stop (e2e)', () => {
         salonId,
         name: label,
         email,
+        phone: syntheticMobile(),
         passwordHash: await argon2.hash(password, { type: argon2.argon2id }),
         role: 'OWNER',
         updatedAt: now,

@@ -7,6 +7,7 @@ import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/infrastructure/database/prisma.service';
 import { HttpExceptionFilter } from '../src/infrastructure/http/http-exception.filter';
 import { listPage } from './list-page';
+import { staffRequest, syntheticMobile } from './support/phone-account';
 
 const describeIfDb = process.env.DATABASE_URL ? describe : describe.skip;
 const password = 'correct-horse-battery';
@@ -49,6 +50,7 @@ describeIfDb('Observed returns (e2e)', () => {
 
   async function registerOwner(label: string) {
     const email = `${label}-${Date.now()}-${Math.random().toString(16).slice(2)}@example.test`;
+    const phone = syntheticMobile();
     const salonId = randomUUID();
     const userId = randomUUID();
     const now = new Date();
@@ -61,14 +63,15 @@ describeIfDb('Observed returns (e2e)', () => {
         salonId,
         name: `${label} Owner`,
         email,
+        phone,
         passwordHash: await argon2.hash(password, { type: argon2.argon2id }),
         role: 'OWNER',
         updatedAt: now,
       },
     });
     const login = await request(app.getHttpServer())
-      .post('/auth/login')
-      .send({ email, password })
+      .post('/auth/login/phone')
+      .send({ phone, password })
       .expect(201);
     return {
       email,
@@ -78,9 +81,9 @@ describeIfDb('Observed returns (e2e)', () => {
     };
   }
 
-  async function login(email: string) {
+  async function login(phone: string) {
     return (
-      await request(app.getHttpServer()).post('/auth/login').send({ email, password }).expect(201)
+      await request(app.getHttpServer()).post('/auth/login/phone').send({ phone, password }).expect(201)
     ).body.accessToken as string;
   }
 
@@ -195,22 +198,32 @@ describeIfDb('Observed returns (e2e)', () => {
   it('allows OWNER MANAGER and STAFF to read tenant outcomes', async () => {
     const salon = await registerOwner('obs-rbac');
     const customerId = await createCustomer(salon.token, 'Rbac');
-    const staffEmail = `staff-obs-${Date.now()}@example.test`;
+    const staff = staffRequest({
+      name: 'Staff',
+      role: 'STAFF',
+      password,
+      email: `staff-obs-${Date.now()}@example.test`,
+    });
     await request(app.getHttpServer())
       .post('/users')
       .set('Authorization', `Bearer ${salon.token}`)
-      .send({ name: 'Staff', email: staffEmail, password, role: 'STAFF' })
+      .send(staff)
       .expect(201);
-    const managerEmail = `mgr-obs-${Date.now()}@example.test`;
+    const manager = staffRequest({
+      name: 'Manager',
+      role: 'MANAGER',
+      password,
+      email: `mgr-obs-${Date.now()}@example.test`,
+    });
     await request(app.getHttpServer())
       .post('/users')
       .set('Authorization', `Bearer ${salon.token}`)
-      .send({ name: 'Manager', email: managerEmail, password, role: 'MANAGER' })
+      .send(manager)
       .expect(201);
 
     expect((await listObserved(salon.token, customerId)).items).toEqual([]);
-    expect((await listObserved(await login(staffEmail), customerId)).items).toEqual([]);
-    expect((await listObserved(await login(managerEmail), customerId)).items).toEqual([]);
+    expect((await listObserved(await login(staff.phone), customerId)).items).toEqual([]);
+    expect((await listObserved(await login(manager.phone), customerId)).items).toEqual([]);
   });
 
   it('associates last-touch SENT messages and excludes ineligible interventions', async () => {

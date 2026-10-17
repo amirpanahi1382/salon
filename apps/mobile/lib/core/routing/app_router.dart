@@ -49,13 +49,10 @@ final routerProvider = Provider<GoRouter>((ref) {
     redirect: (context, state) {
       final auth = ref.read(authControllerProvider);
       final loggingIn =
-          state.matchedLocation == '/login' ||
-          state.matchedLocation == '/register' ||
-          state.matchedLocation == '/admin/login';
+          state.matchedLocation == '/login' || state.matchedLocation == '/register';
       final splashing = state.matchedLocation == '/splash';
       final isPlatformAdmin = auth.user?.isPlatformAdmin == true;
-      final onAdmin = state.matchedLocation.startsWith('/admin') &&
-          state.matchedLocation != '/admin/login';
+      final onAdmin = state.matchedLocation.startsWith('/admin');
       if (auth.status == AuthStatus.unknown) {
         return splashing ? null : '/splash';
       }
@@ -90,10 +87,6 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const SplashScreen(),
       ),
       GoRoute(path: '/login', builder: (context, state) => const LoginScreen()),
-      GoRoute(
-        path: '/admin/login',
-        builder: (context, state) => const PlatformAdminLoginScreen(),
-      ),
       GoRoute(
         path: '/admin/messages',
         builder: (context, state) => const AdminMessageQueueScreen(),

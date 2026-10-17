@@ -4,6 +4,7 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/infrastructure/database/prisma.service';
 import { HttpExceptionFilter } from '../src/infrastructure/http/http-exception.filter';
+import { createProductOwnerSession } from './support/phone-account';
 
 const describeIfDb = process.env.DATABASE_URL ? describe : describe.skip;
 
@@ -22,17 +23,13 @@ describeIfDb('Phase 5 input validation (e2e)', () => {
     app.useGlobalFilters(new HttpExceptionFilter());
     await app.init();
     prisma = app.get(PrismaService);
-    const response = await request(app.getHttpServer())
-      .post('/auth/register')
-      .send({
-        salonName: 'Phase 5 validation salon',
-        ownerName: 'Validation Owner',
-        email: `phase5-${Date.now()}@example.test`,
-        password: 'correct-horse-battery',
-      })
-      .expect(201);
-    token = response.body.accessToken as string;
-    salonId = response.body.user.tenantId as string;
+    const registered = await createProductOwnerSession(prisma.client, app.getHttpServer(), {
+      salonName: 'Phase 5 validation salon',
+      ownerName: 'Validation Owner',
+      password: 'correct-horse-battery',
+    });
+    token = registered.body.accessToken;
+    salonId = registered.body.user.tenantId;
     const customer = await request(app.getHttpServer()).post('/customers')
       .set('Authorization', `Bearer ${token}`)
       .send({ firstName: 'Sara', lastName: 'Validation', phoneNumber: `0912${Date.now().toString().slice(-7)}` })

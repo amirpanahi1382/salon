@@ -4,6 +4,18 @@ import 'models/models.dart';
 class AppStrings {
   static const appName = 'توجه سالن';
   static const loginTitle = 'ورود';
+  static const mobileNumber = 'شماره موبایل';
+  static const confirmPassword = 'تکرار رمز عبور';
+  static const sendSignupCode = 'ارسال کد';
+  static const verifySignupCode = 'تأیید کد';
+  static const signupCode = 'کد تأیید';
+  static const enterPhonePassword = 'شماره موبایل و رمز عبور را وارد کنید.';
+  static const enterSignupCode = 'کد تأیید را وارد کنید.';
+  static const passwordMismatch = 'رمز عبور و تکرار آن یکسان نیست.';
+  static const signupResendWait = 'ارسال دوباره تا چند لحظه ممکن نیست.';
+  static const signupCodeInvalid = 'کد تأیید درست نیست.';
+  static const signupSendUnconfirmed =
+      'نتیجه ارسال تأیید نشد. همان درخواست را دوباره بفرستید.';
   static const registerTitle = 'ساخت حساب سالن';
   static const email = 'ایمیل';
   static const password = 'رمز عبور';
@@ -643,6 +655,11 @@ String localizeUserFacingMessage(String message) {
     'Something went wrong. Please try again.': AppStrings.genericError,
     'Unable to reach the salon platform.': AppStrings.networkError,
     'Invalid email or password': 'ایمیل یا رمز عبور درست نیست.',
+    'Invalid phone or password': 'شماره موبایل یا رمز عبور درست نیست.',
+    'This account already has a mobile number.':
+        'این حساب قبلاً شماره موبایل دارد.',
+    'Enter an Iranian mobile number.': 'شماره موبایل را درست وارد کنید.',
+    'Enter the signup code.': 'کد تأیید را وارد کنید.',
     'email must be an email': 'ایمیل معتبر نیست.',
     'password must be a string': 'رمز عبور معتبر نیست.',
     'password must be longer than or equal to 1 characters':

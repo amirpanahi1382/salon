@@ -1,4 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
@@ -10,18 +12,19 @@ import { PrismaService } from '../src/infrastructure/database/prisma.service';
 import { HttpExceptionFilter } from '../src/infrastructure/http/http-exception.filter';
 import { MemoryObjectStorage } from '../src/infrastructure/storage/memory.object-storage';
 import { OBJECT_STORAGE } from '../src/infrastructure/storage/object-storage';
+import {
+  HistoricalMigrationRehearsal,
+  recreateDisposableDatabase,
+  withDatabase,
+} from './support/historical-database';
 
-const url = process.env.DATABASE_URL;
-const databaseName = process.env.PHASE12_DISPOSABLE_DATABASE_NAME;
-const fixtureRequestId = process.env.PHASE12_LEGACY_REQUEST_ID;
-const enabled = (() => {
-  if (!url || !databaseName || !fixtureRequestId) return false;
-  try {
-    const parsed = new URL(url);
-    return parsed.hostname === '127.0.0.1' && parsed.port !== '' &&
-      parsed.pathname.slice(1) === databaseName && /^salon_phase12_[a-z0-9]+$/.test(databaseName);
-  } catch { return false; }
-})();
+const adminUrl = process.env.PHASE12_HISTORICAL_ADMIN_URL;
+const databaseName = 'salon_phase12_histrehearsal';
+const fixturePath = resolve(__dirname, 'fixtures/vip-phase12-predecessor.sql');
+const fixtureSql = readFileSync(fixturePath, 'utf8');
+const fixtureRequestMatch = fixtureSql.match(/PHASE12_LEGACY_REQUEST_ID=([0-9a-f-]{36})/);
+const fixtureRequestId = fixtureRequestMatch?.[1];
+const enabled = Boolean(adminUrl && fixtureRequestId);
 const describeDisposable = enabled ? describe : describe.skip;
 const useRealStorage = Boolean(process.env.PHASE12_MINIO_PORT);
 if (useRealStorage && (
@@ -75,7 +78,7 @@ class BarrierStorage implements ObjectStorage {
 }
 
 describeDisposable('Phase 12 VIP predecessor replay and submission deadline', () => {
-  jest.setTimeout(60_000);
+  jest.setTimeout(180_000);
   let app: INestApplication;
   let prisma: PrismaService;
   let jwt: JwtService;
@@ -89,13 +92,58 @@ describeDisposable('Phase 12 VIP predecessor replay and submission deadline', ()
     : new MemoryObjectStorage());
 
   beforeAll(async () => {
-    const guard = createPrismaClient(url!);
+    if (!adminUrl || !fixtureRequestId) throw new Error('Phase 12 historical admin URL is required');
+    const admin = new URL(adminUrl);
+    if (admin.hostname !== '127.0.0.1' || admin.pathname !== '/postgres') {
+      throw new Error('PHASE12_HISTORICAL_ADMIN_URL must be the loopback postgres maintenance database');
+    }
+    await recreateDisposableDatabase(admin.toString(), databaseName, /^salon_phase12_[a-z0-9]+$/);
+    const databaseUrl = withDatabase(admin, databaseName);
+    const rehearsal = new HistoricalMigrationRehearsal(databaseUrl);
+    try {
+      rehearsal.copyRange('20260930140000_transaction_item_math_on_reparent');
+      rehearsal.deploy();
+      const beforePhone = await columnExists(databaseUrl, 'users', 'phone');
+      const beforeVerified = await columnExists(databaseUrl, 'vip_sample_works', 'verified_at');
+      if (beforePhone || beforeVerified) throw new Error('Phase 12 predecessor schema is not the expected boundary');
+      rehearsal.applySqlFile(fixturePath);
+      rehearsal.copyRange(
+        '20261001120000_vip_sample_work_recovery',
+        '20260930140000_transaction_item_math_on_reparent',
+      );
+      rehearsal.deploy();
+      await assertRecoveredSample(databaseUrl, fixtureRequestId);
+      // The current API JWT reads salon access_state. That column arrives
+      // after the recovery migration. Phone-first is not applied.
+      rehearsal.copyRange(
+        '20261015190000_activation_receipts',
+        '20261001120000_vip_sample_work_recovery',
+      );
+      rehearsal.deploy();
+      await assertRecoveredSample(databaseUrl, fixtureRequestId);
+    } finally {
+      rehearsal.dispose();
+    }
+    const proof = createPrismaClient(databaseUrl);
+    try {
+      const owner = await proof.$queryRaw<Array<{ phone: string | null; email: string }>>`
+        SELECT phone, email FROM users WHERE id = '3c477580-9480-4f08-bada-1bfafc7ea8e9'::uuid
+      `;
+      if (owner[0]?.email !== 'phase12-owner@example.test' || owner[0]?.phone !== null) {
+        throw new Error('Phase 12 historical owner identity changed');
+      }
+      await proof.$executeRawUnsafe(`COMMENT ON DATABASE "${databaseName}" IS 'phase12-disposable:histrehearsal'`);
+    } finally {
+      await proof.$disconnect();
+    }
+    process.env.DATABASE_URL = databaseUrl;
+    const guard = createPrismaClient(databaseUrl);
     try {
       const rows = await guard.$queryRaw<Array<{ name: string; comment: string | null }>>`
         SELECT datname AS name, shobj_description(oid, 'pg_database') AS comment
         FROM pg_database WHERE datname = current_database()
       `;
-      if (rows[0]?.name !== databaseName || rows[0]?.comment !== `phase12-disposable:${databaseName!.slice('salon_phase12_'.length)}`) {
+      if (rows[0]?.name !== databaseName || rows[0]?.comment !== 'phase12-disposable:histrehearsal') {
         throw new Error('Phase 12 disposable database ownership check failed');
       }
     } finally { await guard.$disconnect(); }
@@ -109,7 +157,16 @@ describeDisposable('Phase 12 VIP predecessor replay and submission deadline', ()
     jwt = app.get(JwtService);
   });
 
-  afterAll(async () => { if (app) await app.close(); });
+  afterAll(async () => {
+    if (app) await app.close();
+    if (!adminUrl) return;
+    const cleanup = createPrismaClient(adminUrl);
+    try {
+      await cleanup.$executeRawUnsafe(`DROP DATABASE IF EXISTS "${databaseName}" WITH (FORCE)`);
+    } finally {
+      await cleanup.$disconnect();
+    }
+  });
 
   it('replays the migrated predecessor record without another upload effect', async () => {
     const sample = await prisma.client.vipSampleWork.findFirstOrThrow({ where: { vipRequestId: fixtureRequestId! } });
@@ -137,22 +194,24 @@ describeDisposable('Phase 12 VIP predecessor replay and submission deadline', ()
       .set('Authorization', `Bearer ${token}`).set('Idempotency-Key', record.key)
       .attach('file', changed, 'legacy.jpg').expect(409);
     const otherUserId = randomUUID();
-    await prisma.client.user.create({ data: {
-      id: otherUserId, salonId: record.tenantId, name: 'Other actor',
-      email: `phase12-${otherUserId}@example.test`, passwordHash: 'synthetic',
-      role: 'STAFF', updatedAt: new Date(),
-    } });
+    const otherEmail = `phase12-${otherUserId}@example.test`;
+    // Email-only. The pre-phone-first check rejects email and phone together.
+    // This is not the historical fixture owner, who stays email-only with a null phone.
+    await prisma.client.$executeRaw`
+      INSERT INTO users (id, salon_id, name, email, password_hash, role, updated_at)
+      VALUES (${otherUserId}::uuid, ${record.tenantId}::uuid, 'Other actor', ${otherEmail}, 'synthetic', 'STAFF'::"UserRole", NOW())
+    `;
     const otherToken = await jwt.signAsync({ sub: otherUserId, tid: record.tenantId, role: 'STAFF' });
     await request(app.getHttpServer()).post(`/vip/requests/${fixtureRequestId!}/sample-works`)
       .set('Authorization', `Bearer ${otherToken}`).set('Idempotency-Key', record.key)
       .attach('file', JPEG, 'legacy.jpg').expect(409);
     const foreignSalon = randomUUID(), foreignUser = randomUUID();
     await prisma.client.salon.create({ data: { id: foreignSalon, name: 'Foreign', updatedAt: new Date() } });
-    await prisma.client.user.create({ data: {
-      id: foreignUser, salonId: foreignSalon, name: 'Foreign',
-      email: `phase12-${foreignUser}@example.test`, passwordHash: 'synthetic',
-      role: 'OWNER', updatedAt: new Date(),
-    } });
+    const foreignEmail = `phase12-${foreignUser}@example.test`;
+    await prisma.client.$executeRaw`
+      INSERT INTO users (id, salon_id, name, email, password_hash, role, updated_at)
+      VALUES (${foreignUser}::uuid, ${foreignSalon}::uuid, 'Foreign', ${foreignEmail}, 'synthetic', 'OWNER'::"UserRole", NOW())
+    `;
     const foreignToken = await jwt.signAsync({ sub: foreignUser, tid: foreignSalon, role: 'OWNER' });
     const foreign = await request(app.getHttpServer()).post(`/vip/requests/${fixtureRequestId!}/sample-works`)
       .set('Authorization', `Bearer ${foreignToken}`).set('Idempotency-Key', record.key)
@@ -209,6 +268,15 @@ describeDisposable('Phase 12 VIP predecessor replay and submission deadline', ()
 
   it('rejects a reservation that expires while object verification is paused', async () => {
     const old = await prisma.client.vipRequest.findUniqueOrThrow({ where: { id: fixtureRequestId! } });
+    // 20261007140000 allows one AWAITING_SAMPLE_WORK row per salon. The recovered
+    // fixture is that row. Leave its sample and idempotency in place and only
+    // release the draft slot so this later product rule can be exercised.
+    await prisma.client.$executeRaw`
+      UPDATE vip_requests
+      SET status = 'SUBMITTED'::"VipRequestStatus", submitted_at = NOW(), updated_at = NOW()
+      WHERE id = ${fixtureRequestId!}::uuid
+        AND status = 'AWAITING_SAMPLE_WORK'::"VipRequestStatus"
+    `;
     const listId = randomUUID(), requestId = randomUUID(), sampleId = randomUUID();
     const key = `vip/${old.salonId}/${requestId}/${sampleId}`;
     await prisma.client.vipTargetList.create({ data: {
@@ -253,6 +321,14 @@ describeDisposable('Phase 12 VIP predecessor replay and submission deadline', ()
 
   it('keeps current upload replay and normal submit, including the exact deadline predicate', async () => {
     const old = await prisma.client.vipRequest.findUniqueOrThrow({ where: { id: fixtureRequestId! } });
+    await prisma.client.$executeRaw`
+      UPDATE vip_requests
+      SET status = 'SUBMITTED'::"VipRequestStatus",
+          submitted_at = COALESCE(submitted_at, NOW()),
+          updated_at = NOW()
+      WHERE salon_id = ${old.salonId}::uuid
+        AND status = 'AWAITING_SAMPLE_WORK'::"VipRequestStatus"
+    `;
     const listId = randomUUID(), requestId = randomUUID();
     const admin = await prisma.client.vipTargetList.findUniqueOrThrow({ where: { id: old.listId } });
     await prisma.client.vipTargetList.create({ data: {
@@ -299,3 +375,44 @@ describeDisposable('Phase 12 VIP predecessor replay and submission deadline', ()
     expect(sample.verifiedAt?.getTime()).toBe(requestRow.submittedAt?.getTime());
   });
 });
+
+async function columnExists(databaseUrl: string, table: string, column: string): Promise<boolean> {
+  const client = createPrismaClient(databaseUrl);
+  try {
+    const rows = await client.$queryRaw<Array<{ present: boolean }>>`
+      SELECT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = ${table} AND column_name = ${column}
+      ) AS present
+    `;
+    return rows[0]?.present === true;
+  } finally {
+    await client.$disconnect();
+  }
+}
+
+async function assertRecoveredSample(databaseUrl: string, requestId: string): Promise<void> {
+  const client = createPrismaClient(databaseUrl);
+  try {
+    const rows = await client.$queryRaw<Array<{ verified: Date | null; uploads: number; resource: string; sha: string }>>`
+      SELECT s.verified_at AS verified,
+             s.sha256 AS sha,
+             (SELECT count(*) FROM vip_sample_work_uploads u WHERE u.vip_request_id = s.vip_request_id)::int AS uploads,
+             i.resource_type AS resource
+      FROM vip_sample_works s
+      JOIN idempotency_records i ON i.resource_id = s.id
+      WHERE s.vip_request_id = ${requestId}::uuid
+    `;
+    if (
+      rows.length !== 1 ||
+      rows[0]?.verified !== null ||
+      rows[0]?.uploads !== 0 ||
+      rows[0]?.resource !== 'vip_sample_work' ||
+      rows[0]?.sha !== '3c4bae649b6c0fade21c149e6ee9773e734d620fda91248a44c58b11c71f3ba9'
+    ) {
+      throw new Error('Phase 12 recovery did not preserve the unverified predecessor sample');
+    }
+  } finally {
+    await client.$disconnect();
+  }
+}

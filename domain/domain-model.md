@@ -63,13 +63,13 @@ A published `AgreementVersion` is an immutable copy of a source-controlled contr
 
 ### User
 
-Salon operator. One salon. Roles `OWNER` | `MANAGER` | `STAFF`. Status `ACTIVE` | `DISABLED`. Login identity is exactly one of globally unique email or globally unique canonical phone (`09` + 9 digits). Email accounts keep email and a null phone. A phone-owned owner stores that phone and a null email. `ACTIVE` does not by itself grant product access. Last active OWNER cannot be removed/demoted. MANAGER may create/disable STAFF only where the salon allows additional users. OWNER assigns any role on those salons. A phone-owned salon rejects another user.
+Salon operator. One salon. Roles `OWNER` | `MANAGER` | `STAFF`. Status `ACTIVE` | `DISABLED`. The login identity is a globally unique canonical phone (`09` + 9 digits). Email, when stored, is optional contact and is not a login. The phone cannot also belong to a platform admin. `ACTIVE` does not by itself grant product access. Last active OWNER cannot be removed/demoted. MANAGER may create/disable STAFF only where the salon allows additional users. OWNER assigns any role on those salons. A phone-owned salon rejects another user. Historical salon rows are not migrated into the phone-first database.
 
 `createdBy` on actions/messages/VIP requests points at a same-salon `users(id, salon_id)` through Phase 8 composite FKs. These enforce new writes; historical rows await explicit FK validation. `ReturnCommitment` creator/updater is XOR: composite salon `(userId, salonId)` **or** `platform_admins.id`, never both, never neither.
 
 ### PlatformAdmin
 
-Not a salon user. No tenant. JWT `scp=platform`. Owns VIP lists and entitlements; dispatches the message queue. Authors support replies on a salon user's conversation; the reply records that admin and does not change messaging or VIP status.
+Not a salon user. No tenant. JWT `scp=platform`. The login identity is a canonical phone, unique across salon users. Email is optional contact. Public signup cannot create an admin. The first admin is created by an operator command on a new empty database after that phone is verified, and only while no admin exists. Owns VIP lists and entitlements; dispatches the message queue. Authors support replies on a salon user's conversation; the reply records that admin and does not change messaging or VIP status.
 
 ### SupportConversation
 

@@ -4,6 +4,7 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/infrastructure/database/prisma.service';
 import { HttpExceptionFilter } from '../src/infrastructure/http/http-exception.filter';
+import { createProductOwnerSession, syntheticMobile } from './support/phone-account';
 
 const describeIfDb = process.env.DATABASE_URL ? describe : describe.skip;
 const password = 'correct-horse-battery';
@@ -11,7 +12,7 @@ const password = 'correct-horse-battery';
 describeIfDb('Phase A reliability (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
-  let owner: { email: string; token: string; tenantId: string; userId: string };
+  let owner: { phone: string; token: string; tenantId: string; userId: string };
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
@@ -37,22 +38,17 @@ describeIfDb('Phase A reliability (e2e)', () => {
   });
 
   async function registerOwner(label: string) {
-    const email = `${label}-${Date.now()}-${Math.random().toString(16).slice(2)}@example.test`;
-    const response = await request(app.getHttpServer())
-      .post('/auth/register')
-      .send({
-        salonName: `${label} Salon`,
-        ownerName: `${label} Owner`,
-        email,
-        password,
-      })
-      .expect(201);
+    const registered = await createProductOwnerSession(prisma.client, app.getHttpServer(), {
+      salonName: `${label} Salon`,
+      ownerName: `${label} Owner`,
+      password,
+    });
 
     return {
-      email,
-      token: response.body.accessToken as string,
-      tenantId: response.body.user.tenantId as string,
-      userId: response.body.user.id as string,
+      phone: registered.phone,
+      token: registered.body.accessToken,
+      tenantId: registered.body.user.tenantId,
+      userId: registered.body.user.id,
     };
   }
 
@@ -270,12 +266,12 @@ describeIfDb('Phase A reliability (e2e)', () => {
 
   it('returns the same generic login error for missing users and wrong passwords', async () => {
     const missing = await request(app.getHttpServer())
-      .post('/auth/login')
-      .send({ email: `missing-${Date.now()}@example.test`, password })
+      .post('/auth/login/phone')
+      .send({ phone: syntheticMobile(), password })
       .expect(401);
     const wrong = await request(app.getHttpServer())
-      .post('/auth/login')
-      .send({ email: owner.email, password: 'wrong-password-1' })
+      .post('/auth/login/phone')
+      .send({ phone: owner.phone, password: 'wrong-password-1' })
       .expect(401);
     expect(missing.body.error).toBe('UNAUTHENTICATED');
     expect(wrong.body.error).toBe('UNAUTHENTICATED');

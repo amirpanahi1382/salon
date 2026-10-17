@@ -6,6 +6,7 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/infrastructure/database/prisma.service';
 import { HttpExceptionFilter } from '../src/infrastructure/http/http-exception.filter';
+import { syntheticMobile } from './support/phone-account';
 
 const expectedName = process.env.VISIT_EVIDENCE_E2E_DATABASE_NAME ?? '';
 const expectedPort = process.env.VISIT_EVIDENCE_E2E_HOST_PORT ?? '';
@@ -67,6 +68,7 @@ describeEvidence('visit evidence on a named disposable database', () => {
 
   async function register(role: 'OWNER' | 'STAFF' = 'OWNER', salonId?: string) {
     const email = `${role.toLowerCase()}-${randomUUID()}@example.test`;
+    const phone = syntheticMobile();
     const userId = randomUUID();
     const tenantId = salonId ?? randomUUID();
     const now = new Date();
@@ -79,12 +81,13 @@ describeEvidence('visit evidence on a named disposable database', () => {
         salonId: tenantId,
         name: role,
         email,
+        phone,
         passwordHash: await argon2.hash(password, { type: argon2.argon2id }),
         role,
         updatedAt: now,
       },
     });
-    const login = await request(app.getHttpServer()).post('/auth/login').send({ email, password }).expect(201);
+    const login = await request(app.getHttpServer()).post('/auth/login/phone').send({ phone, password }).expect(201);
     return { token: login.body.accessToken as string, userId, salonId: tenantId };
   }
 
@@ -138,6 +141,7 @@ describeEvidence('visit evidence on a named disposable database', () => {
       data: {
         id: adminId,
         email: `evidence-admin-${randomUUID()}@example.test`,
+        phone: syntheticMobile(),
         name: 'اپراتور',
         passwordHash: await argon2.hash(password, { type: argon2.argon2id }),
         updatedAt: now,

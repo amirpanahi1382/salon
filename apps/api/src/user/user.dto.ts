@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsEmail, IsIn, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsEmail, IsIn, IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
 import { USER_ROLES, type UserRole } from '@salon/shared';
 
 const USER_STATUSES = ['ACTIVE', 'DISABLED'] as const;
@@ -12,10 +12,16 @@ export class CreateSalonUserDto {
   @MaxLength(120)
   name!: string;
 
-  @ApiProperty()
+  @ApiProperty({ required: false, nullable: true, type: String })
+  @IsOptional()
   @IsEmail()
   @MaxLength(255)
-  email!: string;
+  email?: string;
+
+  @ApiProperty({ description: 'Canonical Iranian mobile. Login identity for this account.' })
+  @IsString()
+  @Matches(/^09\d{9}$/, { message: 'Enter an Iranian mobile number.' })
+  phone!: string;
 
   @ApiProperty()
   @IsString()

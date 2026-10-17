@@ -293,10 +293,11 @@ model User {
   salonId      String     @map("salon_id") @db.Uuid
   salon        Salon      @relation(fields: [salonId], references: [id], onDelete: Restrict)
   name         String
-  /// Globally unique legacy login. Null for a phone-owned owner. Exactly one of email or phone is set.
+  /// Optional contact. Not a signup or login identity. Unique when present.
   email        String?    @unique
-  /// Canonical Iranian mobile (`09` + 9 digits). Globally unique permanent login for a phone-owned owner.
-  phone        String?    @unique
+  /// Canonical Iranian mobile (`09` + 9 digits). Required login identity.
+  /// Unique among salon users. A database trigger also rejects a platform-admin phone.
+  phone        String     @unique
   passwordHash String     @map("password_hash")
   role         UserRole
   status       UserStatus @default(ACTIVE)
@@ -356,7 +357,11 @@ model OpportunityAction {
 /// Platform operator. Not a salon User. Tokens have no tenant id.
 model PlatformAdmin {
   id           String     @id @db.Uuid
-  email        String     @unique
+  /// Optional contact. Not a login identity. Unique when present.
+  email        String?    @unique
+  /// Canonical Iranian mobile. Required login identity.
+  /// Public signup does not set this. Unique, and distinct from every salon user phone.
+  phone        String     @unique
   passwordHash String     @map("password_hash")
   name         String
   status       UserStatus @default(ACTIVE)

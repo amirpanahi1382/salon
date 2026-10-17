@@ -718,6 +718,7 @@ describeIfDisposable('phone signup challenge on a disposable database', () => {
       data: {
         id: adminId,
         email: `phone-signup-${randomUUID()}@example.test`,
+        phone: '09121110099',
         name: 'operator',
         passwordHash: 'not-a-password-hash',
         updatedAt: now,

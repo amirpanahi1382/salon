@@ -18,11 +18,13 @@ Principles that are actually enforced:
 
 | Actor | Mechanism |
 | --- | --- |
-| Salon user | `POST /auth/register` only when `PUBLIC_REGISTRATION_MODE=email`; `POST /auth/login`; Argon2id; product JWT `sub`,`tid`,`role` |
-| Phone-owned owner | `POST /auth/login/phone` always. OTP completion only when `PHONE_SIGNUP_ENABLED` and registration mode `phone`. Pending access gets JWT `scp=onboarding`. Password verified is not product access |
-| Platform admin | `POST /admin/auth/login`; JWT `scp=platform` |
-| Public | email register only in `email` registration mode, email login, phone login, `/health`, `/health/ready`, `/metrics` |
+| Salon user | Phone signup when `PHONE_SIGNUP_ENABLED`; `POST /auth/login/phone`; Argon2id; product JWT `sub`,`tid`,`role`. Email is optional contact and is not a login |
+| Phone login | `POST /auth/login/phone` always. The server returns either a salon session or `scp=platform`. The request has no role. OTP signup completion only when `PHONE_SIGNUP_ENABLED` and registration mode `phone`. Pending access gets JWT `scp=onboarding`. Password verified is not product access |
+| Platform admin | The same `POST /auth/login/phone` screen issues `scp=platform` when the phone belongs to the admin. Public signup cannot create an admin. The first admin is an operator command on a new empty database, after a phone verification, and only when no admin exists |
+| Public | phone signup when enabled; phone login; `/health`, `/health/ready`, `/metrics`. `POST /auth/register`, `POST /auth/login`, and `POST /admin/auth/login` are closed |
 | Phone signup challenge | `POST /auth/signup/phone/start` and `/verify`, off unless `PHONE_SIGNUP_ENABLED`. Possession proof only; no salon, user, or session. Phone and OTP are not stored. Deadline acceptance uses the database clock at the write. The marketing stop does not apply. Completion consumes that proof in the account transaction. The flag stays false. A live send also needs a private `OTPY_API_KEY` and is not authorized by publishing this slice |
+
+Email and password login is not a fallback. A canonical phone is required and unique across salon users and platform admins. Flutter has one «ورود» screen and does not ask for an email.
 
 No refresh tokens. Logout is discarding the token. JWT secret ≥ 32 characters (`JWT_SECRET`).
 

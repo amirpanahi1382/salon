@@ -7,14 +7,10 @@ import { RolesGuard } from '../infrastructure/auth/roles.guard';
 import { AuthController } from './auth.controller';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { JwtStrategy } from './jwt.strategy';
-import { LoginUseCase } from './login.use-case';
 import { PlatformAdminAuthController } from './platform-admin-auth.controller';
-import { PlatformAdminLoginUseCase } from './platform-admin-login.use-case';
-import { RegisterSalonOwnerUseCase } from './register-salon-owner.use-case';
 import { PlatformAdminGuard } from '../infrastructure/auth/platform-admin.guard';
 import { CompletePhoneSignupUseCase } from './complete-phone-signup.use-case';
 import { ExchangeProductSessionUseCase } from './exchange-product-session.use-case';
-import { EmailRegistrationGuard } from './email-registration.guard';
 import { OtpyProvider } from './otp-provider';
 import { PhoneLoginUseCase } from './phone-login.use-case';
 import { PhoneSignupEnabledGuard } from './phone-signup-enabled.guard';
@@ -43,12 +39,8 @@ import {
     JwtAuthGuard,
     RolesGuard,
     PlatformAdminGuard,
-    RegisterSalonOwnerUseCase,
-    LoginUseCase,
-    PlatformAdminLoginUseCase,
     OtpyProvider,
     PhoneSignupEnabledGuard,
-    EmailRegistrationGuard,
     StartPhoneSignupUseCase,
     VerifyPhoneSignupUseCase,
     ConsumeSignupProofUseCase,

@@ -16,6 +16,17 @@ import {
 } from './return-commitment.mapper';
 import type { ReturnCommitmentResponseDto } from './return-commitment.dto';
 
+function isSourceDeliveryUniqueConflict(error: unknown): boolean {
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2010') {
+    return false;
+  }
+  const meta = error.meta;
+  const sqlState = typeof meta === 'object' && meta !== null && 'code' in meta ? String(meta.code) : '';
+  const detail = typeof meta === 'object' && meta !== null && 'message' in meta ? String(meta.message) : '';
+  // PostgreSQL omits the index name and reports the conflicting columns.
+  return sqlState === '23505' && detail.startsWith('Key (salon_id, source_message_delivery_id)=');
+}
+
 type Db = Prisma.TransactionClient | PrismaService['client'];
 
 export type ReturnCommitmentSource = {
@@ -486,31 +497,41 @@ export class ReturnCommitmentRepository {
   ): Promise<boolean> {
     const userId = input.actor.kind === 'SALON_USER' ? input.actor.userId : null;
     const adminId = input.actor.kind === 'PLATFORM_ADMIN' ? input.actor.adminId : null;
-    const inserted = await tx.$queryRaw<Array<{ id: string }>>`
-      INSERT INTO return_commitments (
-        id, salon_id, customer_id, source_message_request_id, source_message_delivery_id,
-        expected_at, actual_visit_id, created_by_user_id, created_by_platform_admin_id,
-        updated_by_user_id, updated_by_platform_admin_id, created_at, updated_at
-      )
-      VALUES (
-        ${input.id}::uuid,
-        ${input.salonId}::uuid,
-        ${input.customerId}::uuid,
-        ${input.sourceMessageRequestId}::uuid,
-        ${input.sourceMessageDeliveryId}::uuid,
-        ${input.expectedAt},
-        NULL,
-        ${userId}::uuid,
-        ${adminId}::uuid,
-        ${userId}::uuid,
-        ${adminId}::uuid,
-        ${input.now},
-        ${input.now}
-      )
-      ON CONFLICT (salon_id, source_message_request_id) DO NOTHING
-      RETURNING id
-    `;
-    return inserted.length > 0;
+    try {
+      const inserted = await tx.$queryRaw<Array<{ id: string }>>`
+        INSERT INTO return_commitments (
+          id, salon_id, customer_id, source_message_request_id, source_message_delivery_id,
+          expected_at, actual_visit_id, created_by_user_id, created_by_platform_admin_id,
+          updated_by_user_id, updated_by_platform_admin_id, created_at, updated_at
+        )
+        VALUES (
+          ${input.id}::uuid,
+          ${input.salonId}::uuid,
+          ${input.customerId}::uuid,
+          ${input.sourceMessageRequestId}::uuid,
+          ${input.sourceMessageDeliveryId}::uuid,
+          ${input.expectedAt},
+          NULL,
+          ${userId}::uuid,
+          ${adminId}::uuid,
+          ${userId}::uuid,
+          ${adminId}::uuid,
+          ${input.now},
+          ${input.now}
+        )
+        ON CONFLICT (salon_id, source_message_request_id) DO NOTHING
+        RETURNING id
+      `;
+      return inserted.length > 0;
+    } catch (error: unknown) {
+      // ON CONFLICT names only the request key. The same outreach also has
+      // return_commitments_salon_source_delivery_key. PostgreSQL raises 23505
+      // for that index, and Prisma reports the raw statement as P2010.
+      if (isSourceDeliveryUniqueConflict(error)) {
+        return false;
+      }
+      throw error;
+    }
   }
 
   updateExpectedAt(input: {

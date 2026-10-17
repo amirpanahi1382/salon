@@ -4,7 +4,7 @@ import { insertSalonService } from '../service/insert-salon-service';
 
 /**
  * One transaction-scoped registration of a salon, its owner, starter services,
- * audit, and outbox rows. Email registration and phone completion both call this.
+ * audit, and outbox rows. Phone completion calls this.
  * The caller owns the transaction and hashes the password before entering it.
  */
 export async function provisionSalonOwner(
@@ -16,16 +16,14 @@ export async function provisionSalonOwner(
     ownerName: string;
     passwordHash: string;
     email: string | null;
-    phone: string | null;
+    phone: string;
     accessState: SalonAccessState;
     additionalUsersAllowed: boolean;
     now: Date;
   },
 ): Promise<void> {
-  const emailSet = input.email !== null;
-  const phoneSet = input.phone !== null;
-  if (emailSet === phoneSet) {
-    throw new Error('Salon owner registration requires exactly one login identity');
+  if (!/^09\d{9}$/.test(input.phone)) {
+    throw new Error('Salon owner registration requires a canonical mobile number');
   }
 
   await tx.salon.create({
@@ -91,7 +89,7 @@ export async function provisionSalonOwner(
       metadata: {
         role: 'OWNER',
         accessState: input.accessState,
-        login: input.phone === null ? 'email' : 'phone',
+        login: 'phone',
       },
     },
   });

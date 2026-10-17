@@ -63,8 +63,16 @@ describeIsolated('Phase 3 historical destination upgrade', () => {
     const queuedId = randomUUID(), sentId = randomUUID(), baleId = randomUUID(), deliveryId = randomUUID();
     const vipRequestId = randomUUID(), vipMessageId = randomUUID();
     const oldPhone = '09121111111', newPhone = '09129999999', vipPhone = '09123333333';
-    await db.salon.create({ data: { id: salonId, name: 'Historical destination fixture' } });
-    await db.user.create({ data: { id: userId, salonId, name: 'Owner', email: `${userId}@example.test`, passwordHash: 'unused', role: 'OWNER' } });
+    await db.$executeRaw`
+      INSERT INTO salons (id, name, status, updated_at)
+      VALUES (${salonId}::uuid, 'Historical destination fixture', 'ACTIVE', clock_timestamp())
+    `;
+    const ownerEmail = `${userId}@example.test`;
+    // Not a current-product login. The Phase 3 predecessor users table has no phone column.
+    await db.$executeRaw`
+      INSERT INTO "users" ("id", "salon_id", "name", "email", "password_hash", "role", "updated_at")
+      VALUES (${userId}::uuid, ${salonId}::uuid, 'Owner', ${ownerEmail}, 'unused', 'OWNER'::"UserRole", NOW())
+    `;
     await db.customer.create({ data: { id: customerId, salonId, firstName: 'Sara', lastName: 'A', phoneNumber: oldPhone } });
     for (const [id, status, date] of [
       [queuedId, 'QUEUED', '2026-09-01'], [sentId, 'SENT', '2026-09-02'], [baleId, 'DISPATCHED', '2026-09-03'],
@@ -86,11 +94,22 @@ describeIsolated('Phase 3 historical destination upgrade', () => {
     } });
 
     const platformAdminId = randomUUID(), listId = randomUUID(), contactId = randomUUID(), recipientId = randomUUID();
-    await db.platformAdmin.create({ data: { id: platformAdminId, email: `${platformAdminId}@example.test`, name: 'Admin', passwordHash: 'unused' } });
-    await db.vipTargetList.create({ data: {
-      id: listId, name: 'Historical VIP list', status: 'IN_USE', contactCount: 30,
-      createdByAdminId: platformAdminId, reservedBySalonId: salonId, reservedAt: new Date(),
-    } });
+    const adminEmail = `${platformAdminId}@example.test`;
+    // Not a current-product login. The Phase 3 predecessor platform_admins table has no phone column.
+    await db.$executeRaw`
+      INSERT INTO "platform_admins" ("id", "email", "name", "password_hash", "updated_at")
+      VALUES (${platformAdminId}::uuid, ${adminEmail}, 'Admin', 'unused', NOW())
+    `;
+    // The current Prisma model selects catalog_membership, added in
+    // 20261005120000. This rehearsal stops at the destination snapshot.
+    await db.$executeRaw`
+      INSERT INTO vip_target_lists (
+        id, name, status, contact_count, created_by_admin_id, reserved_by_salon_id, reserved_at, updated_at
+      ) VALUES (
+        ${listId}::uuid, 'Historical VIP list', 'IN_USE'::"VipTargetListStatus", 30,
+        ${platformAdminId}::uuid, ${salonId}::uuid, NOW(), NOW()
+      )
+    `;
     await db.vipTargetContact.create({ data: { id: contactId, listId, sortOrder: 1, phoneNumber: vipPhone } });
     await db.vipRequest.create({ data: {
       id: vipRequestId, salonId, listId, createdByUserId: userId, requestedCount: 30,

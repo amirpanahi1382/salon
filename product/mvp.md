@@ -17,9 +17,9 @@ These capabilities exist in the repository (API + schema + tests; Flutter unless
 
 ### Salon & access
 
-- Legacy email registration (`POST /auth/register`) creates a `PRODUCT` tenant + OWNER when `PUBLIC_REGISTRATION_MODE=email`. `phone` and `closed` keep that route shut, including while OTP signup is off
+- Public email registration (`POST /auth/register`) is closed in every registration mode. It does not create a salon. Public salon creation is phone signup, which stays disabled until `PHONE_SIGNUP_ENABLED` is turned on
 - Phone completion (`POST /auth/signup/phone/complete`) creates one `AWAITING_AGREEMENT` salon and its phone-owning OWNER. Agreement acceptance can then move that salon to `AWAITING_PAYMENT` when `AGREEMENT_ACCEPTANCE_ENABLED` is on. Manual card transfer and admin receipt review can then activate that salon when `MANUAL_TRANSFER_ENABLED` is on. Both flags default off. There is no payment gateway. A receipt photograph is not confirmed payment; only admin approval sets `PRODUCT`, and that approval requires the platform admin’s explicit manual bank attestation
-- Login JWT (email for legacy accounts, phone for phone-owned accounts, and platform admins). A pending salon receives an onboarding session only
+- Login JWT. The visible app sends only phone and password to `POST /auth/login/phone`; the server decides salon user or platform admin. Email registration and email-password login are closed. Email may be stored later as contact and is not an identity. A pending salon receives an onboarding session only
 - Roles: `OWNER`, `MANAGER`, `STAFF`
 - Salon profile `GET/PATCH /salon`
 - User administration APIs (create, role, status, last-OWNER invariant)
@@ -94,7 +94,7 @@ These capabilities exist in the repository (API + schema + tests; Flutter unless
 | Billing | VIP entitlement flag | Subscriptions, invoices, metering |
 | Redis | Compose + required env | Application client |
 | `GET /auth/owner` | Exists | Product surface; leftover auth probe |
-| Phone signup | Disabled-by-default possession challenge and one-time proof | Salon/user creation, password, login, payment, terms, mobile UI |
+| Phone signup | Possession challenge, one-time proof, and completion that creates one restricted owner when `PHONE_SIGNUP_ENABLED` is on. Flutter has the signup screen. The flag defaults off | A live OTP send, payment, and a published agreement |
 
 ---
 

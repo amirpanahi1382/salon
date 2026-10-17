@@ -1,12 +1,26 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { createPrismaClient } from '@salon/database';
 import jwt from 'jsonwebtoken';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { ThrottlerStorage } from '@nestjs/throttler';
 import argon2 from 'argon2';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
+import type { AuthenticatedPrincipal } from '@salon/shared';
+import { VisitIntentionRepository } from '../src/visit-intention/visit-intention.repository';
+import {
+  ListSalonVipVisitIntentionsUseCase,
+  UpdateVisitIntentionUseCase,
+} from '../src/visit-intention/visit-intention.use-cases';
 import { PrismaService } from '../src/infrastructure/database/prisma.service';
 import { HttpExceptionFilter } from '../src/infrastructure/http/http-exception.filter';
+import { syntheticMobile } from './support/phone-account';
+import {
+  HistoricalMigrationRehearsal,
+  recreateDisposableDatabase,
+  withDatabase,
+} from './support/historical-database';
 
 const databaseUrl = process.env.VISIT_INTENTION_DISPOSABLE_DATABASE_URL;
 const databaseName = databaseUrl ? new URL(databaseUrl).pathname.replace(/^\//, '') : '';
@@ -46,21 +60,35 @@ describeIfDisposable('visit intentions on a disposable database', () => {
       throw new Error('Visit intention tests refused a database other than the disposable target');
     }
     const adminEmail = `visit-intention-admin-${randomUUID()}@example.test`;
+    const adminPhone = syntheticMobile();
     adminId = randomUUID();
     await prisma.client.platformAdmin.create({
       data: {
         id: adminId,
         email: adminEmail,
+        phone: adminPhone,
         name: 'اپراتور',
         passwordHash: await argon2.hash(password, { type: argon2.argon2id }),
         updatedAt: new Date(),
       },
     });
     const login = await request(app.getHttpServer())
-      .post('/admin/auth/login')
-      .send({ email: adminEmail, password })
+      .post('/auth/login/phone')
+      .send({ phone: adminPhone, password })
       .expect(201);
     adminToken = login.body.accessToken as string;
+  });
+
+  beforeEach(() => {
+    const storage = app.get(ThrottlerStorage) as {
+      storage: Map<string, { totalHits: Map<string, number>; isBlocked: boolean }>;
+    };
+    for (const record of storage.storage.values()) {
+      record.isBlocked = false;
+      for (const name of record.totalHits.keys()) {
+        record.totalHits.set(name, 0);
+      }
+    }
   });
 
   afterAll(async () => {
@@ -69,6 +97,7 @@ describeIfDisposable('visit intentions on a disposable database', () => {
 
   async function registerOwner(label: string, options?: { skipLogin?: boolean }) {
     const email = `${label}-${randomUUID()}@example.test`;
+    const phone = syntheticMobile();
     const salonId = randomUUID();
     const userId = randomUUID();
     const now = new Date();
@@ -81,6 +110,7 @@ describeIfDisposable('visit intentions on a disposable database', () => {
         salonId,
         name: label,
         email,
+        phone,
         passwordHash: await argon2.hash(password, { type: argon2.argon2id }),
         role: 'OWNER',
         updatedAt: now,
@@ -97,8 +127,8 @@ describeIfDisposable('visit intentions on a disposable database', () => {
       };
     }
     const login = await request(app.getHttpServer())
-      .post('/auth/login')
-      .send({ email, password })
+      .post('/auth/login/phone')
+      .send({ phone, password })
       .expect(201);
     return {
       token: login.body.accessToken as string,
@@ -110,20 +140,22 @@ describeIfDisposable('visit intentions on a disposable database', () => {
 
   async function addStaff(salonId: string) {
     const email = `staff-${randomUUID()}@example.test`;
+    const phone = syntheticMobile();
     await prisma.client.user.create({
       data: {
         id: randomUUID(),
         salonId,
         name: 'staff',
         email,
+        phone,
         passwordHash: await argon2.hash(password, { type: argon2.argon2id }),
         role: 'STAFF',
         updatedAt: new Date(),
       },
     });
     const login = await request(app.getHttpServer())
-      .post('/auth/login')
-      .send({ email, password })
+      .post('/auth/login/phone')
+      .send({ phone, password })
       .expect(201);
     return login.body.accessToken as string;
   }
@@ -526,13 +558,20 @@ describeIfDisposable('visit intentions on a disposable database', () => {
         .set('Idempotency-Key', secondKey)
         .send({ visitedAt, customerId: matching.body.id }),
     ]);
-    const statuses = [first.status, second.status].sort();
-    expect(statuses).toEqual([201, 409]);
+    const winner = first.status === 201 ? first : second;
+    const loser = winner === first ? second : first;
+    expect(winner.status).toBe(201);
+    expect(loser.status).toBe(409);
+    const winnerCustomerId = winner === first ? chosen : (matching.body.id as string);
+    expect(winner.body.linkedCustomerId).toBe(winnerCustomerId);
     const visitsAfter = await prisma.client.visit.count({ where: { salonId: salon.tenantId } });
     expect(visitsAfter).toBe(visitsBefore + 1);
     const linked = await prisma.client.visitIntention.findUniqueOrThrow({ where: { id: adminCreated.body.id } });
-    expect(linked.linkedCustomerId).toBe(chosen);
-    expect(linked.linkedCustomerId).not.toBe(matching.body.id);
+    expect(linked.linkedCustomerId).toBe(winnerCustomerId);
+    expect(linked.linkedVisitId).toBe(winner.body.linkedVisitId);
+    expect(await prisma.client.visit.count({
+      where: { salonId: salon.tenantId, id: linked.linkedVisitId ?? undefined },
+    })).toBe(1);
     const customers = await prisma.client.customer.count({ where: { salonId: salon.tenantId } });
     expect(customers).toBe(2);
   });
@@ -1188,16 +1227,129 @@ describeIfDisposable('visit intentions on a disposable database', () => {
   });
 
   it('reads an upgraded predecessor fixture and appends revision 2 without rewriting revision 1', async () => {
+    // No fixture file contains these ids. They appear only in this test.
+    // The predecessor rows below are the legal pre-contact-basis shape that
+    // the migration and these assertions determine. Recipient 107 keeps the
+    // target-list phone 09129990000, which must not be copied onto the intention.
     const noneId = '00000000-0000-4000-8000-000000000108';
     const nameId = '00000000-0000-4000-8000-000000000109';
     const phoneId = '00000000-0000-4000-8000-00000000010a';
     const adminId = '00000000-0000-4000-8000-00000000010b';
     const salonId = '00000000-0000-4000-8000-000000000101';
     const userId = '00000000-0000-4000-8000-000000000102';
-    const rows = await prisma.client.visitIntention.findMany({
-      where: { id: { in: [noneId, nameId, phoneId, adminId] } },
-      orderBy: { id: 'asc' },
-    });
+    const requestId = '00000000-0000-4000-8000-000000000103';
+    const listId = '00000000-0000-4000-8000-000000000104';
+    const contactId = '00000000-0000-4000-8000-000000000105';
+    const platformAdminId = '00000000-0000-4000-8000-000000000106';
+    const recipientId = '00000000-0000-4000-8000-000000000107';
+    const sourceUrl = new URL(databaseUrl!);
+    const predecessorName = 'visit_intention_predecessor_rehearsal';
+    await recreateDisposableDatabase(withDatabase(sourceUrl, 'postgres'), predecessorName, /^visit_intention_predecessor_[a-z0-9_]+$/);
+    const predecessorUrl = withDatabase(sourceUrl, predecessorName);
+    const rehearsal = new HistoricalMigrationRehearsal(predecessorUrl);
+    let historicalDb: ReturnType<typeof createPrismaClient> | undefined;
+    try {
+      rehearsal.copyRange('20261010230000_visit_intentions');
+      rehearsal.deploy();
+      const setup = createPrismaClient(predecessorUrl);
+      try {
+        const basis = await setup.$queryRaw<Array<{ present: boolean }>>`
+          SELECT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = 'visit_intentions' AND column_name = 'contact_basis'
+          ) AS present
+        `;
+        expect(basis[0]?.present).toBe(false);
+        await setup.$executeRaw`
+          INSERT INTO salons (id, name, updated_at)
+          VALUES (${salonId}::uuid, 'Historical visit intention', NOW())
+        `;
+        await setup.$executeRaw`
+          INSERT INTO users (id, salon_id, name, email, password_hash, role, updated_at)
+          VALUES (${userId}::uuid, ${salonId}::uuid, 'Historical owner', 'visit-intention-historical@example.test', 'synthetic', 'OWNER'::"UserRole", NOW())
+        `;
+        await setup.$executeRaw`
+          INSERT INTO platform_admins (id, email, password_hash, name, updated_at)
+          VALUES (${platformAdminId}::uuid, 'visit-intention-historical-admin@example.test', 'synthetic', 'Historical admin', NOW())
+        `;
+        await setup.$executeRaw`
+          INSERT INTO vip_target_lists (id, name, status, contact_count, created_by_admin_id, reserved_by_salon_id, reserved_at, updated_at)
+          VALUES (${listId}::uuid, 'Historical list', 'IN_USE'::"VipTargetListStatus", 30, ${platformAdminId}::uuid, ${salonId}::uuid, NOW(), NOW())
+        `;
+        await setup.$executeRaw`
+          INSERT INTO vip_target_contacts (id, list_id, sort_order, phone_number)
+          VALUES (${contactId}::uuid, ${listId}::uuid, 1, '09129990000')
+        `;
+        await setup.$executeRaw`
+          INSERT INTO vip_requests (
+            id, salon_id, list_id, created_by_user_id, requested_count, geographic_range, status, reserved_until, updated_at
+          ) VALUES (
+            ${requestId}::uuid, ${salonId}::uuid, ${listId}::uuid, ${userId}::uuid, 30, 'historical',
+            'SUBMITTED'::"VipRequestStatus", TIMESTAMPTZ '2026-12-01T00:00:00Z', NOW()
+          )
+        `;
+        await setup.$executeRaw`
+          INSERT INTO vip_request_recipients (
+            id, vip_request_id, salon_id, sort_order, source_contact_id, phone_number, message_text
+          ) VALUES (
+            ${recipientId}::uuid, ${requestId}::uuid, ${salonId}::uuid, 1, ${contactId}::uuid, '09129990000', 'Historical target'
+          )
+        `;
+        await setup.$executeRaw`
+          INSERT INTO visit_intentions (
+            id, salon_id, subject, vip_request_id, vip_request_recipient_id,
+            disclosed_display_name, disclosed_phone, time_precision, report_channel,
+            created_by_user_id, created_by_platform_admin_id, updated_by_user_id, updated_by_platform_admin_id,
+            created_at, updated_at
+          ) VALUES
+            (${noneId}::uuid, ${salonId}::uuid, 'VIP_PROSPECT'::"VisitIntentionSubject", ${requestId}::uuid, NULL,
+              NULL, NULL, 'UNKNOWN'::"VisitIntentionTimePrecision", 'INBOUND_TO_SALON'::"VisitIntentionReportChannel",
+              ${userId}::uuid, NULL, ${userId}::uuid, NULL, TIMESTAMPTZ '2026-09-01T00:00:01Z', TIMESTAMPTZ '2026-09-01T00:00:01Z'),
+            (${nameId}::uuid, ${salonId}::uuid, 'VIP_PROSPECT'::"VisitIntentionSubject", ${requestId}::uuid, NULL,
+              'مریم تاریخی', NULL, 'UNKNOWN'::"VisitIntentionTimePrecision", 'INBOUND_TO_SALON'::"VisitIntentionReportChannel",
+              ${userId}::uuid, NULL, ${userId}::uuid, NULL, TIMESTAMPTZ '2026-09-01T00:00:02Z', TIMESTAMPTZ '2026-09-01T00:00:02Z'),
+            (${phoneId}::uuid, ${salonId}::uuid, 'VIP_PROSPECT'::"VisitIntentionSubject", ${requestId}::uuid, NULL,
+              NULL, '09121112233', 'UNKNOWN'::"VisitIntentionTimePrecision", 'INBOUND_TO_SALON'::"VisitIntentionReportChannel",
+              ${userId}::uuid, NULL, ${userId}::uuid, NULL, TIMESTAMPTZ '2026-09-01T00:00:03Z', TIMESTAMPTZ '2026-09-01T00:00:03Z'),
+            (${adminId}::uuid, ${salonId}::uuid, 'VIP_PROSPECT'::"VisitIntentionSubject", ${requestId}::uuid, ${recipientId}::uuid,
+              NULL, NULL, 'UNKNOWN'::"VisitIntentionTimePrecision", 'REPORTED_DURING_MANUAL_HANDLING'::"VisitIntentionReportChannel",
+              NULL, ${platformAdminId}::uuid, NULL, ${platformAdminId}::uuid, TIMESTAMPTZ '2026-09-01T00:00:04Z', TIMESTAMPTZ '2026-09-01T00:00:04Z')
+        `;
+      } finally {
+        await setup.$disconnect();
+      }
+      rehearsal.copyRange('20261011150000_visit_intention_contact_basis', '20261010230000_visit_intentions');
+      rehearsal.deploy();
+      const upgraded = createPrismaClient(predecessorUrl);
+      try {
+        const bases = await upgraded.$queryRaw<Array<{ id: string; basis: string; phone: string | null }>>`
+          SELECT id::text AS id, contact_basis::text AS basis, disclosed_phone AS phone
+          FROM visit_intentions
+          ORDER BY id
+        `;
+        expect(bases).toEqual([
+          { id: noneId, basis: 'WITHHELD', phone: null },
+          { id: nameId, basis: 'SALON_SUPPLIED', phone: null },
+          { id: phoneId, basis: 'SALON_SUPPLIED', phone: '09121112233' },
+          { id: adminId, basis: 'WITHHELD', phone: null },
+        ]);
+        const revisionCount = await upgraded.$queryRaw<Array<{ count: number }>>`
+          SELECT count(*)::int AS count FROM visit_intention_contact_revisions WHERE revision = 1
+        `;
+        expect(revisionCount[0]?.count).toBe(4);
+      } finally {
+        await upgraded.$disconnect();
+      }
+      historicalDb = createPrismaClient(predecessorUrl);
+      const historicalPrisma = { client: historicalDb };
+      const intentions = new VisitIntentionRepository(historicalPrisma as never);
+      const listVip = new ListSalonVipVisitIntentionsUseCase(historicalPrisma as never, intentions);
+      const updateIntention = new UpdateVisitIntentionUseCase(historicalPrisma as never, intentions);
+      const principal = { userId, tenantId: salonId, role: 'OWNER' } as AuthenticatedPrincipal;
+      const rows = await historicalPrisma.client.visitIntention.findMany({
+        where: { id: { in: [noneId, nameId, phoneId, adminId] } },
+        orderBy: { id: 'asc' },
+      });
     expect(rows).toHaveLength(4);
     const byId = new Map(rows.map((row) => [row.id, row]));
     expect(byId.get(noneId)?.contactBasis).toBe('WITHHELD');
@@ -1210,7 +1362,7 @@ describeIfDisposable('visit intentions on a disposable database', () => {
     expect(byId.get(phoneId)?.disclosedPhone).toBe('09121112233');
     expect(byId.get(adminId)?.contactBasis).toBe('WITHHELD');
     expect(byId.get(adminId)?.disclosedPhone).toBeNull();
-    const revisions = await prisma.client.visitIntentionContactRevision.findMany({
+    const revisions = await historicalPrisma.client.visitIntentionContactRevision.findMany({
       where: { visitIntentionId: { in: [noneId, nameId, phoneId, adminId] } },
     });
     expect(revisions).toHaveLength(4);
@@ -1224,40 +1376,34 @@ describeIfDisposable('visit intentions on a disposable database', () => {
       expect(revision.createdAt.toISOString()).toBe(row?.createdAt.toISOString());
       expect(revision.disclosedPhone).not.toBe('09129990000');
     }
-    const secret = process.env.JWT_SECRET;
-    if (!secret) throw new Error('JWT_SECRET is required');
-    const token = jwt.sign({ sub: userId, tid: salonId, role: 'OWNER' }, secret);
     const phone = byId.get(phoneId)!;
-    const listed = await request(app.getHttpServer())
-      .get(`/vip/requests/${phone.vipRequestId}/visit-intentions`)
-      .set('Authorization', `Bearer ${token}`)
-      .expect(200);
-    const serialized = JSON.stringify(listed.body);
+    const listed = await listVip.execute(principal, phone.vipRequestId!, {});
+    const serialized = JSON.stringify(listed);
     expect(serialized).toContain('09121112233');
     expect(serialized).toContain('مریم تاریخی');
     expect(serialized).not.toContain('09129990000');
     expect(serialized).not.toContain('00000000-0000-4000-8000-000000000107');
-    const withheld = listed.body.items.find((item: { id: string }) => item.id === noneId);
-    const adminRow = listed.body.items.find((item: { id: string }) => item.id === adminId);
+    const withheld = listed.items.find((item) => item.id === noneId);
+    const adminRow = listed.items.find((item) => item.id === adminId);
     expect(withheld.identityDisclosure).toBe('WITHHELD');
     expect(withheld.disclosedPhone).toBeNull();
     expect(adminRow.identityDisclosure).toBe('WITHHELD');
     expect(adminRow.disclosedPhone).toBeNull();
     expect(adminRow.vipRequestRecipientId).toBeUndefined();
-    const corrected = await request(app.getHttpServer())
-      .patch(`/visit-intentions/${phoneId}`)
-      .set('Authorization', `Bearer ${token}`)
-      .set('Idempotency-Key', 'vi-upgrade-phone-correction')
-      .send({
+    const corrected = await updateIntention.execute(
+      principal,
+      phoneId,
+      {
         time: { precision: 'UNKNOWN' },
         updatedAt: phone.updatedAt.toISOString(),
         correctDisclosedContact: true,
         disclosedPhone: '09121112244',
-      })
-      .expect(200);
-    expect(corrected.body.disclosedPhone).toBe('09121112244');
-    expect(corrected.body.reportedAt).toBe(phone.createdAt.toISOString());
-    const after = await prisma.client.visitIntentionContactRevision.findMany({
+      },
+      'vi-upgrade-phone-correction',
+    );
+    expect(corrected.disclosedPhone).toBe('09121112244');
+    expect(corrected.reportedAt).toBe(phone.createdAt.toISOString());
+    const after = await historicalPrisma.client.visitIntentionContactRevision.findMany({
       where: { visitIntentionId: phoneId },
       orderBy: { revision: 'asc' },
     });
@@ -1267,6 +1413,23 @@ describeIfDisposable('visit intentions on a disposable database', () => {
     ]);
     expect(after[0]?.createdAt.toISOString()).toBe(phone.createdAt.toISOString());
     expect(after[1]?.recordedByUserId).toBe(userId);
+    const phoneColumn = await historicalPrisma.client.$queryRaw<Array<{ present: boolean }>>`
+      SELECT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'phone'
+      ) AS present
+    `;
+    expect(phoneColumn[0]?.present).toBe(false);
+    } finally {
+      if (historicalDb) await historicalDb.$disconnect();
+      rehearsal.dispose();
+      const cleanup = createPrismaClient(withDatabase(sourceUrl, 'postgres'));
+      try {
+        await cleanup.$executeRawUnsafe(`DROP DATABASE IF EXISTS "${predecessorName}" WITH (FORCE)`);
+      } finally {
+        await cleanup.$disconnect();
+      }
+    }
   });
 
   it('lets platform admin record a customer intention told to support', async () => {
@@ -1410,6 +1573,7 @@ describeIfDisposable('visit intentions on a disposable database', () => {
         salonId: otherSalonId,
         name: 'admin-other',
         email: `admin-other-${randomUUID()}@example.test`,
+        phone: syntheticMobile(),
         passwordHash: await argon2.hash(password, { type: argon2.argon2id }),
         role: 'OWNER',
         updatedAt: otherNow,

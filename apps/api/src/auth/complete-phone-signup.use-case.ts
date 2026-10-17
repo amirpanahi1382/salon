@@ -39,6 +39,7 @@ export class CompletePhoneSignupUseCase {
     salonName: string;
     ownerName: string;
     password: string;
+    passwordConfirmation: string;
     idempotencyKey: string | string[] | undefined;
   }): Promise<CompletionBody> {
     const secret = this.config.values.PHONE_SIGNUP_HASH_SECRET;
@@ -48,6 +49,9 @@ export class CompletePhoneSignupUseCase {
     const phone = normalizeIranianMobile(input.phone);
     if (!phone) {
       throw new ValidationError('Enter an Iranian mobile number.');
+    }
+    if (input.password !== input.passwordConfirmation) {
+      throw new ValidationError('Enter the same password in both fields.');
     }
     const salonName = input.salonName.trim();
     const ownerName = input.ownerName.trim();
@@ -100,6 +104,9 @@ export class CompletePhoneSignupUseCase {
             { maxWait: 5_000, timeout: 15_000 },
           );
         }
+        throw new ConflictError(COMPLETION_CONFLICT);
+      }
+      if (error instanceof Error && error.message.includes('phone_identity_cross_role')) {
         throw new ConflictError(COMPLETION_CONFLICT);
       }
       throw error;

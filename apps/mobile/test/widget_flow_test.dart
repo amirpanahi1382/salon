@@ -42,8 +42,8 @@ class FakeAuthRepository extends AuthRepository {
   Object? nextError;
 
   @override
-  Future<AuthSession> login({
-    required String email,
+  Future<AuthSession> loginWithPhone({
+    required String phone,
     required String password,
   }) async {
     if (nextError != null) {
@@ -1015,9 +1015,12 @@ void main() {
     await tester.pumpWidget(
       const ProviderScope(child: MaterialApp(home: LoginScreen())),
     );
-    await tester.tap(find.text('ورود'));
+    await tester.tap(find.byType(AppButton));
     await tester.pump();
-    expect(find.text('ایمیل و رمز عبور را وارد کنید.'), findsOneWidget);
+    expect(find.text('شماره موبایل و رمز عبور را وارد کنید.'), findsOneWidget);
+    expect(find.text('ورود با ایمیل'), findsNothing);
+    expect(find.text('ورود مدیر پلتفرم'), findsNothing);
+    expect(find.text(AppStrings.email), findsNothing);
   });
 
   testWidgets('login shows authentication error', (tester) async {
@@ -1025,7 +1028,7 @@ void main() {
       ..nextError = const ApiException(
         statusCode: 401,
         code: 'UNAUTHENTICATED',
-        message: 'Invalid email or password',
+        message: 'Invalid phone or password',
       );
     await tester.pumpWidget(
       ProviderScope(
@@ -1033,11 +1036,11 @@ void main() {
         child: const MaterialApp(home: LoginScreen()),
       ),
     );
-    await tester.enterText(find.byType(TextField).first, 'a@b.com');
+    await tester.enterText(find.byType(TextField).first, '09120000000');
     await tester.enterText(find.byType(TextField).last, 'password1');
-    await tester.tap(find.text('ورود'));
+    await tester.tap(find.byType(AppButton));
     await tester.pump();
-    expect(find.textContaining('ایمیل یا رمز عبور درست نیست.'), findsOneWidget);
+    expect(find.textContaining('شماره موبایل یا رمز عبور درست نیست.'), findsOneWidget);
   });
 
   testWidgets('dashboard renders overall performance before message results', (

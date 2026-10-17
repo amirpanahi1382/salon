@@ -7,29 +7,22 @@ import { Roles } from '../infrastructure/auth/roles.decorator';
 import { RolesGuard } from '../infrastructure/auth/roles.guard';
 import {
   CompletePhoneSignupDto,
-  LoginDto,
   PhoneLoginDto,
-  RegisterSalonOwnerDto,
   StartPhoneSignupDto,
   VerifyPhoneSignupDto,
 } from './auth.dto';
 import { CompletePhoneSignupUseCase } from './complete-phone-signup.use-case';
 import { ExchangeProductSessionUseCase } from './exchange-product-session.use-case';
-import { EmailRegistrationGuard } from './email-registration.guard';
 import { JwtAuthGuard } from './jwt-auth.guard';
-import { LoginUseCase } from './login.use-case';
 import { PhoneLoginUseCase } from './phone-login.use-case';
 import { PhoneSignupEnabledGuard } from './phone-signup-enabled.guard';
 import { StartPhoneSignupUseCase, VerifyPhoneSignupUseCase } from './phone-signup.use-cases';
-import { RegisterSalonOwnerUseCase } from './register-salon-owner.use-case';
 import { AllowOnboardingSession } from './salon-session-access';
 
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
   constructor(
-    private readonly registerSalonOwner: RegisterSalonOwnerUseCase,
-    private readonly login: LoginUseCase,
     private readonly startPhoneSignup: StartPhoneSignupUseCase,
     private readonly verifyPhoneSignup: VerifyPhoneSignupUseCase,
     private readonly completePhoneSignup: CompletePhoneSignupUseCase,
@@ -86,26 +79,9 @@ export class AuthController {
       salonName: body.salonName,
       ownerName: body.ownerName,
       password: body.password,
+      passwordConfirmation: body.passwordConfirmation,
       idempotencyKey,
     });
-  }
-
-  @Post('register')
-  @UseGuards(EmailRegistrationGuard)
-  @Throttle({ default: { limit: 5, ttl: 60_000 } })
-  @ApiOperation({
-    summary:
-      'Register a salon and owner by email. Available only when PUBLIC_REGISTRATION_MODE=email.',
-  })
-  register(@Body() body: RegisterSalonOwnerDto) {
-    return this.registerSalonOwner.execute(body);
-  }
-
-  @Post('login')
-  @Throttle({ default: { limit: 10, ttl: 60_000 } })
-  @ApiOperation({ summary: 'Authenticate with email and password' })
-  signIn(@Body() body: LoginDto) {
-    return this.login.execute(body);
   }
 
   @Post('login/phone')
@@ -156,7 +132,7 @@ export class AuthController {
   @Roles('OWNER', 'MANAGER', 'STAFF')
   @AllowOnboardingSession()
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Return the authenticated principal (tenant is server-derived)' })
+  @ApiOperation({ summary: 'Return the authenticated principal. The phone number is not included.' })
   me(@CurrentUser() user: AuthenticatedPrincipal) {
     return user;
   }

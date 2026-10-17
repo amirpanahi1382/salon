@@ -15,6 +15,7 @@ import {
   SUPPORT_PAGE_LIMIT,
 } from '../src/support/support.constants';
 import { SupportRepository } from '../src/support/support.repository';
+import { syntheticMobile } from './support/phone-account';
 
 const databaseUrl = process.env.SUPPORT_DISPOSABLE_DATABASE_URL;
 const databaseName = databaseUrl ? new URL(databaseUrl).pathname.replace(/^\//, '') : '';
@@ -58,19 +59,21 @@ describeIfDisposable('salon user support conversations', () => {
     }
 
     const adminEmail = `support-admin-${Date.now()}@example.test`;
+    const adminPhone = syntheticMobile();
     adminId = randomUUID();
     await prisma.client.platformAdmin.create({
       data: {
         id: adminId,
         email: adminEmail,
+        phone: adminPhone,
         name: 'اپراتور',
         passwordHash: await argon2.hash(adminPassword, { type: argon2.argon2id }),
         updatedAt: new Date(),
       },
     });
     const login = await request(app.getHttpServer())
-      .post('/admin/auth/login')
-      .send({ email: adminEmail, password: adminPassword })
+      .post('/auth/login/phone')
+      .send({ phone: adminPhone, password: adminPassword })
       .expect(201);
     adminToken = login.body.accessToken as string;
 
@@ -108,6 +111,7 @@ describeIfDisposable('salon user support conversations', () => {
         salonId,
         name: label,
         email,
+        phone: syntheticMobile(),
         passwordHash: await argon2.hash(password, { type: argon2.argon2id }),
         role,
         updatedAt: new Date(),

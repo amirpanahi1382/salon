@@ -1,12 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { ThrottlerStorage } from '@nestjs/throttler';
 import argon2 from 'argon2';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/infrastructure/database/prisma.service';
 import { HttpExceptionFilter } from '../src/infrastructure/http/http-exception.filter';
 import { listPage } from './list-page';
+import { staffRequest, syntheticMobile } from './support/phone-account';
 
 const describeIfDb = process.env.DATABASE_URL ? describe : describe.skip;
 const password = 'correct-horse-battery';
@@ -37,12 +39,27 @@ describeIfDb('Return commitments (e2e)', () => {
     prisma = app.get(PrismaService);
   });
 
+  beforeEach(() => {
+    // Cases in this file share the in-memory address counter. The concurrency
+    // case is not a throttle test; start each case from an empty counter.
+    const storage = app.get(ThrottlerStorage) as {
+      storage: Map<string, { totalHits: Map<string, number>; isBlocked: boolean }>;
+      timeoutIds?: Map<string, NodeJS.Timeout[]>;
+    };
+    storage.timeoutIds?.forEach((ids) => {
+      for (const id of ids) clearTimeout(id);
+    });
+    storage.timeoutIds?.clear();
+    storage.storage.clear();
+  });
+
   afterAll(async () => {
     await app.close();
   });
 
   async function registerOwner(label: string) {
     const email = `${label}-${Date.now()}-${Math.random().toString(16).slice(2)}@example.test`;
+    const phone = syntheticMobile();
     const salonId = randomUUID();
     const userId = randomUUID();
     const now = new Date();
@@ -55,14 +72,15 @@ describeIfDb('Return commitments (e2e)', () => {
         salonId,
         name: `${label} Owner`,
         email,
+        phone,
         passwordHash: await argon2.hash(password, { type: argon2.argon2id }),
         role: 'OWNER',
         updatedAt: now,
       },
     });
     const login = await request(app.getHttpServer())
-      .post('/auth/login')
-      .send({ email, password })
+      .post('/auth/login/phone')
+      .send({ phone, password })
       .expect(201);
     return {
       email,
@@ -72,9 +90,9 @@ describeIfDb('Return commitments (e2e)', () => {
     };
   }
 
-  async function login(email: string) {
+  async function login(phone: string) {
     return (
-      await request(app.getHttpServer()).post('/auth/login').send({ email, password }).expect(201)
+      await request(app.getHttpServer()).post('/auth/login/phone').send({ phone, password }).expect(201)
     ).body.accessToken as string;
   }
 
@@ -339,6 +357,7 @@ describeIfDb('Return commitments (e2e)', () => {
       data: {
         id: adminId,
         email: `rc-admin-${randomUUID()}@example.test`,
+        phone: syntheticMobile(),
         passwordHash: 'hash',
         name: 'Admin',
         updatedAt: new Date(),
@@ -596,42 +615,119 @@ describeIfDb('Return commitments (e2e)', () => {
 
   it('serializes concurrent creates from two actors to one row', async () => {
     const salon = await registerOwner('rc-race');
-    const customerId = await createCustomer(salon.token, 'Race');
-    const staffEmail = `staff-rc-${Date.now()}@example.test`;
+    const staff = staffRequest({
+      name: 'Staff',
+      role: 'STAFF',
+      password,
+      email: `staff-rc-${Date.now()}@example.test`,
+    });
     await request(app.getHttpServer())
       .post('/users')
       .set('Authorization', `Bearer ${salon.token}`)
-      .send({ name: 'Staff', email: staffEmail, password, role: 'STAFF' })
+      .send(staff)
       .expect(201);
-    const staffToken = await login(staffEmail);
-    const sent = await insertCustomerMessage({
-      salonId: salon.tenantId,
-      userId: salon.userId,
-      customerId,
-      requestedAt: new Date(Date.now() - 60 * 60 * 1000),
-      submittedAt: new Date(Date.now() - 30 * 60 * 1000),
-      status: 'SENT',
+    const staffToken = await login(staff.phone);
+    const staffUser = await prisma.client.user.findFirstOrThrow({
+      where: { salonId: salon.tenantId, phone: staff.phone },
+      select: { id: true },
     });
-    const expectedAt = futureIso(24);
-    const [ownerResult, staffResult] = await Promise.all([
-      request(app.getHttpServer())
+
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const customerId = await createCustomer(salon.token, `Race${attempt}`);
+      const sent = await insertCustomerMessage({
+        salonId: salon.tenantId,
+        userId: salon.userId,
+        customerId,
+        requestedAt: new Date(Date.now() - 60 * 60 * 1000),
+        submittedAt: new Date(Date.now() - 30 * 60 * 1000),
+        status: 'SENT',
+      });
+      const ownerExpectedAt = futureIso(24 + attempt);
+      const staffExpectedAt = futureIso(48 + attempt);
+      const ownerKey = `rc-race-o-${attempt}-${randomUUID()}`;
+      const staffKey = `rc-race-s-${attempt}-${randomUUID()}`;
+      const [ownerResult, staffResult] = await Promise.all([
+        request(app.getHttpServer())
+          .post(`/messages/${sent.requestId}/return-commitments`)
+          .set('Authorization', `Bearer ${salon.token}`)
+          .set('Idempotency-Key', ownerKey)
+          .send({ expectedAt: ownerExpectedAt }),
+        request(app.getHttpServer())
+          .post(`/messages/${sent.requestId}/return-commitments`)
+          .set('Authorization', `Bearer ${staffToken}`)
+          .set('Idempotency-Key', staffKey)
+          .send({ expectedAt: staffExpectedAt }),
+      ]);
+      const winner = ownerResult.status === 201 ? ownerResult : staffResult;
+      const loser = winner === ownerResult ? staffResult : ownerResult;
+      const winnerUserId = winner === ownerResult ? salon.userId : staffUser.id;
+      const winnerKey = winner === ownerResult ? ownerKey : staffKey;
+      const loserKey = winner === ownerResult ? staffKey : ownerKey;
+      const winnerExpectedAt = winner === ownerResult ? ownerExpectedAt : staffExpectedAt;
+      expect(winner.status).toBe(201);
+      expect(loser.status).toBe(409);
+      expect(winner.body.createdByUserId).toBe(winnerUserId);
+      expect(winner.body.sourceMessage).toEqual({
+        requestId: sent.requestId,
+        deliveryId: sent.deliveryId,
+      });
+      expect(winner.body.expectedAt).toBe(winnerExpectedAt);
+
+      const rows = await prisma.client.returnCommitment.findMany({
+        where: { salonId: salon.tenantId, sourceMessageRequestId: sent.requestId },
+      });
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({
+        id: winner.body.id,
+        createdByUserId: winnerUserId,
+        sourceMessageDeliveryId: sent.deliveryId,
+        expectedAt: new Date(winnerExpectedAt),
+      });
+
+      const successAudits = await prisma.client.auditLog.findMany({
+        where: {
+          tenantId: salon.tenantId,
+          action: 'RETURN_COMMITMENT_CREATED',
+          result: 'SUCCESS',
+          resourceId: winner.body.id,
+        },
+      });
+      expect(successAudits).toHaveLength(1);
+      expect(successAudits[0]?.actorId).toBe(winnerUserId);
+      expect(await prisma.client.auditLog.count({
+        where: {
+          tenantId: salon.tenantId,
+          action: 'RETURN_COMMITMENT_CREATED',
+          result: 'SUCCESS',
+          metadata: { path: ['sourceMessageRequestId'], equals: sent.requestId },
+          NOT: { resourceId: winner.body.id },
+        },
+      })).toBe(0);
+      expect(await prisma.client.idempotencyRecord.count({
+        where: { tenantId: salon.tenantId, key: loserKey },
+      })).toBe(0);
+      expect(await prisma.client.idempotencyRecord.count({
+        where: { tenantId: salon.tenantId, key: winnerKey, actorId: winnerUserId },
+      })).toBe(1);
+
+      const replay = await request(app.getHttpServer())
         .post(`/messages/${sent.requestId}/return-commitments`)
-        .set('Authorization', `Bearer ${salon.token}`)
-        .set('Idempotency-Key', `rc-race-o-${randomUUID()}`)
-        .send({ expectedAt }),
-      request(app.getHttpServer())
+        .set('Authorization', `Bearer ${winner === ownerResult ? salon.token : staffToken}`)
+        .set('Idempotency-Key', winnerKey)
+        .send({ expectedAt: winnerExpectedAt })
+        .expect(201);
+      expect(replay.body.id).toBe(winner.body.id);
+      await request(app.getHttpServer())
         .post(`/messages/${sent.requestId}/return-commitments`)
-        .set('Authorization', `Bearer ${staffToken}`)
-        .set('Idempotency-Key', `rc-race-s-${randomUUID()}`)
-        .send({ expectedAt: futureIso(30) }),
-    ]);
-    const statuses = [ownerResult.status, staffResult.status].sort();
-    expect(statuses).toEqual([201, 409]);
-    const count = await prisma.client.returnCommitment.count({
-      where: { salonId: salon.tenantId, sourceMessageRequestId: sent.requestId },
-    });
-    expect(count).toBe(1);
-  });
+        .set('Authorization', `Bearer ${winner === ownerResult ? salon.token : staffToken}`)
+        .set('Idempotency-Key', winnerKey)
+        .send({ expectedAt: futureIso(80 + attempt) })
+        .expect(409);
+      expect(await prisma.client.returnCommitment.count({
+        where: { salonId: salon.tenantId, sourceMessageRequestId: sent.requestId },
+      })).toBe(1);
+    }
+  }, 120_000);
 
   it('does not change Phase 4A observed-return association', async () => {
     const salon = await registerOwner('rc-obs');

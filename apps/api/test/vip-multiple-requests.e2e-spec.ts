@@ -8,7 +8,6 @@ import {
   VIP_QUOTA_MAX,
   VIP_QUOTA_WINDOW_DAYS,
 } from '@salon/shared';
-import * as argon2 from 'argon2';
 import ExcelJS from 'exceljs';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
@@ -16,6 +15,12 @@ import { PrismaService } from '../src/infrastructure/database/prisma.service';
 import { HttpExceptionFilter } from '../src/infrastructure/http/http-exception.filter';
 import { MemoryObjectStorage } from '../src/infrastructure/storage/memory.object-storage';
 import { OBJECT_STORAGE } from '../src/infrastructure/storage/object-storage';
+import {
+  createPlatformAdminSession,
+  createProductOwnerSession,
+  hashTestPassword,
+  syntheticMobile,
+} from './support/phone-account';
 
 const databaseUrl = process.env.DATABASE_URL;
 const disposableTarget = (() => {
@@ -97,21 +102,13 @@ describeIfDb('VIP multiple requests and rolling quota (e2e)', () => {
       throw new Error('Refusing VIP multiple-request tests without this run’s disposable database');
     }
     jwt = app.get(JwtService);
-    const adminEmail = `vip-multi-${Date.now()}@example.test`;
-    await prisma.client.platformAdmin.create({
-      data: {
-        id: randomUUID(),
-        email: adminEmail,
-        name: 'Ops',
-        passwordHash: await argon2.hash(adminPassword, { type: argon2.argon2id }),
-        updatedAt: new Date(),
-      },
+    const admin = await createPlatformAdminSession(prisma.client, app.getHttpServer(), {
+      name: 'Ops',
+      password: adminPassword,
     });
-    const login = await request(app.getHttpServer())
-      .post('/admin/auth/login')
-      .send({ email: adminEmail, password: adminPassword })
-      .expect(201);
-    adminToken = login.body.accessToken as string;
+    expect(admin.body.accountKind).toBe('PLATFORM_ADMIN');
+    expect(admin.body.admin.id).toBe(admin.adminId);
+    adminToken = admin.accessToken;
   });
 
   afterAll(async () => {
@@ -124,7 +121,6 @@ describeIfDb('VIP multiple requests and rolling quota (e2e)', () => {
   }
 
   async function createOwner(label: string) {
-    const email = `${label}-${Date.now()}-${Math.random().toString(16).slice(2)}@example.test`;
     const salonId = randomUUID();
     const userId = randomUUID();
     const now = new Date();
@@ -136,8 +132,8 @@ describeIfDb('VIP multiple requests and rolling quota (e2e)', () => {
         id: userId,
         salonId,
         name: `${label} Owner`,
-        email,
-        passwordHash: await argon2.hash(password, { type: argon2.argon2id }),
+        phone: syntheticMobile(),
+        passwordHash: await hashTestPassword(password),
         role: 'OWNER',
         updatedAt: now,
       },
@@ -690,16 +686,11 @@ describeIfDb('VIP multiple requests and rolling quota (e2e)', () => {
   });
 
   it('does not grant VIP entitlement during public registration', async () => {
-    const email = `register-${Date.now()}@example.test`;
-    const registered = await request(app.getHttpServer())
-      .post('/auth/register')
-      .send({
-        salonName: 'Registered Salon',
-        ownerName: 'Registered Owner',
-        email,
-        password,
-      })
-      .expect(201);
+    const registered = await createProductOwnerSession(prisma.client, app.getHttpServer(), {
+      salonName: 'Registered Salon',
+      ownerName: 'Registered Owner',
+      password,
+    });
     const tenantId = registered.body.user.tenantId as string;
     expect(
       await prisma.client.vipSalonEntitlement.count({ where: { salonId: tenantId } }),

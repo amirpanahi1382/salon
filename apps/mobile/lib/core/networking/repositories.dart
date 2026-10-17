@@ -1,5 +1,4 @@
 import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart';
 
 import '../../core/errors/api_exception.dart';
 import '../../core/networking/api_client.dart';
@@ -32,60 +31,58 @@ class AuthRepository {
       '/auth/login/phone',
       data: {'phone': phone.trim(), 'password': password},
     );
-    final session = AuthSession.fromAuthJson(asJsonMap(data));
+    final session = AuthSession.fromPhoneAuthJson(data);
     await _persist(session);
     return session;
   }
 
-  Future<AuthSession> login({
-    required String email,
-    required String password,
+  Future<void> startPhoneSignup({
+    required String phone,
+    required String idempotencyKey,
   }) async {
-    final data = await api.post(
-      '/auth/login',
-      data: {'email': sanitizeAuthEmail(email), 'password': password},
+    await api.post(
+      '/auth/signup/phone/start',
+      data: {'phone': phone.trim()},
+      headers: {'Idempotency-Key': idempotencyKey},
     );
-    final session = AuthSession.fromAuthJson(asJsonMap(data));
-    await _persist(session);
-    return session;
   }
 
-  Future<AuthSession> register({
+  Future<String> verifyPhoneSignup({
+    required String phone,
+    required String otpCode,
+    required String idempotencyKey,
+  }) async {
+    final data = asJsonMap(
+      await api.post(
+        '/auth/signup/phone/verify',
+        data: {'phone': phone.trim(), 'otpCode': otpCode},
+        headers: {'Idempotency-Key': idempotencyKey},
+      ),
+    );
+    return requiredJsonString(data['signupProof'], 'signupProof');
+  }
+
+  Future<void> completePhoneSignup({
+    required String phone,
+    required String signupProof,
     required String salonName,
     required String ownerName,
-    required String email,
     required String password,
+    required String passwordConfirmation,
+    required String idempotencyKey,
   }) async {
-    final data = await api.post(
-      '/auth/register',
+    await api.post(
+      '/auth/signup/phone/complete',
       data: {
+        'phone': phone.trim(),
+        'signupProof': signupProof,
         'salonName': salonName.trim(),
         'ownerName': ownerName.trim(),
-        'email': sanitizeAuthEmail(email),
         'password': password,
+        'passwordConfirmation': passwordConfirmation,
       },
+      headers: {'Idempotency-Key': idempotencyKey},
     );
-    final session = AuthSession.fromAuthJson(asJsonMap(data));
-    await _persist(session);
-    return session;
-  }
-
-  Future<AuthSession> loginPlatformAdmin({
-    required String email,
-    required String password,
-  }) async {
-    final data = await api.post(
-      '/admin/auth/login',
-      data: {'email': sanitizeAuthEmail(email), 'password': password},
-    );
-    if (kDebugMode) {
-      debugPrint(
-        'admin login response type=${data.runtimeType} keys=${data is Map ? data.keys.toList() : null}',
-      );
-    }
-    final session = AuthSession.fromAdminAuthJson(data);
-    await _persist(session);
-    return session;
   }
 
   Future<AuthSession> exchangeProductSession() async {

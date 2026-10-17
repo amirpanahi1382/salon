@@ -11,6 +11,7 @@ import { PrismaService } from '../src/infrastructure/database/prisma.service';
 import { HttpExceptionFilter } from '../src/infrastructure/http/http-exception.filter';
 import { MemoryObjectStorage } from '../src/infrastructure/storage/memory.object-storage';
 import { OBJECT_STORAGE } from '../src/infrastructure/storage/object-storage';
+import { syntheticMobile } from './support/phone-account';
 
 const describeIfDb = process.env.DATABASE_URL ? describe : describe.skip;
 
@@ -51,18 +52,20 @@ describeIfDb('VIP catalog membership (e2e)', () => {
     }
     adminId = randomUUID();
     const email = `catalog-admin-${Date.now()}@example.test`;
+    const phone = syntheticMobile();
     await prisma.client.platformAdmin.create({
       data: {
         id: adminId,
         email,
+        phone,
         name: 'Catalog Ops',
         passwordHash: await argon2.hash('catalog-admin-pass', { type: argon2.argon2id }),
         updatedAt: new Date(),
       },
     });
     const login = await request(app.getHttpServer())
-      .post('/admin/auth/login')
-      .send({ email, password: 'catalog-admin-pass' })
+      .post('/auth/login/phone')
+      .send({ phone, password: 'catalog-admin-pass' })
       .expect(201);
     adminToken = login.body.accessToken as string;
   });
@@ -182,6 +185,7 @@ describeIfDb('VIP catalog membership (e2e)', () => {
         salonId,
         name: 'Catalog Owner',
         email: `catalog-owner-${Date.now()}@example.test`,
+        phone: syntheticMobile(),
         passwordHash: await argon2.hash('owner-pass', { type: argon2.argon2id }),
         role: 'OWNER',
         updatedAt: now,

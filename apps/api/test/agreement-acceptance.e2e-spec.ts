@@ -16,6 +16,7 @@ import { provisionSalonOwner } from '../src/auth/provision-salon-owner';
 import { AppConfigService } from '../src/infrastructure/config/app-config.service';
 import { PrismaService } from '../src/infrastructure/database/prisma.service';
 import { HttpExceptionFilter } from '../src/infrastructure/http/http-exception.filter';
+import { createPlatformAdminSession, createProductOwnerSession } from './support/phone-account';
 
 const databaseUrl = process.env.AGREEMENT_DISPOSABLE_DATABASE_URL;
 const databaseName = databaseUrl ? new URL(databaseUrl).pathname.replace(/^\//, '') : '';
@@ -580,17 +581,10 @@ describeIfDisposable('agreement acceptance on a disposable database', () => {
       await upgrade.salon.create({
         data: { id: salonId, name: 'Historical', status: 'ACTIVE', updatedAt: new Date() },
       });
-      await upgrade.user.create({
-        data: {
-          id: ownerId,
-          salonId,
-          name: 'Historical Owner',
-          email,
-          passwordHash: 'hash',
-          role: 'OWNER',
-          updatedAt: new Date(),
-        },
-      });
+      await upgrade.$executeRaw`
+        INSERT INTO users (id, salon_id, name, email, password_hash, role, status, updated_at)
+        VALUES (${ownerId}::uuid, ${salonId}::uuid, 'Historical Owner', ${email}, 'hash', 'OWNER', 'ACTIVE', clock_timestamp())
+      `;
       const customerId = createId();
       await upgrade.customer.create({
         data: {
@@ -604,22 +598,40 @@ describeIfDisposable('agreement acceptance on a disposable database', () => {
       });
       await upgrade.$disconnect();
 
-      for (const directory of directories.filter((item) => item >= '20261015180000_salon_access_awaiting_payment')) {
+      const phoneFirst = '20261017150000_phone_first_identity';
+      for (const directory of directories.filter(
+        (item) => item >= '20261015180000_salon_access_awaiting_payment' && item < phoneFirst,
+      )) {
         const sql = await readFile(path.join(migrationsDir, directory, 'migration.sql'), 'utf8');
         await psql(container, upgradeName, sql);
       }
       const upgraded = createPrismaClient(upgradeUrl.toString());
       const salon = await upgraded.salon.findUniqueOrThrow({ where: { id: salonId } });
-      const owner = await upgraded.user.findUniqueOrThrow({ where: { id: ownerId } });
+      const owner = await upgraded.$queryRaw<Array<{ email: string; phone: string | null }>>`
+        SELECT email, phone FROM users WHERE id = ${ownerId}::uuid
+      `;
       const customer = await upgraded.customer.findUniqueOrThrow({ where: { id: customerId } });
       expect(salon.accessState).toBe('PRODUCT');
       expect(salon.name).toBe('Historical');
-      expect(owner.email).toBe(email);
-      expect(owner.phone).toBeNull();
+      expect(owner[0]?.email).toBe(email);
+      expect(owner[0]?.phone).toBeNull();
       expect(customer.phoneNumber).toBe('09120001111');
       expect(await upgraded.agreementAcceptance.count()).toBe(0);
       expect(await upgraded.agreementVersion.count()).toBe(0);
       await upgraded.$disconnect();
+      const phoneFirstSql = await readFile(path.join(migrationsDir, phoneFirst, 'migration.sql'), 'utf8');
+      await expect(psql(container, upgradeName, phoneFirstSql)).rejects.toThrow(
+        /phone_first_refuses_nonempty_database/,
+      );
+      const refused = createPrismaClient(upgradeUrl.toString());
+      const ownerAfter = await refused.$queryRaw<Array<{ phone: string | null }>>`
+        SELECT phone FROM users WHERE id = ${ownerId}::uuid
+      `;
+      expect(ownerAfter[0]?.phone).toBeNull();
+      expect((await refused.customer.findUniqueOrThrow({ where: { id: customerId } })).phoneNumber).toBe(
+        '09120001111',
+      );
+      await refused.$disconnect();
     } finally {
       await psql(container, 'postgres', `DROP DATABASE IF EXISTS ${upgradeName} WITH (FORCE)`);
     }
@@ -666,40 +678,20 @@ describeIfDisposable('agreement acceptance on a disposable database', () => {
   }
 
   async function legacyOwner(): Promise<{ token: string; salonId: string; userId: string }> {
-    const email = `legacy-${randomUUID()}@example.com`;
-    const response = await request(app.getHttpServer())
-      .post('/auth/register')
-      .send({
-        salonName: 'Legacy Salon',
-        ownerName: 'Legacy Owner',
-        email,
-        password,
-      })
-      .expect(201);
-    return {
-      token: response.body.accessToken as string,
-      salonId: response.body.user.tenantId as string,
-      userId: response.body.user.id as string,
-    };
+    const session = await createProductOwnerSession(prisma.client, app.getHttpServer(), {
+      salonName: 'Legacy Salon',
+      ownerName: 'Legacy Owner',
+      password,
+    });
+    return { token: session.accessToken, salonId: session.salonId, userId: session.userId };
   }
 
   async function platformAdmin(): Promise<{ id: string; token: string }> {
-    const email = `admin-${randomUUID()}@example.com`;
-    const id = createId();
-    await prisma.client.platformAdmin.create({
-      data: {
-        id,
-        email,
-        name: 'Agreement Operator',
-        passwordHash: await argon2.hash(password, { type: argon2.argon2id }),
-        updatedAt: new Date(),
-      },
+    const admin = await createPlatformAdminSession(prisma.client, app.getHttpServer(), {
+      name: 'Agreement Operator',
+      password,
     });
-    const response = await request(app.getHttpServer())
-      .post('/admin/auth/login')
-      .send({ email, password })
-      .expect(201);
-    return { id, token: response.body.accessToken as string };
+    return { id: admin.adminId, token: admin.accessToken };
   }
 
   async function insertPresentation(input: {

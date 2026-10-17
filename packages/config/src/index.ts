@@ -67,15 +67,13 @@ const envSchema = z.object({
   OTPY_BASE_URL: z.string().url().default('https://api.otpy.ir'),
   OTPY_TIMEOUT_MS: z.coerce.number().int().min(1000).max(30_000).default(10_000),
   /**
-   * Who may create a salon through a public route.
-   * `email` is the pre-cutover default and opens POST /auth/register.
-   * `phone` closes that route. `closed` closes it as well.
-   * Phone-password login is not this setting.
+   * Historical values stay readable so an old environment file still loads.
+   * None of them opens email registration. Public salon creation is phone signup.
    */
   PUBLIC_REGISTRATION_MODE: z.enum(['email', 'phone', 'closed']).default('email'),
   /**
    * OTP start, verify, and phone-signup completion. Off until rollout.
-   * Does not control POST /auth/login/phone or POST /auth/register.
+   * Does not control POST /auth/login/phone.
    * May be true only when PUBLIC_REGISTRATION_MODE is phone.
    */
   PHONE_SIGNUP_ENABLED: booleanFromString.default(false),
@@ -190,18 +188,6 @@ const envSchema = z.object({
   }, z.coerce.number().int().positive().optional()),
   BALE_SAFIR_BASE_URL: z.string().url().default('https://safir.bale.ai/api/v3'),
   BALE_SAFIR_TIMEOUT_MS: z.coerce.number().int().min(1000).max(60_000).default(10_000),
-  PLATFORM_ADMIN_EMAIL: z.preprocess((value) => {
-    if (value === undefined || value === '') {
-      return undefined;
-    }
-    return value;
-  }, z.string().email().max(255).optional()),
-  PLATFORM_ADMIN_PASSWORD: z.preprocess((value) => {
-    if (value === undefined || value === '') {
-      return undefined;
-    }
-    return value;
-  }, z.string().min(12).max(128).optional()),
 });
 
 export type AppConfig = z.infer<typeof envSchema>;
@@ -215,13 +201,6 @@ export function loadConfig(
       .map((issue) => `${issue.path.join('.') || '(root)'}: ${issue.message}`)
       .join('; ');
     throw new Error(`Invalid configuration: ${issues}`);
-  }
-  const email = parsed.data.PLATFORM_ADMIN_EMAIL;
-  const password = parsed.data.PLATFORM_ADMIN_PASSWORD;
-  if ((email && !password) || (!email && password)) {
-    throw new Error(
-      'Invalid configuration: PLATFORM_ADMIN_EMAIL and PLATFORM_ADMIN_PASSWORD must both be set or both omitted',
-    );
   }
   if (
     parsed.data.PHONE_SIGNUP_ENABLED &&

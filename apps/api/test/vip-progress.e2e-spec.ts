@@ -10,6 +10,7 @@ import { PrismaService } from '../src/infrastructure/database/prisma.service';
 import { HttpExceptionFilter } from '../src/infrastructure/http/http-exception.filter';
 import { MemoryObjectStorage } from '../src/infrastructure/storage/memory.object-storage';
 import { OBJECT_STORAGE } from '../src/infrastructure/storage/object-storage';
+import { syntheticMobile } from './support/phone-account';
 
 const expectedName = process.env.VIP_PROGRESS_E2E_DATABASE_NAME ?? '';
 const expectedPort = process.env.VIP_PROGRESS_E2E_HOST_PORT ?? '';
@@ -148,19 +149,21 @@ describeIfDb('VIP request progress (e2e)', () => {
     jwt = app.get(JwtService);
 
     const adminEmail = `vip-progress-${Date.now()}@example.test`;
+    const adminPhone = syntheticMobile();
     ids.adminId = randomUUID();
     await prisma.client.platformAdmin.create({
       data: {
         id: ids.adminId,
         email: adminEmail,
+        phone: adminPhone,
         name: 'Ops',
         passwordHash: await argon2.hash(adminPassword, { type: argon2.argon2id }),
         updatedAt: new Date(),
       },
     });
     const login = await request(app.getHttpServer())
-      .post('/admin/auth/login')
-      .send({ email: adminEmail, password: adminPassword })
+      .post('/auth/login/phone')
+      .send({ phone: adminPhone, password: adminPassword })
       .expect(201);
     adminToken = login.body.accessToken as string;
 
@@ -281,6 +284,7 @@ describeIfDb('VIP request progress (e2e)', () => {
         salonId,
         name: `${label} owner`,
         email,
+        phone: syntheticMobile(),
         passwordHash: await argon2.hash(password, { type: argon2.argon2id }),
         role: 'OWNER',
         updatedAt: now,

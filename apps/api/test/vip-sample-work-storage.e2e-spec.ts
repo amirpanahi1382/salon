@@ -14,6 +14,7 @@ import { PrismaService } from '../src/infrastructure/database/prisma.service';
 import { HttpExceptionFilter } from '../src/infrastructure/http/http-exception.filter';
 import { OBJECT_STORAGE } from '../src/infrastructure/storage/object-storage';
 import { VipSampleWorkRecoveryProcessor } from '../../worker/src/vip/vip-sample-work-recovery.processor';
+import { syntheticMobile } from './support/phone-account';
 
 const isolatedUrl = process.env.PHASE10_ISOLATED_DATABASE_URL;
 const describeIfDisposable = isolatedUrl && isolatedUrl === process.env.DATABASE_URL &&
@@ -124,11 +125,11 @@ describeIfDisposable('VIP sample-work real PostgreSQL + MinIO lifecycle', () => 
     const adminId = randomUUID(), salonId = randomUUID(), userId = randomUUID();
     const listId = randomUUID(), requestId = randomUUID();
     await prisma.client.platformAdmin.create({ data: {
-      id: adminId, email: `${label}-${adminId}@example.test`, name: label, passwordHash: 'test', updatedAt: now,
+      id: adminId, email: `${label}-${adminId}@example.test`, phone: syntheticMobile(), name: label, passwordHash: 'test', updatedAt: now,
     } });
     await prisma.client.salon.create({ data: { id: salonId, name: label, updatedAt: now } });
     await prisma.client.user.create({ data: {
-      id: userId, salonId, name: 'Owner', email: `${label}-${userId}@example.test`,
+      id: userId, salonId, name: 'Owner', email: `${label}-${userId}@example.test`, phone: syntheticMobile(),
       passwordHash: 'test', role: 'OWNER', updatedAt: now,
     } });
     await prisma.client.vipTargetList.create({ data: {

@@ -2,8 +2,10 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
+import { PrismaService } from '../src/infrastructure/database/prisma.service';
 import { HttpExceptionFilter } from '../src/infrastructure/http/http-exception.filter';
 import { listItems } from './list-page';
+import { createProductOwnerSession, loginWithPhone, staffRequest } from './support/phone-account';
 
 const describeIfDb = process.env.DATABASE_URL ? describe : describe.skip;
 const password = 'correct-horse-battery';
@@ -14,6 +16,7 @@ function daysAgoIso(days: number): string {
 
 describeIfDb('Intelligence (e2e)', () => {
   let app: INestApplication;
+  let prisma: PrismaService;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
@@ -30,6 +33,7 @@ describeIfDb('Intelligence (e2e)', () => {
     );
     app.useGlobalFilters(new HttpExceptionFilter());
     await app.init();
+    prisma = app.get(PrismaService);
   });
 
   afterAll(async () => {
@@ -37,21 +41,15 @@ describeIfDb('Intelligence (e2e)', () => {
   });
 
   async function registerOwner(label: string) {
-    const email = `${label}-${Date.now()}-${Math.random().toString(16).slice(2)}@example.test`;
-    const response = await request(app.getHttpServer())
-      .post('/auth/register')
-      .send({
-        salonName: `${label} Salon`,
-        ownerName: `${label} Owner`,
-        email,
-        password,
-      })
-      .expect(201);
+    const registered = await createProductOwnerSession(prisma.client, app.getHttpServer(), {
+      salonName: `${label} Salon`,
+      ownerName: `${label} Owner`,
+      password,
+    });
 
     return {
-      token: response.body.accessToken as string,
-      tenantId: response.body.user.tenantId as string,
-      email,
+      token: registered.body.accessToken,
+      tenantId: registered.body.user.tenantId,
     };
   }
 
@@ -195,21 +193,14 @@ describeIfDb('Intelligence (e2e)', () => {
     expect(listItems(salonBOpportunities.body)).toHaveLength(1);
     expect(listItems<{ customerId: string }>(salonBOpportunities.body)[0].customerId).toBe(otherCustomer);
 
-    const staffEmail = `staff-${Date.now()}@example.test`;
+    const staff = staffRequest({ name: 'Staff Member', password, role: 'STAFF' });
     await request(app.getHttpServer())
       .post('/users')
       .set('Authorization', `Bearer ${salonA.token}`)
-      .send({
-        name: 'Staff Member',
-        email: staffEmail,
-        password,
-        role: 'STAFF',
-      })
+      .send(staff)
       .expect(201);
-    const staffLogin = await request(app.getHttpServer())
-      .post('/auth/login')
-      .send({ email: staffEmail, password })
-      .expect(201);
+    const staffLogin = await loginWithPhone(app.getHttpServer(), staff.phone, password);
+    expect(staffLogin.status).toBe(201);
 
     await request(app.getHttpServer())
       .get('/intelligence/summary')

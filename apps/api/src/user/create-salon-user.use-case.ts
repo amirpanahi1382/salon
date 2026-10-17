@@ -7,6 +7,7 @@ import {
   createId,
   DOMAIN_EVENT_TYPES,
   ForbiddenError,
+  ValidationError,
   type AuthenticatedPrincipal,
 } from '@salon/shared';
 import { PrismaService } from '../infrastructure/database/prisma.service';
@@ -22,13 +23,17 @@ export class CreateSalonUserUseCase {
       throw new ForbiddenError();
     }
 
-    const email = input.email.trim().toLowerCase();
+    const phone = input.phone.trim();
+    if (!/^09\d{9}$/.test(phone)) {
+      throw new ValidationError('Enter an Iranian mobile number.');
+    }
+    const email = input.email?.trim().toLowerCase() || null;
     const existing = await this.prisma.client.user.findUnique({
-      where: { email },
+      where: { phone },
       select: { id: true },
     });
     if (existing) {
-      throw new ConflictError('An account with this email already exists');
+      throw new ConflictError('This mobile number cannot be used.');
     }
 
     const passwordHash = await argon2.hash(input.password, {
@@ -53,6 +58,7 @@ export class CreateSalonUserUseCase {
             salonId: principal.tenantId,
             name: input.name.trim(),
             email,
+            phone,
             passwordHash,
             role: input.role,
             status: 'ACTIVE',
@@ -105,8 +111,12 @@ export class CreateSalonUserUseCase {
       ) {
         throw new ForbiddenError('This salon has one owner account.');
       }
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-        throw new ConflictError('An account with this email already exists');
+      if (
+        error instanceof Error &&
+        (error.message.includes('phone_identity_cross_role') ||
+          (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002'))
+      ) {
+        throw new ConflictError('This mobile number cannot be used.');
       }
       throw error;
     }

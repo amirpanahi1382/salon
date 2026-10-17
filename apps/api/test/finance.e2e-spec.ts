@@ -1,10 +1,19 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { createId } from '@salon/shared';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
+import { provisionSalonOwner } from '../src/auth/provision-salon-owner';
 import { PrismaService } from '../src/infrastructure/database/prisma.service';
 import { HttpExceptionFilter } from '../src/infrastructure/http/http-exception.filter';
 import { listItems } from './list-page';
+import {
+  createProductOwnerSession,
+  hashTestPassword,
+  loginWithPhone,
+  staffRequest,
+  syntheticMobile,
+} from './support/phone-account';
 
 const describeIfDb = process.env.DATABASE_URL ? describe : describe.skip;
 const password = 'correct-horse-battery';
@@ -31,20 +40,14 @@ describeIfDb('Services and transactions (e2e)', () => {
   });
 
   async function registerOwner(label: string) {
-    const email = `${label}-${Date.now()}-${Math.random().toString(16).slice(2)}@example.test`;
-    const response = await request(app.getHttpServer())
-      .post('/auth/register')
-      .send({
-        salonName: `${label} Salon`,
-        ownerName: `${label} Owner`,
-        email,
-        password,
-      })
-      .expect(201);
+    const registered = await createProductOwnerSession(prisma.client, app.getHttpServer(), {
+      salonName: `${label} Salon`,
+      ownerName: `${label} Owner`,
+      password,
+    });
     return {
-      email,
-      token: response.body.accessToken as string,
-      tenantId: response.body.user.tenantId as string,
+      token: registered.body.accessToken,
+      tenantId: registered.body.user.tenantId,
     };
   }
 
@@ -75,15 +78,15 @@ describeIfDb('Services and transactions (e2e)', () => {
     const serviceA = await createService(salonA.token, `Color ${Date.now()}`);
     const serviceB = await createService(salonB.token, `Cut ${Date.now()}`);
 
-    const staffEmail = `staff-${Date.now()}@example.test`;
+    const staff = staffRequest({ name: 'Staff', password, role: 'STAFF' });
     await request(app.getHttpServer())
       .post('/users')
       .set('Authorization', `Bearer ${salonA.token}`)
-      .send({ name: 'Staff', email: staffEmail, password, role: 'STAFF' })
+      .send(staff)
       .expect(201);
-    const staffToken = (
-      await request(app.getHttpServer()).post('/auth/login').send({ email: staffEmail, password }).expect(201)
-    ).body.accessToken as string;
+    const staffLogin = await loginWithPhone(app.getHttpServer(), staff.phone, password);
+    expect(staffLogin.status).toBe(201);
+    const staffToken = staffLogin.body.accessToken as string;
 
     await request(app.getHttpServer())
       .post('/services')
@@ -91,15 +94,15 @@ describeIfDb('Services and transactions (e2e)', () => {
       .send({ name: 'Forbidden' })
       .expect(403);
 
-    const managerEmail = `mgr-${Date.now()}@example.test`;
+    const manager = staffRequest({ name: 'Manager', password, role: 'MANAGER' });
     await request(app.getHttpServer())
       .post('/users')
       .set('Authorization', `Bearer ${salonA.token}`)
-      .send({ name: 'Manager', email: managerEmail, password, role: 'MANAGER' })
+      .send(manager)
       .expect(201);
-    const managerToken = (
-      await request(app.getHttpServer()).post('/auth/login').send({ email: managerEmail, password }).expect(201)
-    ).body.accessToken as string;
+    const managerLogin = await loginWithPhone(app.getHttpServer(), manager.phone, password);
+    expect(managerLogin.status).toBe(201);
+    const managerToken = managerLogin.body.accessToken as string;
 
     await request(app.getHttpServer())
       .post('/services')
@@ -499,7 +502,7 @@ describeIfDb('Services and transactions (e2e)', () => {
 
   it('provisions Hair Service and Nail Service for a real owner registration', async () => {
     const email = `owner-${Date.now()}-${Math.random().toString(16).slice(2)}@gmail.com`;
-    const registered = await request(app.getHttpServer())
+    await request(app.getHttpServer())
       .post('/auth/register')
       .send({
         salonName: 'Windows Dev Salon',
@@ -507,7 +510,27 @@ describeIfDb('Services and transactions (e2e)', () => {
         email,
         password,
       })
-      .expect(201);
+      .expect(404);
+
+    // Fixture insert skips starter services. Non-test email still provisions them.
+    const phone = syntheticMobile();
+    const passwordHash = await hashTestPassword(password);
+    await prisma.client.$transaction((tx) =>
+      provisionSalonOwner(tx, {
+        salonId: createId(),
+        userId: createId(),
+        salonName: 'Windows Dev Salon',
+        ownerName: 'Owner',
+        passwordHash,
+        email,
+        phone,
+        accessState: 'PRODUCT',
+        additionalUsersAllowed: true,
+        now: new Date(),
+      }),
+    );
+    const registered = await loginWithPhone(app.getHttpServer(), phone, password);
+    expect(registered.status).toBe(201);
 
     const listed = await request(app.getHttpServer())
       .get('/services')

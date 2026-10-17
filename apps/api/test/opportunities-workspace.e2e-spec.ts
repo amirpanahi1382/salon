@@ -11,6 +11,7 @@ import {
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/infrastructure/database/prisma.service';
 import { HttpExceptionFilter } from '../src/infrastructure/http/http-exception.filter';
+import { syntheticMobile } from './support/phone-account';
 
 const describeIfDb = process.env.DATABASE_URL ? describe : describe.skip;
 const password = 'correct-horse-battery';
@@ -64,6 +65,7 @@ describeIfDb('Opportunities V2 workspace (e2e)', () => {
         salonId,
         name: `${label} Owner`,
         email,
+        phone: syntheticMobile(),
         passwordHash: await argon2.hash(password, { type: argon2.argon2id }),
         role: 'OWNER',
         updatedAt: now,
@@ -90,6 +92,7 @@ describeIfDb('Opportunities V2 workspace (e2e)', () => {
         salonId: owner.tenantId,
         name: 'Staff',
         email,
+        phone: syntheticMobile(),
         passwordHash: await argon2.hash(password, { type: argon2.argon2id }),
         role: 'STAFF',
         status: 'ACTIVE',
@@ -216,6 +219,7 @@ describeIfDb('Opportunities V2 workspace (e2e)', () => {
       data: {
         id: adminId,
         email: `ws-admin-${randomUUID()}@example.test`,
+        phone: syntheticMobile(),
         passwordHash: 'hash',
         name: 'Admin',
         updatedAt: new Date(),

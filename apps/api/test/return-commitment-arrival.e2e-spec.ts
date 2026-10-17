@@ -12,6 +12,7 @@ import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/infrastructure/database/prisma.service';
 import { HttpExceptionFilter } from '../src/infrastructure/http/http-exception.filter';
 import { listPage } from './list-page';
+import { staffRequest, syntheticMobile } from './support/phone-account';
 
 const describeIfDb = process.env.DATABASE_URL ? describe : describe.skip;
 const password = 'correct-horse-battery';
@@ -52,6 +53,7 @@ describeIfDb('Return commitment arrival (e2e)', () => {
 
   async function registerOwner(label: string) {
     const email = `${label}-${Date.now()}-${Math.random().toString(16).slice(2)}@example.test`;
+    const phone = syntheticMobile();
     const salonId = randomUUID();
     const userId = randomUUID();
     const now = new Date();
@@ -64,14 +66,15 @@ describeIfDb('Return commitment arrival (e2e)', () => {
         salonId,
         name: `${label} Owner`,
         email,
+        phone,
         passwordHash: await argon2.hash(password, { type: argon2.argon2id }),
         role: 'OWNER',
         updatedAt: now,
       },
     });
     const login = await request(app.getHttpServer())
-      .post('/auth/login')
-      .send({ email, password })
+      .post('/auth/login/phone')
+      .send({ phone, password })
       .expect(201);
     return {
       email,
@@ -81,9 +84,9 @@ describeIfDb('Return commitment arrival (e2e)', () => {
     };
   }
 
-  async function login(email: string) {
+  async function login(phone: string) {
     return (
-      await request(app.getHttpServer()).post('/auth/login').send({ email, password }).expect(201)
+      await request(app.getHttpServer()).post('/auth/login/phone').send({ phone, password }).expect(201)
     ).body.accessToken as string;
   }
 
@@ -266,20 +269,30 @@ describeIfDb('Return commitment arrival (e2e)', () => {
   it('enforces sale RBAC and records Visit+sale atomically with exact decimals', async () => {
     const salon = await registerOwner('arr-sale');
     const customerId = await createCustomer(salon.token, 'Sale');
-    const staffEmail = `staff-arr-${Date.now()}@example.test`;
+    const staff = staffRequest({
+      name: 'Staff',
+      role: 'STAFF',
+      password,
+      email: `staff-arr-${Date.now()}@example.test`,
+    });
     await request(app.getHttpServer())
       .post('/users')
       .set('Authorization', `Bearer ${salon.token}`)
-      .send({ name: 'Staff', email: staffEmail, password, role: 'STAFF' })
+      .send(staff)
       .expect(201);
-    const staffToken = await login(staffEmail);
-    const managerEmail = `mgr-arr-${Date.now()}@example.test`;
+    const staffToken = await login(staff.phone);
+    const manager = staffRequest({
+      name: 'Manager',
+      role: 'MANAGER',
+      password,
+      email: `mgr-arr-${Date.now()}@example.test`,
+    });
     await request(app.getHttpServer())
       .post('/users')
       .set('Authorization', `Bearer ${salon.token}`)
-      .send({ name: 'Manager', email: managerEmail, password, role: 'MANAGER' })
+      .send(manager)
       .expect(201);
-    const managerToken = await login(managerEmail);
+    const managerToken = await login(manager.phone);
     const serviceId = await createService(salon.token, `Hair ${randomUUID().slice(0, 8)}`);
     const sent = await insertSentMessage({
       salonId: salon.tenantId,
@@ -697,13 +710,18 @@ describeIfDb('Return commitment arrival (e2e)', () => {
   it('serializes concurrent arrivals to one linked Visit', async () => {
     const salon = await registerOwner('arr-race');
     const customerId = await createCustomer(salon.token, 'Race');
-    const staffEmail = `staff-arr-r-${Date.now()}@example.test`;
+    const staff = staffRequest({
+      name: 'Staff',
+      role: 'STAFF',
+      password,
+      email: `staff-arr-r-${Date.now()}@example.test`,
+    });
     await request(app.getHttpServer())
       .post('/users')
       .set('Authorization', `Bearer ${salon.token}`)
-      .send({ name: 'Staff', email: staffEmail, password, role: 'STAFF' })
+      .send(staff)
       .expect(201);
-    const staffToken = await login(staffEmail);
+    const staffToken = await login(staff.phone);
     const sent = await insertSentMessage({
       salonId: salon.tenantId,
       userId: salon.userId,

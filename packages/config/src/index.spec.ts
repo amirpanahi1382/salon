@@ -183,12 +183,15 @@ describe('loadConfig', () => {
     expect(config.OTPY_API_KEY).toBeUndefined();
   });
 
-  it('requires platform admin email and password together', () => {
-    expect(() =>
-      loadConfig({
-        ...valid,
-        PLATFORM_ADMIN_EMAIL: 'ops@example.test',
-      }),
-    ).toThrow(/PLATFORM_ADMIN_EMAIL/);
+  it('ignores operator bootstrap credentials that are not API settings', () => {
+    const config = loadConfig({
+      ...valid,
+      PLATFORM_ADMIN_PHONE: '09120000000',
+      PLATFORM_ADMIN_PASSWORD: 'development-admin-pass',
+    });
+    expect(config).not.toHaveProperty('PLATFORM_ADMIN_EMAIL');
+    expect(config).not.toHaveProperty('PLATFORM_ADMIN_PASSWORD');
+    expect(config).not.toHaveProperty('PLATFORM_ADMIN_PHONE');
+    expect(config.JWT_SECRET).toBe(valid.JWT_SECRET);
   });
 });

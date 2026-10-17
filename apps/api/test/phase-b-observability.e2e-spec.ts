@@ -5,6 +5,7 @@ import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/infrastructure/database/prisma.service';
 import { HttpExceptionFilter } from '../src/infrastructure/http/http-exception.filter';
 import { ShutdownState } from '../src/infrastructure/observability/shutdown-state';
+import { createProductOwnerSession } from './support/phone-account';
 
 const describeIfDb = process.env.DATABASE_URL ? describe : describe.skip;
 
@@ -28,17 +29,13 @@ describeIfDb('Phase B observability (e2e)', () => {
     app.useGlobalFilters(new HttpExceptionFilter());
     await app.init();
 
-    const email = `phase-b-${Date.now()}@example.test`;
-    const response = await request(app.getHttpServer())
-      .post('/auth/register')
-      .send({
-        salonName: 'Phase B Salon',
-        ownerName: 'Phase B Owner',
-        email,
-        password: 'correct-horse-battery',
-      })
-      .expect(201);
-    ownerToken = response.body.accessToken as string;
+    const prisma = app.get(PrismaService);
+    const registered = await createProductOwnerSession(prisma.client, app.getHttpServer(), {
+      salonName: 'Phase B Salon',
+      ownerName: 'Phase B Owner',
+      password: 'correct-horse-battery',
+    });
+    ownerToken = registered.body.accessToken;
   });
 
   afterAll(async () => {

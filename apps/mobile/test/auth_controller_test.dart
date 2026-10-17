@@ -22,8 +22,8 @@ class _FakeAuthRepository extends AuthRepository {
   Object? nextError;
 
   @override
-  Future<AuthSession> login({
-    required String email,
+  Future<AuthSession> loginWithPhone({
+    required String phone,
     required String password,
   }) async {
     if (nextError != null) {
@@ -72,7 +72,7 @@ void main() {
 
     await container
         .read(authControllerProvider.notifier)
-        .login('leila@example.test', 'password1');
+        .loginWithPhone('09120000000', 'password1');
     expect(container.read(authControllerProvider).status, AuthStatus.signedIn);
     expect(container.read(authControllerProvider).user?.name, 'Leila');
 

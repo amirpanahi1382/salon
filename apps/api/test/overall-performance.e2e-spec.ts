@@ -6,6 +6,7 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/infrastructure/database/prisma.service';
 import { HttpExceptionFilter } from '../src/infrastructure/http/http-exception.filter';
+import { syntheticMobile } from './support/phone-account';
 
 const describeIfDb = process.env.DATABASE_URL ? describe : describe.skip;
 const password = 'correct-horse-battery';
@@ -51,6 +52,7 @@ describeIfDb('Salon overall performance (e2e)', () => {
 
   async function registerOwner(label: string) {
     const email = `${label}-${Date.now()}-${Math.random().toString(16).slice(2)}@example.test`;
+    const phone = syntheticMobile();
     const salonId = randomUUID();
     const userId = randomUUID();
     const now = new Date();
@@ -63,14 +65,15 @@ describeIfDb('Salon overall performance (e2e)', () => {
         salonId,
         name: `${label} Owner`,
         email,
+        phone,
         passwordHash: await argon2.hash(password, { type: argon2.argon2id }),
         role: 'OWNER',
         updatedAt: now,
       },
     });
     const login = await request(app.getHttpServer())
-      .post('/auth/login')
-      .send({ email, password })
+      .post('/auth/login/phone')
+      .send({ phone, password })
       .expect(201);
     return {
       token: login.body.accessToken as string,
@@ -81,12 +84,14 @@ describeIfDb('Salon overall performance (e2e)', () => {
 
   async function loginStaff(owner: { tenantId: string; token: string }) {
     const email = `staff-${randomUUID()}@example.test`;
+    const phone = syntheticMobile();
     await prisma.client.user.create({
       data: {
         id: randomUUID(),
         salonId: owner.tenantId,
         name: 'Staff',
         email,
+        phone,
         passwordHash: await argon2.hash(password, { type: argon2.argon2id }),
         role: 'STAFF',
         status: 'ACTIVE',
@@ -94,8 +99,8 @@ describeIfDb('Salon overall performance (e2e)', () => {
       },
     });
     const login = await request(app.getHttpServer())
-      .post('/auth/login')
-      .send({ email, password })
+      .post('/auth/login/phone')
+      .send({ phone, password })
       .expect(201);
     return login.body.accessToken as string;
   }
@@ -209,6 +214,7 @@ describeIfDb('Salon overall performance (e2e)', () => {
       data: {
         id: adminId,
         email: `op-admin-${randomUUID()}@example.test`,
+        phone: syntheticMobile(),
         passwordHash: 'hash',
         name: 'Admin',
         updatedAt: new Date(),

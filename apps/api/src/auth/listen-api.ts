@@ -1,6 +1,6 @@
 /**
  * Bind the API port. This is the startup step that can fail with EADDRINUSE.
- * It must not create or update platform admins. Explicit credential upsert is
+ * It must not create or update platform admins. The first admin is
  * `pnpm db:bootstrap-admin`, which is not part of process startup.
  * An omitted host calls listen with the port only. A port is not a loopback bind.
  */

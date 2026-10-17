@@ -7,6 +7,7 @@ import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/infrastructure/database/prisma.service';
 import { HttpExceptionFilter } from '../src/infrastructure/http/http-exception.filter';
 import { listPage } from './list-page';
+import { staffRequest, syntheticMobile } from './support/phone-account';
 
 const describeIfDb = process.env.DATABASE_URL ? describe : describe.skip;
 const password = 'correct-horse-battery';
@@ -53,6 +54,7 @@ describeIfDb('Owner recovery outcomes (e2e)', () => {
 
   async function registerOwner(label: string) {
     const email = `${label}-${Date.now()}-${Math.random().toString(16).slice(2)}@example.test`;
+    const phone = syntheticMobile();
     const salonId = randomUUID();
     const userId = randomUUID();
     const now = new Date();
@@ -65,14 +67,15 @@ describeIfDb('Owner recovery outcomes (e2e)', () => {
         salonId,
         name: `${label} Owner`,
         email,
+        phone,
         passwordHash: await argon2.hash(password, { type: argon2.argon2id }),
         role: 'OWNER',
         updatedAt: now,
       },
     });
     const login = await request(app.getHttpServer())
-      .post('/auth/login')
-      .send({ email, password })
+      .post('/auth/login/phone')
+      .send({ phone, password })
       .expect(201);
     return {
       email,
@@ -188,23 +191,33 @@ describeIfDb('Owner recovery outcomes (e2e)', () => {
     const salon = await registerOwner('ro-rbac');
     await request(app.getHttpServer()).get('/recovery/outcomes/summary').expect(401);
 
-    const staffEmail = `ro-staff-${randomUUID()}@example.test`;
-    const managerEmail = `ro-mgr-${randomUUID()}@example.test`;
+    const staff = staffRequest({
+      name: 'Staff',
+      role: 'STAFF',
+      password,
+      email: `ro-staff-${randomUUID()}@example.test`,
+    });
+    const manager = staffRequest({
+      name: 'Manager',
+      role: 'MANAGER',
+      password,
+      email: `ro-mgr-${randomUUID()}@example.test`,
+    });
     await request(app.getHttpServer())
       .post('/users')
       .set('Authorization', `Bearer ${salon.token}`)
-      .send({ name: 'Staff', email: staffEmail, password, role: 'STAFF' })
+      .send(staff)
       .expect(201);
     await request(app.getHttpServer())
       .post('/users')
       .set('Authorization', `Bearer ${salon.token}`)
-      .send({ name: 'Manager', email: managerEmail, password, role: 'MANAGER' })
+      .send(manager)
       .expect(201);
     const staffToken = (
-      await request(app.getHttpServer()).post('/auth/login').send({ email: staffEmail, password })
+      await request(app.getHttpServer()).post('/auth/login/phone').send({ phone: staff.phone, password })
     ).body.accessToken as string;
     const managerToken = (
-      await request(app.getHttpServer()).post('/auth/login').send({ email: managerEmail, password })
+      await request(app.getHttpServer()).post('/auth/login/phone').send({ phone: manager.phone, password })
     ).body.accessToken as string;
 
     await request(app.getHttpServer())
@@ -471,6 +484,7 @@ describeIfDb('Owner recovery outcomes (e2e)', () => {
       data: {
         id: adminId,
         email: `ro-admin-${randomUUID()}@example.test`,
+        phone: syntheticMobile(),
         passwordHash: 'hash',
         name: 'Admin',
         updatedAt: new Date(),

@@ -9,6 +9,7 @@ import { HttpExceptionFilter } from '../src/infrastructure/http/http-exception.f
 import { listItems, listPage } from './list-page';
 import { formatJalaliDateTimeTehran } from '../src/visit/jalali-format';
 import { VISIT_EXPORT_HEADERS, VISIT_EXPORT_SHEET_NAME } from '../src/visit/visit-export.constants';
+import { createProductOwnerSession, loginWithPhone, staffRequest } from './support/phone-account';
 
 const describeIfDb = process.env.DATABASE_URL ? describe : describe.skip;
 const password = 'correct-horse-battery';
@@ -35,21 +36,15 @@ describeIfDb('Visit list enrichment and Excel export (e2e)', () => {
   });
 
   async function registerOwner(label: string) {
-    const email = `${label}-${Date.now()}-${Math.random().toString(16).slice(2)}@example.test`;
-    const response = await request(app.getHttpServer())
-      .post('/auth/register')
-      .send({
-        salonName: `${label} Salon`,
-        ownerName: `${label} Owner`,
-        email,
-        password,
-      })
-      .expect(201);
+    const registered = await createProductOwnerSession(prisma.client, app.getHttpServer(), {
+      salonName: `${label} Salon`,
+      ownerName: `${label} Owner`,
+      password,
+    });
     return {
-      email,
-      token: response.body.accessToken as string,
-      tenantId: response.body.user.tenantId as string,
-      userId: response.body.user.id as string,
+      token: registered.body.accessToken,
+      tenantId: registered.body.user.tenantId,
+      userId: registered.body.user.id,
     };
   }
 
@@ -72,10 +67,10 @@ describeIfDb('Visit list enrichment and Excel export (e2e)', () => {
     return { id: response.body.id as string, name: response.body.name as string };
   }
 
-  async function login(email: string) {
-    return (
-      await request(app.getHttpServer()).post('/auth/login').send({ email, password }).expect(201)
-    ).body.accessToken as string;
+  async function login(phone: string) {
+    const response = await loginWithPhone(app.getHttpServer(), phone, password);
+    expect(response.status).toBe(201);
+    return response.body.accessToken as string;
   }
 
   async function completeSale(
@@ -100,21 +95,21 @@ describeIfDb('Visit list enrichment and Excel export (e2e)', () => {
     const nail = await createService(salonA.token, `Nail ${Date.now()}`);
     const otherService = await createService(salonB.token, `Other ${Date.now()}`);
 
-    const staffEmail = `staff-vexp-${Date.now()}@example.test`;
+    const staff = staffRequest({ name: 'Staff', password, role: 'STAFF' });
     await request(app.getHttpServer())
       .post('/users')
       .set('Authorization', `Bearer ${salonA.token}`)
-      .send({ name: 'Staff', email: staffEmail, password, role: 'STAFF' })
+      .send(staff)
       .expect(201);
-    const staffToken = await login(staffEmail);
+    const staffToken = await login(staff.phone);
 
-    const managerEmail = `mgr-vexp-${Date.now()}@example.test`;
+    const manager = staffRequest({ name: 'Manager', password, role: 'MANAGER' });
     await request(app.getHttpServer())
       .post('/users')
       .set('Authorization', `Bearer ${salonA.token}`)
-      .send({ name: 'Manager', email: managerEmail, password, role: 'MANAGER' })
+      .send(manager)
       .expect(201);
-    const managerToken = await login(managerEmail);
+    const managerToken = await login(manager.phone);
 
     const visitOnly = await request(app.getHttpServer())
       .post('/visits')

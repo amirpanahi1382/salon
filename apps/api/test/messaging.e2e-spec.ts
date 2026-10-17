@@ -11,6 +11,7 @@ import { HttpExceptionFilter } from '../src/infrastructure/http/http-exception.f
 import { messageBusinessDateValue } from '@salon/shared';
 import { SendCustomerMessageHandler } from '../../worker/src/messaging/send-customer-message.handler';
 import { listPage } from './list-page';
+import { syntheticMobile } from './support/phone-account';
 
 const describeIfDb = process.env.DATABASE_URL ? describe : describe.skip;
 const password = 'correct-horse-battery';
@@ -39,19 +40,21 @@ describeIfDb('Opportunity messages (e2e)', () => {
     prisma = app.get(PrismaService);
 
     const adminEmail = `platform-admin-${Date.now()}@example.test`;
+    const adminPhone = syntheticMobile();
     adminId = randomUUID();
     await prisma.client.platformAdmin.create({
       data: {
         id: adminId,
         email: adminEmail,
+        phone: adminPhone,
         name: 'Ops',
         passwordHash: await argon2.hash(adminPassword, { type: argon2.argon2id }),
         updatedAt: new Date(),
       },
     });
     const login = await request(app.getHttpServer())
-      .post('/admin/auth/login')
-      .send({ email: adminEmail, password: adminPassword })
+      .post('/auth/login/phone')
+      .send({ phone: adminPhone, password: adminPassword })
       .expect(201);
     adminToken = login.body.accessToken as string;
   });
@@ -74,6 +77,7 @@ describeIfDb('Opportunity messages (e2e)', () => {
         salonId,
         name: `${label} Owner`,
         email,
+        phone: syntheticMobile(),
         passwordHash: await argon2.hash(password, { type: argon2.argon2id }),
         role: 'OWNER',
         updatedAt: now,
@@ -457,12 +461,13 @@ describeIfDb('Opportunity messages (e2e)', () => {
     config.BALE_SAFIR_BOT_ID = 1;
     try {
     const otherEmail = `retry-admin-${randomUUID()}@example.test`;
+    const otherPhone = syntheticMobile();
     await prisma.client.platformAdmin.create({ data: {
-      id: randomUUID(), email: otherEmail, name: 'Retry race admin',
+      id: randomUUID(), email: otherEmail, phone: otherPhone, name: 'Retry race admin',
       passwordHash: await argon2.hash(adminPassword, { type: argon2.argon2id }), updatedAt: new Date(),
     } });
-    const otherLogin = await request(app.getHttpServer()).post('/admin/auth/login')
-      .send({ email: otherEmail, password: adminPassword }).expect(201);
+    const otherLogin = await request(app.getHttpServer()).post('/auth/login/phone')
+      .send({ phone: otherPhone, password: adminPassword }).expect(201);
     const salon = await createOwnerBypassingRegisterThrottle('msg-retry-race');
     const customerId = await seedRevenueDecline(salon.token, 'RetryRace');
     const created = await request(app.getHttpServer())

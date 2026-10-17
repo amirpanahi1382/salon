@@ -7,6 +7,7 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/infrastructure/database/prisma.service';
 import { HttpExceptionFilter } from '../src/infrastructure/http/http-exception.filter';
+import { syntheticMobile } from './support/phone-account';
 
 const describeIfDb = process.env.DATABASE_URL ? describe : describe.skip;
 
@@ -26,12 +27,13 @@ describeIfDb('Phase 6 admin salon selection pagination (e2e)', () => {
     await app.init();
     prisma = app.get(PrismaService);
     const email = `phase6-admin-${randomUUID()}@example.test`;
+    const phone = syntheticMobile();
     await prisma.client.platformAdmin.create({ data: {
-      id: randomUUID(), email, name: 'Phase 6 admin',
+      id: randomUUID(), email, phone, name: 'Phase 6 admin',
       passwordHash: await argon2.hash('phase6-test-password', { type: argon2.argon2id }),
     } });
-    const login = await request(app.getHttpServer()).post('/admin/auth/login')
-      .send({ email, password: 'phase6-test-password' }).expect(201);
+    const login = await request(app.getHttpServer()).post('/auth/login/phone')
+      .send({ phone, password: 'phase6-test-password' }).expect(201);
     token = login.body.accessToken as string;
     const sameTime = new Date('2026-01-01T00:00:00.000Z');
     const older = new Date('2025-01-01T00:00:00.000Z');
@@ -45,7 +47,7 @@ describeIfDb('Phase 6 admin salon selection pagination (e2e)', () => {
     const salonUserId = randomUUID();
     await prisma.client.user.create({ data: {
       id: salonUserId, salonId: ids[0]!, name: 'Salon owner',
-      email: `${salonUserId}@example.test`, passwordHash: 'unused', role: 'OWNER',
+      email: `${salonUserId}@example.test`, phone: syntheticMobile(), passwordHash: 'unused', role: 'OWNER',
     } });
     salonToken = await app.get(JwtService).signAsync({ sub: salonUserId, tid: ids[0], role: 'OWNER' });
   });

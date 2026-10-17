@@ -5,6 +5,7 @@ import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/infrastructure/database/prisma.service';
 import { HttpExceptionFilter } from '../src/infrastructure/http/http-exception.filter';
 import { listItems, listPage } from './list-page';
+import { createProductOwnerSession, loginWithPhone, staffRequest } from './support/phone-account';
 
 const describeIfDb = process.env.DATABASE_URL ? describe : describe.skip;
 const password = 'correct-horse-battery';
@@ -36,21 +37,16 @@ describeIfDb('Visits (e2e)', () => {
   });
 
   async function registerOwner(label: string) {
-    const email = `${label}-${Date.now()}-${Math.random().toString(16).slice(2)}@example.test`;
-    const response = await request(app.getHttpServer())
-      .post('/auth/register')
-      .send({
-        salonName: `${label} Salon`,
-        ownerName: `${label} Owner`,
-        email,
-        password,
-      })
-      .expect(201);
+    const registered = await createProductOwnerSession(prisma.client, app.getHttpServer(), {
+      salonName: `${label} Salon`,
+      ownerName: `${label} Owner`,
+      password,
+    });
 
     return {
-      token: response.body.accessToken as string,
-      tenantId: response.body.user.tenantId as string,
-      userId: response.body.user.id as string,
+      token: registered.body.accessToken,
+      tenantId: registered.body.user.tenantId,
+      userId: registered.body.user.id,
     };
   }
 
@@ -68,11 +64,9 @@ describeIfDb('Visits (e2e)', () => {
     return response.body.id as string;
   }
 
-  async function loginAs(email: string) {
-    const response = await request(app.getHttpServer())
-      .post('/auth/login')
-      .send({ email, password })
-      .expect(201);
+  async function loginAs(phone: string) {
+    const response = await loginWithPhone(app.getHttpServer(), phone, password);
+    expect(response.status).toBe(201);
     return response.body.accessToken as string;
   }
 
@@ -356,22 +350,22 @@ describeIfDb('Visits (e2e)', () => {
   it('lets MANAGER and STAFF record completed visits', async () => {
     const owner = await registerOwner('visit-roles');
     const customerId = await createCustomer(owner.token, 'Roles');
-    const managerEmail = `mgr-visit-${Date.now()}@example.test`;
-    const staffEmail = `staff-visit-${Date.now()}@example.test`;
+    const manager = staffRequest({ name: 'Manager', password, role: 'MANAGER' });
+    const staff = staffRequest({ name: 'Staff', password, role: 'STAFF' });
 
     await request(app.getHttpServer())
       .post('/users')
       .set('Authorization', `Bearer ${owner.token}`)
-      .send({ name: 'Manager', email: managerEmail, password, role: 'MANAGER' })
+      .send(manager)
       .expect(201);
     await request(app.getHttpServer())
       .post('/users')
       .set('Authorization', `Bearer ${owner.token}`)
-      .send({ name: 'Staff', email: staffEmail, password, role: 'STAFF' })
+      .send(staff)
       .expect(201);
 
-    const managerToken = await loginAs(managerEmail);
-    const staffToken = await loginAs(staffEmail);
+    const managerToken = await loginAs(manager.phone);
+    const staffToken = await loginAs(staff.phone);
 
     const managerVisit = await request(app.getHttpServer())
       .post('/visits')

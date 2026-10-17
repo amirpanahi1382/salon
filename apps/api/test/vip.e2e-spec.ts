@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
+import { ThrottlerStorage } from '@nestjs/throttler';
 import * as argon2 from 'argon2';
 import ExcelJS from 'exceljs';
 import request from 'supertest';
@@ -10,6 +11,7 @@ import { PrismaService } from '../src/infrastructure/database/prisma.service';
 import { HttpExceptionFilter } from '../src/infrastructure/http/http-exception.filter';
 import { MemoryObjectStorage } from '../src/infrastructure/storage/memory.object-storage';
 import { OBJECT_STORAGE } from '../src/infrastructure/storage/object-storage';
+import { syntheticMobile } from './support/phone-account';
 import {
   VIP_ONE_ACTIVE_DRAFT_MESSAGE,
   VIP_QUOTA_EXCEEDED_MESSAGE,
@@ -68,20 +70,37 @@ describeIfDb('VIP outreach (e2e)', () => {
     jwt = app.get(JwtService);
 
     const adminEmail = `vip-platform-${Date.now()}@example.test`;
+    const adminPhone = syntheticMobile();
     await prisma.client.platformAdmin.create({
       data: {
         id: randomUUID(),
         email: adminEmail,
+        phone: adminPhone,
         name: 'Ops',
         passwordHash: await argon2.hash(adminPassword, { type: argon2.argon2id }),
         updatedAt: new Date(),
       },
     });
     const login = await request(app.getHttpServer())
-      .post('/admin/auth/login')
-      .send({ email: adminEmail, password: adminPassword })
+      .post('/auth/login/phone')
+      .send({ phone: adminPhone, password: adminPassword })
       .expect(201);
     adminToken = login.body.accessToken as string;
+  });
+
+  beforeEach(() => {
+    // The global guard counts by client address. Every case in this file
+    // shares that in-memory counter, and the default limit is 60 per minute.
+    // Clear it before each case. This file does not assert throttle behavior.
+    const storage = app.get(ThrottlerStorage) as {
+      storage: Map<string, { totalHits: Map<string, number>; isBlocked: boolean }>;
+      timeoutIds?: Map<string, NodeJS.Timeout[]>;
+    };
+    storage.timeoutIds?.forEach((ids) => {
+      for (const id of ids) clearTimeout(id);
+    });
+    storage.timeoutIds?.clear();
+    storage.storage.clear();
   });
 
   afterAll(async () => {
@@ -102,6 +121,7 @@ describeIfDb('VIP outreach (e2e)', () => {
         salonId,
         name: `${label} Owner`,
         email,
+        phone: syntheticMobile(),
         passwordHash: await argon2.hash(password, { type: argon2.argon2id }),
         role: 'OWNER',
         updatedAt: now,

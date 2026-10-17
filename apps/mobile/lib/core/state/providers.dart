@@ -102,7 +102,11 @@ final activationRepositoryProvider = Provider<ActivationRepository>((ref) {
 enum AuthStatus { unknown, signedOut, signedIn }
 
 class AuthState {
-  const AuthState({required this.status, this.user, this.message});
+  const AuthState({
+    required this.status,
+    this.user,
+    this.message,
+  });
 
   final AuthStatus status;
   final AuthUser? user;
@@ -123,15 +127,7 @@ class AuthController extends Notifier<AuthState> {
     }
     try {
       final me = await ref.read(authRepositoryProvider).me();
-      final restored = AuthUser(
-        id: me.id,
-        tenantId: me.tenantId,
-        role: me.role,
-        name: stored.name,
-        email: stored.email,
-        accessState: me.accessState,
-        sessionScope: me.sessionScope,
-      );
+      final restored = me.copyWith(name: stored.name, email: stored.email);
       if (shouldExchangeProductSession(
         role: restored.role,
         accessState: restored.accessState,
@@ -151,13 +147,6 @@ class AuthController extends Notifier<AuthState> {
     }
   }
 
-  Future<void> login(String email, String password) async {
-    final session = await ref
-        .read(authRepositoryProvider)
-        .login(email: email, password: password);
-    state = AuthState(status: AuthStatus.signedIn, user: session.user);
-  }
-
   Future<void> loginWithPhone(String phone, String password) async {
     final session = await ref
         .read(authRepositoryProvider)
@@ -172,15 +161,7 @@ class AuthController extends Notifier<AuthState> {
     }
     state = AuthState(
       status: state.status,
-      user: AuthUser(
-        id: user.id,
-        tenantId: user.tenantId,
-        role: user.role,
-        name: user.name,
-        email: user.email,
-        accessState: accessState,
-        sessionScope: user.sessionScope,
-      ),
+      user: user.copyWith(accessState: accessState),
     );
   }
 
@@ -189,40 +170,11 @@ class AuthController extends Notifier<AuthState> {
     final session = await ref.read(authRepositoryProvider).exchangeProductSession();
     state = AuthState(
       status: AuthStatus.signedIn,
-      user: AuthUser(
-        id: session.user.id,
-        tenantId: session.user.tenantId,
-        role: session.user.role,
+      user: session.user.copyWith(
         name: session.user.name ?? current?.name,
         email: session.user.email ?? current?.email,
-        accessState: session.user.accessState,
-        sessionScope: session.user.sessionScope,
       ),
     );
-  }
-
-  Future<void> loginPlatformAdmin(String email, String password) async {
-    final session = await ref
-        .read(authRepositoryProvider)
-        .loginPlatformAdmin(email: email, password: password);
-    state = AuthState(status: AuthStatus.signedIn, user: session.user);
-  }
-
-  Future<void> register({
-    required String salonName,
-    required String ownerName,
-    required String email,
-    required String password,
-  }) async {
-    final session = await ref
-        .read(authRepositoryProvider)
-        .register(
-          salonName: salonName,
-          ownerName: ownerName,
-          email: email,
-          password: password,
-        );
-    state = AuthState(status: AuthStatus.signedIn, user: session.user);
   }
 
   Future<void> logout() async {

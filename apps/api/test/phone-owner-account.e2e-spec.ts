@@ -143,6 +143,7 @@ describeIfDisposable('phone-owned salon account on a disposable database', () =>
         salonName: body.salonName ?? 'Niloofar',
         ownerName: body.ownerName ?? 'Niloofar Owner',
         password: body.password ?? 'phone-owner-password',
+        passwordConfirmation: body.password ?? 'phone-owner-password',
       });
   }
 
@@ -436,6 +437,7 @@ describeIfDisposable('phone-owned salon account on a disposable database', () =>
       .send({
         name: 'Extra',
         email: `extra-${randomUUID()}@example.test`,
+        phone: '09126660021',
         password: 'extra-staff-password',
         role: 'STAFF',
       })
@@ -444,12 +446,13 @@ describeIfDisposable('phone-owned salon account on a disposable database', () =>
     await expect(
       prisma.client.$executeRaw`
         INSERT INTO users (
-          id, salon_id, name, email, password_hash, role, status, updated_at
+          id, salon_id, name, email, phone, password_hash, role, status, updated_at
         ) VALUES (
           ${createId()}::uuid,
           ${created.body.salonId}::uuid,
           'Raw extra',
           ${`raw-${randomUUID()}@example.test`},
+          '09126660022',
           'hash',
           'STAFF',
           'ACTIVE',
@@ -581,53 +584,46 @@ describeIfDisposable('phone-owned salon account on a disposable database', () =>
     configure(emailMode);
     await emailMode.init();
     try {
-      const legacyPassword = 'legacy-owner-password';
-      const registered = await request(emailMode.getHttpServer())
+      await request(emailMode.getHttpServer())
         .post('/auth/register')
-        .send({ salonName: 'Legacy Salon', ownerName: 'Legacy Owner', email, password: legacyPassword })
-        .expect(201);
-      expect(registered.body.accessState).toBe('PRODUCT');
-      const salon = await prisma.client.salon.findUniqueOrThrow({
-        where: { id: registered.body.user.tenantId },
-      });
-      expect(salon.additionalUsersAllowed).toBe(true);
-      const owner = await prisma.client.user.findUniqueOrThrow({ where: { email } });
-      expect(owner.phone).toBeNull();
-      const signedIn = await request(disabled.getHttpServer())
+        .send({ salonName: 'Legacy Salon', ownerName: 'Legacy Owner', email, password: 'legacy-owner-password' })
+        .expect(404);
+      await request(emailMode.getHttpServer())
         .post('/auth/login')
-        .send({ email, password: legacyPassword })
-        .expect(201);
-      expect(signedIn.body.sessionScope).toBe('product');
-      const token = signedIn.body.accessToken as string;
-      await request(disabled.getHttpServer())
-        .get('/customers')
-        .set('Authorization', `Bearer ${token}`)
-        .expect(200);
-      const staffEmail = `staff-${randomUUID()}@example.com`;
+        .send({ email, password: 'legacy-owner-password' })
+        .expect(404);
+      const salon = await prisma.client.salon.findUniqueOrThrow({ where: { id: created.body.salonId } });
+      expect(salon.additionalUsersAllowed).toBe(false);
       await request(disabled.getHttpServer())
         .post('/users')
-        .set('Authorization', `Bearer ${token}`)
-        .send({ name: 'Staff', email: staffEmail, password: 'legacy-staff-password', role: 'STAFF' })
-        .expect(201);
-      expect(await prisma.client.user.count({ where: { salonId: salon.id } })).toBe(2);
+        .set('Authorization', `Bearer ${promoted.body.accessToken}`)
+        .send({
+          name: 'Staff',
+          phone: '09126660032',
+          password: 'legacy-staff-password',
+          role: 'STAFF',
+        })
+        .expect(403);
+      expect(await prisma.client.user.count({ where: { salonId: salon.id } })).toBe(1);
     } finally {
       await emailMode.close();
     }
 
-    const adminEmail = `admin-${randomUUID()}@example.com`;
+    const adminPhone = '09126660040';
     const adminPassword = 'platform-admin-password';
     await prisma.client.platformAdmin.create({
       data: {
         id: createId(),
-        email: adminEmail,
+        phone: adminPhone,
+        email: null,
         name: 'Operator',
         passwordHash: await argon2.hash(adminPassword, { type: argon2.argon2id }),
         updatedAt: new Date(),
       },
     });
     const admin = await request(app.getHttpServer())
-      .post('/admin/auth/login')
-      .send({ email: adminEmail, password: adminPassword })
+      .post('/auth/login/phone')
+      .send({ phone: adminPhone, password: adminPassword })
       .expect(201);
     await request(app.getHttpServer())
       .get('/admin/auth/me')
@@ -701,7 +697,8 @@ describeIfDisposable('phone-owned salon account on a disposable database', () =>
       `;
       await upgrade.$disconnect();
 
-      const later = directories.filter((directory) => directory >= cutoff);
+      const phoneFirst = '20261017150000_phone_first_identity';
+      const later = directories.filter((directory) => directory >= cutoff && directory < phoneFirst);
       expect(later[0]).toBe(cutoff);
       for (const directory of later) {
         const sql = await readFile(path.join(migrationsDir, directory, 'migration.sql'), 'utf8');
@@ -709,16 +706,19 @@ describeIfDisposable('phone-owned salon account on a disposable database', () =>
       }
 
       const upgraded = createPrismaClient(upgradeUrl.toString());
-      const owner = await upgraded.user.findUniqueOrThrow({ where: { id: ownerId } });
-      const staff = await upgraded.user.findUniqueOrThrow({ where: { id: staffId } });
+      const identities = await upgraded.$queryRaw<Array<{ id: string; email: string; phone: string | null; role: string }>>`
+        SELECT id::text, email, phone, role::text AS role FROM users WHERE salon_id = ${salonId}::uuid
+      `;
+      const owner = identities.find((row) => row.id === ownerId);
+      const staff = identities.find((row) => row.id === staffId);
       const salon = await upgraded.salon.findUniqueOrThrow({ where: { id: salonId } });
       const action = await upgraded.opportunityAction.findUniqueOrThrow({ where: { id: actionId } });
-      expect(owner.email).toBe(ownerEmail);
-      expect(owner.phone).toBeNull();
-      expect(owner.role).toBe('OWNER');
-      expect(staff.email).toBe(staffEmail);
-      expect(staff.phone).toBeNull();
-      expect(staff.role).toBe('STAFF');
+      expect(owner?.email).toBe(ownerEmail);
+      expect(owner?.phone).toBeNull();
+      expect(owner?.role).toBe('OWNER');
+      expect(staff?.email).toBe(staffEmail);
+      expect(staff?.phone).toBeNull();
+      expect(staff?.role).toBe('STAFF');
       expect(salon.status).toBe('ACTIVE');
       expect(salon.accessState).toBe('PRODUCT');
       expect(salon.additionalUsersAllowed).toBe(true);
@@ -726,44 +726,22 @@ describeIfDisposable('phone-owned salon account on a disposable database', () =>
       expect(action.salonId).toBe(salonId);
       await upgraded.$disconnect();
 
-      const config = app.get(AppConfigService);
-      const upgradeRef = await Test.createTestingModule({ imports: [AppModule] })
-        .overrideProvider(AppConfigService)
-        .useValue({ values: { ...config.values, DATABASE_URL: upgradeUrl.toString() } })
-        .overrideProvider(OtpyProvider)
-        .useValue(otp)
-        .compile();
-      const upgradeApp = upgradeRef.createNestApplication();
-      configure(upgradeApp);
-      await upgradeApp.init();
-      try {
-        const connected = await upgradeApp
-          .get(PrismaService)
-          .client.$queryRaw<Array<{ current_database: string }>>`SELECT current_database()`;
-        expect(connected[0]?.current_database).toBe(upgradeName);
-        const signedIn = await request(upgradeApp.getHttpServer())
-          .post('/auth/login')
-          .send({ email: ownerEmail, password })
-          .expect(201);
-        expect(signedIn.body.accessState).toBe('PRODUCT');
-        expect(signedIn.body.sessionScope).toBe('product');
-        await request(upgradeApp.getHttpServer())
-          .get('/customers')
-          .set('Authorization', `Bearer ${signedIn.body.accessToken}`)
-          .expect(200);
-        const users = await request(upgradeApp.getHttpServer())
-          .get('/users')
-          .set('Authorization', `Bearer ${signedIn.body.accessToken}`)
-          .expect(200);
-        expect(users.body).toEqual(
-          expect.arrayContaining([
-            expect.objectContaining({ email: ownerEmail, role: 'OWNER' }),
-            expect.objectContaining({ email: staffEmail, role: 'STAFF' }),
-          ]),
-        );
-      } finally {
-        await upgradeApp.close();
-      }
+      const phoneFirstSql = await readFile(path.join(migrationsDir, phoneFirst, 'migration.sql'), 'utf8');
+      await expect(psql(container, upgradeName, phoneFirstSql)).rejects.toThrow(
+        /phone_first_refuses_nonempty_database/,
+      );
+      const refused = createPrismaClient(upgradeUrl.toString());
+      const after = await refused.$queryRaw<Array<{ id: string; email: string; phone: string | null }>>`
+        SELECT id::text, email, phone FROM users WHERE salon_id = ${salonId}::uuid
+      `;
+      expect(after.find((row) => row.id === ownerId)).toMatchObject({ email: ownerEmail, phone: null });
+      expect(after.find((row) => row.id === staffId)).toMatchObject({ email: staffEmail, phone: null });
+      expect(await refused.salon.findUniqueOrThrow({ where: { id: salonId } })).toMatchObject({
+        name: 'Upgrade Salon',
+        accessState: 'PRODUCT',
+        additionalUsersAllowed: true,
+      });
+      await refused.$disconnect();
     } finally {
       await psql(container, 'postgres', `DROP DATABASE IF EXISTS ${upgradeName} WITH (FORCE)`);
     }

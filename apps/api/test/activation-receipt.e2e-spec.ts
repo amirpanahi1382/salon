@@ -17,6 +17,7 @@ import { AppConfigService } from '../src/infrastructure/config/app-config.servic
 import { PrismaService } from '../src/infrastructure/database/prisma.service';
 import { HttpExceptionFilter } from '../src/infrastructure/http/http-exception.filter';
 import { OBJECT_STORAGE, type ObjectStorage } from '../src/infrastructure/storage/object-storage';
+import { createPlatformAdminSession, createProductOwnerSession } from './support/phone-account';
 import { S3CompatibleObjectStorage } from '../src/infrastructure/storage/s3-compatible.object-storage';
 import { BANK_TRANSFER_ATTESTATION, CONTRACT_PAYMENT_AMOUNT_LABEL, MANUAL_TRANSFER_CARD_NUMBER, MANUAL_TRANSFER_CARDHOLDER_NAME } from '../src/activation/payment-instructions';
 
@@ -1225,34 +1226,20 @@ describeIfDisposable('manual transfer receipt review on a disposable database', 
   }
 
   async function legacyOwner() {
-    const email = `legacy-${randomUUID()}@example.com`;
-    const response = await request(app.getHttpServer())
-      .post('/auth/register')
-      .send({ salonName: 'Legacy Salon', ownerName: 'Legacy Owner', email, password })
-      .expect(201);
-    return {
-      token: response.body.accessToken as string,
-      salonId: response.body.user.tenantId as string,
-    };
+    const session = await createProductOwnerSession(prisma.client, app.getHttpServer(), {
+      salonName: 'Legacy Salon',
+      ownerName: 'Legacy Owner',
+      password,
+    });
+    return { token: session.accessToken, salonId: session.salonId };
   }
 
   async function platformAdmin() {
-    const email = `admin-${randomUUID()}@example.com`;
-    const id = createId();
-    await prisma.client.platformAdmin.create({
-      data: {
-        id,
-        email,
-        name: 'Activation Operator',
-        passwordHash: await argon2.hash(password, { type: argon2.argon2id }),
-        updatedAt: new Date(),
-      },
+    const admin = await createPlatformAdminSession(prisma.client, app.getHttpServer(), {
+      name: 'Activation Operator',
+      password,
     });
-    const response = await request(app.getHttpServer())
-      .post('/admin/auth/login')
-      .send({ email, password })
-      .expect(201);
-    return { id, token: response.body.accessToken as string };
+    return { id: admin.adminId, token: admin.accessToken };
   }
 });
 

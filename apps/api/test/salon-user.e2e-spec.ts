@@ -4,8 +4,13 @@ import * as argon2 from 'argon2';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/infrastructure/database/prisma.service';
-import { createId } from '@salon/shared';
 import { HttpExceptionFilter } from '../src/infrastructure/http/http-exception.filter';
+import {
+  createPlatformAdminSession,
+  createProductOwnerSession,
+  loginWithPhone,
+  staffRequest,
+} from './support/phone-account';
 
 const describeIfDb = process.env.DATABASE_URL ? describe : describe.skip;
 const password = 'correct-horse-battery';
@@ -37,30 +42,22 @@ describeIfDb('Salon and users (e2e)', () => {
   });
 
   async function registerOwner(label: string) {
-    const email = `${label}-${Date.now()}-${Math.random().toString(16).slice(2)}@example.test`;
-    const response = await request(app.getHttpServer())
-      .post('/auth/register')
-      .send({
-        salonName: `${label} Salon`,
-        ownerName: `${label} Owner`,
-        email,
-        password,
-      })
-      .expect(201);
+    const registered = await createProductOwnerSession(prisma.client, app.getHttpServer(), {
+      salonName: `${label} Salon`,
+      ownerName: `${label} Owner`,
+      password,
+    });
 
     return {
-      email,
-      token: response.body.accessToken as string,
-      userId: response.body.user.id as string,
-      tenantId: response.body.user.tenantId as string,
+      token: registered.body.accessToken,
+      userId: registered.body.user.id,
+      tenantId: registered.body.user.tenantId,
     };
   }
 
-  async function login(email: string) {
-    const response = await request(app.getHttpServer())
-      .post('/auth/login')
-      .send({ email, password })
-      .expect(201);
+  async function login(phone: string) {
+    const response = await loginWithPhone(app.getHttpServer(), phone, password);
+    expect(response.status).toBe(201);
     return response.body.accessToken as string;
   }
 
@@ -109,16 +106,23 @@ describeIfDb('Salon and users (e2e)', () => {
 
     const managerEmail = `manager-${Date.now()}@example.test`;
     const staffEmail = `staff-${Date.now()}@example.test`;
+    const manager = staffRequest({
+      name: 'Manager A',
+      email: managerEmail,
+      password,
+      role: 'MANAGER',
+    });
+    const staff = staffRequest({
+      name: 'Staff A',
+      email: staffEmail,
+      password,
+      role: 'STAFF',
+    });
 
     const managerCreated = await request(app.getHttpServer())
       .post('/users')
       .set('Authorization', `Bearer ${salonA.token}`)
-      .send({
-        name: 'Manager A',
-        email: managerEmail,
-        password,
-        role: 'MANAGER',
-      })
+      .send(manager)
       .expect(201);
 
     expect(managerCreated.body.passwordHash).toBeUndefined();
@@ -134,16 +138,11 @@ describeIfDb('Salon and users (e2e)', () => {
     const staffCreated = await request(app.getHttpServer())
       .post('/users')
       .set('Authorization', `Bearer ${salonA.token}`)
-      .send({
-        name: 'Staff A',
-        email: staffEmail,
-        password,
-        role: 'STAFF',
-      })
+      .send(staff)
       .expect(201);
 
-    const managerToken = await login(managerEmail);
-    const staffToken = await login(staffEmail);
+    const managerToken = await login(manager.phone);
+    const staffToken = await login(staff.phone);
 
     await request(app.getHttpServer())
       .get('/admin/message-queue')
@@ -159,22 +158,14 @@ describeIfDb('Salon and users (e2e)', () => {
       .expect(403);
 
     const adminEmail = `salon-user-admin-${Date.now()}@example.test`;
-    const adminPassword = password;
-    await prisma.client.platformAdmin.create({
-      data: {
-        id: createId(),
-        email: adminEmail,
-        name: 'Platform Admin',
-        passwordHash: await argon2.hash(adminPassword, { type: argon2.argon2id }),
-        updatedAt: new Date(),
-      },
+    const admin = await createPlatformAdminSession(prisma.client, app.getHttpServer(), {
+      name: 'Platform Admin',
+      password,
+      email: adminEmail,
     });
-    const adminLogin = await request(app.getHttpServer())
-      .post('/admin/auth/login')
-      .send({ email: adminEmail, password: adminPassword })
-      .expect(201);
-    const adminToken = adminLogin.body.accessToken as string;
-    expect(adminLogin.body.admin.email).toBe(adminEmail);
+    const adminToken = admin.accessToken;
+    expect(admin.body.accountKind).toBe('PLATFORM_ADMIN');
+    expect(admin.body.admin.id).toBe(admin.adminId);
     await request(app.getHttpServer())
       .get('/admin/message-queue')
       .set('Authorization', `Bearer ${adminToken}`)
@@ -223,34 +214,40 @@ describeIfDb('Salon and users (e2e)', () => {
     await request(app.getHttpServer())
       .post('/users')
       .set('Authorization', `Bearer ${staffToken}`)
-      .send({
-        name: 'Blocked',
-        email: `blocked-${Date.now()}@example.test`,
-        password,
-        role: 'STAFF',
-      })
+      .send(
+        staffRequest({
+          name: 'Blocked',
+          email: `blocked-${Date.now()}@example.test`,
+          password,
+          role: 'STAFF',
+        }),
+      )
       .expect(403);
 
     await request(app.getHttpServer())
       .post('/users')
       .set('Authorization', `Bearer ${managerToken}`)
-      .send({
-        name: 'Another Manager',
-        email: `mgr2-${Date.now()}@example.test`,
-        password,
-        role: 'MANAGER',
-      })
+      .send(
+        staffRequest({
+          name: 'Another Manager',
+          email: `mgr2-${Date.now()}@example.test`,
+          password,
+          role: 'MANAGER',
+        }),
+      )
       .expect(403);
 
     const managerStaff = await request(app.getHttpServer())
       .post('/users')
       .set('Authorization', `Bearer ${managerToken}`)
-      .send({
-        name: 'Staff From Manager',
-        email: `staff-from-mgr-${Date.now()}@example.test`,
-        password,
-        role: 'STAFF',
-      })
+      .send(
+        staffRequest({
+          name: 'Staff From Manager',
+          email: `staff-from-mgr-${Date.now()}@example.test`,
+          password,
+          role: 'STAFF',
+        }),
+      )
       .expect(201);
     expect(managerStaff.body.role).toBe('STAFF');
 
@@ -337,17 +334,17 @@ describeIfDb('Salon and users (e2e)', () => {
 
   it('lets OWNER deactivate STAFF and rejects the disabled user on login', async () => {
     const owner = await registerOwner('deactivate');
-    const staffEmail = `disabled-${Date.now()}@example.test`;
+    const staffBody = staffRequest({
+      name: 'Soon Disabled',
+      email: `disabled-${Date.now()}@example.test`,
+      password,
+      role: 'STAFF',
+    });
 
     const staff = await request(app.getHttpServer())
       .post('/users')
       .set('Authorization', `Bearer ${owner.token}`)
-      .send({
-        name: 'Soon Disabled',
-        email: staffEmail,
-        password,
-        role: 'STAFF',
-      })
+      .send(staffBody)
       .expect(201);
 
     await request(app.getHttpServer())
@@ -366,20 +363,25 @@ describeIfDb('Salon and users (e2e)', () => {
     expect(statusAudit?.metadata).toMatchObject({ to: 'DISABLED' });
 
     await request(app.getHttpServer())
-      .post('/auth/login')
-      .send({ email: staffEmail, password })
+      .post('/auth/login/phone')
+      .send({ phone: staffBody.phone, password })
       .expect(401);
   });
 
   it('keeps at least one OWNER when two owners demote each other concurrently', async () => {
     const ownerA = await registerOwner('owner-race');
-    const ownerBEmail = `owner-b-${Date.now()}@example.test`;
+    const ownerB = staffRequest({
+      name: 'Second Owner',
+      email: `owner-b-${Date.now()}@example.test`,
+      password,
+      role: 'OWNER',
+    });
     const created = await request(app.getHttpServer())
       .post('/users')
       .set('Authorization', `Bearer ${ownerA.token}`)
-      .send({ name: 'Second Owner', email: ownerBEmail, password, role: 'OWNER' })
+      .send(ownerB)
       .expect(201);
-    const ownerBToken = await login(ownerBEmail);
+    const ownerBToken = await login(ownerB.phone);
 
     const [first, second] = await Promise.all([
       request(app.getHttpServer())

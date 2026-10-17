@@ -66,22 +66,14 @@ describe('signup phone normalization and deadlines', () => {
     expect(cooldownRemaining(new Date(Date.now() - 61_000), new Date(), 60)).toBe(0);
   });
 
-  it('opens email registration only in email mode', () => {
-    expect(
-      new EmailRegistrationGuard({
-        values: { PUBLIC_REGISTRATION_MODE: 'email' },
-      } as never).canActivate(),
-    ).toBe(true);
-    expect(() =>
-      new EmailRegistrationGuard({
-        values: { PUBLIC_REGISTRATION_MODE: 'phone' },
-      } as never).canActivate(),
-    ).toThrow(NotFoundError);
-    expect(() =>
-      new EmailRegistrationGuard({
-        values: { PUBLIC_REGISTRATION_MODE: 'closed' },
-      } as never).canActivate(),
-    ).toThrow(NotFoundError);
+  it('keeps email registration closed in every mode', () => {
+    for (const mode of ['email', 'phone', 'closed']) {
+      expect(() =>
+        new EmailRegistrationGuard({
+          values: { PUBLIC_REGISTRATION_MODE: mode },
+        } as never).canActivate(),
+      ).toThrow(NotFoundError);
+    }
   });
 
   it('hides the routes when the feature flag is off', () => {

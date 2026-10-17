@@ -7,6 +7,7 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/infrastructure/database/prisma.service';
 import { HttpExceptionFilter } from '../src/infrastructure/http/http-exception.filter';
+import { syntheticMobile } from './support/phone-account';
 
 const describeIfDb = process.env.DATABASE_URL ? describe : describe.skip;
 const password = 'correct-horse-battery';
@@ -32,18 +33,20 @@ describeIfDb('ReturnCommitment /arrive duplicate-Visit hardening (e2e)', () => {
     jwt = app.get(JwtService);
 
     const adminEmail = `platform-admin-arrive-hard-${Date.now()}@example.test`;
+    const adminPhone = syntheticMobile();
     await prisma.client.platformAdmin.create({
       data: {
         id: randomUUID(),
         email: adminEmail,
+        phone: adminPhone,
         name: 'Ops',
         passwordHash: await argon2.hash(adminPassword, { type: argon2.argon2id }),
         updatedAt: new Date(),
       },
     });
     const login = await request(app.getHttpServer())
-      .post('/admin/auth/login')
-      .send({ email: adminEmail, password: adminPassword })
+      .post('/auth/login/phone')
+      .send({ phone: adminPhone, password: adminPassword })
       .expect(201);
     adminToken = login.body.accessToken as string;
   });
@@ -66,6 +69,7 @@ describeIfDb('ReturnCommitment /arrive duplicate-Visit hardening (e2e)', () => {
         salonId,
         name: `${label} Owner`,
         email,
+        phone: syntheticMobile(),
         passwordHash: await argon2.hash(password, { type: argon2.argon2id }),
         role: 'OWNER',
         updatedAt: now,

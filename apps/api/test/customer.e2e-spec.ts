@@ -6,6 +6,7 @@ import { PrismaService } from '../src/infrastructure/database/prisma.service';
 import { HttpExceptionFilter } from '../src/infrastructure/http/http-exception.filter';
 import { encodeCursor } from '../src/infrastructure/http/list-page';
 import { listItems, listPage } from './list-page';
+import { createProductOwnerSession, loginWithPhone, staffRequest } from './support/phone-account';
 
 const describeIfDb = process.env.DATABASE_URL ? describe : describe.skip;
 const password = 'correct-horse-battery';
@@ -37,22 +38,16 @@ describeIfDb('Customers (e2e)', () => {
   });
 
   async function registerOwner(label: string) {
-    const email = `${label}-${Date.now()}-${Math.random().toString(16).slice(2)}@example.test`;
-    const response = await request(app.getHttpServer())
-      .post('/auth/register')
-      .send({
-        salonName: `${label} Salon`,
-        ownerName: `${label} Owner`,
-        email,
-        password,
-      })
-      .expect(201);
+    const registered = await createProductOwnerSession(prisma.client, app.getHttpServer(), {
+      salonName: `${label} Salon`,
+      ownerName: `${label} Owner`,
+      password,
+    });
 
     return {
-      email,
-      token: response.body.accessToken as string,
-      userId: response.body.user.id as string,
-      tenantId: response.body.user.tenantId as string,
+      token: registered.body.accessToken,
+      userId: registered.body.user.id,
+      tenantId: registered.body.user.tenantId,
     };
   }
 
@@ -255,23 +250,16 @@ describeIfDb('Customers (e2e)', () => {
 
   it('lets STAFF create and view customers but not update them', async () => {
     const owner = await registerOwner('cust-staff');
-    const staffEmail = `staff-cust-${Date.now()}@example.test`;
+    const staff = staffRequest({ name: 'Staff', password, role: 'STAFF' });
 
     await request(app.getHttpServer())
       .post('/users')
       .set('Authorization', `Bearer ${owner.token}`)
-      .send({
-        name: 'Staff',
-        email: staffEmail,
-        password,
-        role: 'STAFF',
-      })
+      .send(staff)
       .expect(201);
 
-    const staffLogin = await request(app.getHttpServer())
-      .post('/auth/login')
-      .send({ email: staffEmail, password })
-      .expect(201);
+    const staffLogin = await loginWithPhone(app.getHttpServer(), staff.phone, password);
+    expect(staffLogin.status).toBe(201);
 
     const created = await request(app.getHttpServer())
       .post('/customers')
@@ -299,16 +287,14 @@ describeIfDb('Customers (e2e)', () => {
       .set('Authorization', `Bearer ${staffLogin.body.accessToken}`)
       .expect(403);
 
-    const managerEmail = `mgr-cust-${Date.now()}@example.test`;
+    const manager = staffRequest({ name: 'Manager', password, role: 'MANAGER' });
     await request(app.getHttpServer())
       .post('/users')
       .set('Authorization', `Bearer ${owner.token}`)
-      .send({ name: 'Manager', email: managerEmail, password, role: 'MANAGER' })
+      .send(manager)
       .expect(201);
-    const managerLogin = await request(app.getHttpServer())
-      .post('/auth/login')
-      .send({ email: managerEmail, password })
-      .expect(201);
+    const managerLogin = await loginWithPhone(app.getHttpServer(), manager.phone, password);
+    expect(managerLogin.status).toBe(201);
 
     await request(app.getHttpServer())
       .delete(`/customers/${created.body.id}`)

@@ -20,13 +20,28 @@ class ApiException implements Exception {
 
   String get userMessage {
     if (isUnauthenticated) {
-      if (message.trim() == 'Invalid email or password') {
+      if (message.trim() == 'Invalid email or password' ||
+          message.trim() == 'Invalid phone or password') {
         return localizeUserFacingMessage(message);
       }
       return AppStrings.sessionExpired;
     }
     if (isForbidden) {
       return AppStrings.permissionDenied;
+    }
+    if (code == 'SIGNUP_RESEND_COOLDOWN' || code == 'SIGNUP_SEND_LIMIT') {
+      final seconds = RegExp(r'\d+').firstMatch(message)?.group(0);
+      if (seconds != null) {
+        return 'ارسال دوباره تا $seconds ثانیه دیگر ممکن نیست.';
+      }
+      return AppStrings.signupResendWait;
+    }
+    if (code == 'SIGNUP_VERIFICATION_FAILED') {
+      return AppStrings.signupCodeInvalid;
+    }
+    if (code == 'SIGNUP_SEND_UNCONFIRMED' ||
+        code == 'SIGNUP_VERIFICATION_UNCONFIRMED') {
+      return AppStrings.signupSendUnconfirmed;
     }
     if (statusCode == 429 || code == 'RATE_LIMITED') {
       return localizeUserFacingMessage('Too Many Requests');

@@ -75,6 +75,23 @@ class AuthUser {
       sessionScope: json['sessionScope'] as String? ?? 'product',
     );
   }
+
+  AuthUser copyWith({
+    String? name,
+    String? email,
+    String? accessState,
+    String? sessionScope,
+  }) {
+    return AuthUser(
+      id: id,
+      tenantId: tenantId,
+      role: role,
+      name: name ?? this.name,
+      email: email ?? this.email,
+      accessState: accessState ?? this.accessState,
+      sessionScope: sessionScope ?? this.sessionScope,
+    );
+  }
 }
 
 class AuthSession {
@@ -89,6 +106,14 @@ class AuthSession {
       accessToken: requiredJsonString(map['accessToken'], 'accessToken'),
       user: AuthUser.fromAdminLoginJson(asJsonMap(map['admin'])),
     );
+  }
+
+  factory AuthSession.fromPhoneAuthJson(Object? json) {
+    final map = asJsonMap(json);
+    if (map['accountKind'] == 'PLATFORM_ADMIN') {
+      return AuthSession.fromAdminAuthJson(map);
+    }
+    return AuthSession.fromAuthJson(map);
   }
 
   factory AuthSession.fromAuthJson(Object? json) {

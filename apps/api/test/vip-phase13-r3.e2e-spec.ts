@@ -14,6 +14,7 @@ import { PrismaService } from '../src/infrastructure/database/prisma.service';
 import { HttpExceptionFilter } from '../src/infrastructure/http/http-exception.filter';
 import { OBJECT_STORAGE } from '../src/infrastructure/storage/object-storage';
 import { VipSampleWorkRecoveryProcessor } from '../../worker/src/vip/vip-sample-work-recovery.processor';
+import { syntheticMobile } from './support/phone-account';
 
 const databaseName = process.env.PHASE13B_DISPOSABLE_DATABASE_NAME;
 const databaseUrl = process.env.DATABASE_URL;
@@ -125,11 +126,11 @@ describeDisposable('Phase 13 post-terminal stale PUT (real PostgreSQL and MinIO)
     const adminId = randomUUID(), salonId = randomUUID(), userId = randomUUID();
     const listId = randomUUID(), requestId = randomUUID();
     await prisma.client.platformAdmin.create({ data: {
-      id: adminId, email: `${adminId}@example.test`, name: 'Phase13', passwordHash: 'synthetic', updatedAt: now,
+      id: adminId, email: `${adminId}@example.test`, phone: syntheticMobile(), name: 'Phase13', passwordHash: 'synthetic', updatedAt: now,
     } });
     await prisma.client.salon.create({ data: { id: salonId, name: 'Phase13', updatedAt: now } });
     await prisma.client.user.create({ data: {
-      id: userId, salonId, name: 'Owner', email: `${userId}@example.test`,
+      id: userId, salonId, name: 'Owner', email: `${userId}@example.test`, phone: syntheticMobile(),
       passwordHash: 'synthetic', role: 'OWNER', updatedAt: now,
     } });
     await prisma.client.vipTargetList.create({ data: {

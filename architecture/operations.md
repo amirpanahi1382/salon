@@ -101,6 +101,19 @@ PostgreSQL and object storage are not one transaction. A replacement does not ma
 
 Backup of `salon` does not include these objects. Restoring PostgreSQL without the bucket keeps the receipt rows and blocks a new approval when the bytes or digest do not match. Restoring the bucket without the rows does not create a review. Operators must back up the private bucket prefix separately and must not put a public read policy on it. Confirm the card number, cardholder, and accepted amount before `MANUAL_TRANSFER_ENABLED=true`. Enabling the flag is not authorization to request live payments.
 
+## Phone-first cutover
+
+This is the recoverable order. It is not authorization to perform it.
+
+1. Stop writers to the old `salon` database and its object storage only after an explicit decision.
+2. Archive that database and the private object-storage prefixes. Record the archive names, sizes, and checksums.
+3. Restore the archive into a disposable database and a disposable bucket. Prove a read of the restored catalog and one restored object. Do not point the product at that restore.
+4. Create a new empty database. Apply the migration chain there. It builds the phone-first schema from scratch. The phone-first migration checks every ordinary table in `public` and refuses the migration when any of them already has a row. Prisma's migration ledger is the only excluded table. That refusal happens before any schema change. Do not apply it to the persistent database named `salon`.
+5. Set a database comment on that new database. Establish the first platform admin with the operator command, passing the exact database name, system identifier, and comment. The command reads those from the live connection and stops before any message or insert when they do not match. The phone is supplied at that time, verified, and not hard-coded. Confirm one admin exists and a second run does not change it.
+6. Switch API and worker configuration to the new database and storage only after a separate explicit authorization. Leave the archive until that new system has been accepted.
+
+Do not migrate historical accounts or business rows into the new database. Do not run the phone-first migration against `salon` or `salon_preview`.
+
 ## API bind
 
 `API_PORT` chooses the port only. `API_BIND_HOST` is optional and defaults to unset. Unset keeps `listen(port)`, which is the existing deployment behavior. The only accepted value is `127.0.0.1`; any other value stops startup before the process accepts connections. Docker Compose does not set this value.
@@ -134,7 +147,7 @@ Do not raise pool size without measuring. Same `DATABASE_URL` in API and worker 
 
 ## Throttling
 
-`@nestjs/throttler` is **in-memory per process**. Login/register have tighter limits.
+`@nestjs/throttler` is **in-memory per process**. Phone login and phone-signup completion have tighter limits. Email registration and email-password login are closed.
 
 - Single API instance: counters are correct for that process.
 - Multiple API replicas: limits are **not** globally consistent. Redis-backed throttling is deferred until multi-instance deployment is an actual requirement. Redis failure must not silently disable brute-force protection; that is why Redis is not in the path today.

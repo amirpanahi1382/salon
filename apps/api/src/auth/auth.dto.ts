@@ -89,6 +89,12 @@ export class CompletePhoneSignupDto {
   @MinLength(8)
   @MaxLength(128)
   password!: string;
+
+  @ApiProperty({ description: 'Must match password. Not stored.' })
+  @IsString()
+  @MinLength(8)
+  @MaxLength(128)
+  passwordConfirmation!: string;
 }
 
 export class PhoneLoginDto {

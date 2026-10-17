@@ -6,6 +6,7 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/infrastructure/database/prisma.service';
 import { HttpExceptionFilter } from '../src/infrastructure/http/http-exception.filter';
+import { syntheticMobile } from './support/phone-account';
 
 const describeIfDb = process.env.PHASE6B_ISOLATED_DATABASE_URL ? describe : describe.skip;
 
@@ -45,10 +46,10 @@ describeIfDb('Phase 6B intelligence completeness (disposable PostgreSQL)', () =>
     const userId = randomUUID(), otherUserId = randomUUID();
     const emptyUserId = randomUUID(), exactUserId = randomUUID();
     await db.client.user.createMany({ data: [
-      { id: userId, salonId, name: 'Owner', email: `${userId}@example.test`, passwordHash: 'unused', role: 'OWNER' },
-      { id: otherUserId, salonId: otherSalonId, name: 'Other owner', email: `${otherUserId}@example.test`, passwordHash: 'unused', role: 'OWNER' },
-      { id: emptyUserId, salonId: emptySalonId, name: 'Empty owner', email: `${emptyUserId}@example.test`, passwordHash: 'unused', role: 'OWNER' },
-      { id: exactUserId, salonId: exactSalonId, name: 'Exact owner', email: `${exactUserId}@example.test`, passwordHash: 'unused', role: 'OWNER' },
+      { id: userId, salonId, name: 'Owner', email: `${userId}@example.test`, phone: syntheticMobile(), passwordHash: 'unused', role: 'OWNER' },
+      { id: otherUserId, salonId: otherSalonId, name: 'Other owner', email: `${otherUserId}@example.test`, phone: syntheticMobile(), passwordHash: 'unused', role: 'OWNER' },
+      { id: emptyUserId, salonId: emptySalonId, name: 'Empty owner', email: `${emptyUserId}@example.test`, phone: syntheticMobile(), passwordHash: 'unused', role: 'OWNER' },
+      { id: exactUserId, salonId: exactSalonId, name: 'Exact owner', email: `${exactUserId}@example.test`, phone: syntheticMobile(), passwordHash: 'unused', role: 'OWNER' },
     ] });
     token = await jwt.signAsync({ sub: userId, tid: salonId, role: 'OWNER' });
     otherToken = await jwt.signAsync({ sub: otherUserId, tid: otherSalonId, role: 'OWNER' });

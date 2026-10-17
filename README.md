@@ -49,14 +49,11 @@ pnpm db:migrate
 pnpm build:packages
 ```
 
-Optional development platform admin (never production; never commit a real password). `pnpm dev:api` does not create or update this account:
+First platform admin, only on a new empty database. `pnpm dev:api` and API startup do not run it, and it does not change an existing admin.
 
-```bash
-# Set PLATFORM_ADMIN_EMAIL and PLATFORM_ADMIN_PASSWORD in .env (both or neither).
-# An already-exported DATABASE_URL overrides .env. The command refuses database
-# salon on port 5432 unless this confirmation is set for that invocation.
-PLATFORM_ADMIN_BOOTSTRAP_CONFIRM=salon pnpm db:bootstrap-admin
-```
+Set `PLATFORM_ADMIN_PHONE`, `PLATFORM_ADMIN_PASSWORD`, `PLATFORM_ADMIN_EXPECTED_DATABASE`, `PLATFORM_ADMIN_EXPECTED_SYSTEM_IDENTIFIER`, and `PLATFORM_ADMIN_EXPECTED_DATABASE_COMMENT`. Those three expected values must match the live database name, PostgreSQL system identifier, and database comment. The command reads them from the connection and stops before any verification message or insert when they do not match. It also refuses databases named `salon` and `salon_preview`.
+
+The first successful proof sends one code and creates no admin. Set `PLATFORM_ADMIN_OTP_CODE` and run `pnpm db:bootstrap-admin` again to create exactly one admin. A wrong code creates nothing. A later run does not overwrite that admin or create another. No email is required.
 
 Starter service catalog for real registrations: Hair Service + Nail Service (skipped for `@example.test`).
 
@@ -91,7 +88,7 @@ Flutter: see [`apps/mobile/README.md`](apps/mobile/README.md).
 | `pnpm db:migrate` | `migrate deploy` |
 | `pnpm db:migrate:dev` | `migrate dev` |
 | `pnpm db:ensure-dev-catalog` | Dev starter services helper |
-| `pnpm db:bootstrap-admin` | Dev platform admin upsert |
+| `pnpm db:bootstrap-admin` | First platform admin on a new empty database, after a live identity proof. Not an upsert |
 | `pnpm build:packages` / `pnpm build` | Packages, then API + worker |
 | `pnpm dev:api` / `pnpm dev:worker` | Watch mode |
 | `pnpm start:api` / `pnpm start:worker` | Compiled start |
@@ -102,9 +99,7 @@ Flutter: see [`apps/mobile/README.md`](apps/mobile/README.md).
 
 ## Authentication
 
-Tenant JWT: `POST /auth/register`, `POST /auth/login`, `GET /auth/me`. Claims include `sub`, `tid`, `role`. Expiry `JWT_EXPIRES_IN` (default `8h`). No refresh token. Logout is client-side.
-
-Platform admin JWT: `POST /admin/auth/login`, `GET /admin/auth/me`. Claim `scp=platform`. No `tid`.
+Phone and password sign in through `POST /auth/login/phone`. The server chooses a salon user or a platform admin. Salon claims include `sub`, `tid`, and `role`. A platform admin token has `scp=platform` and no `tid`. `GET /auth/me` and `GET /admin/auth/me` return the matching principal. `POST /auth/register`, `POST /auth/login`, and `POST /admin/auth/login` are closed. Expiry `JWT_EXPIRES_IN` (default `8h`). No refresh token. Logout is client-side.
 
 Tenant is always taken from the authenticated user. A body `salonId` is ignored/rejected.
 
