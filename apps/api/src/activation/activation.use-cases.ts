@@ -262,6 +262,24 @@ export class UploadActivationReceiptUseCase {
         if (stored.length !== 1) {
           throw new ConflictError('The receipt image was not stored');
         }
+        await tx.auditLog.create({
+          data: {
+            id: createId(),
+            tenantId: principal.tenantId,
+            actorId: principal.userId,
+            action: 'ACTIVATION_RECEIPT_STORED',
+            resource: 'activation_receipt',
+            resourceId: receiptId,
+            result: 'SUCCESS',
+            metadata: {
+              agreementAcceptanceId: acceptance.id,
+              objectKey,
+              sha256: image.sha256,
+              byteSize: image.buffer.length,
+              contentType: image.contentType,
+            },
+          },
+        });
       });
     } catch (error) {
       if (error instanceof ConflictError) {
@@ -275,24 +293,6 @@ export class UploadActivationReceiptUseCase {
       }
       throw error;
     }
-    await this.prisma.client.auditLog.create({
-      data: {
-        id: createId(),
-        tenantId: principal.tenantId,
-        actorId: principal.userId,
-        action: 'ACTIVATION_RECEIPT_STORED',
-        resource: 'activation_receipt',
-        resourceId: receiptId,
-        result: 'SUCCESS',
-        metadata: {
-          agreementAcceptanceId: acceptance.id,
-          objectKey,
-          sha256: image.sha256,
-          byteSize: image.buffer.length,
-          contentType: image.contentType,
-        },
-      },
-    });
     return {
       receiptId,
       phase: 'STORED' as const,

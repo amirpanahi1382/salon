@@ -656,13 +656,18 @@ describeIfDisposable('phone-owned salon account on a disposable database', () =>
         .filter((entry) => entry.isDirectory())
         .map((entry) => entry.name)
         .sort();
+      const cutoff = '20261015160000_phone_owned_salon_access';
       for (const directory of directories) {
-        if (directory === '20261015160000_phone_owned_salon_access') continue;
+        if (directory >= cutoff) continue;
         const sql = await readFile(path.join(migrationsDir, directory, 'migration.sql'), 'utf8');
         await psql(container, upgradeName, sql);
       }
 
       const upgrade = createPrismaClient(upgradeUrl.toString());
+      const missingAccessState = await upgrade.$queryRaw<Array<{ typname: string }>>`
+        SELECT typname FROM pg_type WHERE typname = 'SalonAccessState'
+      `;
+      expect(missingAccessState).toHaveLength(0);
       const salonId = createId();
       const ownerId = createId();
       const staffId = createId();
@@ -696,11 +701,12 @@ describeIfDisposable('phone-owned salon account on a disposable database', () =>
       `;
       await upgrade.$disconnect();
 
-      const upgradeSql = await readFile(
-        path.join(migrationsDir, '20261015160000_phone_owned_salon_access', 'migration.sql'),
-        'utf8',
-      );
-      await psql(container, upgradeName, upgradeSql);
+      const later = directories.filter((directory) => directory >= cutoff);
+      expect(later[0]).toBe(cutoff);
+      for (const directory of later) {
+        const sql = await readFile(path.join(migrationsDir, directory, 'migration.sql'), 'utf8');
+        await psql(container, upgradeName, sql);
+      }
 
       const upgraded = createPrismaClient(upgradeUrl.toString());
       const owner = await upgraded.user.findUniqueOrThrow({ where: { id: ownerId } });

@@ -772,6 +772,197 @@ describeIfDisposable('manual transfer receipt review on a disposable database', 
     }
   });
 
+  it('commits the stored phase and success audit together, and leaves an honest orphan when that audit fails', async () => {
+    const admin = await platformAdmin();
+    const publish = await request(app.getHttpServer())
+      .post('/admin/agreements/versions/publish')
+      .set('Authorization', `Bearer ${admin.token}`);
+    expect([201, 409]).toContain(publish.status);
+    const owner = await acceptOwner(admin.token);
+    const storage = app.get<ObjectStorage>(OBJECT_STORAGE);
+    if (!storage.preparePutObject) {
+      throw new Error('Activation storage cannot prepare a put');
+    }
+    const originalPut = storage.putObject.bind(storage);
+    const originalGet = storage.getObject.bind(storage);
+    const originalDelete = storage.deleteObject.bind(storage);
+    const deletedKeys: string[] = [];
+    let mode: 'ok' | 'fail-put' | 'tamper' = 'ok';
+    storage.putObject = async (input) => {
+      if (mode === 'fail-put') {
+        mode = 'ok';
+        throw new InfrastructureError('File storage is temporarily unavailable');
+      }
+      return originalPut(input);
+    };
+    storage.getObject = async (key) => {
+      const found = await originalGet(key);
+      if (mode === 'tamper') {
+        mode = 'ok';
+        return { body: Buffer.from([0x00, 0x01, 0x02]), contentType: found.contentType };
+      }
+      return found;
+    };
+    storage.deleteObject = async (key) => {
+      deletedKeys.push(key);
+      await originalDelete(key);
+    };
+    const firstBody = await receiptJpeg(21);
+    const replacementBody = await receiptJpeg(22);
+    try {
+      const first = await upload(owner.token, firstBody);
+      const firstRow = await prisma.client.activationReceipt.findUniqueOrThrow({
+        where: { id: first.body.receiptId },
+      });
+      const firstAudit = await storedAudits(owner.salonId);
+      expect(await prisma.client.activationReceipt.count({
+        where: { salonId: owner.salonId, phase: 'STORED' },
+      })).toBe(1);
+      expect(firstAudit).toHaveLength(1);
+      expect(firstAudit[0]).toMatchObject({
+        resourceId: firstRow.id,
+        result: 'SUCCESS',
+        metadata: {
+          agreementAcceptanceId: firstRow.agreementAcceptanceId,
+          objectKey: firstRow.objectKey,
+          sha256: createHash('sha256').update(firstBody).digest('hex'),
+          byteSize: firstBody.length,
+          contentType: 'image/jpeg',
+        },
+      });
+
+      const beforeFailure = new Set((await prisma.client.activationReceipt.findMany({
+        where: { salonId: owner.salonId },
+        select: { id: true },
+      })).map((row) => row.id));
+      mode = 'fail-put';
+      const failedPut = await postReceipt(owner.token, await receiptJpeg(23));
+      expect(failedPut.status).toBe(503);
+      const failedPutRow = await onlyNewReceipt(owner.salonId, beforeFailure);
+      expect(failedPutRow.phase).toBe('FAILED');
+      expect((await prisma.client.activationReceipt.findUniqueOrThrow({ where: { id: firstRow.id } })).phase)
+        .toBe('STORED');
+      expect(await storedAudits(owner.salonId)).toHaveLength(1);
+      expect(await prisma.client.auditLog.count({
+        where: { resourceId: failedPutRow.id, action: 'ACTIVATION_RECEIPT_STORED' },
+      })).toBe(0);
+      expect(deletedKeys).not.toContain(firstRow.objectKey);
+
+      const beforeTamper = new Set((await prisma.client.activationReceipt.findMany({
+        where: { salonId: owner.salonId },
+        select: { id: true },
+      })).map((row) => row.id));
+      mode = 'tamper';
+      const unverified = await postReceipt(owner.token, await receiptJpeg(24));
+      expect(unverified.status).toBe(503);
+      const unverifiedRow = await onlyNewReceipt(owner.salonId, beforeTamper);
+      expect(unverifiedRow.phase).toBe('FAILED');
+      expect((await prisma.client.activationReceipt.findUniqueOrThrow({ where: { id: firstRow.id } })).phase)
+        .toBe('STORED');
+      expect(await storedAudits(owner.salonId)).toHaveLength(1);
+      expect(await prisma.client.auditLog.count({
+        where: { resourceId: unverifiedRow.id, action: 'ACTIVATION_RECEIPT_STORED' },
+      })).toBe(0);
+      expect(deletedKeys).toContain(unverifiedRow.objectKey);
+      expect(deletedKeys).not.toContain(firstRow.objectKey);
+      await expect(storage.getObject(unverifiedRow.objectKey)).rejects.toThrow();
+      expect((await storage.getObject(firstRow.objectKey)).body.equals(firstBody)).toBe(true);
+
+      const replacement = await upload(owner.token, replacementBody);
+      const replacementRow = await prisma.client.activationReceipt.findUniqueOrThrow({
+        where: { id: replacement.body.receiptId },
+      });
+      expect((await prisma.client.activationReceipt.findUniqueOrThrow({ where: { id: firstRow.id } })).phase)
+        .toBe('SUPERSEDED');
+      expect(replacementRow.phase).toBe('STORED');
+      const replacementAudits = await storedAudits(owner.salonId);
+      expect(replacementAudits.map((audit) => audit.resourceId).sort()).toEqual(
+        [firstRow.id, replacementRow.id].sort(),
+      );
+      expect(replacementAudits.find((audit) => audit.resourceId === replacementRow.id)).toMatchObject({
+        result: 'SUCCESS',
+        metadata: {
+          agreementAcceptanceId: replacementRow.agreementAcceptanceId,
+          objectKey: replacementRow.objectKey,
+          sha256: createHash('sha256').update(replacementBody).digest('hex'),
+          byteSize: replacementBody.length,
+          contentType: 'image/jpeg',
+        },
+      });
+      expect(await prisma.client.activationReceipt.count({
+        where: { salonId: owner.salonId, phase: 'STORED' },
+      })).toBe(1);
+
+      await psql(container, databaseName, `
+        CREATE OR REPLACE FUNCTION refuse_activation_receipt_stored_audit()
+        RETURNS trigger
+        LANGUAGE plpgsql
+        AS $fn$
+        BEGIN
+          IF NEW.action = 'ACTIVATION_RECEIPT_STORED' THEN
+            RAISE EXCEPTION 'activation receipt stored audit refused';
+          END IF;
+          RETURN NEW;
+        END;
+        $fn$;
+        CREATE TRIGGER refuse_activation_receipt_stored_audit
+        BEFORE INSERT ON audit_logs
+        FOR EACH ROW
+        EXECUTE FUNCTION refuse_activation_receipt_stored_audit();
+      `);
+      const beforeAuditFailure = new Set((await prisma.client.activationReceipt.findMany({
+        where: { salonId: owner.salonId },
+        select: { id: true },
+      })).map((row) => row.id));
+      const deletedBeforeOrphan = deletedKeys.length;
+      const refused = await postReceipt(owner.token, await receiptJpeg(25));
+      expect(refused.status).toBe(500);
+      const orphan = await onlyNewReceipt(owner.salonId, beforeAuditFailure);
+      expect(JSON.stringify(refused.body)).not.toContain(orphan.id);
+      expect(orphan.phase).toBe('UPLOADING');
+      expect((await prisma.client.activationReceipt.findUniqueOrThrow({ where: { id: replacementRow.id } })).phase)
+        .toBe('STORED');
+      expect((await prisma.client.activationReceipt.findUniqueOrThrow({ where: { id: firstRow.id } })).phase)
+        .toBe('SUPERSEDED');
+      expect(await prisma.client.activationReceipt.count({
+        where: { salonId: owner.salonId, phase: 'STORED' },
+      })).toBe(1);
+      expect(await storedAudits(owner.salonId)).toHaveLength(2);
+      expect(await prisma.client.auditLog.count({
+        where: { resourceId: orphan.id, action: 'ACTIVATION_RECEIPT_STORED' },
+      })).toBe(0);
+      expect(deletedKeys).toHaveLength(deletedBeforeOrphan);
+      expect(deletedKeys).not.toContain(orphan.objectKey);
+      expect((await storage.getObject(orphan.objectKey)).body.length).toBe(orphan.byteSize);
+      const ready = await request(app.getHttpServer())
+        .get('/activation/status')
+        .set('Authorization', `Bearer ${owner.token}`)
+        .expect(200);
+      expect(ready.body.receiptReady).toBe(true);
+      expect(ready.body.receiptId).toBe(replacementRow.id);
+      await request(app.getHttpServer())
+        .post(`/activation/receipts/${orphan.id}/submit`)
+        .set('Authorization', `Bearer ${owner.token}`)
+        .set('Idempotency-Key', `orphan-${randomUUID()}`)
+        .expect(409);
+      expect((await prisma.client.activationReceipt.findUniqueOrThrow({ where: { id: orphan.id } })).phase)
+        .toBe('UPLOADING');
+      expect((await storage.getObject(orphan.objectKey)).body.length).toBe(orphan.byteSize);
+      // The object and UPLOADING row are the crash window after a committed PUT
+      // and before the phase transaction. This test does not retry the upload
+      // or delete the object. A later upload may mark a row older than 60 seconds
+      // FAILED and still leave the object in storage.
+    } finally {
+      storage.putObject = originalPut;
+      storage.getObject = originalGet;
+      storage.deleteObject = originalDelete;
+      await psql(container, databaseName, `
+        DROP TRIGGER IF EXISTS refuse_activation_receipt_stored_audit ON audit_logs;
+        DROP FUNCTION IF EXISTS refuse_activation_receipt_stored_audit();
+      `);
+    }
+  });
+
   it('stores a decoded receipt through the disposable S3 adapter', async () => {
     const endpoint = process.env.ACTIVATION_DISPOSABLE_MINIO_ENDPOINT ?? '';
     const port = Number(process.env.ACTIVATION_DISPOSABLE_MINIO_PORT ?? '0');
@@ -940,6 +1131,20 @@ describeIfDisposable('manual transfer receipt review on a disposable database', 
       .expect(200);
     expect(recorded.body.bankAttestationWording).toBe(BANK_TRANSFER_ATTESTATION);
     expect(recorded.body.requiredBankAttestation).toBeNull();
+  }
+
+  async function storedAudits(salonId: string) {
+    return prisma.client.auditLog.findMany({
+      where: { tenantId: salonId, action: 'ACTIVATION_RECEIPT_STORED' },
+      orderBy: { createdAt: 'asc' },
+    });
+  }
+
+  async function onlyNewReceipt(salonId: string, before: Set<string>) {
+    const rows = await prisma.client.activationReceipt.findMany({ where: { salonId } });
+    const created = rows.filter((row) => !before.has(row.id));
+    expect(created).toHaveLength(1);
+    return created[0]!;
   }
 
   async function postReceipt(token: string, body: Buffer) {
