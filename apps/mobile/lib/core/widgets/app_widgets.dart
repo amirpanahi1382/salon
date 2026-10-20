@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../errors/api_exception.dart';
 import '../theme/app_theme.dart';
@@ -397,6 +398,11 @@ class AppTextField extends StatelessWidget {
     this.textInputAction,
     this.textDirection,
     this.onChanged,
+    this.inputFormatters,
+    this.errorText,
+    this.hintOnly = false,
+    this.readOnly = false,
+    this.maxLength,
   });
 
   final String label;
@@ -406,17 +412,94 @@ class AppTextField extends StatelessWidget {
   final TextInputAction? textInputAction;
   final TextDirection? textDirection;
   final ValueChanged<String>? onChanged;
+  final List<TextInputFormatter>? inputFormatters;
+  final String? errorText;
+  /// When true, the prompt stays inside the empty field instead of floating above it.
+  final bool hintOnly;
+  final bool readOnly;
+  final int? maxLength;
 
   @override
   Widget build(BuildContext context) {
-    return TextField(
+    final radius = BorderRadius.circular(AppTokens.radiusMd);
+    final decoration = hintOnly
+        ? InputDecoration(
+            labelText: null,
+            hintText: label,
+            hintStyle: const TextStyle(
+              color: AppTokens.textSecondary,
+              fontSize: 15,
+              fontWeight: FontWeight.w400,
+            ),
+            errorText: errorText,
+            errorStyle: const TextStyle(
+              color: AppTokens.danger,
+              fontSize: 13,
+              height: 1.35,
+              fontWeight: FontWeight.w500,
+            ),
+            errorMaxLines: 3,
+            counterText: maxLength == null ? null : '',
+            filled: true,
+            fillColor: readOnly ? AppTokens.surfaceElevated : AppTokens.surface,
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: AppTokens.space16,
+              vertical: 16,
+            ),
+            border: OutlineInputBorder(borderRadius: radius),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: radius,
+              borderSide: const BorderSide(color: AppTokens.line, width: 1),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: radius,
+              borderSide: const BorderSide(color: AppTokens.accent, width: 1.5),
+            ),
+            errorBorder: OutlineInputBorder(
+              borderRadius: radius,
+              borderSide: const BorderSide(color: AppTokens.danger, width: 1.25),
+            ),
+            focusedErrorBorder: OutlineInputBorder(
+              borderRadius: radius,
+              borderSide: const BorderSide(color: AppTokens.danger, width: 1.5),
+            ),
+            disabledBorder: OutlineInputBorder(
+              borderRadius: radius,
+              borderSide: const BorderSide(color: AppTokens.line, width: 1),
+            ),
+          )
+        : InputDecoration(
+            labelText: label,
+            errorText: errorText,
+            counterText: maxLength == null ? null : '',
+          );
+    final field = TextField(
       controller: controller,
       obscureText: obscureText,
+      readOnly: readOnly,
+      enableInteractiveSelection: true,
       keyboardType: keyboardType,
       textInputAction: textInputAction,
       textDirection: textDirection,
-      onChanged: onChanged,
-      decoration: InputDecoration(labelText: label),
+      onChanged: readOnly ? null : onChanged,
+      inputFormatters: inputFormatters,
+      maxLength: maxLength,
+      style: TextStyle(
+        color: readOnly ? AppTokens.textSecondary : AppTokens.textPrimary,
+        fontSize: 15,
+        height: 1.35,
+      ),
+      cursorColor: AppTokens.accent,
+      decoration: decoration,
+    );
+    if (!hintOnly) {
+      return field;
+    }
+    return Semantics(
+      label: label,
+      textField: true,
+      readOnly: readOnly,
+      child: field,
     );
   }
 }

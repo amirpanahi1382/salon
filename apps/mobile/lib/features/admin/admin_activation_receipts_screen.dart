@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/errors/api_exception.dart';
 import '../../core/networking/api_client.dart';
+import '../../core/routing/app_router.dart';
 import '../../core/state/providers.dart';
 import '../../core/theme/app_tokens.dart';
 import '../../core/widgets/app_widgets.dart';
@@ -22,7 +23,8 @@ class AdminActivationReceiptsScreen extends ConsumerStatefulWidget {
       _AdminActivationReceiptsScreenState();
 }
 
-class _AdminActivationReceiptsScreenState extends ConsumerState<AdminActivationReceiptsScreen> {
+class _AdminActivationReceiptsScreenState extends ConsumerState<AdminActivationReceiptsScreen>
+    with RouteAware {
   List<ActivationReceiptSummary> _items = [];
   bool _loading = true;
   Object? _error;
@@ -30,6 +32,27 @@ class _AdminActivationReceiptsScreenState extends ConsumerState<AdminActivationR
   @override
   void initState() {
     super.initState();
+    _load();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route is PageRoute) {
+      adminRouteObserver.subscribe(this, route);
+    }
+  }
+
+  @override
+  void dispose() {
+    adminRouteObserver.unsubscribe(this);
+    super.dispose();
+  }
+
+  @override
+  void didPopNext() {
+    // Returning from a pushed receipt detail after approve, reject, or back.
     _load();
   }
 
@@ -56,6 +79,11 @@ class _AdminActivationReceiptsScreenState extends ConsumerState<AdminActivationR
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<int>(activationReceiptListRefreshProvider, (previous, next) {
+      if (previous != next) {
+        _load();
+      }
+    });
     return AdminMessagingShell(
       child: Scaffold(
         appBar: AppBar(title: const Text(AppStrings.adminActivationReceipts)),
@@ -184,6 +212,7 @@ class _AdminActivationReceiptScreenState extends ConsumerState<AdminActivationRe
           );
       _decisionKey = null;
       if (!mounted) return;
+      ref.read(activationReceiptListRefreshProvider.notifier).bump();
       context.go('/admin/activation-receipts');
     } catch (error) {
       if (!mounted) return;
@@ -233,6 +262,7 @@ class _AdminActivationReceiptScreenState extends ConsumerState<AdminActivationRe
           );
       _decisionKey = null;
       if (!mounted) return;
+      ref.read(activationReceiptListRefreshProvider.notifier).bump();
       context.go('/admin/activation-receipts');
     } catch (error) {
       if (!mounted) return;

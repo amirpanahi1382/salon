@@ -47,7 +47,7 @@ No AsyncLocalStorage: request fields ride on the Express request / Pino `customP
 | `GET /health` | Liveness: process is up | none | 200 `{ status: "ok" }` | process not running |
 | `GET /health/ready` | Ready to serve API traffic | PostgreSQL; not draining | 200 `{ status: "ok", checks.postgres: "up" }` | 503 |
 
-Redis is **not** a readiness dependency and is **not used by application code**. MinIO is used for VIP sample-work upload/download on the API; it is still **not** part of `/health/ready` (Postgres only). A MinIO outage fails VIP image use-cases, not process liveness.
+Redis is **not** a readiness dependency and is **not used by application code**. MinIO is used for VIP sample-work and private activation-receipt upload/download on the API; it is still **not** part of `/health/ready` (Postgres only). A MinIO outage fails those image use-cases, not process liveness.
 
 During SIGTERM/SIGINT the API marks itself draining; readiness returns 503 while in-flight requests finish.
 

@@ -223,6 +223,7 @@ void main() {
     expect(find.text(_amount), findsNothing);
     expect(find.byKey(const Key('receipt-picker')), findsNothing);
     expect(find.byKey(const Key('receipt-submit')), findsNothing);
+    expect(find.byKey(const Key('payment-unavailable-logout')), findsOneWidget);
   });
 
   testWidgets('keeps a submitted receipt visible without offering a new transfer', (tester) async {
@@ -233,6 +234,33 @@ void main() {
     expect(find.byKey(const Key('payment-waiting')), findsOneWidget);
     expect(find.text(_card), findsNothing);
     expect(find.byKey(const Key('receipt-picker')), findsNothing);
+    expect(find.byKey(const Key('payment-waiting-logout')), findsOneWidget);
+  });
+
+  testWidgets('waiting logout clears the local session and leaves server review untouched', (tester) async {
+    _LogoutAuth.logouts = 0;
+    final fake = _FakeActivation(
+      const ActivationStatus(phase: 'UNDER_REVIEW', receiptReady: false),
+    );
+    await _pump(tester, fake, logoutAuth: true);
+    expect(find.byKey(const Key('payment-waiting')), findsOneWidget);
+    expect(find.byKey(const Key('payment-waiting-logout')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('payment-waiting-logout')));
+    await tester.pump();
+    expect(_LogoutAuth.logouts, 1);
+    expect(fake.current.phase, 'UNDER_REVIEW');
+  });
+
+  testWidgets('payment-unavailable logout clears the local session', (tester) async {
+    _LogoutAuth.logouts = 0;
+    final fake = _FakeActivation(
+      const ActivationStatus(phase: 'PAYMENT_UNAVAILABLE', receiptReady: false),
+    );
+    await _pump(tester, fake, logoutAuth: true);
+    await tester.tap(find.byKey(const Key('payment-unavailable-logout')));
+    await tester.pump();
+    expect(_LogoutAuth.logouts, 1);
+    expect(fake.current.phase, 'PAYMENT_UNAVAILABLE');
   });
 
   testWidgets('keeps bank details hidden when transfer review is unpublished', (tester) async {
@@ -281,10 +309,35 @@ class _QuietAgreement extends AgreementRepository {
   }
 }
 
+class _LogoutAuth extends AuthController {
+  static int logouts = 0;
+
+  @override
+  AuthState build() {
+    return AuthState(
+      status: AuthStatus.signedIn,
+      user: AuthUser(
+        id: 'user-1',
+        tenantId: 'salon-1',
+        role: 'OWNER',
+        accessState: 'AWAITING_PAYMENT',
+        sessionScope: 'onboarding',
+      ),
+    );
+  }
+
+  @override
+  Future<void> logout() async {
+    logouts += 1;
+    state = const AuthState(status: AuthStatus.signedOut);
+  }
+}
+
 Future<void> _pump(
   WidgetTester tester,
   ActivationRepository repository, {
   bool exchange = false,
+  bool logoutAuth = false,
   CopyText? copyText,
   ReceiptImagePicker? pickImage,
   Duration pollInterval = const Duration(days: 1),
@@ -297,6 +350,7 @@ Future<void> _pump(
       overrides: [
         activationRepositoryProvider.overrideWithValue(repository),
         if (exchange) authControllerProvider.overrideWith(_ExchangeAuth.new),
+        if (logoutAuth) authControllerProvider.overrideWith(_LogoutAuth.new),
       ],
       child: MaterialApp(
         home: PaymentScreen(

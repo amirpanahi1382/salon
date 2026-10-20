@@ -1,7 +1,7 @@
 # Current-state system specification
 
 **Product:** Beauty Salon Revenue Intelligence (salon-facing name in Flutter: توجه سالن / Salon Attention)  
-**As of:** 2026-09-15  
+**As of:** repository HEAD reviewed for the phone-first journey on 2026-10-20 (uncommitted UX work is not part of HEAD)
 **Authority:** executable code, Prisma schema, SQL migrations, tests, Flutter client, then `.env.example` names, then other docs.
 
 This document answers **what exists today**. It is not a roadmap.
@@ -18,7 +18,7 @@ Legend: **Implemented** · **Partial** · **Deferred** · **Out of scope** · **
 
 **Not encoded in schema:** “women’s salon” (product decision only).
 
-**Out of scope (verified absent):** booking/calendar, POS hardware, payments, accounting, payroll, commissions, inventory, supplier marketplace, product price catalog, campaign aggregates, ML/LLM.
+**Out of scope (verified absent):** booking/calendar, POS hardware or payment gateway, accounting, payroll, commissions, inventory, supplier marketplace, product price catalog, campaign aggregates, ML/LLM. Manual card-transfer instructions, receipt upload, and platform-admin activation review are implemented onboarding evidence, not a payment processor or a financial ledger.
 
 ---
 
@@ -29,14 +29,15 @@ Legend: **Implemented** · **Partial** · **Deferred** · **Out of scope** · **
 | `apps/api` | Yes — NestJS HTTP |
 | `apps/worker` | Yes — outbox + retention, no HTTP |
 | `apps/mobile` | Yes — Flutter; not in pnpm workspace |
-| `packages/{database,config,shared}` | Yes |
-| `infra/docker` | Postgres used; Redis unused by code; MinIO used for VIP images |
+| `packages/{database,config,shared,object-storage}` | Yes |
+| `infra/docker` | Postgres used; Redis unused by code; MinIO used for VIP sample works and private activation receipts |
 | `packages/database/prisma/migrations` | Yes (foundation through VIP, including MessageRequest opportunity-context CHECK) |
 
 ```text
 Flutter → NestJS API → PostgreSQL/Prisma
-                         → outbox → Worker → Bale Safir (BALE only)
-                         → MinIO (VIP sample works)
+                   │       → outbox → Worker → Bale Safir (BALE only)
+                   ▼
+                 MinIO (VIP sample works + private activation receipts)
 ```
 
 ---
@@ -216,7 +217,7 @@ Admin: import template/import (phone required, name optional; import does not se
 
 Salon: `GET /vip/capability`, `GET /vip/regions` (14 canonical Tehran regions; counts are ACTIVE, unreserved, `ORIGINAL_TEHRAN` lists only), `GET /vip/lists?regionCode=01` (that region’s ACTIVE unreserved original lists only; unclassified and historical `regionCode` null lists excluded), `POST /vip/requests` (the same original-list predicate inside the reservation update), get, upload sample, submit, download own sample. Flutter VIP request flow is region-first. `VipRequest.geographicRange` remains message-template copy and may be prefilled from the selected region name.
 
-Quota is `VIP_QUOTA_MAX` (500) recipients per salon over a rolling `VIP_QUOTA_WINDOW_DAYS` (7) × 24 hours, measured from one evaluation instant (`created_at >= now - 7 days`). It is not a calendar week. Each new request is exactly 30, 50, or 100 recipients. Every committed non-`CANCELLED` request in the window counts, including `SUBMITTED`, `MANUAL_QUEUED`, and `BALE_NOT_IMPLEMENTED`, even if a recipient later fails or is cancelled. Expired `AWAITING_SAMPLE_WORK` drafts become `CANCELLED` and stop counting. Idempotent replay does not create a second request. Concurrent creates lock the salon entitlement row and reject `used + requestedCount > 500`. A salon may have many submitted or processing requests. At most one `AWAITING_SAMPLE_WORK` draft may exist per salon; that rule is a partial unique index plus the same locked transaction. `activeDraft` is that draft. `inProgressRequests` is an API response summary of the 10 most recent submitted or processing requests (`createdAt DESC, id DESC`). That bound lives in the capability use case and is not a shared domain constant. `inProgressRequestsHasMore` is true when older rows exist. It does not hide the region form and does not include recipients or message history. A separate paginated history route is not implemented. `currentRequest` is the same value as `activeDraft`. The one-draft rule is the partial unique index `vip_requests_one_awaiting_draft_per_salon`. Prisma cannot model that index; it lives only in migration `20261007140000` and must not be dropped as schema drift. Applying it fails if a salon already has two `AWAITING_SAMPLE_WORK` rows. Read-only preflight: `SELECT salon_id FROM vip_requests WHERE status = 'AWAITING_SAMPLE_WORK' GROUP BY salon_id HAVING count(*) > 1`. A submitted request keeps its reserved list and recipient snapshots; the list is not returned to `ACTIVE` for reuse. Draft expiry still cancels an abandoned draft and restores its list. There is no successful terminal VIP-request status; completing that lifecycle is a separate follow-up. Public `POST /auth/register` creates a salon and owner and does not grant `VipSalonEntitlement`. VIP access remains a platform-admin grant or revoke, with no payment check.
+Quota is `VIP_QUOTA_MAX` (500) recipients per salon over a rolling `VIP_QUOTA_WINDOW_DAYS` (7) × 24 hours, measured from one evaluation instant (`created_at >= now - 7 days`). It is not a calendar week. Each new request is exactly 30, 50, or 100 recipients. Every committed non-`CANCELLED` request in the window counts, including `SUBMITTED`, `MANUAL_QUEUED`, and `BALE_NOT_IMPLEMENTED`, even if a recipient later fails or is cancelled. Expired `AWAITING_SAMPLE_WORK` drafts become `CANCELLED` and stop counting. Idempotent replay does not create a second request. Concurrent creates lock the salon entitlement row and reject `used + requestedCount > 500`. A salon may have many submitted or processing requests. At most one `AWAITING_SAMPLE_WORK` draft may exist per salon; that rule is a partial unique index plus the same locked transaction. `activeDraft` is that draft. `inProgressRequests` is an API response summary of the 10 most recent submitted or processing requests (`createdAt DESC, id DESC`). That bound lives in the capability use case and is not a shared domain constant. `inProgressRequestsHasMore` is true when older rows exist. It does not hide the region form and does not include recipients or message history. A separate paginated history route is not implemented. `currentRequest` is the same value as `activeDraft`. The one-draft rule is the partial unique index `vip_requests_one_awaiting_draft_per_salon`. Prisma cannot model that index; it lives only in migration `20261007140000` and must not be dropped as schema drift. Applying it fails if a salon already has two `AWAITING_SAMPLE_WORK` rows. Read-only preflight: `SELECT salon_id FROM vip_requests WHERE status = 'AWAITING_SAMPLE_WORK' GROUP BY salon_id HAVING count(*) > 1`. A submitted request keeps its reserved list and recipient snapshots; the list is not returned to `ACTIVE` for reuse. Draft expiry still cancels an abandoned draft and restores its list. There is no successful terminal VIP-request status; completing that lifecycle is a separate follow-up. Phone signup completion creates one restricted salon and OWNER when enabled; it does not grant `VipSalonEntitlement`. Email registration is closed. VIP access remains a platform-admin grant or revoke, with no payment check.
 
 Sample uploads now persist intent and reserve capacity before object PUT, use generation/token ownership, and become committed metadata only after read-back digest/type/length verification. The worker releases expired upload positions and deletes only generation-specific objects proven to belong to abandoned uncommitted attempts. Submit and download re-verify bytes. `verifiedAt` is point-in-time evidence; historical rows remain null until an actual read succeeds, and no state promises future storage availability.
 The API fixes a storage-enforced, generation-key PUT expiry before committing each upload intent. A paused obsolete attempt cannot refresh that authorization after terminal cleanup; disposable MinIO rejected the stale PUT. The separate lifetime of PUTs accepted before expiry and target-path expiry semantics still require deployment validation; see `architecture/operations.md`.
@@ -245,7 +246,7 @@ Entitlement is not billing.
 | Pino + request IDs | **Implemented** |
 | Throttle | **Implemented** in-memory |
 | Swagger `/docs` | **Implemented** non-prod default |
-| MinIO | **Implemented** VIP images |
+| MinIO | **Implemented** VIP sample works and private activation receipts |
 | Redis | env required, **unused** |
 | RLS | **Not** present |
 | Billing | **Out of scope** |
@@ -258,8 +259,9 @@ Persian-first, RTL, `fa_IR`, Vazirmatn, **dark** charcoal/champagne theme (`AppT
 
 | Screen | Status |
 | --- | --- |
-| Login / register / splash | Implemented |
-| Platform admin login | Implemented |
+| Shared phone/password login, phone OTP signup, and splash | Implemented; email-login routes are closed. Signup write paths are disabled by default |
+| Agreement and manual-transfer onboarding | Implemented: four declared Article 1 fields, server-rendered preview and explicit acceptance; card instructions, receipt upload, review/waiting/rejection states. All three signup, agreement, and transfer write-path flags are disabled by default |
+| Platform-admin receipt review | Implemented under «فیش واریز»: authenticated image read, explicit bank-check attestation before approval, and rejection with a reason. Approval alone changes salon access to `PRODUCT` |
 | Admin message queue | Implemented as **ارسال پیام عادی** salon folders + detail; queue removal and manual-sent capabilities are server-owned |
 | Admin VIP lists/detail | Implemented (inventory; not the VIP send destination). The inventory screen defaults to **لیست‌های اصلی تهران** (`catalogMembership=ORIGINAL_TEHRAN`) and can switch to **همهٔ لیست‌ها** (omitted filter). Counts and pages come from the server for the selected filter. An unclassified environment shows an empty original collection rather than every regional list. Import keeps the existing contract, leaves membership null, then opens the new list from the all-lists view. Entitlement salon selection uses `GET /admin/vip/salons`: 50-row pages ordered by `createdAt DESC, id DESC`, with an optional case-insensitive full-population name `q`. `nextCursor` encodes the last returned timestamp and ID and is present exactly when `hasMore` is true. Flutter debounces search, resets its cursor on query change, retains prior pages on a later-page error, and retries that page. Names need not be unique; entitlement actions use salon IDs. Live pages are not a snapshot under concurrent changes. |
 | Admin VIP outreach folders | Implemented as **ارسال پیام VIP** (`/admin/vip/outreach`) |
@@ -283,7 +285,7 @@ Android emulator API default `http://10.0.2.2:3000`. Physical device: LAN IP via
 
 ## 15. Tests (presence)
 
-API E2E: auth, salon-user, customer, import, visit, visit-with-sale, export, finance, intelligence, action, messaging, observed-returns, return-commitments, vip, observability, reliability.
+API E2E includes phone identity/signup/owner-account, agreement acceptance, activation receipts, auth, salon-user, customer, import, visits/sales, finance, intelligence, action, messaging, return outcomes, VIP, support, observability, and reliability. This is an inventory of test files, not evidence of a live rollout.
 
 Unit: shared intelligence/money/vip, database constraints, many API use-case specs.
 

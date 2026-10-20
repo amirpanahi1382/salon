@@ -22,6 +22,8 @@ Completed **visits** are historical facts. **Transactions** are financial facts.
 
 VIP outreach is a **separate** capability (platform-managed contact lists). It reuses the messaging execution pipeline. It does **not** create salon `Customer` rows.
 
+Phone-first onboarding is separate from product access: phone OTP proof → one OWNER and one `AWAITING_AGREEMENT` salon → explicit acceptance of a published, versioned agreement → `AWAITING_PAYMENT` → manual transfer receipt under review → platform-admin approval with an explicit bank-check attestation → `PRODUCT`. A receipt image alone is not verified payment. The signup, agreement-acceptance, and manual-transfer flags default off; publishing code or migrating a schema does not enable them. Email registration and email-password login are closed. Salon users and platform admins use phone/password login; platform admins are created by a separate operator command, never public signup.
+
 Long-term wedges (marketplace, attribution/incentives) exist as **strategy**, not as current implementation. Do not build them unless product docs explicitly pull them into scope.
 
 ---
@@ -117,7 +119,7 @@ Do not create a Visit or Transaction from messaging or VIP.
 - **Modular monolith**: NestJS `apps/api` + NestJS `apps/worker` + Flutter `apps/mobile` + `packages/*`.
 - Do not split microservices, add Kafka, CQRS, event sourcing, or multi-region designs for prestige.
 - Do not add Redis to the request path just because Compose requires `REDIS_URL` (Redis is unused by application code today).
-- MinIO is used for VIP sample-work bytes. Do not store those bytes in PostgreSQL.
+- MinIO is used for VIP sample-work and private activation-receipt bytes. Do not store those bytes in PostgreSQL; back up the object storage independently.
 
 ---
 
@@ -140,7 +142,7 @@ Do not change tests merely to make documentation look true. Do not change produc
 Unless product strategy + MVP docs explicitly change:
 
 - Booking, reservations, calendar, appointment scheduling
-- POS hardware, tenders, receipts, payments, tax/accounting
+- POS hardware, payment gateway/processor, tenders, tax/accounting (the separate manual onboarding transfer-and-receipt review is implemented)
 - Payroll, employee commissions, attribution, rewards
 - Inventory ERP
 - Supplier marketplace, ordering, checkout

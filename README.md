@@ -24,13 +24,14 @@ API and worker are **two processes**, not one Nest app with a background thread.
 
 ```text
 Flutter  →  NestJS API  →  PostgreSQL (Prisma)
-                              ↓ transactional outbox
-                         NestJS worker  →  Bale Safir (BALE deliveries only)
-                              ↓
-                         MinIO (VIP sample-work images)
+                    │         ↓ transactional outbox
+                    │    NestJS worker  →  Bale Safir (BALE deliveries only)
+                    ▼         │ VIP abandoned-upload cleanup
+              MinIO / S3-compatible storage
+              (VIP sample works + private activation receipts)
 ```
 
-Redis is required by env/Compose and is **not used by application code**. MinIO **is** used for VIP sample work.
+Redis is required by env/Compose and is **not used by application code**. MinIO stores VIP sample works and private activation receipt images; a PostgreSQL backup does not include those objects.
 
 ## Prerequisites
 
@@ -102,6 +103,8 @@ Flutter: see [`apps/mobile/README.md`](apps/mobile/README.md).
 Phone and password sign in through `POST /auth/login/phone`. The server chooses a salon user or a platform admin. Salon claims include `sub`, `tid`, and `role`. A platform admin token has `scp=platform` and no `tid`. `GET /auth/me` and `GET /admin/auth/me` return the matching principal. `POST /auth/register`, `POST /auth/login`, and `POST /admin/auth/login` are closed. Expiry `JWT_EXPIRES_IN` (default `8h`). No refresh token. Logout is client-side.
 
 Tenant is always taken from the authenticated user. A body `salonId` is ignored/rejected.
+
+Phone-first onboarding is a separate restricted journey: phone → OTP → password entered twice and one OWNER account → login → published `CONTRACT_V1` presentation and explicit acceptance → card-transfer instructions and receipt upload → `UNDER_REVIEW` → platform-admin bank-check attestation and approval → fresh product session. A pending owner can sign in but cannot use CRM, VIP, messaging, or other product routes. Signup, agreement acceptance, and manual transfer each have separate flags that default off. There is no payment gateway; uploading a receipt does not confirm payment. Contract publication and live rollout are separate operator decisions. See `docs/current-state-system-spec.md` and `architecture/security.md` for the exact gates and evidence limits.
 
 A **Visit** is a completed historical interaction, not a booking.
 

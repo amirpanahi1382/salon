@@ -99,6 +99,17 @@ final activationRepositoryProvider = Provider<ActivationRepository>((ref) {
   return ActivationRepository(ref.watch(apiClientProvider));
 });
 
+/// Bumped after an admin approves or rejects a receipt so the pending list reloads.
+class ActivationReceiptListRefresh extends Notifier<int> {
+  @override
+  int build() => 0;
+
+  void bump() => state++;
+}
+
+final activationReceiptListRefreshProvider =
+    NotifierProvider<ActivationReceiptListRefresh, int>(ActivationReceiptListRefresh.new);
+
 enum AuthStatus { unknown, signedOut, signedIn }
 
 class AuthState {

@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -30,6 +30,9 @@ import 'salon_access.dart';
 
 export 'salon_access.dart';
 
+/// Lets admin list screens reload when a pushed detail route is popped or replaced.
+final RouteObserver<ModalRoute<void>> adminRouteObserver = RouteObserver<ModalRoute<void>>();
+
 class _AuthRefresh extends ChangeNotifier {
   void ping() => notifyListeners();
 }
@@ -46,6 +49,7 @@ final routerProvider = Provider<GoRouter>((ref) {
   return GoRouter(
     initialLocation: '/splash',
     refreshListenable: refresh,
+    observers: [adminRouteObserver],
     redirect: (context, state) {
       final auth = ref.read(authControllerProvider);
       final loggingIn =

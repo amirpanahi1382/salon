@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/errors/api_exception.dart';
@@ -6,6 +7,9 @@ import '../../core/networking/api_client.dart';
 import '../../core/state/providers.dart';
 import '../../core/widgets/app_widgets.dart';
 import 'agreement_repository.dart';
+import 'contract_markdown.dart';
+import 'contract_presentation.dart';
+import 'declared_fields.dart';
 
 final agreementRepositoryProvider = Provider<AgreementRepository>((ref) {
   return AgreementRepository(ref.watch(apiClientProvider));
@@ -19,6 +23,14 @@ const agreementDeclaredNote =
 
 const agreementRecordedText = 'قرارداد ثبت شد. راهنمای واریز هنوز در دسترس نیست.';
 
+const agreementJumpToConsentLabel = 'رفتن به تأیید';
+
+/// Same green as the contract title; used for the fixed bottom jump control.
+const agreementTitleGreen = Color(0xFF81C784);
+const agreementJumpGreen = agreementTitleGreen;
+const agreementJumpGreenForeground = Color(0xFF1B5E20);
+const agreementJumpBarHeight = 52.0;
+
 class AgreementScreen extends ConsumerStatefulWidget {
   const AgreementScreen({super.key});
 
@@ -31,6 +43,9 @@ class _AgreementScreenState extends ConsumerState<AgreementScreen> {
   final _nationalId = TextEditingController();
   final _salonName = TextEditingController();
   final _phone = TextEditingController();
+  final _scrollController = ScrollController();
+  final _consentSectionKey = GlobalKey();
+  final _confirmButtonKey = GlobalKey();
   AgreementContract? _contract;
   AgreementPreview? _preview;
   Object? _error;
@@ -42,6 +57,10 @@ class _AgreementScreenState extends ConsumerState<AgreementScreen> {
   int _previewGeneration = 0;
   _AcceptanceAttempt? _pendingAcceptance;
   bool _acceptRetry = false;
+  bool _presentationAmbiguous = false;
+  String? _fullNameError;
+  String? _nationalIdError;
+  String? _salonNameError;
 
   @override
   void initState() {
@@ -55,13 +74,56 @@ class _AgreementScreenState extends ConsumerState<AgreementScreen> {
     _nationalId.dispose();
     _salonName.dispose();
     _phone.dispose();
+    _scrollController.dispose();
     super.dispose();
+  }
+
+  Future<void> _jumpToConsent() async {
+    FocusManager.instance.primaryFocus?.unfocus();
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    if (!mounted) {
+      return;
+    }
+    final target = _consentSectionKey.currentContext;
+    if (target != null && target.mounted) {
+      await Scrollable.ensureVisible(
+        target,
+        duration: const Duration(milliseconds: 350),
+        curve: Curves.easeInOut,
+        alignment: 0.05,
+      );
+      if (!mounted) {
+        return;
+      }
+      // Bring the final confirmation control fully above the fixed jump bar.
+      final confirm = _confirmButtonKey.currentContext;
+      if (confirm != null && confirm.mounted) {
+        await Scrollable.ensureVisible(
+          confirm,
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeInOut,
+          alignment: 0.85,
+        );
+      }
+      return;
+    }
+    if (!mounted) {
+      return;
+    }
+    if (_scrollController.hasClients) {
+      await _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 400),
+        curve: Curves.easeInOut,
+      );
+    }
   }
 
   Future<void> _load() async {
     setState(() {
       _loading = true;
       _error = null;
+      _presentationAmbiguous = false;
     });
     try {
       final contract = await ref.read(agreementRepositoryProvider).current();
@@ -86,12 +148,30 @@ class _AgreementScreenState extends ConsumerState<AgreementScreen> {
     _idempotencyKey = createRequestId();
     _pendingAcceptance = null;
     _acceptRetry = false;
+    final fullName = validateDeclaredFullName(_fullName.text);
+    final nationalId = validateDeclaredNationalId(_nationalId.text);
+    final salonName = validateDeclaredSalonName(_salonName.text);
     setState(() {
       _preview = null;
       _accepted = false;
       _previewing = false;
+      _fullNameError = _fullName.text.trim().isEmpty ? null : fullName.error;
+      _nationalIdError = _nationalId.text.trim().isEmpty ? null : nationalId.error;
+      _salonNameError = _salonName.text.trim().isEmpty ? null : salonName.error;
     });
     _refreshPreview(generation);
+  }
+
+  void _onNationalIdChanged(String value) {
+    final ascii = toAsciiDigits(value).replaceAll(RegExp(r'\s'), '');
+    if (ascii != _nationalId.text) {
+      final selection = ascii.length;
+      _nationalId.value = TextEditingValue(
+        text: ascii,
+        selection: TextSelection.collapsed(offset: selection.clamp(0, ascii.length)),
+      );
+    }
+    _edit();
   }
 
   bool _phoneNeedsVerification(AgreementContract contract) {
@@ -99,11 +179,15 @@ class _AgreementScreenState extends ConsumerState<AgreementScreen> {
     return phone.isNotEmpty && phone != contract.verifiedPhone;
   }
 
+  bool _declaredFieldsValid() {
+    return validateDeclaredFullName(_fullName.text).isValid &&
+        validateDeclaredNationalId(_nationalId.text).isValid &&
+        validateDeclaredSalonName(_salonName.text).isValid;
+  }
+
   bool _fieldsReady(AgreementContract contract) {
     return !_phoneNeedsVerification(contract) &&
-        _fullName.text.trim().isNotEmpty &&
-        _nationalId.text.trim().isNotEmpty &&
-        _salonName.text.trim().isNotEmpty &&
+        _declaredFieldsValid() &&
         _phone.text.trim().isNotEmpty;
   }
 
@@ -236,74 +320,183 @@ class _AgreementScreenState extends ConsumerState<AgreementScreen> {
             ? const LoadingView()
             : contract == null
                 ? _ErrorPane(error: _error, onRetry: _load)
-                : ListView(
-                    padding: const EdgeInsets.all(24),
-                    children: [
-                      Text('نسخه ${contract.versionKey}', key: const Key('agreement-version')),
-                      const SizedBox(height: 8),
-                      Text(contract.amountLabel, key: const Key('agreement-amount')),
-                      Text(contract.amountIrr, key: const Key('agreement-amount-irr')),
-                      const SizedBox(height: 12),
-                      const Text(agreementDeclaredNote, key: Key('agreement-declared-note')),
-                      const SizedBox(height: 12),
-                      ..._body(contract),
-                      if (_phoneNeedsVerification(contract))
-                        const Padding(
-                          padding: EdgeInsets.only(top: 12),
-                          child: Text(
-                            agreementPhoneUnverifiedText,
-                            key: Key('agreement-phone-unverified'),
-                          ),
-                        ),
-                      if (_preview != null) ...[
-                        const SizedBox(height: 16),
-                        const Text('متن نهایی همین نسخه'),
-                        Text(_preview!.canonicalDocument, key: const Key('agreement-rendered')),
-                      ],
-                      const SizedBox(height: 16),
-                      CheckboxListTile(
-                        key: const Key('agreement-consent'),
-                        contentPadding: EdgeInsets.zero,
-                        value: _preview != null && !_previewing && _accepted,
-                        onChanged: _preview == null || _previewing || _phoneNeedsVerification(contract)
-                            ? null
-                            : (value) => setState(() => _accepted = value ?? false),
-                        title: Text(contract.checkboxWording),
-                        controlAffinity: ListTileControlAffinity.leading,
-                      ),
-                      if (_error != null) ...[
-                        const SizedBox(height: 12),
-                        Text(_message(_error!), key: const Key('agreement-error')),
-                        TextButton(
-                          key: const Key('agreement-retry'),
-                          onPressed: _retry,
-                          child: const Text('تلاش دوباره'),
-                        ),
-                      ],
-                      const SizedBox(height: 12),
-                      AppButton(
-                        key: const Key('agreement-confirm'),
-                        label: contract.buttonWording,
-                        loading: _submitting || _previewing,
-                        onPressed: _accepted &&
-                                _preview != null &&
-                                !_previewing &&
-                                !_phoneNeedsVerification(contract)
-                            ? _submit
-                            : null,
-                      ),
-                    ],
-                  ),
+                : _presentationAmbiguous
+                    ? _ErrorPane(
+                        error: 'نمایش قرارداد برای این نسخه مبهم است.',
+                        onRetry: _load,
+                      )
+                    : _buildContractPage(context, contract),
       ),
     );
   }
 
+  Widget _buildContractPage(BuildContext context, AgreementContract contract) {
+    final consentEnabled = _preview != null &&
+        !_previewing &&
+        _declaredFieldsValid() &&
+        !_phoneNeedsVerification(contract);
+    // Extra list padding keeps consent + confirm fully above the fixed jump bar.
+    const listBottomPadding = agreementJumpBarHeight + 48;
+    return Column(
+      children: [
+        Expanded(
+          child: ListView(
+            controller: _scrollController,
+            padding: const EdgeInsets.fromLTRB(24, 16, 24, listBottomPadding),
+            children: [
+              Text(
+                contract.versionKey == contractV1VersionKey
+                    ? contractV1Title
+                    : contract.versionKey,
+                key: const Key('agreement-title'),
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      color: agreementTitleGreen,
+                      fontWeight: FontWeight.w700,
+                    ),
+              ),
+              const SizedBox(height: 12),
+              const Text(agreementDeclaredNote, key: Key('agreement-declared-note')),
+              const SizedBox(height: 12),
+              ..._body(contract),
+              if (_phoneNeedsVerification(contract))
+                const Padding(
+                  padding: EdgeInsets.only(top: 12),
+                  child: Text(
+                    agreementPhoneUnverifiedText,
+                    key: Key('agreement-phone-unverified'),
+                  ),
+                ),
+              if (_preview != null) ...[
+                const SizedBox(height: 16),
+                const Text('متن نهایی همین نسخه'),
+                ..._previewWidgets(contract, _preview!),
+              ],
+              const SizedBox(height: 16),
+              KeyedSubtree(
+                key: _consentSectionKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    CheckboxListTile(
+                      key: const Key('agreement-consent'),
+                      contentPadding: EdgeInsets.zero,
+                      value: consentEnabled && _accepted,
+                      onChanged: !consentEnabled
+                          ? null
+                          : (value) => setState(() => _accepted = value ?? false),
+                      title: Text(contract.checkboxWording),
+                      controlAffinity: ListTileControlAffinity.leading,
+                    ),
+                    if (_error != null) ...[
+                      const SizedBox(height: 12),
+                      Text(_message(_error!), key: const Key('agreement-error')),
+                      TextButton(
+                        key: const Key('agreement-retry'),
+                        onPressed: _retry,
+                        child: const Text('تلاش دوباره'),
+                      ),
+                    ],
+                    const SizedBox(height: 12),
+                    KeyedSubtree(
+                      key: _confirmButtonKey,
+                      child: AppButton(
+                        key: const Key('agreement-confirm'),
+                        label: contract.buttonWording,
+                        loading: _submitting || _previewing,
+                        onPressed: consentEnabled && _accepted ? _submit : null,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        Material(
+          color: agreementJumpGreen,
+          elevation: 6,
+          child: SizedBox(
+            height: agreementJumpBarHeight,
+            width: double.infinity,
+            child: TextButton(
+              key: const Key('agreement-jump-to-consent'),
+              onPressed: _jumpToConsent,
+              style: TextButton.styleFrom(
+                foregroundColor: agreementJumpGreenForeground,
+                minimumSize: const Size(double.infinity, agreementJumpBarHeight),
+                padding: EdgeInsets.zero,
+                shape: const RoundedRectangleBorder(),
+              ),
+              child: const Text(
+                agreementJumpToConsentLabel,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 16,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  List<Widget> _previewWidgets(AgreementContract contract, AgreementPreview preview) {
+    final prepared = prepareContractPresentation(
+      versionKey: contract.versionKey,
+      source: preview.canonicalDocument,
+      checkboxWording: contract.checkboxWording,
+      buttonWording: contract.buttonWording,
+    );
+    if (prepared == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && !_presentationAmbiguous) {
+          setState(() => _presentationAmbiguous = true);
+        }
+      });
+      return const [];
+    }
+    return [
+      ContractMarkdownView(
+        key: const Key('agreement-rendered'),
+        source: prepared.body,
+      ),
+    ];
+  }
+
   List<Widget> _body(AgreementContract contract) {
     final widgets = <Widget>[];
-    for (var index = 0; index < contract.segments.length; index += 1) {
-      final segment = contract.segments[index];
+    final segments = contract.segments;
+    for (var index = 0; index < segments.length; index += 1) {
+      final segment = segments[index];
       if (segment.text != null) {
-        widgets.add(Text(segment.text!, key: Key('agreement-readonly-$index')));
+        final nextField =
+            index + 1 < segments.length ? segments[index + 1].field : null;
+        final prepared = prepareContractPresentation(
+          versionKey: contract.versionKey,
+          source: segment.text!,
+          checkboxWording: contract.checkboxWording,
+          buttonWording: contract.buttonWording,
+          stripTrailingFieldLabelFor: nextField,
+        );
+        if (prepared == null) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted && !_presentationAmbiguous) {
+              setState(() => _presentationAmbiguous = true);
+            }
+          });
+          return widgets;
+        }
+        if (prepared.body.trim().isEmpty) {
+          continue;
+        }
+        widgets.add(
+          ContractMarkdownView(
+            key: Key('agreement-readonly-$index'),
+            source: prepared.body,
+          ),
+        );
       } else {
         widgets.add(_field(segment.field ?? ''));
       }
@@ -312,36 +505,51 @@ class _AgreementScreenState extends ConsumerState<AgreementScreen> {
   }
 
   Widget _field(String field) {
-    return switch (field) {
+    final child = switch (field) {
       'fullName' => AppTextField(
           key: const Key('agreement-full-name'),
           label: 'نام و نام خانوادگی',
           controller: _fullName,
+          hintOnly: true,
+          errorText: _fullNameError,
           onChanged: (_) => _edit(),
         ),
       'nationalId' => AppTextField(
           key: const Key('agreement-national-id'),
           label: 'کد ملی',
           controller: _nationalId,
+          hintOnly: true,
+          errorText: _nationalIdError,
           keyboardType: TextInputType.number,
           textDirection: TextDirection.ltr,
-          onChanged: (_) => _edit(),
+          maxLength: 10,
+          inputFormatters: [
+            FilteringTextInputFormatter.allow(RegExp(r'[0-9۰-۹٠-٩]')),
+          ],
+          onChanged: _onNationalIdChanged,
         ),
       'salonName' => AppTextField(
           key: const Key('agreement-salon-name'),
           label: 'نام سالن آرایشگاهی',
           controller: _salonName,
+          hintOnly: true,
+          errorText: _salonNameError,
           onChanged: (_) => _edit(),
         ),
       _ => AppTextField(
           key: const Key('agreement-phone'),
           label: 'شمارهٔ تماس',
           controller: _phone,
+          hintOnly: true,
+          readOnly: true,
           keyboardType: TextInputType.phone,
           textDirection: TextDirection.ltr,
-          onChanged: (_) => _edit(),
         ),
     };
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: child,
+    );
   }
 
   Future<void> _retry() async {
@@ -480,7 +688,11 @@ class _ErrorPane extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final failure = error;
-    final message = failure is ApiException ? failure.message : 'بارگذاری قرارداد ناموفق بود.';
+    final message = failure is ApiException
+        ? failure.message
+        : failure is String
+            ? failure
+            : 'بارگذاری قرارداد ناموفق بود.';
     return ListView(
       padding: const EdgeInsets.all(24),
       children: [

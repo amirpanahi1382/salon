@@ -1,6 +1,6 @@
 # Current product scope
 
-**Status:** Scope as of 2026-09-15  
+**Status:** Scope reviewed for the phone-first journey on 2026-10-20
 **Authority for “does it exist?”:** `docs/current-state-system-spec.md`
 
 This file defines **what the product is allowed to be now**. It is not a historical phase checklist.
@@ -18,7 +18,7 @@ These capabilities exist in the repository (API + schema + tests; Flutter unless
 ### Salon & access
 
 - Public email registration (`POST /auth/register`) is closed in every registration mode. It does not create a salon. Public salon creation is phone signup, which stays disabled until `PHONE_SIGNUP_ENABLED` is turned on
-- Phone completion (`POST /auth/signup/phone/complete`) creates one `AWAITING_AGREEMENT` salon and its phone-owning OWNER. Agreement acceptance can then move that salon to `AWAITING_PAYMENT` when `AGREEMENT_ACCEPTANCE_ENABLED` is on. Manual card transfer and admin receipt review can then activate that salon when `MANUAL_TRANSFER_ENABLED` is on. Both flags default off. There is no payment gateway. A receipt photograph is not confirmed payment; only admin approval sets `PRODUCT`, and that approval requires the platform admin’s explicit manual bank attestation
+- Phone completion (`POST /auth/signup/phone/complete`) creates one `AWAITING_AGREEMENT` salon and its phone-owning OWNER. Agreement acceptance can then move that salon to `AWAITING_PAYMENT` when `AGREEMENT_ACCEPTANCE_ENABLED` is on. Manual card transfer and admin receipt review can then activate that salon when `MANUAL_TRANSFER_ENABLED` is on. Signup, agreement, and transfer flags all default off. There is no payment gateway. A receipt photograph is not confirmed payment; only admin approval sets `PRODUCT`, and that approval requires the platform admin’s explicit manual bank attestation
 - Login JWT. The visible app sends only phone and password to `POST /auth/login/phone`; the server decides salon user or platform admin. Email registration and email-password login are closed. Email may be stored later as contact and is not an identity. A pending salon receives an onboarding session only
 - Roles: `OWNER`, `MANAGER`, `STAFF`
 - Salon profile `GET/PATCH /salon`
@@ -69,7 +69,7 @@ These capabilities exist in the repository (API + schema + tests; Flutter unless
 
 - Admin target lists (Excel, max 100 contacts)
 - Salon entitlement grant/revoke (not billing)
-- Reserve ACTIVE list, quota 100 contacts / 14 days, sample works in MinIO, submit CAS
+- Reserve ACTIVE list, rolling quota 500 contacts / 7 days (request sizes 30/50/100), sample works in MinIO, submit CAS
 - Recipients snapshotted; manual dispatch onto the **same** message queue
 - VIP Bale: placeholder `BALE_NOT_IMPLEMENTED` / queue select-bale rejected
 
@@ -88,13 +88,13 @@ These capabilities exist in the repository (API + schema + tests; Flutter unless
 | Flutter vs API | Core salon loop + admin queue + VIP UI in current repository HEAD | User admin, salon PATCH, void, segments screen, standalone transactions |
 | Campaigns | Per-customer MessageRequest | Campaign aggregate, recipient lists as a first-class entity, send-all |
 | Outcome measurement | EVENT owner view + customer OBSERVED/COMMITMENT_BACKED evidence | Cohort analytics, rates, incremental/causal revenue |
-| Consent | — | Opt-in/opt-out, STOP handling |
+| Contact policy | Platform-admin future-send stop for a canonical phone | Initial marketing consent proof and a self-service opt-in/opt-out center |
 | VIP Bale | Status + API rejection | Safir send for VIP phones |
 | Intelligence scale | SQL aggregates for visits | Uncapped, indexed serving for large tenants |
 | Billing | VIP entitlement flag | Subscriptions, invoices, metering |
 | Redis | Compose + required env | Application client |
 | `GET /auth/owner` | Exists | Product surface; leftover auth probe |
-| Phone signup | Possession challenge, one-time proof, and completion that creates one restricted owner when `PHONE_SIGNUP_ENABLED` is on. Flutter has the signup screen. The flag defaults off | A live OTP send, payment, and a published agreement |
+| Phone-first onboarding | OTP possession and completion; one restricted owner; versioned agreement presentation/acceptance; manual card-transfer instructions, receipt upload/review, admin approval, and Flutter screens. All three write-path flags default off | Live OTP/cutover, legal approval, publication of `CONTRACT_V1` on the target API, actual bank-transfer verification, and a payment gateway |
 
 ---
 
@@ -122,7 +122,7 @@ These capabilities exist in the repository (API + schema + tests; Flutter unless
 
 ```text
 Booking, reservations, calendar, staff scheduling
-POS, payments, cash drawer, tax accounting
+POS, payment gateway/processing, cash drawer, tax accounting (manual onboarding transfer and receipt review are implemented separately)
 Payroll, employee commission engine
 Inventory ERP
 Supplier marketplace, ratings, checkout, delivery

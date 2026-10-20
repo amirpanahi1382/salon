@@ -150,6 +150,23 @@ describeIfDisposable('agreement acceptance on a disposable database', () => {
       .set('Authorization', `Bearer ${token}`)
       .send({ fullName: 'نرگس رضایی', nationalId: '0000000000', salonName: 'سالن', phone: owner.phone })
       .expect(400);
+    const latinName = await request(app.getHttpServer())
+      .post('/agreement/presentations')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ fullName: 'Narges Rezaei', nationalId: national, salonName: 'سالن', phone: owner.phone })
+      .expect(400);
+    expect(latinName.body.message).toMatch(/Persian full name/i);
+    const badChecksum = await request(app.getHttpServer())
+      .post('/agreement/presentations')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        fullName: 'نرگس رضایی',
+        nationalId: `${national.slice(0, 9)}0`,
+        salonName: 'سالن',
+        phone: owner.phone,
+      })
+      .expect(400);
+    expect(badChecksum.body.message).toMatch(/checksum/i);
     const mismatch = await request(app.getHttpServer())
       .post('/agreement/presentations')
       .set('Authorization', `Bearer ${token}`)
@@ -163,12 +180,16 @@ describeIfDisposable('agreement acceptance on a disposable database', () => {
       .send({
         fullName: 'نرگس رضایی',
         nationalId: national,
-        salonName: 'سالن <نرگس>',
+        salonName: 'سالن Glow Beauty <نرگس>',
         phone: owner.phone,
       })
       .expect(201);
     expect(presented.body.canonicalDocument).toContain('نرگس رضایی');
     expect(presented.body.canonicalDocument).toContain(national);
+    expect(presented.body.canonicalDocument).toContain('سالن Glow Beauty <نرگس>');
+    expect(presented.body.canonicalDocument).toContain('نام و نام خانوادگی:');
+    expect(presented.body.canonicalDocument).toContain('کد ملی:');
+    expect(presented.body.canonicalDocument).toContain('نام سالن آرایشگاهی:');
     expect(presented.body.templateDigest).toBe(published.body.templateDigest);
 
     const key = `accept-${randomUUID()}`;
@@ -306,8 +327,11 @@ describeIfDisposable('agreement acceptance on a disposable database', () => {
       .get('/agreement/acceptance/document.html')
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
-    expect(html.text).toContain('سالن &lt;نرگس&gt;');
+    expect(html.text).toContain('سالن Glow Beauty &lt;نرگس&gt;');
     expect(html.text).not.toContain('<نرگس>');
+    expect(html.text).toContain('نام و نام خانوادگی:');
+    expect(html.text).toContain('کد ملی:');
+    expect(html.text).toContain('نام سالن آرایشگاهی:');
     await request(app.getHttpServer())
       .get('/agreement/acceptance/document')
       .set('Authorization', `Bearer ${await login(other.phone)}`)

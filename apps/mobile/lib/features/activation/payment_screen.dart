@@ -11,6 +11,7 @@ import '../../core/state/providers.dart';
 import '../../core/theme/app_tokens.dart';
 import '../../core/widgets/app_widgets.dart';
 import '../../features/agreement/agreement_screen.dart';
+import '../../shared/labels.dart';
 import 'activation_repository.dart';
 
 typedef ReceiptImagePicker = Future<({Uint8List bytes, String name})?> Function();
@@ -262,6 +263,15 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen>
     }
     if (status.phase == 'PAYMENT_UNAVAILABLE') {
       return Scaffold(
+        appBar: AppBar(
+          actions: [
+            TextButton(
+              key: const Key('payment-unavailable-logout'),
+              onPressed: () => ref.read(authControllerProvider.notifier).logout(),
+              child: const Text(AppStrings.logout),
+            ),
+          ],
+        ),
         body: SafeArea(
           child: Padding(
             padding: const EdgeInsets.all(AppTokens.space24),
@@ -389,14 +399,23 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen>
   }
 }
 
-class _WaitingScreen extends StatelessWidget {
+class _WaitingScreen extends ConsumerWidget {
   const _WaitingScreen({required this.pulse});
 
   final Animation<double> pulse;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return Scaffold(
+      appBar: AppBar(
+        actions: [
+          TextButton(
+            key: const Key('payment-waiting-logout'),
+            onPressed: () => ref.read(authControllerProvider.notifier).logout(),
+            child: const Text(AppStrings.logout),
+          ),
+        ],
+      ),
       body: SafeArea(
         child: Center(
           child: Padding(

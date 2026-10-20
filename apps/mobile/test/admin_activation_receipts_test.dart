@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:salon_mobile/core/errors/api_exception.dart';
 import 'package:salon_mobile/core/networking/api_client.dart';
+import 'package:salon_mobile/core/routing/app_router.dart';
 import 'package:salon_mobile/core/state/providers.dart';
 import 'package:salon_mobile/core/storage/session_store.dart';
 import 'package:salon_mobile/core/widgets/app_widgets.dart';
@@ -19,22 +20,25 @@ class _FakeActivation extends ActivationRepository {
 
   int approvals = 0;
   int rejections = 0;
+  int listCalls = 0;
   String? reason;
   String? attestation;
   Object? imageError;
   String? corruptId;
+  List<ActivationReceiptSummary> pending = const [
+    ActivationReceiptSummary(
+      id: 'receipt-1',
+      phase: 'UNDER_REVIEW',
+      submittedAt: '2026-10-15T12:00:00.000Z',
+      salonName: 'سالن نرگس',
+      ownerName: 'نرگس رضایی',
+    ),
+  ];
 
   @override
   Future<List<ActivationReceiptSummary>> listPending() async {
-    return const [
-      ActivationReceiptSummary(
-        id: 'receipt-1',
-        phase: 'UNDER_REVIEW',
-        submittedAt: '2026-10-15T12:00:00.000Z',
-        salonName: 'سالن نرگس',
-        ownerName: 'نرگس رضایی',
-      ),
-    ];
+    listCalls += 1;
+    return List<ActivationReceiptSummary>.from(pending);
   }
 
   @override
@@ -76,6 +80,7 @@ class _FakeActivation extends ActivationRepository {
   }) async {
     approvals += 1;
     attestation = bankAttestation;
+    pending = pending.where((item) => item.id != id).toList();
   }
 
   @override
@@ -86,6 +91,7 @@ class _FakeActivation extends ActivationRepository {
   }) async {
     rejections += 1;
     this.reason = reason;
+    pending = pending.where((item) => item.id != id).toList();
   }
 }
 
@@ -95,23 +101,7 @@ void main() {
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     final fake = _FakeActivation();
-    final router = GoRouter(
-      initialLocation: '/admin/activation-receipts',
-      routes: [
-        GoRoute(
-          path: '/admin/activation-receipts',
-          builder: (context, state) => const AdminActivationReceiptsScreen(),
-          routes: [
-            GoRoute(
-              path: ':id',
-              builder: (context, state) => AdminActivationReceiptScreen(
-                receiptId: state.pathParameters['id']!,
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
+    final router = _receiptRouter();
     addTearDown(router.dispose);
     await tester.pumpWidget(
       ProviderScope(
@@ -148,6 +138,9 @@ void main() {
     expect(fake.rejections, 1);
     expect(fake.reason, 'مبلغ نادرست است');
     expect(fake.approvals, 0);
+    expect(find.text('در انتظار بررسی'), findsNothing);
+    expect(find.text('فیشی در انتظار بررسی نیست.'), findsOneWidget);
+    expect(fake.listCalls, greaterThan(1));
   });
 
   testWidgets('enables activation only after the receipt is shown and the bank attestation is checked', (tester) async {
@@ -168,6 +161,30 @@ void main() {
     expect(fake.approvals, 1);
     expect(fake.attestation, 'واریز را در حساب بانکی بررسی و با این فیش تطبیق داده‌ام');
     expect(fake.rejections, 0);
+    expect(find.text('در انتظار بررسی'), findsNothing);
+    expect(find.text('فیشی در انتظار بررسی نیست.'), findsOneWidget);
+  });
+
+  testWidgets('reloads the pending list when navigating back from a receipt detail', (tester) async {
+    tester.view.physicalSize = const Size(900, 1800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    final fake = _FakeActivation();
+    await tester.pumpWidget(_adminApp(fake, '/admin/activation-receipts'));
+    await tester.pumpAndSettle();
+    final listsBeforeOpen = fake.listCalls;
+    await tester.tap(find.byKey(const Key('activation-receipt-receipt-1')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('admin-receipt-image')), findsOneWidget);
+    // Another actor cleared the queue while the detail was open.
+    fake.pending = const [];
+    final back = find.byType(BackButton);
+    expect(back, findsOneWidget);
+    await tester.tap(back);
+    await tester.pumpAndSettle();
+    expect(fake.listCalls, greaterThan(listsBeforeOpen));
+    expect(find.text('در انتظار بررسی'), findsNothing);
+    expect(find.text('فیشی در انتظار بررسی نیست.'), findsOneWidget);
   });
 
   testWidgets('keeps activation disabled when the receipt image cannot be shown', (tester) async {
@@ -251,9 +268,10 @@ Future<void> _settleReceiptImage(WidgetTester tester) async {
   await tester.pumpAndSettle();
 }
 
-Widget _adminApp(_FakeActivation fake, String location) {
-  final router = GoRouter(
-    initialLocation: location,
+GoRouter _receiptRouter({String initialLocation = '/admin/activation-receipts'}) {
+  return GoRouter(
+    initialLocation: initialLocation,
+    observers: [adminRouteObserver],
     routes: [
       GoRoute(
         path: '/admin/activation-receipts',
@@ -269,6 +287,10 @@ Widget _adminApp(_FakeActivation fake, String location) {
       ),
     ],
   );
+}
+
+Widget _adminApp(_FakeActivation fake, String location) {
+  final router = _receiptRouter(initialLocation: location);
   return ProviderScope(
     overrides: [activationRepositoryProvider.overrideWithValue(fake)],
     child: MaterialApp.router(routerConfig: router),

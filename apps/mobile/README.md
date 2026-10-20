@@ -14,6 +14,6 @@ flutter run --dart-define=API_BASE_URL=http://localhost:3000
 
 Customers can be added one by one or imported from Excel (Name and Phone). Phones must be `09` + 9 digits.
 
-Platform admin UI: `/admin/login`, message queue, VIP lists. Salon VIP lives on the Opportunities flow when entitled.
+Salon users and platform admins use the same phone-and-password `/login` screen; the server chooses the account. A new salon owner moves through phone OTP, password creation, agreement acceptance, manual-transfer receipt upload, and admin review before product access. Pending owners can sign in but cannot open product screens. These signup/agreement/transfer write paths are disabled by default on the API. Platform admin UI includes message queues, VIP lists, and the activation-receipt review at `/admin/activation-receipts`. Salon VIP lives on the Opportunities flow when entitled.
 
 See `docs/current-state-system-spec.md` for the screen inventory.

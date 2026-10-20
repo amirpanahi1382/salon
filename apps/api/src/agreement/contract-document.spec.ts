@@ -96,6 +96,100 @@ describe('declared agreement fields', () => {
       ),
     ).toThrow(ValidationError);
   });
+
+  it('accepts Persian full names with half-spaces and rejects Latin, Urdu, digits, and separators', () => {
+    const id = nationalId('001354241');
+    const withHalfSpace = normalizeDeclaredFields(
+      {
+        fullName: 'سید\u200cعلی رضایی',
+        nationalId: id,
+        salonName: 'سالن',
+        phone: verifiedPhone,
+      },
+      verifiedPhone,
+    );
+    expect(withHalfSpace.fullName).toContain('\u200c');
+    expect(
+      normalizeDeclaredFields(
+        {
+          fullName: 'علي رضا', // Arabic Yeh → Persian Yeh
+          nationalId: id,
+          salonName: 'سالن',
+          phone: verifiedPhone,
+        },
+        verifiedPhone,
+      ).fullName,
+    ).toBe('علی رضا');
+    expect(
+      normalizeDeclaredFields(
+        { fullName: 'فاطمه زهرا', nationalId: id, salonName: 'سالن', phone: verifiedPhone },
+        verifiedPhone,
+      ).fullName,
+    ).toBe('فاطمه زهرا');
+    expect(() =>
+      normalizeDeclaredFields(
+        { fullName: 'Narges Rezaei', nationalId: id, salonName: 'سالن', phone: verifiedPhone },
+        verifiedPhone,
+      ),
+    ).toThrow(/Persian full name/);
+    expect(() =>
+      normalizeDeclaredFields(
+        { fullName: 'نرگس 2', nationalId: id, salonName: 'سالن', phone: verifiedPhone },
+        verifiedPhone,
+      ),
+    ).toThrow(/Persian full name/);
+    // Urdu-specific letters must not pass via Script=Arabic.
+    expect(() =>
+      normalizeDeclaredFields(
+        { fullName: 'محمدے', nationalId: id, salonName: 'سالن', phone: verifiedPhone },
+        verifiedPhone,
+      ),
+    ).toThrow(/Persian full name/);
+    expect(() =>
+      normalizeDeclaredFields(
+        { fullName: 'احمدٹ', nationalId: id, salonName: 'سالن', phone: verifiedPhone },
+        verifiedPhone,
+      ),
+    ).toThrow(/Persian full name/);
+    expect(() =>
+      normalizeDeclaredFields(
+        { fullName: '\u200c\u200c', nationalId: id, salonName: 'سالن', phone: verifiedPhone },
+        verifiedPhone,
+      ),
+    ).toThrow(/Persian full name/);
+    expect(() =>
+      normalizeDeclaredFields(
+        { fullName: 'نرگس\u200c', nationalId: id, salonName: 'سالن', phone: verifiedPhone },
+        verifiedPhone,
+      ),
+    ).toThrow(/Persian full name/);
+  });
+
+  it('keeps the national ID checksum and accepts mixed Persian/English salon names', () => {
+    const id = nationalId('001354241');
+    expect(() =>
+      normalizeDeclaredFields(
+        { fullName: 'نرگس رضایی', nationalId: `${id.slice(0, 9)}0`, salonName: 'سالن', phone: verifiedPhone },
+        verifiedPhone,
+      ),
+    ).toThrow(/checksum/i);
+    expect(() =>
+      normalizeDeclaredFields(
+        { fullName: 'نرگس رضایی', nationalId: '12345', salonName: 'سالن', phone: verifiedPhone },
+        verifiedPhone,
+      ),
+    ).toThrow(/10 digits/i);
+    const mixed = normalizeDeclaredFields(
+      {
+        fullName: 'نرگس رضایی',
+        nationalId: id,
+        salonName: 'سالن Glow Beauty',
+        phone: verifiedPhone,
+      },
+      verifiedPhone,
+    );
+    expect(mixed.salonName).toBe('سالن Glow Beauty');
+  });
 });
 
 describe('agreement evidence cipher', () => {

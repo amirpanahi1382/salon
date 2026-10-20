@@ -18,7 +18,7 @@ One product, **two NestJS deployables** plus a Flutter client:
 
 Do not merge API and worker into one HTTP process. Do not split domains into microservices.
 
-Internal API layout is use-case modules (`auth`, `salon`, `user`, `customer`, `visit`, `service`, `transaction`, `intelligence`, `action`, `messaging`, `vip`) plus `infrastructure/*`.
+Internal API layout is use-case modules (`auth`, `agreement`, `activation`, `salon`, `user`, `customer`, `visit`, `service`, `transaction`, `intelligence`, `action`, `messaging`, `vip`, support and recovery/outcome modules) plus `infrastructure/*`.
 
 ---
 
@@ -46,9 +46,9 @@ Internal API layout is use-case modules (`auth`, `salon`, `user`, `customer`, `v
                    known no-op events → PROCESSED
                    MessageDeliveryActivated / MessageSendRequested
                      → BaleSafirMessageSender (abortable HTTP)
-                            │
-                            ▼
-                 MinIO (VIP sample-work bytes only)
+
+                 API → MinIO (VIP sample work + private activation receipts)
+                 Worker → MinIO (VIP abandoned-upload cleanup only)
 
 Redis: Compose + REDIS_URL required; no app client.
 ```
@@ -58,7 +58,8 @@ Redis: Compose + REDIS_URL required; no app client.
 ## 3. Auth and tenant model
 
 - Salon users: Argon2id password, JWT `sub` + `tid` + `role`. Default expiry 8h. No refresh token.
-- Platform admins: separate table and `POST /admin/auth/login`; JWT `scp=platform`, **no** `tid`.
+- Salon users and platform admins share `POST /auth/login/phone`; the server chooses the account from its globally unique phone. Email-password login routes are closed. Platform admins remain in a separate table and receive JWT `scp=platform`, **no** `tid`.
+- A phone signup creates one restricted OWNER in `AWAITING_AGREEMENT`. Agreement acceptance moves the salon to `AWAITING_PAYMENT`; only platform-admin approval of a submitted activation receipt moves it to `PRODUCT`. Both awaiting states get onboarding sessions, not product access. The signup, agreement-acceptance, and manual-transfer flags default off.
 - Every salon request loads the user from DB (status, salon status, current role). Token `role` is not the authorization source after login.
 - Guards: `JwtAuthGuard`, `RolesGuard`, `PlatformAdminGuard`.
 - Tenant on writes always `principal.tenantId`.
@@ -96,7 +97,7 @@ The worker releases expired upload leases in bounded batches and retries deletio
 ## 6. Storage and config
 
 - PostgreSQL is the system of record.
-- MinIO/S3-compatible: VIP images through `@salon/object-storage`, used by API upload/read and the worker's narrowly scoped abandoned-attempt cleanup.
+- MinIO/S3-compatible: VIP images and private activation-receipt images through `@salon/object-storage`. The API uploads/reads both; the worker's abandoned-attempt cleanup is narrowly scoped to VIP uploads. Receipt images have no public URL or automatic cleanup worker and need a backup independent of PostgreSQL.
 - Env via `@salon/config` Zod schema. Names in `.env.example`. Never document secret values.
 - Bale credentials are **platform env**, not per-salon secrets.
 
