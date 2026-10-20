@@ -18,7 +18,18 @@ import {
   findIdempotencyRecord,
   hashIdempotencyPayload,
 } from '../infrastructure/http/idempotency';
+import {
+  decodeCursor,
+  encodeCursor,
+  parseCursorInstant,
+  parseCursorUuid,
+  toListPage,
+} from '../infrastructure/http/list-page';
 import { OBJECT_STORAGE, type ObjectStorage } from '../infrastructure/storage/object-storage';
+import {
+  ACTIVATION_RECEIPT_LIST_PHASES,
+  type ListActivationReceiptsQueryDto,
+} from './activation.dto';
 import {
   BANK_TRANSFER_ATTESTATION,
   instructionDigest,
@@ -35,6 +46,7 @@ import {
 
 const SUBMIT_OPERATION = 'activation_receipt_submit';
 const DECIDE_OPERATION = 'activation_receipt_decision';
+const ACTIVATION_RECEIPT_PAGE_SIZE = 50;
 
 type AcceptanceRow = {
   id: string;
@@ -470,21 +482,48 @@ export class ReadOwnerActivationReceiptUseCase {
 }
 
 @Injectable()
-export class ListPendingActivationReceiptsUseCase {
+export class ListActivationReceiptsUseCase {
   constructor(private readonly prisma: PrismaService) {}
 
-  async execute() {
+  async execute(query: ListActivationReceiptsQueryDto) {
+    const selected = query.phase;
+    const scope = selected ?? 'ALL';
+    const parts = decodeCursor(query.cursor, 3);
+    let cursor: { submittedAt: Date; id: string } | undefined;
+    if (parts) {
+      if (parts[0] !== scope) {
+        throw new ValidationError('Invalid cursor');
+      }
+      cursor = {
+        submittedAt: parseCursorInstant(parts[1]!),
+        id: parseCursorUuid(parts[2]!),
+      };
+    }
     const rows = await this.prisma.client.activationReceipt.findMany({
-      where: { phase: 'UNDER_REVIEW' },
-      orderBy: [{ submittedAt: 'asc' }, { id: 'asc' }],
-      take: 50,
+      where: {
+        phase: selected ?? { in: [...ACTIVATION_RECEIPT_LIST_PHASES] },
+        submittedAt: { not: null },
+        ...(cursor
+          ? {
+              OR: [
+                { submittedAt: { lt: cursor.submittedAt } },
+                { submittedAt: cursor.submittedAt, id: { lt: cursor.id } },
+              ],
+            }
+          : {}),
+      },
+      orderBy: [{ submittedAt: 'desc' }, { id: 'desc' }],
+      take: ACTIVATION_RECEIPT_PAGE_SIZE + 1,
       include: {
         salon: { select: { id: true, name: true } },
         user: { select: { id: true, name: true } },
       },
     });
+    const page = toListPage(rows, ACTIVATION_RECEIPT_PAGE_SIZE, (row) =>
+      encodeCursor([scope, row.submittedAt!.toISOString(), row.id]),
+    );
     return {
-      items: rows.map((row) => ({
+      items: page.items.map((row) => ({
         id: row.id,
         phase: row.phase,
         submittedAt: row.submittedAt?.toISOString() ?? null,
@@ -493,6 +532,8 @@ export class ListPendingActivationReceiptsUseCase {
         ownerId: row.user.id,
         ownerName: row.user.name,
       })),
+      hasMore: page.hasMore,
+      nextCursor: page.nextCursor,
     };
   }
 }

@@ -83,6 +83,18 @@ class StoredReceipt {
   }
 }
 
+enum ActivationReceiptFilter {
+  all('همه', null),
+  underReview('در انتظار بررسی', 'UNDER_REVIEW'),
+  approved('تأیید شده', 'APPROVED'),
+  rejected('رد شده', 'REJECTED');
+
+  const ActivationReceiptFilter(this.label, this.phase);
+
+  final String label;
+  final String? phase;
+}
+
 class ActivationReceiptSummary {
   const ActivationReceiptSummary({
     required this.id,
@@ -109,6 +121,30 @@ class ActivationReceiptSummary {
   }
 }
 
+class ActivationReceiptPage {
+  const ActivationReceiptPage({
+    required this.items,
+    required this.hasMore,
+    required this.nextCursor,
+  });
+
+  final List<ActivationReceiptSummary> items;
+  final bool hasMore;
+  final String? nextCursor;
+
+  factory ActivationReceiptPage.fromJson(Object? json) {
+    final map = asJsonMap(json);
+    final items = map['items'];
+    return ActivationReceiptPage(
+      items: items is List
+          ? items.map((item) => ActivationReceiptSummary.fromJson(asJsonMap(item))).toList()
+          : const [],
+      hasMore: map['hasMore'] == true,
+      nextCursor: map['nextCursor'] as String?,
+    );
+  }
+}
+
 class ActivationReceiptReview {
   const ActivationReceiptReview({
     required this.id,
@@ -122,12 +158,15 @@ class ActivationReceiptReview {
     required this.cardholderName,
     required this.notice,
     required this.requiredBankAttestation,
+    this.decidedAt,
+    this.bankAttestationWording,
     this.rejectionReason,
   });
 
   final String id;
   final String phase;
   final String? submittedAt;
+  final String? decidedAt;
   final String salonName;
   final String ownerName;
   final String agreementVersionKey;
@@ -136,6 +175,7 @@ class ActivationReceiptReview {
   final String cardholderName;
   final String notice;
   final String requiredBankAttestation;
+  final String? bankAttestationWording;
   final String? rejectionReason;
 
   factory ActivationReceiptReview.fromJson(Object? json) {
@@ -145,6 +185,7 @@ class ActivationReceiptReview {
       id: requiredJsonString(map['id'], 'id'),
       phase: requiredJsonString(map['phase'], 'phase'),
       submittedAt: map['submittedAt'] as String?,
+      decidedAt: map['decidedAt'] as String?,
       salonName: requiredJsonString(map['salonName'], 'salonName'),
       ownerName: requiredJsonString(map['ownerName'], 'ownerName'),
       agreementVersionKey: requiredJsonString(map['agreementVersionKey'], 'agreementVersionKey'),
@@ -153,6 +194,7 @@ class ActivationReceiptReview {
       cardholderName: requiredJsonString(instructions['cardholderName'], 'cardholderName'),
       notice: requiredJsonString(map['notice'], 'notice'),
       requiredBankAttestation: map['requiredBankAttestation'] as String? ?? '',
+      bankAttestationWording: map['bankAttestationWording'] as String?,
       rejectionReason: map['rejectionReason'] as String?,
     );
   }
@@ -192,15 +234,17 @@ class ActivationRepository {
     );
   }
 
-  Future<List<ActivationReceiptSummary>> listPending() async {
-    final data = asJsonMap(await _api.get('/admin/activation-receipts'));
-    final items = data['items'];
-    if (items is! List) {
-      return const [];
-    }
-    return items
-        .map((item) => ActivationReceiptSummary.fromJson(asJsonMap(item)))
-        .toList();
+  Future<ActivationReceiptPage> list({
+    required ActivationReceiptFilter filter,
+    String? cursor,
+  }) async {
+    final query = <String, dynamic>{};
+    final phase = filter.phase;
+    if (phase != null) query['phase'] = phase;
+    if (cursor != null) query['cursor'] = cursor;
+    return ActivationReceiptPage.fromJson(
+      await _api.get('/admin/activation-receipts', query: query.isEmpty ? null : query),
+    );
   }
 
   Future<ActivationReceiptReview> review(String id) async {

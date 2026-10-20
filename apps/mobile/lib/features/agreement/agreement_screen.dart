@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -80,43 +81,81 @@ class _AgreementScreenState extends ConsumerState<AgreementScreen> {
 
   Future<void> _jumpToConsent() async {
     FocusManager.instance.primaryFocus?.unfocus();
-    await Future<void>.delayed(const Duration(milliseconds: 50));
+    await _waitForKeyboardToClose();
     if (!mounted) {
       return;
     }
-    final target = _consentSectionKey.currentContext;
-    if (target != null && target.mounted) {
-      await Scrollable.ensureVisible(
-        target,
-        duration: const Duration(milliseconds: 350),
-        curve: Curves.easeInOut,
-        alignment: 0.05,
-      );
+    await _revealConsentControls(const Duration(milliseconds: 350));
+    if (!mounted) {
+      return;
+    }
+    // A preview can arrive between measuring and scrolling; correct once the
+    // list has settled so one tap still lands on both controls.
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) {
+      return;
+    }
+    await _revealConsentControls(const Duration(milliseconds: 120));
+  }
+
+  Future<void> _waitForKeyboardToClose() async {
+    for (var attempt = 0; attempt < 10; attempt += 1) {
+      await WidgetsBinding.instance.endOfFrame;
       if (!mounted) {
         return;
       }
-      // Bring the final confirmation control fully above the fixed jump bar.
-      final confirm = _confirmButtonKey.currentContext;
-      if (confirm != null && confirm.mounted) {
-        await Scrollable.ensureVisible(
-          confirm,
-          duration: const Duration(milliseconds: 250),
-          curve: Curves.easeInOut,
-          alignment: 0.85,
-        );
+      if (MediaQuery.viewInsetsOf(context).bottom == 0) {
+        return;
       }
+      await Future<void>.delayed(const Duration(milliseconds: 40));
+    }
+  }
+
+  Future<void> _revealConsentControls(Duration duration) async {
+    if (!mounted || !_scrollController.hasClients) {
       return;
     }
-    if (!mounted) {
+    final consent = _consentSectionKey.currentContext;
+    final confirm = _confirmButtonKey.currentContext;
+    if (consent == null || confirm == null) {
       return;
     }
-    if (_scrollController.hasClients) {
-      await _scrollController.animateTo(
-        _scrollController.position.maxScrollExtent,
-        duration: const Duration(milliseconds: 400),
-        curve: Curves.easeInOut,
-      );
+    final consentBox = consent.findRenderObject();
+    final confirmBox = confirm.findRenderObject();
+    if (consentBox is! RenderBox || confirmBox is! RenderBox) {
+      return;
     }
+    final viewport = RenderAbstractViewport.of(consentBox);
+    if (viewport is! RenderBox) {
+      return;
+    }
+    final viewportBox = viewport as RenderBox;
+    final viewportTop = viewportBox.localToGlobal(Offset.zero).dy;
+    final consentTop = consentBox.localToGlobal(Offset.zero).dy - viewportTop;
+    final confirmBottom = confirmBox.localToGlobal(Offset.zero).dy +
+        confirmBox.size.height -
+        viewportTop;
+    const gap = 8.0;
+    final targetForConsent = consentTop - gap;
+    final targetForConfirm = confirmBottom - (viewportBox.size.height - gap);
+    // Show the checkbox top when both controls fit above the fixed bar;
+    // otherwise keep the confirmation control clear of the bar.
+    final bothFit =
+        confirmBottom - targetForConsent <= viewportBox.size.height - gap;
+    final delta = bothFit ? targetForConsent : targetForConfirm;
+    if (delta.abs() < 0.5) {
+      return;
+    }
+    final position = _scrollController.position;
+    final target = (position.pixels + delta).clamp(
+      position.minScrollExtent,
+      position.maxScrollExtent,
+    );
+    await _scrollController.animateTo(
+      target,
+      duration: duration,
+      curve: Curves.easeInOut,
+    );
   }
 
   Future<void> _load() async {
@@ -340,76 +379,80 @@ class _AgreementScreenState extends ConsumerState<AgreementScreen> {
     return Column(
       children: [
         Expanded(
-          child: ListView(
+          child: SingleChildScrollView(
+            key: const Key('agreement-scroll'),
             controller: _scrollController,
             padding: const EdgeInsets.fromLTRB(24, 16, 24, listBottomPadding),
-            children: [
-              Text(
-                contract.versionKey == contractV1VersionKey
-                    ? contractV1Title
-                    : contract.versionKey,
-                key: const Key('agreement-title'),
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      color: agreementTitleGreen,
-                      fontWeight: FontWeight.w700,
-                    ),
-              ),
-              const SizedBox(height: 12),
-              const Text(agreementDeclaredNote, key: Key('agreement-declared-note')),
-              const SizedBox(height: 12),
-              ..._body(contract),
-              if (_phoneNeedsVerification(contract))
-                const Padding(
-                  padding: EdgeInsets.only(top: 12),
-                  child: Text(
-                    agreementPhoneUnverifiedText,
-                    key: Key('agreement-phone-unverified'),
-                  ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  contract.versionKey == contractV1VersionKey
+                      ? contractV1Title
+                      : contract.versionKey,
+                  key: const Key('agreement-title'),
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                        color: agreementTitleGreen,
+                        fontWeight: FontWeight.w700,
+                      ),
                 ),
-              if (_preview != null) ...[
-                const SizedBox(height: 16),
-                const Text('متن نهایی همین نسخه'),
-                ..._previewWidgets(contract, _preview!),
-              ],
-              const SizedBox(height: 16),
-              KeyedSubtree(
-                key: _consentSectionKey,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    CheckboxListTile(
-                      key: const Key('agreement-consent'),
-                      contentPadding: EdgeInsets.zero,
-                      value: consentEnabled && _accepted,
-                      onChanged: !consentEnabled
-                          ? null
-                          : (value) => setState(() => _accepted = value ?? false),
-                      title: Text(contract.checkboxWording),
-                      controlAffinity: ListTileControlAffinity.leading,
+                const SizedBox(height: 12),
+                const Text(agreementDeclaredNote, key: Key('agreement-declared-note')),
+                const SizedBox(height: 12),
+                ..._body(contract),
+                if (_phoneNeedsVerification(contract))
+                  const Padding(
+                    padding: EdgeInsets.only(top: 12),
+                    child: Text(
+                      agreementPhoneUnverifiedText,
+                      key: Key('agreement-phone-unverified'),
                     ),
-                    if (_error != null) ...[
+                  ),
+                if (_preview != null) ...[
+                  const SizedBox(height: 16),
+                  const Text('متن نهایی همین نسخه'),
+                  ..._previewWidgets(contract, _preview!),
+                ],
+                const SizedBox(height: 16),
+                KeyedSubtree(
+                  key: _consentSectionKey,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      CheckboxListTile(
+                        key: const Key('agreement-consent'),
+                        contentPadding: EdgeInsets.zero,
+                        value: consentEnabled && _accepted,
+                        onChanged: !consentEnabled
+                            ? null
+                            : (value) => setState(() => _accepted = value ?? false),
+                        title: Text(contract.checkboxWording),
+                        controlAffinity: ListTileControlAffinity.leading,
+                      ),
+                      if (_error != null) ...[
+                        const SizedBox(height: 12),
+                        Text(_message(_error!), key: const Key('agreement-error')),
+                        TextButton(
+                          key: const Key('agreement-retry'),
+                          onPressed: _retry,
+                          child: const Text('تلاش دوباره'),
+                        ),
+                      ],
                       const SizedBox(height: 12),
-                      Text(_message(_error!), key: const Key('agreement-error')),
-                      TextButton(
-                        key: const Key('agreement-retry'),
-                        onPressed: _retry,
-                        child: const Text('تلاش دوباره'),
+                      KeyedSubtree(
+                        key: _confirmButtonKey,
+                        child: AppButton(
+                          key: const Key('agreement-confirm'),
+                          label: contract.buttonWording,
+                          loading: _submitting || _previewing,
+                          onPressed: consentEnabled && _accepted ? _submit : null,
+                        ),
                       ),
                     ],
-                    const SizedBox(height: 12),
-                    KeyedSubtree(
-                      key: _confirmButtonKey,
-                      child: AppButton(
-                        key: const Key('agreement-confirm'),
-                        label: contract.buttonWording,
-                        loading: _submitting || _previewing,
-                        onPressed: consentEnabled && _accepted ? _submit : null,
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
         Material(

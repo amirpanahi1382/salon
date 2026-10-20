@@ -7,7 +7,7 @@ import { Test } from '@nestjs/testing';
 import { ThrottlerStorage } from '@nestjs/throttler';
 import * as argon2 from 'argon2';
 import { decode } from 'jsonwebtoken';
-import { createPrismaClient } from '@salon/database';
+import { createPrismaClient, Prisma } from '@salon/database';
 import { createId, InfrastructureError } from '@salon/shared';
 import sharp from 'sharp';
 import request from 'supertest';
@@ -19,7 +19,7 @@ import { HttpExceptionFilter } from '../src/infrastructure/http/http-exception.f
 import { OBJECT_STORAGE, type ObjectStorage } from '../src/infrastructure/storage/object-storage';
 import { createPlatformAdminSession, createProductOwnerSession } from './support/phone-account';
 import { S3CompatibleObjectStorage } from '../src/infrastructure/storage/s3-compatible.object-storage';
-import { BANK_TRANSFER_ATTESTATION, CONTRACT_PAYMENT_AMOUNT_LABEL, MANUAL_TRANSFER_CARD_NUMBER, MANUAL_TRANSFER_CARDHOLDER_NAME } from '../src/activation/payment-instructions';
+import { BANK_TRANSFER_ATTESTATION, CONTRACT_PAYMENT_AMOUNT_LABEL, MANUAL_TRANSFER_CARD_NUMBER, MANUAL_TRANSFER_CARDHOLDER_NAME, paymentInstructionsForAcceptance } from '../src/activation/payment-instructions';
 
 const databaseUrl = process.env.ACTIVATION_DISPOSABLE_DATABASE_URL;
 const databaseName = databaseUrl ? new URL(databaseUrl).pathname.replace(/^\//, '') : '';
@@ -1059,6 +1059,247 @@ describeIfDisposable('manual transfer receipt review on a disposable database', 
     } finally {
       await s3App.close();
     }
+  });
+
+  it('serves the submitted receipt history with server filters, keyset pages, and disabled-flag reads', async () => {
+    const admin = await platformAdmin();
+    const publish = await request(app.getHttpServer())
+      .post('/admin/agreements/versions/publish')
+      .set('Authorization', `Bearer ${admin.token}`);
+    expect([201, 409]).toContain(publish.status);
+    const owner = await acceptOwner(admin.token);
+    const acceptance = await prisma.client.agreementAcceptance.findFirstOrThrow({
+      where: { salonId: owner.salonId },
+      include: { version: { select: { versionKey: true } } },
+    });
+    const instructionSnapshot = paymentInstructionsForAcceptance({
+      amountIrr: '50000000.00',
+      versionKey: acceptance.version.versionKey,
+      acceptanceId: acceptance.id,
+      versionId: acceptance.versionId,
+    });
+    if (!instructionSnapshot) throw new Error('Expected a server-owned payment snapshot');
+
+    const real = await upload(owner.token, await receiptJpeg(77));
+    await request(app.getHttpServer())
+      .post(`/activation/receipts/${real.body.receiptId}/submit`)
+      .set('Authorization', `Bearer ${owner.token}`)
+      .set('Idempotency-Key', `history-submit-${randomUUID()}`)
+      .expect(201);
+
+    const base = Date.now() - 60 * 60 * 1000;
+    const idFor = () => createId();
+    const seeded: Array<{ id: string; phase: 'APPROVED' | 'REJECTED' }> = [];
+    const row = (
+      id: string,
+      phase: 'APPROVED' | 'REJECTED',
+      index: number,
+    ) => {
+      const at = new Date(base - Math.floor(index / 2) * 1000);
+      seeded.push({ id, phase });
+      return {
+        id,
+        salonId: owner.salonId,
+        userId: owner.userId,
+        agreementAcceptanceId: acceptance.id,
+        objectKey: `activation-receipts/${owner.salonId}/${id}`,
+        contentType: 'image/jpeg',
+        byteSize: 64,
+        sha256: 'b'.repeat(64),
+        phase,
+        storedAt: at,
+        submittedAt: at,
+        submissionIdempotencyKey: `submission-${id}`,
+        amountIrr: new Prisma.Decimal('50000000.00'),
+        instructionSnapshot,
+        instructionDigest: 'c'.repeat(64),
+        decidedAt: at,
+        decidedByAdminId: admin.id,
+        decisionIdempotencyKey: `decision-${id}`,
+        rejectionReason: phase === 'REJECTED' ? 'مبلغ با قرارداد یکی نیست' : null,
+        bankAttestationWording: phase === 'APPROVED' ? BANK_TRANSFER_ATTESTATION : null,
+        createdAt: at,
+        updatedAt: at,
+      };
+    };
+    const approvedRows = Array.from({ length: 55 }, (_, index) =>
+      row(idFor(), 'APPROVED', index),
+    );
+    const rejectedRows = Array.from({ length: 10 }, (_, index) =>
+      row(idFor(), 'REJECTED', index),
+    );
+    await prisma.client.activationReceipt.createMany({
+      data: [...approvedRows, ...rejectedRows],
+    });
+
+    const storedId = idFor();
+    const supersededId = idFor();
+    const failedId = idFor();
+    const uploadingId = idFor();
+    const excludedBase = {
+      salonId: owner.salonId,
+      userId: owner.userId,
+      agreementAcceptanceId: acceptance.id,
+      contentType: 'image/jpeg',
+      byteSize: 64,
+      sha256: 'd'.repeat(64),
+      createdAt: new Date(base),
+      updatedAt: new Date(base),
+    };
+    await prisma.client.activationReceipt.createMany({
+      data: [
+        {
+          ...excludedBase,
+          id: storedId,
+          objectKey: `activation-receipts/${owner.salonId}/${storedId}`,
+          phase: 'STORED',
+          storedAt: new Date(base),
+        },
+        {
+          ...excludedBase,
+          id: supersededId,
+          objectKey: `activation-receipts/${owner.salonId}/${supersededId}`,
+          phase: 'SUPERSEDED',
+          storedAt: new Date(base),
+        },
+        {
+          ...excludedBase,
+          id: failedId,
+          objectKey: `activation-receipts/${owner.salonId}/${failedId}`,
+          phase: 'FAILED',
+        },
+        {
+          ...excludedBase,
+          id: uploadingId,
+          objectKey: `activation-receipts/${owner.salonId}/${uploadingId}`,
+          phase: 'UPLOADING',
+        },
+      ],
+    });
+
+    const auth = () => request(app.getHttpServer())
+      .get('/admin/activation-receipts')
+      .set('Authorization', `Bearer ${admin.token}`);
+    const first = await auth().expect(200);
+    expect(first.body.items).toHaveLength(50);
+    expect(first.body.hasMore).toBe(true);
+    expect(typeof first.body.nextCursor).toBe('string');
+    expect(first.body.items[first.body.items.length - 1].phase).toBe('APPROVED');
+    await auth()
+      .query({ phase: 'APPROVED', cursor: first.body.nextCursor })
+      .expect(400);
+
+    const seen: string[] = [];
+    const cursors = new Set<string>();
+    let cursor: string | undefined;
+    for (let page = 0; page < 20; page += 1) {
+      const response = await auth()
+        .query(cursor ? { cursor } : {})
+        .expect(200);
+      seen.push(...response.body.items.map((item: { id: string }) => item.id));
+      if (!response.body.hasMore) {
+        expect(response.body.nextCursor).toBeNull();
+        break;
+      }
+      expect(typeof response.body.nextCursor).toBe('string');
+      expect(cursors.has(response.body.nextCursor)).toBe(false);
+      cursors.add(response.body.nextCursor);
+      cursor = response.body.nextCursor;
+    }
+    expect(seen.length).toBeGreaterThanOrEqual(66);
+    expect(new Set(seen).size).toBe(seen.length);
+    expect(seen).toEqual(expect.arrayContaining([
+      real.body.receiptId,
+      ...seeded.map((item) => item.id),
+    ]));
+    expect(seen).not.toContain(storedId);
+    expect(seen).not.toContain(supersededId);
+    expect(seen).not.toContain(failedId);
+    expect(seen).not.toContain(uploadingId);
+
+    const pending = await auth().query({ phase: 'UNDER_REVIEW' }).expect(200);
+    expect(pending.body.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: real.body.receiptId, phase: 'UNDER_REVIEW' }),
+    ]));
+    expect(pending.body.items.every((item: { phase: string }) => item.phase === 'UNDER_REVIEW')).toBe(true);
+
+    const approved = await auth().query({ phase: 'APPROVED' }).expect(200);
+    expect(approved.body.items).toHaveLength(50);
+    expect(approved.body.hasMore).toBe(true);
+    const approvedSecond = await auth()
+      .query({ phase: 'APPROVED', cursor: approved.body.nextCursor })
+      .expect(200);
+    const approvedSeen = [
+      ...approved.body.items.map((item: { id: string }) => item.id),
+      ...approvedSecond.body.items.map((item: { id: string }) => item.id),
+    ];
+    expect(approvedSeen).toEqual(expect.arrayContaining(seeded.filter((item) => item.phase === 'APPROVED').map((item) => item.id)));
+    expect(approvedSeen).not.toContain(real.body.receiptId);
+    expect([...approved.body.items, ...approvedSecond.body.items]
+      .every((item: { phase: string }) => item.phase === 'APPROVED')).toBe(true);
+    await auth().query({ cursor: approved.body.nextCursor }).expect(400);
+
+    const rejected = await auth().query({ phase: 'REJECTED' }).expect(200);
+    expect(rejected.body.items).toEqual(expect.arrayContaining(seeded.filter((item) => item.phase === 'REJECTED').map((item) => (
+      expect.objectContaining({ id: item.id, phase: 'REJECTED' })
+    ))));
+    expect(rejected.body.items.every((item: { phase: string }) => item.phase === 'REJECTED')).toBe(true);
+
+    for (const phase of ['STORED', 'FAILED', 'SUPERSEDED', 'UPLOADING']) {
+      await auth().query({ phase }).expect(400);
+    }
+    await auth().query({ cursor: '@@@' }).expect(400);
+    await auth()
+      .query({ phase: 'REJECTED', cursor: approved.body.nextCursor })
+      .expect(400);
+    await request(app.getHttpServer()).get('/admin/activation-receipts').expect(401);
+    await auth().set('Authorization', `Bearer ${owner.token}`).expect(403);
+
+    const approveKey = `history-approve-${randomUUID()}`;
+    await request(app.getHttpServer())
+      .post(`/admin/activation-receipts/${real.body.receiptId}/approve`)
+      .set('Authorization', `Bearer ${admin.token}`)
+      .set('Idempotency-Key', approveKey)
+      .send({ bankAttestation: BANK_TRANSFER_ATTESTATION })
+      .expect(201);
+
+    const history = await request(hidden.getHttpServer())
+      .get('/admin/activation-receipts')
+      .set('Authorization', `Bearer ${admin.token}`)
+      .expect(200);
+    expect(history.body.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: real.body.receiptId, phase: 'APPROVED' }),
+      expect.objectContaining({ id: seeded.find((item) => item.phase === 'REJECTED')!.id, phase: 'REJECTED' }),
+    ]));
+    const approvedDetail = await request(hidden.getHttpServer())
+      .get(`/admin/activation-receipts/${real.body.receiptId}`)
+      .set('Authorization', `Bearer ${admin.token}`)
+      .expect(200);
+    expect(approvedDetail.body.phase).toBe('APPROVED');
+    expect(approvedDetail.body.requiredBankAttestation).toBeNull();
+    expect(approvedDetail.body.bankAttestationWording).toBe(BANK_TRANSFER_ATTESTATION);
+    expect(approvedDetail.body.decidedAt).not.toBeNull();
+    const rejectedSeed = seeded.find((item) => item.phase === 'REJECTED')!;
+    const rejectedDetail = await request(hidden.getHttpServer())
+      .get(`/admin/activation-receipts/${rejectedSeed.id}`)
+      .set('Authorization', `Bearer ${admin.token}`)
+      .expect(200);
+    expect(rejectedDetail.body.phase).toBe('REJECTED');
+    expect(rejectedDetail.body.rejectionReason).toBe('مبلغ با قرارداد یکی نیست');
+    const historicalImage = await request(hidden.getHttpServer())
+      .get(`/admin/activation-receipts/${real.body.receiptId}/image`)
+      .set('Authorization', `Bearer ${admin.token}`)
+      .expect(200);
+    expect(Number(historicalImage.headers['content-length'])).toBeGreaterThan(10);
+    expect(await prisma.client.auditLog.count({
+      where: { resourceId: real.body.receiptId, action: 'ACTIVATION_RECEIPT_VIEWED' },
+    })).toBe(1);
+    await request(hidden.getHttpServer())
+      .post(`/admin/activation-receipts/${real.body.receiptId}/approve`)
+      .set('Authorization', `Bearer ${admin.token}`)
+      .set('Idempotency-Key', `history-hidden-${randomUUID()}`)
+      .send({ bankAttestation: BANK_TRANSFER_ATTESTATION })
+      .expect(404);
   });
 
   async function assertApproved(

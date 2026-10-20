@@ -7,6 +7,7 @@ import {
   HttpCode,
   Param,
   Post,
+  Query,
   StreamableFile,
   UploadedFile,
   UseGuards,
@@ -27,12 +28,16 @@ import { RolesGuard } from '../infrastructure/auth/roles.guard';
 import { requireIdempotencyKey } from '../infrastructure/http/idempotency';
 import { UuidParam } from '../infrastructure/http/uuid-param';
 import { ManualTransferEnabledGuard } from './activation-enabled.guard';
-import { ApproveActivationReceiptDto, RejectActivationReceiptDto } from './activation.dto';
+import {
+  ApproveActivationReceiptDto,
+  ListActivationReceiptsQueryDto,
+  RejectActivationReceiptDto,
+} from './activation.dto';
 import {
   DecideActivationReceiptUseCase,
   GetActivationReceiptReviewUseCase,
   GetActivationStatusUseCase,
-  ListPendingActivationReceiptsUseCase,
+  ListActivationReceiptsUseCase,
   ReadAdminActivationReceiptUseCase,
   ReadOwnerActivationReceiptUseCase,
   SubmitActivationReceiptUseCase,
@@ -129,16 +134,19 @@ export class ActivationController {
 @Controller('admin/activation-receipts')
 export class AdminActivationController {
   constructor(
-    private readonly list: ListPendingActivationReceiptsUseCase,
+    private readonly list: ListActivationReceiptsUseCase,
     private readonly review: GetActivationReceiptReviewUseCase,
     private readonly image: ReadAdminActivationReceiptUseCase,
     private readonly decide: DecideActivationReceiptUseCase,
   ) {}
 
   @Get()
-  @ApiOperation({ summary: 'Pending receipt reviews. A photograph is not confirmed payment.' })
-  listPending() {
-    return this.list.execute();
+  @ApiOperation({
+    summary:
+      'Submitted receipt history (under review, approved, rejected). A photograph is not confirmed payment.',
+  })
+  history(@Query() query: ListActivationReceiptsQueryDto) {
+    return this.list.execute(query);
   }
 
   @Get(':id')

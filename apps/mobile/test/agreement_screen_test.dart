@@ -196,6 +196,30 @@ class _MarkdownAgreement extends _FakeAgreement {
   }
 }
 
+class _LongAgreement extends _MarkdownAgreement {
+  @override
+  Future<AgreementContract> current() async {
+    final base = await super.current();
+    return AgreementContract(
+      versionKey: base.versionKey,
+      templateDigest: base.templateDigest,
+      amountIrr: base.amountIrr,
+      amountLabel: base.amountLabel,
+      checkboxWording: base.checkboxWording,
+      buttonWording: base.buttonWording,
+      verifiedPhone: base.verifiedPhone,
+      segments: [
+        ...base.segments,
+        for (var index = 0; index < 24; index += 1)
+          const AgreementSegment.text(
+            '\n\n## مادهٔ تکمیلی\n\n'
+            'این بند برای آزمون قرارداد طولانی تکرار شده است و هیچ اثر دیگری ندارد.',
+          ),
+      ],
+    );
+  }
+}
+
 void main() {
   test('routes phone onboarding without sending a product salon through it', () {
     expect(
@@ -419,6 +443,45 @@ void main() {
     expect(find.byKey(const Key('agreement-rendered')), findsNothing);
   });
 
+  testWidgets('one tap reveals consent and confirm on a long contract with the keyboard open',
+      (tester) async {
+    tester.view.physicalSize = const Size(800, 1000);
+    tester.view.devicePixelRatio = 1;
+    tester.view.viewInsets = const FakeViewPadding(bottom: 280);
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetViewInsets();
+    });
+    final fake = _LongAgreement();
+    await tester.pumpWidget(_app(fake));
+    await tester.pumpAndSettle();
+    await _fillDeclaredFields(tester);
+    await tester.pumpAndSettle();
+
+    final barBefore = tester.getRect(find.byKey(const Key('agreement-jump-to-consent')));
+    final consentBefore = tester.getRect(find.byKey(const Key('agreement-consent')));
+    expect(consentBefore.top, greaterThan(barBefore.top));
+
+    await tester.tap(find.byKey(const Key('agreement-jump-to-consent')));
+    tester.view.viewInsets = const FakeViewPadding();
+    await tester.pumpAndSettle();
+
+    final scrollRect = tester.getRect(find.byKey(const Key('agreement-scroll')));
+    final bar = tester.getRect(find.byKey(const Key('agreement-jump-to-consent')));
+    final consent = tester.getRect(find.byKey(const Key('agreement-consent')));
+    final confirm = tester.getRect(find.byKey(const Key('agreement-confirm')));
+    expect(bar.top, closeTo(scrollRect.bottom, 0.5));
+    expect(consent.top, greaterThanOrEqualTo(scrollRect.top - 1));
+    expect(consent.bottom, lessThanOrEqualTo(bar.top + 1));
+    expect(confirm.top, greaterThanOrEqualTo(consent.bottom));
+    expect(confirm.bottom, lessThanOrEqualTo(bar.top + 1));
+    expect(
+      tester.widget<CheckboxListTile>(find.byKey(const Key('agreement-consent'))).value,
+      isFalse,
+    );
+    expect(fake.acceptCalls, 0);
+  });
+
   testWidgets('keeps the bottom jump bar above the keyboard inset', (tester) async {
     tester.view.physicalSize = const Size(800, 2400);
     tester.view.devicePixelRatio = 1;
@@ -454,7 +517,7 @@ void main() {
     expect(jumpBefore.height, agreementJumpBarHeight);
     expect(jumpBefore.bottom, closeTo(screen.bottom, 1));
 
-    await tester.drag(find.byType(ListView), const Offset(0, -600));
+    await tester.drag(find.byKey(const Key('agreement-scroll')), const Offset(0, -600));
     await tester.pumpAndSettle();
 
     final jumpAfter = tester.getRect(find.byKey(const Key('agreement-jump-to-consent')));
