@@ -10,6 +10,7 @@ import 'package:salon_mobile/core/networking/api_client.dart';
 import 'package:salon_mobile/core/routing/app_router.dart';
 import 'package:salon_mobile/core/state/providers.dart';
 import 'package:salon_mobile/core/storage/session_store.dart';
+import 'package:salon_mobile/core/theme/app_tokens.dart';
 import 'package:salon_mobile/core/widgets/app_widgets.dart';
 import 'package:salon_mobile/features/activation/activation_repository.dart';
 import 'package:salon_mobile/features/admin/admin_activation_receipts_screen.dart';
@@ -166,6 +167,11 @@ void main() {
     expect(find.byKey(const Key('admin-receipt-image')), findsOneWidget);
     expect(find.text('CONTRACT_V1'), findsOneWidget);
     expect(find.text('۵۰٬۰۰۰٬۰۰۰ ریال'), findsOneWidget);
+    expect(find.byKey(const Key('admin-payment-notice')), findsNothing);
+    expect(find.textContaining('ثبت تصویر فیش به‌تنهایی'), findsNothing);
+    final pendingPhase = tester.widget<Text>(find.byKey(const Key('admin-receipt-phase')));
+    expect(pendingPhase.style?.color, AppTokens.warning);
+    expect(pendingPhase.style?.fontWeight, FontWeight.w700);
     expect(find.byKey(const Key('activation-approve')), findsOneWidget);
     expect(find.text('واریز را در حساب بانکی بررسی و با این فیش تطبیق داده‌ام'), findsOneWidget);
     expect(tester.widget<CheckboxListTile>(find.byKey(const Key('activation-bank-attestation'))).value, isFalse);
@@ -219,6 +225,44 @@ void main() {
       expect(find.text('فیشی ثبت نشده است.'), findsOneWidget);
     },
   );
+
+  testWidgets('opens a zoomable full-screen receipt image and closes it', (tester) async {
+    tester.view.physicalSize = const Size(900, 1800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    final fake = _FakeActivation();
+    await tester.pumpWidget(_adminApp(fake, '/admin/activation-receipts/receipt-1'));
+    await _settleReceiptImage(tester);
+    expect(find.byKey(const Key('admin-receipt-image-open')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('admin-receipt-image-open')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('admin-receipt-image-full')), findsOneWidget);
+    expect(find.byKey(const Key('admin-receipt-image-close')), findsOneWidget);
+
+    final viewerFinder = find.byKey(const Key('admin-receipt-image-zoom'));
+    final viewer = tester.widget<InteractiveViewer>(viewerFinder);
+    expect(viewer.maxScale, greaterThanOrEqualTo(4));
+    final controller = viewer.transformationController!;
+    expect(controller.value.getMaxScaleOnAxis(), 1);
+
+    final center = tester.getCenter(viewerFinder);
+    final first = await tester.startGesture(center - const Offset(40, 0));
+    final second = await tester.startGesture(center + const Offset(40, 0));
+    await tester.pump();
+    await first.moveTo(center - const Offset(120, 0));
+    await second.moveTo(center + const Offset(120, 0));
+    await tester.pump();
+    await first.up();
+    await second.up();
+    await tester.pumpAndSettle();
+    expect(controller.value.getMaxScaleOnAxis(), greaterThan(1));
+
+    await tester.tap(find.byKey(const Key('admin-receipt-image-close')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('admin-receipt-image-full')), findsNothing);
+    expect(find.byKey(const Key('admin-receipt-image')), findsOneWidget);
+  });
 
   testWidgets('reloads the pending list when navigating back from a receipt detail', (tester) async {
     tester.view.physicalSize = const Size(900, 1800);
@@ -539,6 +583,11 @@ void main() {
     await tester.pumpWidget(_adminApp(fake, '/admin/activation-receipts/a1'));
     await _settleReceiptImage(tester);
     expect(find.text('تأیید شده'), findsOneWidget);
+    expect(find.byKey(const Key('admin-payment-notice')), findsNothing);
+    expect(find.textContaining('ثبت تصویر فیش به‌تنهایی'), findsNothing);
+    final approvedPhase = tester.widget<Text>(find.byKey(const Key('admin-receipt-phase')));
+    expect(approvedPhase.style?.color, AppTokens.success);
+    expect(approvedPhase.style?.fontWeight, FontWeight.w700);
     expect(find.byKey(const Key('admin-receipt-decided-at')), findsOneWidget);
     expect(find.byKey(const Key('admin-receipt-attestation')), findsOneWidget);
     expect(find.byKey(const Key('activation-approve')), findsNothing);
@@ -548,6 +597,10 @@ void main() {
     await tester.pumpWidget(_adminApp(fake, '/admin/activation-receipts/r1'));
     await _settleReceiptImage(tester);
     expect(find.text('رد شده'), findsOneWidget);
+    final rejectedPhase = tester.widget<Text>(find.byKey(const Key('admin-receipt-phase')));
+    expect(rejectedPhase.style?.color, AppTokens.danger);
+    expect(rejectedPhase.style?.fontWeight, FontWeight.w700);
+    expect(find.byKey(const Key('admin-payment-notice')), findsNothing);
     expect(find.byKey(const Key('admin-receipt-reason')), findsOneWidget);
     expect(find.text('مبلغ با قرارداد یکی نیست'), findsOneWidget);
     expect(find.byKey(const Key('activation-approve')), findsNothing);

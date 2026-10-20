@@ -10,6 +10,7 @@ import 'package:salon_mobile/core/networking/api_client.dart';
 import 'package:salon_mobile/core/state/providers.dart';
 import 'package:salon_mobile/core/storage/session_store.dart';
 import 'package:salon_mobile/core/widgets/app_widgets.dart';
+import 'package:salon_mobile/core/widgets/onboarding_progress.dart';
 import 'package:salon_mobile/features/activation/activation_repository.dart';
 import 'package:salon_mobile/shared/models/models.dart';
 import 'package:salon_mobile/features/activation/payment_screen.dart';
@@ -125,6 +126,10 @@ void main() {
       ActivationStatus(phase: 'AWAITING_RECEIPT', receiptReady: false, instructions: _instructions()),
     );
     await _pump(tester, fake, copyText: (value) async => copied.add(value));
+    expect(
+      tester.widget<OnboardingProgress>(find.byType(OnboardingProgress)).stage,
+      OnboardingStage.activation,
+    );
     expect(find.text(_card), findsOneWidget);
     expect(find.text(_holder), findsOneWidget);
     expect(find.text(_amount), findsOneWidget);
@@ -187,6 +192,10 @@ void main() {
     final fake = _FakeActivation(const ActivationStatus(phase: 'UNDER_REVIEW', receiptReady: false));
     await _pump(tester, fake, exchange: true, pollInterval: const Duration(milliseconds: 20));
     expect(find.byKey(const Key('payment-waiting')), findsOneWidget);
+    expect(
+      tester.widget<OnboardingProgress>(find.byType(OnboardingProgress)).stage,
+      OnboardingStage.activation,
+    );
     expect(find.text(_card), findsNothing);
 
     fake.current = const ActivationStatus(phase: 'APPROVED', receiptReady: false);

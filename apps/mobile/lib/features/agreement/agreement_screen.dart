@@ -7,6 +7,7 @@ import '../../core/errors/api_exception.dart';
 import '../../core/networking/api_client.dart';
 import '../../core/state/providers.dart';
 import '../../core/widgets/app_widgets.dart';
+import '../../core/widgets/onboarding_progress.dart';
 import 'agreement_repository.dart';
 import 'contract_markdown.dart';
 import 'contract_presentation.dart';
@@ -378,6 +379,10 @@ class _AgreementScreenState extends ConsumerState<AgreementScreen> {
     const listBottomPadding = agreementJumpBarHeight + 48;
     return Column(
       children: [
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 24),
+          child: OnboardingProgress(stage: OnboardingStage.agreement),
+        ),
         Expanded(
           child: SingleChildScrollView(
             key: const Key('agreement-scroll'),
@@ -674,6 +679,8 @@ class _AgreementRecordedScreenState extends ConsumerState<AgreementRecordedScree
             : ListView(
                 padding: const EdgeInsets.all(24),
                 children: [
+                  const OnboardingProgress(stage: OnboardingStage.activation),
+                  const SizedBox(height: 12),
                   const Text(agreementRecordedText, key: Key('agreement-recorded')),
                   if (receipt != null) ...[
                     const SizedBox(height: 16),

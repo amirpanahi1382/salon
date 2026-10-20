@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:salon_mobile/core/errors/api_exception.dart';
 import 'package:salon_mobile/core/widgets/app_widgets.dart';
+import 'package:salon_mobile/core/widgets/onboarding_progress.dart';
 import 'package:salon_mobile/core/networking/api_client.dart';
 import 'package:salon_mobile/core/routing/app_router.dart';
 import 'package:salon_mobile/core/state/providers.dart';
@@ -291,6 +292,10 @@ void main() {
     final fake = _FakeAgreement();
     await tester.pumpWidget(_app(fake));
     await tester.pumpAndSettle();
+    expect(
+      tester.widget<OnboardingProgress>(find.byType(OnboardingProgress)).stage,
+      OnboardingStage.agreement,
+    );
 
     expect(find.byKey(const Key('agreement-title')), findsOneWidget);
     expect(find.text('نسخه CONTRACT_V1'), findsNothing);
@@ -699,6 +704,10 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    expect(
+      tester.widget<OnboardingProgress>(find.byType(OnboardingProgress)).stage,
+      OnboardingStage.activation,
+    );
     expect(find.text(agreementRecordedText), findsOneWidget);
     expect(find.text('CONTRACT_V1'), findsOneWidget);
     expect(find.textContaining('کارت'), findsNothing);

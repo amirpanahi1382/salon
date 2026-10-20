@@ -7,6 +7,7 @@ import '../../core/errors/api_exception.dart';
 import '../../core/networking/api_client.dart';
 import '../../core/state/providers.dart';
 import '../../core/widgets/app_widgets.dart';
+import '../../core/widgets/onboarding_progress.dart';
 import '../../shared/labels.dart';
 
 String loginErrorText(Object error) {
@@ -362,6 +363,8 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       body: ListView(
         padding: const EdgeInsets.all(24),
         children: [
+          const OnboardingProgress(stage: OnboardingStage.registration),
+          const SizedBox(height: 20),
           if (_step == 0)
             AppTextField(
               key: const Key('signup-phone'),

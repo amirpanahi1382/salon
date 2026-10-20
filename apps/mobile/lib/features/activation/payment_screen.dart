@@ -10,6 +10,7 @@ import '../../core/networking/api_client.dart';
 import '../../core/state/providers.dart';
 import '../../core/theme/app_tokens.dart';
 import '../../core/widgets/app_widgets.dart';
+import '../../core/widgets/onboarding_progress.dart';
 import '../../features/agreement/agreement_screen.dart';
 import '../../shared/labels.dart';
 import 'activation_repository.dart';
@@ -273,18 +274,31 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen>
           ],
         ),
         body: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(AppTokens.space24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(paymentUnavailableText, key: const Key('payment-unavailable')),
-                if (status.rejectionReason != null) ...[
-                  const SizedBox(height: AppTokens.space16),
-                  Text(status.rejectionReason!, key: const Key('payment-rejection-reason')),
-                ],
-              ],
-            ),
+          child: Column(
+            children: [
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: AppTokens.space24),
+                child: OnboardingProgress(stage: OnboardingStage.activation),
+              ),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.all(AppTokens.space24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(paymentUnavailableText, key: const Key('payment-unavailable')),
+                      if (status.rejectionReason != null) ...[
+                        const SizedBox(height: AppTokens.space16),
+                        Text(
+                          status.rejectionReason!,
+                          key: const Key('payment-rejection-reason'),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       );
@@ -299,6 +313,7 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen>
         child: ListView(
           padding: const EdgeInsets.all(AppTokens.space24),
           children: [
+            const OnboardingProgress(stage: OnboardingStage.activation),
             Text('راهنمای واریز', style: Theme.of(context).textTheme.headlineSmall),
             const SizedBox(height: AppTokens.space8),
             Text(instructions.notice, key: const Key('payment-notice')),
@@ -417,31 +432,48 @@ class _WaitingScreen extends ConsumerWidget {
         ],
       ),
       body: SafeArea(
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(AppTokens.space32),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                FadeTransition(
-                  opacity: Tween<double>(begin: 0.45, end: 1).animate(pulse),
-                  child: const Icon(Icons.hourglass_top, size: 56, color: AppTokens.accent),
-                ),
-                const SizedBox(height: AppTokens.space8),
-                const Icon(Icons.account_balance_outlined, color: AppTokens.textSecondary),
-                const SizedBox(height: AppTokens.space24),
-                Semantics(
-                  label: paymentWaitingText,
-                  child: Text(
-                    paymentWaitingText,
-                    key: const Key('payment-waiting'),
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.titleMedium,
+        child: Column(
+          children: [
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: AppTokens.space24),
+              child: OnboardingProgress(stage: OnboardingStage.activation),
+            ),
+            Expanded(
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(AppTokens.space32),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      FadeTransition(
+                        opacity: Tween<double>(begin: 0.45, end: 1).animate(pulse),
+                        child: const Icon(
+                          Icons.hourglass_top,
+                          size: 56,
+                          color: AppTokens.accent,
+                        ),
+                      ),
+                      const SizedBox(height: AppTokens.space8),
+                      const Icon(
+                        Icons.account_balance_outlined,
+                        color: AppTokens.textSecondary,
+                      ),
+                      const SizedBox(height: AppTokens.space24),
+                      Semantics(
+                        label: paymentWaitingText,
+                        child: Text(
+                          paymentWaitingText,
+                          key: const Key('payment-waiting'),
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ],
+              ),
             ),
-          ),
+          ],
         ),
       ),
     );

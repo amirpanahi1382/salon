@@ -6,6 +6,7 @@ import 'package:salon_mobile/core/networking/api_client.dart';
 import 'package:salon_mobile/core/networking/repositories.dart';
 import 'package:salon_mobile/core/state/providers.dart';
 import 'package:salon_mobile/core/storage/session_store.dart';
+import 'package:salon_mobile/core/widgets/onboarding_progress.dart';
 import 'package:salon_mobile/features/auth/auth_screens.dart';
 import 'package:salon_mobile/shared/labels.dart';
 
@@ -99,6 +100,10 @@ void main() {
         message: 'Enter an Iranian mobile number.',
       );
     await _pump(tester, auth);
+    expect(
+      tester.widget<OnboardingProgress>(find.byType(OnboardingProgress)).stage,
+      OnboardingStage.registration,
+    );
 
     await tester.enterText(find.byKey(const Key('signup-phone')), '09120000001');
     await tester.tap(find.byKey(const Key('signup-submit')));

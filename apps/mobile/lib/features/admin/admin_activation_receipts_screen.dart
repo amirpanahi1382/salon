@@ -203,7 +203,11 @@ class _AdminActivationReceiptsScreenState extends ConsumerState<AdminActivationR
               const SizedBox(height: AppTokens.space4),
               Text(_when(item.submittedAt)),
               const SizedBox(height: AppTokens.space4),
-              Text(_phaseLabel(item.phase), key: Key('activation-phase-${item.id}')),
+              Text(
+                _phaseLabel(item.phase),
+                key: Key('activation-phase-${item.id}'),
+                style: _phaseStyle(context, item.phase),
+              ),
             ],
           ),
         );
@@ -301,6 +305,16 @@ class _AdminActivationReceiptScreenState extends ConsumerState<AdminActivationRe
     }
   }
 
+  void _openImageViewer() {
+    final image = _image;
+    if (image == null || !_imageReady || _renderFailed) return;
+    showDialog<void>(
+      context: context,
+      barrierColor: Colors.black,
+      builder: (context) => _ReceiptImageViewer(image: Uint8List.fromList(image)),
+    );
+  }
+
   Future<void> _approve() async {
     final review = _review;
     if (review == null || !_imageReady || _renderFailed || !_attested || _image == null || review.requiredBankAttestation.isEmpty) {
@@ -391,12 +405,14 @@ class _AdminActivationReceiptScreenState extends ConsumerState<AdminActivationRe
             : ListView(
                 padding: const EdgeInsets.all(AppTokens.space16),
                 children: [
-                  Text(review.notice, key: const Key('admin-payment-notice')),
-                  const SizedBox(height: AppTokens.space16),
                   Text(review.salonName, key: const Key('admin-receipt-salon')),
                   Text(review.ownerName, key: const Key('admin-receipt-owner')),
                   Text(_when(review.submittedAt), key: const Key('admin-receipt-time')),
-                  Text(_phaseLabel(review.phase), key: const Key('admin-receipt-phase')),
+                  Text(
+                    _phaseLabel(review.phase),
+                    key: const Key('admin-receipt-phase'),
+                    style: _phaseStyle(context, review.phase, detail: true),
+                  ),
                   if (review.decidedAt != null)
                     Text(
                       'زمان تصمیم: ${_when(review.decidedAt)}',
@@ -417,24 +433,65 @@ class _AdminActivationReceiptScreenState extends ConsumerState<AdminActivationRe
                     Text(review.rejectionReason!, key: const Key('admin-receipt-reason')),
                   if (_image != null) ...[
                     const SizedBox(height: AppTokens.space16),
-                    Image.memory(
-                      Uint8List.fromList(_image!),
-                      key: const Key('admin-receipt-image'),
-                      height: 220,
-                      fit: BoxFit.contain,
-                      frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
-                        if (wasSynchronouslyLoaded || frame != null) {
-                          _scheduleImageResult(true);
-                        }
-                        return child;
-                      },
-                      errorBuilder: (context, error, stackTrace) {
-                        _scheduleImageResult(false);
-                        return const Text(
-                          'تصویر فیش قابل نمایش نیست.',
-                          key: Key('admin-receipt-image-error'),
-                        );
-                      },
+                    Semantics(
+                      button: _imageReady && !_renderFailed,
+                      label: 'بزرگ‌نمایی تصویر فیش',
+                      child: InkWell(
+                        key: const Key('admin-receipt-image-open'),
+                        onTap: _imageReady && !_renderFailed ? _openImageViewer : null,
+                        borderRadius: BorderRadius.circular(AppTokens.radiusMd),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(AppTokens.radiusMd),
+                          child: Stack(
+                            alignment: Alignment.bottomRight,
+                            children: [
+                              Image.memory(
+                                Uint8List.fromList(_image!),
+                                key: const Key('admin-receipt-image'),
+                                height: 220,
+                                width: double.infinity,
+                                fit: BoxFit.contain,
+                                frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+                                  if (wasSynchronouslyLoaded || frame != null) {
+                                    _scheduleImageResult(true);
+                                  }
+                                  return child;
+                                },
+                                errorBuilder: (context, error, stackTrace) {
+                                  _scheduleImageResult(false);
+                                  return const Text(
+                                    'تصویر فیش قابل نمایش نیست.',
+                                    key: Key('admin-receipt-image-error'),
+                                  );
+                                },
+                              ),
+                              if (_imageReady && !_renderFailed)
+                                Container(
+                                  margin: const EdgeInsets.all(AppTokens.space8),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: AppTokens.space8,
+                                    vertical: AppTokens.space4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black54,
+                                    borderRadius: BorderRadius.circular(AppTokens.radiusSm),
+                                  ),
+                                  child: const Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.zoom_in, size: 18, color: Colors.white),
+                                      SizedBox(width: AppTokens.space4),
+                                      Text(
+                                        'بزرگ‌نمایی',
+                                        style: TextStyle(color: Colors.white),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
                     ),
                   ],
                   if (_error != null) ...[
@@ -480,6 +537,83 @@ class _AdminActivationReceiptScreenState extends ConsumerState<AdminActivationRe
                   ],
                 ],
               ),
+      ),
+    );
+  }
+}
+
+class _ReceiptImageViewer extends StatefulWidget {
+  const _ReceiptImageViewer({required this.image});
+
+  final Uint8List image;
+
+  @override
+  State<_ReceiptImageViewer> createState() => _ReceiptImageViewerState();
+}
+
+class _ReceiptImageViewerState extends State<_ReceiptImageViewer> {
+  final _transformationController = TransformationController();
+
+  @override
+  void dispose() {
+    _transformationController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog.fullscreen(
+      backgroundColor: Colors.black,
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: InteractiveViewer(
+              key: const Key('admin-receipt-image-zoom'),
+              transformationController: _transformationController,
+              minScale: 1,
+              maxScale: 6,
+              child: Center(
+                child: Image.memory(
+                  widget.image,
+                  key: const Key('admin-receipt-image-full'),
+                  fit: BoxFit.contain,
+                  gaplessPlayback: true,
+                  errorBuilder: (context, error, stackTrace) => const Text(
+                    'تصویر فیش قابل نمایش نیست.',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: SafeArea(
+              bottom: false,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: AppTokens.space8),
+                child: Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'برای بزرگ‌نمایی، دو انگشت را باز کنید.',
+                        style: TextStyle(color: Colors.white70),
+                      ),
+                    ),
+                    IconButton(
+                      key: const Key('admin-receipt-image-close'),
+                      tooltip: 'بستن',
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.close, color: Colors.white),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -559,6 +693,25 @@ String _phaseLabel(String phase) {
     'REJECTED' => 'رد شده',
     _ => phase,
   };
+}
+
+Color _phaseColor(String phase) {
+  return switch (phase) {
+    'UNDER_REVIEW' => AppTokens.warning,
+    'APPROVED' => AppTokens.success,
+    'REJECTED' => AppTokens.danger,
+    _ => AppTokens.textSecondary,
+  };
+}
+
+TextStyle _phaseStyle(BuildContext context, String phase, {bool detail = false}) {
+  final base = detail
+      ? Theme.of(context).textTheme.titleMedium
+      : Theme.of(context).textTheme.bodyMedium;
+  return (base ?? const TextStyle()).copyWith(
+    color: _phaseColor(phase),
+    fontWeight: FontWeight.w700,
+  );
 }
 
 String _when(String? iso) {
