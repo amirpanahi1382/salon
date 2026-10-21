@@ -30,7 +30,7 @@ describe('loadConfig', () => {
     expect(config.PHONE_SIGNUP_MAX_SENDS).toBe(3);
     expect(config.PHONE_SIGNUP_SEND_WINDOW_SECONDS).toBe(900);
     expect(config.PHONE_SIGNUP_MAX_VERIFY_ATTEMPTS).toBe(5);
-    expect(config.PHONE_SIGNUP_MAX_TTL_SECONDS).toBe(180);
+    expect(config.PHONE_SIGNUP_MAX_TTL_SECONDS).toBe(60);
     expect(config.PHONE_SIGNUP_PROOF_TTL_SECONDS).toBe(600);
     expect(config.AGREEMENT_ACCEPTANCE_ENABLED).toBe(false);
     expect(config.MANUAL_TRANSFER_ENABLED).toBe(false);
@@ -99,6 +99,12 @@ describe('loadConfig', () => {
     expect(config.BALE_SAFIR_BOT_ID).toBeUndefined();
     expect(config.BALE_SAFIR_BASE_URL).toBe('https://safir.bale.ai/api/v3');
     expect(getBaleSafirSettings(config)).toBeNull();
+  });
+
+  it('never accepts a phone-signup TTL cap above 60 seconds', () => {
+    expect(() =>
+      loadConfig({ ...valid, PHONE_SIGNUP_MAX_TTL_SECONDS: '61' }),
+    ).toThrow(/PHONE_SIGNUP_MAX_TTL_SECONDS/);
   });
 
   it('requires the phone-signup hash secret only when the challenge is enabled', () => {

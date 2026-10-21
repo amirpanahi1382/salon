@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -6,23 +5,13 @@ import 'package:go_router/go_router.dart';
 import '../../core/errors/api_exception.dart';
 import '../../core/networking/api_client.dart';
 import '../../core/state/providers.dart';
+import '../../core/theme/app_tokens.dart';
 import '../../core/widgets/app_widgets.dart';
 import '../../core/widgets/onboarding_progress.dart';
 import '../../shared/labels.dart';
+import 'signup_otp_panel.dart';
 
-String loginErrorText(Object error) {
-  final friendly = friendlyError(error);
-  if (kDebugMode) {
-    if (error is ApiException) {
-      return 'HTTP ${error.statusCode} ${error.code}\n${error.message}\n$friendly';
-    }
-    if (error is NetworkException) {
-      return 'NetworkException: ${error.message}';
-    }
-    return '${error.runtimeType}: $error\n$friendly';
-  }
-  return friendly;
-}
+String loginErrorText(Object error) => friendlyError(error);
 
 class SplashScreen extends StatelessWidget {
   const SplashScreen({super.key});
@@ -130,7 +119,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 }
 
 class RegisterScreen extends ConsumerStatefulWidget {
-  const RegisterScreen({super.key});
+  const RegisterScreen({
+    super.key,
+    this.now = DateTime.now,
+    this.keyFactory = createRequestId,
+  });
+
+  final DateTime Function() now;
+  final String Function() keyFactory;
 
   @override
   ConsumerState<RegisterScreen> createState() => _RegisterScreenState();
@@ -138,7 +134,6 @@ class RegisterScreen extends ConsumerStatefulWidget {
 
 class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   final _phone = TextEditingController();
-  final _code = TextEditingController();
   final _salon = TextEditingController();
   final _owner = TextEditingController();
   final _password = TextEditingController();
@@ -148,37 +143,23 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   String? _startKey;
   String? _startPhone;
   bool _startAmbiguous = false;
-  String? _verifyKey;
-  String? _verifyPhone;
-  String? _verifyCodeValue;
-  bool _verifyAmbiguous = false;
   String? _completeKey;
   _SignupCompletion? _completeBody;
   bool _completeAmbiguous = false;
   bool _loading = false;
   int _step = 0;
+  DateTime? _codeDeadline;
+  DateTime? _resendDeadline;
+  int _otpGeneration = 0;
 
   @override
   void dispose() {
     _phone.dispose();
-    _code.dispose();
     _salon.dispose();
     _owner.dispose();
     _password.dispose();
     _confirmation.dispose();
     super.dispose();
-  }
-
-  bool _ambiguous(Object error) {
-    if (error is NetworkException) {
-      return true;
-    }
-    if (error is ApiException) {
-      return error.statusCode >= 500 ||
-          error.code == 'SIGNUP_SEND_UNCONFIRMED' ||
-          error.code == 'SIGNUP_VERIFICATION_UNCONFIRMED';
-    }
-    return false;
   }
 
   Future<void> _sendCode() async {
@@ -188,7 +169,11 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       setState(() => _error = AppStrings.enterPhonePassword);
       return;
     }
-    final key = retry ? _startKey! : createRequestId();
+    final key = retry ? _startKey! : widget.keyFactory();
+    // Code validity is anchored to request start so transit delay cannot make
+    // the UI show a still-valid code after the server deadline. Resend wait
+    // uses the response clock so the button does not unlock early.
+    final requestStartedAt = widget.now();
     setState(() {
       _loading = true;
       _error = null;
@@ -199,21 +184,30 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       }
     });
     try {
-      await ref.read(authRepositoryProvider).startPhoneSignup(
+      final challenge = await ref.read(authRepositoryProvider).startPhoneSignup(
             phone: phone,
             idempotencyKey: key,
           );
       if (mounted) {
+        final responseAt = widget.now();
         setState(() {
           _startAmbiguous = false;
           _startKey = null;
+          _proof = null;
+          _codeDeadline = requestStartedAt.add(
+            Duration(seconds: challenge.expiresInSeconds),
+          );
+          _resendDeadline = responseAt.add(
+            Duration(seconds: challenge.resendAvailableInSeconds),
+          );
+          _otpGeneration += 1;
           _step = 1;
         });
       }
     } catch (error) {
       if (mounted) {
         setState(() {
-          _startAmbiguous = _ambiguous(error);
+          _startAmbiguous = isSignupErrorAmbiguous(error);
           if (!_startAmbiguous) {
             _startKey = null;
           }
@@ -227,57 +221,40 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     }
   }
 
-  Future<void> _verifyCode() async {
-    final retry = _verifyAmbiguous &&
-        _verifyKey != null &&
-        _verifyPhone != null &&
-        _verifyCodeValue != null;
-    final phone = retry ? _verifyPhone! : _phone.text.trim();
-    final code = retry ? _verifyCodeValue! : _code.text.trim();
-    if (!RegExp(r'^\d{4,8}$').hasMatch(code)) {
-      setState(() => _error = AppStrings.enterSignupCode);
+  void _onVerified(String proof) {
+    if (!mounted) {
       return;
     }
-    final key = retry ? _verifyKey! : createRequestId();
     setState(() {
-      _loading = true;
+      _proof = proof;
       _error = null;
-      if (!retry) {
-        _verifyKey = key;
-        _verifyPhone = phone;
-        _verifyCodeValue = code;
-        _verifyAmbiguous = false;
-      }
+      _step = 2;
     });
-    try {
-      final proof = await ref.read(authRepositoryProvider).verifyPhoneSignup(
-            phone: phone,
-            otpCode: code,
-            idempotencyKey: key,
-          );
-      if (mounted) {
-        setState(() {
-          _proof = proof;
-          _verifyAmbiguous = false;
-          _verifyKey = null;
-          _step = 2;
-        });
-      }
-    } catch (error) {
-      if (mounted) {
-        setState(() {
-          _verifyAmbiguous = _ambiguous(error);
-          if (!_verifyAmbiguous) {
-            _verifyKey = null;
-          }
-          _error = loginErrorText(error);
-        });
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _loading = false);
-      }
+  }
+
+  void _onResendConfirmed() {
+    if (!mounted) {
+      return;
     }
+    setState(() {
+      _proof = null;
+      _completeKey = null;
+      _completeBody = null;
+      _completeAmbiguous = false;
+      _error = null;
+    });
+  }
+
+  void _restartOtpForExpiredProof() {
+    final now = widget.now();
+    setState(() {
+      _proof = null;
+      _step = 1;
+      _codeDeadline = now;
+      _resendDeadline = now;
+      _otpGeneration += 1;
+      _error = AppStrings.signupProofExpired;
+    });
   }
 
   Future<void> _createAccount() async {
@@ -309,7 +286,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
         return;
       }
     }
-    final key = retry ? _completeKey! : createRequestId();
+    final key = retry ? _completeKey! : widget.keyFactory();
     setState(() {
       _loading = true;
       _error = null;
@@ -340,15 +317,21 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
         });
       }
     } catch (error) {
-      if (mounted) {
-        setState(() {
-          _completeAmbiguous = _ambiguous(error);
-          if (!_completeAmbiguous) {
-            _completeKey = null;
-          }
-          _error = loginErrorText(error);
-        });
+      if (!mounted) {
+        return;
       }
+      if (error is ApiException && error.code == 'SIGNUP_PROOF_EXPIRED') {
+        setState(() => _loading = false);
+        _restartOtpForExpiredProof();
+        return;
+      }
+      setState(() {
+        _completeAmbiguous = isSignupErrorAmbiguous(error);
+        if (!_completeAmbiguous) {
+          _completeKey = null;
+        }
+        _error = loginErrorText(error);
+      });
     } finally {
       if (mounted) {
         setState(() => _loading = false);
@@ -358,85 +341,143 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final otpStep = _step == 1;
     return Scaffold(
-      appBar: AppBar(title: const Text(AppStrings.registerTitle)),
-      body: ListView(
-        padding: const EdgeInsets.all(24),
-        children: [
-          const OnboardingProgress(stage: OnboardingStage.registration),
-          const SizedBox(height: 20),
-          if (_step == 0)
-            AppTextField(
-              key: const Key('signup-phone'),
-              label: AppStrings.mobileNumber,
-              controller: _phone,
-              keyboardType: TextInputType.phone,
-              textDirection: TextDirection.ltr,
-            ),
-          if (_step == 1)
-            AppTextField(
-              key: const Key('signup-code'),
-              label: AppStrings.signupCode,
-              controller: _code,
-              keyboardType: TextInputType.number,
-              textDirection: TextDirection.ltr,
-            ),
-          if (_step == 2) ...[
-            AppTextField(
-              key: const Key('signup-salon'),
-              label: AppStrings.salonName,
-              controller: _salon,
-            ),
-            const SizedBox(height: 12),
-            AppTextField(
-              key: const Key('signup-owner'),
-              label: AppStrings.ownerName,
-              controller: _owner,
-            ),
-            const SizedBox(height: 12),
-            AppTextField(
-              key: const Key('signup-password'),
-              label: AppStrings.password,
-              controller: _password,
-              obscureText: true,
-              textDirection: TextDirection.ltr,
-            ),
-            const SizedBox(height: 12),
-            AppTextField(
-              key: const Key('signup-password-confirmation'),
-              label: AppStrings.confirmPassword,
-              controller: _confirmation,
-              obscureText: true,
-              textDirection: TextDirection.ltr,
-            ),
-          ],
-          if (_error != null) ...[
-            const SizedBox(height: 12),
-            Text(
-              _error!,
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
-            ),
-          ],
-          const SizedBox(height: 24),
-          AppButton(
-            key: const Key('signup-submit'),
-            label: _step == 0
-                ? AppStrings.sendSignupCode
-                : _step == 1
-                    ? AppStrings.verifySignupCode
-                    : AppStrings.createAccount,
-            onPressed: _step == 0
-                ? _sendCode
-                : _step == 1
-                    ? _verifyCode
-                    : _createAccount,
-            loading: _loading,
-          ),
-          TextButton(
-            onPressed: () => context.go('/login'),
-            child: const Text(AppStrings.haveAccount),
-          ),
-        ],
+      backgroundColor: otpStep ? SignupOtpVisuals.background : null,
+      appBar: AppBar(
+        title: Text(
+          AppStrings.registerTitle,
+          style: otpStep
+              ? const TextStyle(
+                  color: SignupOtpVisuals.text,
+                  fontWeight: FontWeight.w600,
+                )
+              : null,
+        ),
+        backgroundColor: otpStep ? SignupOtpVisuals.background : null,
+        foregroundColor: otpStep ? SignupOtpVisuals.text : null,
+        elevation: otpStep ? 0 : null,
+        scrolledUnderElevation: otpStep ? 0 : null,
+      ),
+      body: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return SingleChildScrollView(
+              padding: EdgeInsets.fromLTRB(
+                AppTokens.space24,
+                otpStep ? AppTokens.space8 : AppTokens.space24,
+                AppTokens.space24,
+                AppTokens.space24 + MediaQuery.viewInsetsOf(context).bottom,
+              ),
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 520),
+                  child: Directionality(
+                    textDirection: TextDirection.rtl,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (!otpStep) ...[
+                          const OnboardingProgress(
+                            stage: OnboardingStage.registration,
+                          ),
+                          const SizedBox(height: AppTokens.space20),
+                        ],
+                        if (_step == 0)
+                          AppTextField(
+                            key: const Key('signup-phone'),
+                            label: AppStrings.mobileNumber,
+                            controller: _phone,
+                            keyboardType: TextInputType.phone,
+                            textDirection: TextDirection.ltr,
+                          ),
+                        if (_step == 1 &&
+                            _codeDeadline != null &&
+                            _resendDeadline != null)
+                          SignupOtpPanel(
+                            key: ValueKey('signup-otp-$_otpGeneration'),
+                            phone: _startPhone ?? _phone.text.trim(),
+                            expiresAt: _codeDeadline!,
+                            resendAvailableAt: _resendDeadline!,
+                            repository: ref.read(authRepositoryProvider),
+                            now: widget.now,
+                            keyFactory: widget.keyFactory,
+                            onVerified: _onVerified,
+                            onResendConfirmed: _onResendConfirmed,
+                          ),
+                        if (_step == 2) ...[
+                          AppTextField(
+                            key: const Key('signup-salon'),
+                            label: AppStrings.salonName,
+                            controller: _salon,
+                          ),
+                          const SizedBox(height: 12),
+                          AppTextField(
+                            key: const Key('signup-owner'),
+                            label: AppStrings.ownerName,
+                            controller: _owner,
+                          ),
+                          const SizedBox(height: 12),
+                          AppTextField(
+                            key: const Key('signup-password'),
+                            label: AppStrings.password,
+                            controller: _password,
+                            obscureText: true,
+                            textDirection: TextDirection.ltr,
+                          ),
+                          const SizedBox(height: 12),
+                          AppTextField(
+                            key: const Key('signup-password-confirmation'),
+                            label: AppStrings.confirmPassword,
+                            controller: _confirmation,
+                            obscureText: true,
+                            textDirection: TextDirection.ltr,
+                          ),
+                        ],
+                        if (_error != null) ...[
+                          const SizedBox(height: 12),
+                          Text(
+                            _error!,
+                            key: const Key('signup-error'),
+                            style: TextStyle(
+                              color: otpStep
+                                  ? SignupOtpVisuals.danger
+                                  : Theme.of(context).colorScheme.error,
+                            ),
+                          ),
+                        ],
+                        if (_step != 1) ...[
+                          const SizedBox(height: AppTokens.space24),
+                          AppButton(
+                            key: const Key('signup-submit'),
+                            label: _step == 0
+                                ? AppStrings.sendSignupCode
+                                : AppStrings.createAccount,
+                            onPressed:
+                                _step == 0 ? _sendCode : _createAccount,
+                            loading: _loading,
+                          ),
+                          TextButton(
+                            onPressed: () => context.go('/login'),
+                            child: const Text(AppStrings.haveAccount),
+                          ),
+                        ] else
+                          TextButton(
+                            onPressed: () => context.go('/login'),
+                            style: TextButton.styleFrom(
+                              foregroundColor: SignupOtpVisuals.textMuted,
+                            ),
+                            child: const Text(AppStrings.haveAccount),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
       ),
     );
   }

@@ -14,7 +14,9 @@ export type AppErrorCode =
   | 'SIGNUP_RESEND_COOLDOWN'
   | 'SIGNUP_SEND_LIMIT'
   | 'SIGNUP_VERIFICATION_FAILED'
+  | 'SIGNUP_VERIFICATION_LIMIT'
   | 'SIGNUP_PROOF_ALREADY_ISSUED'
+  | 'SIGNUP_PROOF_EXPIRED'
   | 'SIGNUP_CHALLENGE_SUPERSEDED'
   | 'SIGNUP_CHALLENGE_EXPIRED'
   | 'AGREEMENT_PHONE_UNVERIFIED'
@@ -149,14 +151,20 @@ export class SignupResendCooldownError extends AppError {
       'SIGNUP_RESEND_COOLDOWN',
       `Another signup message cannot be sent yet. Try again in ${retryAfterSeconds} seconds.`,
       429,
+      { retryAfterSeconds },
     );
     this.name = 'SignupResendCooldownError';
   }
 }
 
 export class SignupSendLimitError extends AppError {
-  constructor(message = 'Another signup message cannot be sent yet.') {
-    super('SIGNUP_SEND_LIMIT', message, 429);
+  constructor(retryAfterSeconds?: number) {
+    super(
+      'SIGNUP_SEND_LIMIT',
+      'Another signup message cannot be sent yet.',
+      429,
+      retryAfterSeconds === undefined ? undefined : { retryAfterSeconds },
+    );
     this.name = 'SignupSendLimitError';
   }
 }
@@ -168,12 +176,33 @@ export class SignupVerificationFailedError extends AppError {
   }
 }
 
+/** The local attempt budget for this challenge is spent. A fresh code is required. */
+export class SignupVerificationLimitError extends AppError {
+  constructor(retryAfterSeconds?: number) {
+    super(
+      'SIGNUP_VERIFICATION_LIMIT',
+      'Too many verification attempts for this signup code.',
+      429,
+      retryAfterSeconds === undefined ? undefined : { retryAfterSeconds },
+    );
+    this.name = 'SignupVerificationLimitError';
+  }
+}
+
 export class SignupProofAlreadyIssuedError extends AppError {
   constructor(
     message = 'This verification already returned a signup proof. That proof is not issued again.',
   ) {
     super('SIGNUP_PROOF_ALREADY_ISSUED', message, 409);
     this.name = 'SignupProofAlreadyIssuedError';
+  }
+}
+
+/** The proof once existed for this phone but its local deadline has passed. */
+export class SignupProofExpiredError extends AppError {
+  constructor(message = 'This signup proof has expired. Verify the phone again.') {
+    super('SIGNUP_PROOF_EXPIRED', message, 409);
+    this.name = 'SignupProofExpiredError';
   }
 }
 

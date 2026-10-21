@@ -34,9 +34,13 @@ class _SignupRepository extends AuthRepository {
   Object? startError;
   Object? verifyError;
   Object? completeError;
+  PhoneSignupChallenge challenge = const PhoneSignupChallenge(
+    expiresInSeconds: 60,
+    resendAvailableInSeconds: 60,
+  );
 
   @override
-  Future<void> startPhoneSignup({
+  Future<PhoneSignupChallenge> startPhoneSignup({
     required String phone,
     required String idempotencyKey,
   }) async {
@@ -44,6 +48,7 @@ class _SignupRepository extends AuthRepository {
     if (startError != null) {
       throw startError!;
     }
+    return challenge;
   }
 
   @override
@@ -83,12 +88,22 @@ class _SignupRepository extends AuthRepository {
 }
 
 Future<void> _pump(WidgetTester tester, _SignupRepository auth) async {
+  await tester.binding.setSurfaceSize(const Size(400, 900));
+  addTearDown(() async {
+    await tester.binding.setSurfaceSize(null);
+  });
   await tester.pumpWidget(
     ProviderScope(
       overrides: [authRepositoryProvider.overrideWith((ref) => auth)],
       child: const MaterialApp(home: RegisterScreen()),
     ),
   );
+}
+
+Future<void> _tapFinder(WidgetTester tester, Finder finder) async {
+  await tester.ensureVisible(finder);
+  await tester.pump();
+  await tester.tap(finder);
 }
 
 void main() {
@@ -106,9 +121,9 @@ void main() {
     );
 
     await tester.enterText(find.byKey(const Key('signup-phone')), '09120000001');
-    await tester.tap(find.byKey(const Key('signup-submit')));
+    await _tapFinder(tester, find.byKey(const Key('signup-submit')));
     await tester.pump();
-    await tester.tap(find.byKey(const Key('signup-submit')));
+    await _tapFinder(tester, find.byKey(const Key('signup-submit')));
     await tester.pump();
 
     expect(auth.starts, hasLength(2));
@@ -117,7 +132,7 @@ void main() {
     expect(auth.starts[1].phone, '09120000001');
 
     await tester.enterText(find.byKey(const Key('signup-phone')), '09120000002');
-    await tester.tap(find.byKey(const Key('signup-submit')));
+    await _tapFinder(tester, find.byKey(const Key('signup-submit')));
     await tester.pump();
     expect(auth.starts, hasLength(3));
     expect(auth.starts.last.phone, '09120000002');
@@ -128,10 +143,10 @@ void main() {
     final auth = _SignupRepository()..startError = const NetworkException();
     await _pump(tester, auth);
     await tester.enterText(find.byKey(const Key('signup-phone')), '09120000003');
-    await tester.tap(find.byKey(const Key('signup-submit')));
+    await _tapFinder(tester, find.byKey(const Key('signup-submit')));
     await tester.pump();
     await tester.enterText(find.byKey(const Key('signup-phone')), '09129999999');
-    await tester.tap(find.byKey(const Key('signup-submit')));
+    await _tapFinder(tester, find.byKey(const Key('signup-submit')));
     await tester.pump();
 
     expect(auth.starts, hasLength(2));
@@ -143,7 +158,7 @@ void main() {
     final auth = _SignupRepository();
     await _pump(tester, auth);
     await tester.enterText(find.byKey(const Key('signup-phone')), '09120000004');
-    await tester.tap(find.byKey(const Key('signup-submit')));
+    await _tapFinder(tester, find.byKey(const Key('signup-submit')));
     await tester.pump();
 
     auth.verifyError = const ApiException(
@@ -152,9 +167,9 @@ void main() {
       message: 'The signup code could not be verified.',
     );
     await tester.enterText(find.byKey(const Key('signup-code')), '111111');
-    await tester.tap(find.text(AppStrings.verifySignupCode));
+    await _tapFinder(tester, find.text(AppStrings.verifySignupCode));
     await tester.pump();
-    await tester.tap(find.text(AppStrings.verifySignupCode));
+    await _tapFinder(tester, find.text(AppStrings.verifySignupCode));
     await tester.pump();
 
     expect(auth.verifies, hasLength(2));
@@ -172,13 +187,18 @@ void main() {
       );
     await _pump(tester, auth);
     await tester.enterText(find.byKey(const Key('signup-phone')), '09120000005');
-    await tester.tap(find.byKey(const Key('signup-submit')));
+    await _tapFinder(tester, find.byKey(const Key('signup-submit')));
     await tester.pump();
     await tester.enterText(find.byKey(const Key('signup-code')), '222222');
-    await tester.tap(find.text(AppStrings.verifySignupCode));
+    await _tapFinder(tester, find.text(AppStrings.verifySignupCode));
     await tester.pump();
     await tester.enterText(find.byKey(const Key('signup-code')), '333333');
-    await tester.tap(find.text(AppStrings.verifySignupCode));
+    await tester.pump();
+    expect(
+      tester.widget<TextField>(find.byKey(const Key('signup-code'))).controller?.text,
+      '222222',
+    );
+    await _tapFinder(tester, find.text(AppStrings.verifySignupCode));
     await tester.pump();
 
     expect(auth.verifies, hasLength(2));
@@ -195,10 +215,10 @@ void main() {
       );
     await _pump(tester, auth);
     await tester.enterText(find.byKey(const Key('signup-phone')), '09120000006');
-    await tester.tap(find.byKey(const Key('signup-submit')));
+    await _tapFinder(tester, find.byKey(const Key('signup-submit')));
     await tester.pump();
     await tester.enterText(find.byKey(const Key('signup-code')), '444444');
-    await tester.tap(find.text(AppStrings.verifySignupCode));
+    await _tapFinder(tester, find.text(AppStrings.verifySignupCode));
     await tester.pump();
     await tester.enterText(find.byKey(const Key('signup-salon')), 'سالن اول');
     await tester.enterText(find.byKey(const Key('signup-owner')), 'مالک');
@@ -207,10 +227,10 @@ void main() {
       find.byKey(const Key('signup-password-confirmation')),
       'password-one',
     );
-    await tester.tap(find.text(AppStrings.createAccount));
+    await _tapFinder(tester, find.text(AppStrings.createAccount));
     await tester.pump();
     await tester.enterText(find.byKey(const Key('signup-salon')), 'سالن دوم');
-    await tester.tap(find.text(AppStrings.createAccount));
+    await _tapFinder(tester, find.text(AppStrings.createAccount));
     await tester.pump();
 
     expect(auth.completes, hasLength(2));
@@ -223,10 +243,10 @@ void main() {
     final auth = _SignupRepository()..completeError = const NetworkException();
     await _pump(tester, auth);
     await tester.enterText(find.byKey(const Key('signup-phone')), '09120000007');
-    await tester.tap(find.byKey(const Key('signup-submit')));
+    await _tapFinder(tester, find.byKey(const Key('signup-submit')));
     await tester.pump();
     await tester.enterText(find.byKey(const Key('signup-code')), '555555');
-    await tester.tap(find.text(AppStrings.verifySignupCode));
+    await _tapFinder(tester, find.text(AppStrings.verifySignupCode));
     await tester.pump();
     await tester.enterText(find.byKey(const Key('signup-salon')), 'سالن ثابت');
     await tester.enterText(find.byKey(const Key('signup-owner')), 'مالک');
@@ -235,11 +255,11 @@ void main() {
       find.byKey(const Key('signup-password-confirmation')),
       'password-two',
     );
-    await tester.tap(find.text(AppStrings.createAccount));
+    await _tapFinder(tester, find.text(AppStrings.createAccount));
     await tester.pump();
     await tester.enterText(find.byKey(const Key('signup-salon')), 'سالن عوض‌شده');
     await tester.enterText(find.byKey(const Key('signup-password')), 'password-other');
-    await tester.tap(find.text(AppStrings.createAccount));
+    await _tapFinder(tester, find.text(AppStrings.createAccount));
     await tester.pump();
 
     expect(auth.completes, hasLength(2));

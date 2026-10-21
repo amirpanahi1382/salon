@@ -5,6 +5,7 @@ import {
   cooldownRemaining,
   normalizeIranianMobile,
   signupDeadline,
+  signupPendingResponse,
   signupPhoneHash,
   signupCompletionHash,
   signupProofHash,
@@ -27,8 +28,8 @@ describe('signup phone normalization and deadlines', () => {
 
   it('never lets the local deadline exceed the provider TTL or the configured cap', () => {
     const now = new Date('2026-10-15T00:00:00.000Z');
-    expect(signupDeadline(now, 180, 299).toISOString()).toBe('2026-10-15T00:03:00.000Z');
-    expect(signupDeadline(now, 180, 30).toISOString()).toBe('2026-10-15T00:00:30.000Z');
+    expect(signupDeadline(now, 60, 299).toISOString()).toBe('2026-10-15T00:01:00.000Z');
+    expect(signupDeadline(now, 60, 30).toISOString()).toBe('2026-10-15T00:00:30.000Z');
   });
 
   it('hashes phones and proofs so the stored value is not the secret', () => {
@@ -58,6 +59,15 @@ describe('signup phone normalization and deadlines', () => {
         proof,
       }),
     );
+  });
+
+  it('keeps a zero resend window instead of substituting the cooldown', () => {
+    expect(signupPendingResponse(60, 0)).toEqual({
+      outcome: 'pending',
+      expiresInSeconds: 60,
+      resendAvailableInSeconds: 0,
+    });
+    expect(signupPendingResponse(45, 17).resendAvailableInSeconds).toBe(17);
   });
 
   it('counts a full cooldown second while the window is still open', () => {

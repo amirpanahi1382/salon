@@ -174,10 +174,16 @@ Exception mapDioException(DioException error) {
 
   final data = error.response?.data;
   if (data is Map) {
+    final details = data['details'];
     return ApiException(
       statusCode: error.response?.statusCode ?? 500,
       code: data['error']?.toString() ?? 'HTTP_ERROR',
       message: stringifyApiMessage(data['message']),
+      details: details is Map
+          ? {
+              for (final entry in details.entries) entry.key.toString(): entry.value,
+            }
+          : null,
     );
   }
 

@@ -13,9 +13,46 @@ class AppStrings {
   static const enterSignupCode = 'کد تأیید را وارد کنید.';
   static const passwordMismatch = 'رمز عبور و تکرار آن یکسان نیست.';
   static const signupResendWait = 'ارسال دوباره تا چند لحظه ممکن نیست.';
-  static const signupCodeInvalid = 'کد تأیید درست نیست.';
+  static const signupCodeInvalid = 'کد نادرست است. دوباره تلاش کنید.';
   static const signupSendUnconfirmed =
-      'نتیجه ارسال تأیید نشد. همان درخواست را دوباره بفرستید.';
+      'نتیجه ارسال قطعی نیست. همان درخواست را دوباره بفرستید.';
+  static const signupVerificationUnconfirmed =
+      'نتیجه بررسی قطعی نیست. همان کد را دوباره بفرستید.';
+  static const signupSendLimit = 'سقف ارسال پر شده است. کمی بعد تلاش کنید.';
+  static const signupVerificationLimit =
+      'تلاش‌ها تمام شد. کد تازه بگیرید.';
+  static const signupCodeExpired = 'کد منقضی شده است. کد تازه بگیرید.';
+  static const signupCodeExpiredWait =
+      'کد منقضی شده است. برای کد تازه کمی صبر کنید.';
+  static const signupChallengeSuperseded =
+      'این کد جایگزین شده است. کد جدید را وارد کنید.';
+  static const signupProofExpired =
+      'مهلت تأیید شماره تمام شده است. شماره را دوباره تأیید کنید.';
+  static const signupProofAlreadyIssued =
+      'این شماره قبلاً تأیید شده است. مرحله ساخت حساب را ادامه دهید.';
+  static const signupServiceUnavailable =
+      'سرویس تأیید کد موقتاً در دسترس نیست. کمی بعد دوباره تلاش کنید.';
+  static const signupOtpHeading = 'کد تأیید را وارد کنید';
+  static const signupOtpCodeLabel = 'کد تأیید';
+  static const signupOtpCodeHint = '۴ تا ۸ رقم';
+  static const signupOtpCodeMalformed = 'کد تأیید را ۴ تا ۸ رقمی وارد کنید.';
+  static const signupCodeValidity = 'اعتبار';
+  static const signupResendCode = 'ارسال مجدد کد';
+  static const signupCodeExpiredShort = 'کد منقضی شده است';
+  static const signupCodeSentAgain = 'کد تازه ارسال شد.';
+  static const signupOtpNeedFreshCode = 'برای ادامه، کد تازه بگیرید.';
+
+  /// Short destination line only — no code-length wording on the OTP screen.
+  static String signupOtpDestination(String maskedPhone) =>
+      'ارسال‌شده به $maskedPhone';
+  static String signupResendWaitSeconds(int seconds) =>
+      'ارسال کد تازه تا ${toPersianDigits(seconds.toString())} ثانیه دیگر ممکن نیست.';
+  static String signupSendLimitSeconds(int seconds) =>
+      'سقف ارسال کد در این بازه پر شده است. تا ${toPersianDigits(seconds.toString())} ثانیه دیگر دوباره تلاش کنید.';
+  static String signupResendRemaining(String remaining) =>
+      'ارسال مجدد تا $remaining';
+  static String signupExpiredResendRemaining(String remaining) =>
+      '$signupCodeExpiredShort. $signupResendCode تا $remaining';
   static const registerTitle = 'ساخت حساب سالن';
   static const email = 'ایمیل';
   static const password = 'رمز عبور';

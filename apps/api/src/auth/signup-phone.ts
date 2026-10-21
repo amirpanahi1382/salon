@@ -82,6 +82,19 @@ export function secondsUntil(deadline: Date, now: Date): number {
   return Math.max(0, Math.ceil((deadline.getTime() - now.getTime()) / 1000));
 }
 
+export type SignupPendingResponse = {
+  outcome: 'pending';
+  expiresInSeconds: number;
+  resendAvailableInSeconds: number;
+};
+
+export function signupPendingResponse(
+  expiresInSeconds: number,
+  resendAvailableInSeconds: number,
+): SignupPendingResponse {
+  return { outcome: 'pending', expiresInSeconds, resendAvailableInSeconds };
+}
+
 export function cooldownRemaining(createdAt: Date, now: Date, cooldownSeconds: number): number {
   const elapsedMs = now.getTime() - createdAt.getTime();
   const remainingMs = cooldownSeconds * 1000 - elapsedMs;

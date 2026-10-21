@@ -17,6 +17,37 @@ String sanitizeAuthEmail(String email) {
       .trim();
 }
 
+class PhoneSignupChallenge {
+  const PhoneSignupChallenge({
+    required this.expiresInSeconds,
+    required this.resendAvailableInSeconds,
+  });
+
+  final int expiresInSeconds;
+  final int resendAvailableInSeconds;
+
+  factory PhoneSignupChallenge.fromJson(Object? json) {
+    final data = asJsonMap(json);
+    return PhoneSignupChallenge(
+      expiresInSeconds: _requiredSeconds(data['expiresInSeconds'], 'expiresInSeconds'),
+      resendAvailableInSeconds: _requiredSeconds(
+        data['resendAvailableInSeconds'],
+        'resendAvailableInSeconds',
+      ),
+    );
+  }
+}
+
+int _requiredSeconds(Object? value, String field) {
+  if (value is int && value >= 0) {
+    return value;
+  }
+  if (value is num && value >= 0) {
+    return value.toInt();
+  }
+  throw FormatException('Expected non-negative seconds for $field');
+}
+
 class AuthRepository {
   AuthRepository({required this.api, required this.sessionStore});
 
@@ -36,14 +67,16 @@ class AuthRepository {
     return session;
   }
 
-  Future<void> startPhoneSignup({
+  Future<PhoneSignupChallenge> startPhoneSignup({
     required String phone,
     required String idempotencyKey,
   }) async {
-    await api.post(
-      '/auth/signup/phone/start',
-      data: {'phone': phone.trim()},
-      headers: {'Idempotency-Key': idempotencyKey},
+    return PhoneSignupChallenge.fromJson(
+      await api.post(
+        '/auth/signup/phone/start',
+        data: {'phone': phone.trim()},
+        headers: {'Idempotency-Key': idempotencyKey},
+      ),
     );
   }
 

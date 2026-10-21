@@ -89,7 +89,7 @@ const envSchema = z.object({
   PHONE_SIGNUP_SEND_WINDOW_SECONDS: z.coerce.number().int().min(60).max(86_400).default(900),
   PHONE_SIGNUP_MAX_VERIFY_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(5),
   /** Local deadline cap. The stored deadline is also never later than OTPy's reported TTL. */
-  PHONE_SIGNUP_MAX_TTL_SECONDS: z.coerce.number().int().min(30).max(600).default(180),
+  PHONE_SIGNUP_MAX_TTL_SECONDS: z.coerce.number().int().min(30).max(60).default(60),
   PHONE_SIGNUP_PROOF_TTL_SECONDS: z.coerce.number().int().min(60).max(3600).default(600),
   /**
    * Agreement presentation and acceptance. Off until an operator enables it.

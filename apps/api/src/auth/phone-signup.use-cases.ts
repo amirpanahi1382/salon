@@ -10,10 +10,12 @@ import {
   SignupChallengeExpiredError,
   SignupChallengeSupersededError,
   SignupProofAlreadyIssuedError,
+  SignupProofExpiredError,
   SignupResendCooldownError,
   SignupSendLimitError,
   SignupSendUnconfirmedError,
   SignupVerificationFailedError,
+  SignupVerificationLimitError,
   SignupVerificationUnconfirmedError,
   ValidationError,
   createId,
@@ -26,6 +28,7 @@ import { assertSameIdempotentRequest, requireIdempotencyKey } from '../infrastru
 import {
   issueSignupProof,
   normalizeIranianMobile,
+  signupPendingResponse,
   signupPhoneHash,
   signupProofHash,
   signupStartHash,
@@ -221,14 +224,26 @@ export class StartPhoneSignupUseCase {
       return { kind: 'error', error: new SignupSendLimitError() };
     }
 
-    const sentRows = await tx.$queryRaw<Array<ClockCount>>`
-      SELECT count(*)::int AS value
+    const sentRows = await tx.$queryRaw<
+      Array<{ value: number | bigint; retry_after_seconds: number | bigint }>
+    >`
+      SELECT
+        count(*)::int AS value,
+        COALESCE(
+          GREATEST(0, ceil(extract(epoch FROM (
+            min(created_at) + (${input.windowSeconds}::int * interval '1 second') - clock_timestamp()
+          ))))::int,
+          0
+        ) AS retry_after_seconds
       FROM signup_phone_challenges
       WHERE phone_hash = ${phoneHash}
         AND created_at >= clock_timestamp() - (${input.windowSeconds}::int * interval '1 second')
     `;
     if (asInt(sentRows[0]?.value ?? 0) >= input.maxSends) {
-      return { kind: 'error', error: new SignupSendLimitError() };
+      return {
+        kind: 'error',
+        error: new SignupSendLimitError(asInt(sentRows[0]?.retry_after_seconds ?? 0)),
+      };
     }
 
     if (open) {
@@ -324,11 +339,7 @@ export class StartPhoneSignupUseCase {
         const resendIn = asInt(confirmed.resend_in_seconds);
         return {
           kind: 'pending' as const,
-          body: {
-            outcome: 'pending' as const,
-            expiresInSeconds: asInt(confirmed.expires_in_seconds),
-            resendAvailableInSeconds: resendIn || cooldown,
-          },
+          body: signupPendingResponse(asInt(confirmed.expires_in_seconds), resendIn),
         };
       }
       const expired = await tx.$queryRaw<Array<{ id: string }>>`
@@ -392,8 +403,17 @@ export class VerifyPhoneSignupUseCase {
       throw new NotFoundError();
     }
     const maxAttempts = this.config.values.PHONE_SIGNUP_MAX_VERIFY_ATTEMPTS;
+    const cooldownSeconds = this.config.values.PHONE_SIGNUP_RESEND_COOLDOWN_SECONDS;
     const opened = await this.prisma.client.$transaction(
-      (tx) => this.openAttempt(tx, { phone, otpCode: input.otpCode, key, secret, maxAttempts }),
+      (tx) =>
+        this.openAttempt(tx, {
+          phone,
+          otpCode: input.otpCode,
+          key,
+          secret,
+          maxAttempts,
+          cooldownSeconds,
+        }),
       { maxWait: 5_000, timeout: 15_000 },
     );
     if (opened.kind === 'already_issued') {
@@ -401,6 +421,15 @@ export class VerifyPhoneSignupUseCase {
     }
     if (opened.kind === 'unconfirmed') {
       throw new SignupVerificationUnconfirmedError();
+    }
+    if (opened.kind === 'superseded') {
+      throw new SignupChallengeSupersededError();
+    }
+    if (opened.kind === 'expired') {
+      throw new SignupChallengeExpiredError();
+    }
+    if (opened.kind === 'limit') {
+      throw new SignupVerificationLimitError(opened.retryAfterSeconds);
     }
     if (opened.kind === 'failed') {
       throw new SignupVerificationFailedError();
@@ -446,11 +475,15 @@ export class VerifyPhoneSignupUseCase {
       key: string;
       secret: string;
       maxAttempts: number;
+      cooldownSeconds: number;
     },
   ): Promise<
     | { kind: 'call'; challengeId: string; attemptId: string }
     | { kind: 'already_issued' }
     | { kind: 'unconfirmed' }
+    | { kind: 'superseded' }
+    | { kind: 'expired' }
+    | { kind: 'limit'; retryAfterSeconds?: number }
     | { kind: 'failed' }
   > {
     const phoneHash = signupPhoneHash(input.secret, input.phone);
@@ -477,8 +510,18 @@ export class VerifyPhoneSignupUseCase {
       where: { phoneHash, status: { in: OPEN_STATUSES } },
       orderBy: { createdAt: 'desc' },
     });
-    if (!challenge || challenge.verifyAttempts >= input.maxAttempts) {
-      return { kind: 'failed' };
+    if (!challenge) {
+      return classifyClosedChallenge(tx, phoneHash);
+    }
+    if (challenge.verifyAttempts >= input.maxAttempts) {
+      return {
+        kind: 'limit',
+        retryAfterSeconds: await resendWaitSeconds(
+          tx,
+          challenge.id,
+          input.cooldownSeconds,
+        ),
+      };
     }
 
     const reserved = await tx.$queryRaw<Array<{ id: string }>>`
@@ -493,6 +536,26 @@ export class VerifyPhoneSignupUseCase {
     `;
     if (reserved.length !== 1) {
       await markExpiredIfDue(tx, challenge.id);
+      const current = await tx.signupPhoneChallenge.findUnique({
+        where: { id: challenge.id },
+        select: { status: true, verifyAttempts: true },
+      });
+      if (current?.status === SignupPhoneChallengeStatus.INVALIDATED) {
+        return { kind: 'superseded' };
+      }
+      if (current?.status === SignupPhoneChallengeStatus.EXPIRED) {
+        return { kind: 'expired' };
+      }
+      if (current && current.verifyAttempts >= input.maxAttempts) {
+        return {
+          kind: 'limit',
+          retryAfterSeconds: await resendWaitSeconds(
+            tx,
+            challenge.id,
+            input.cooldownSeconds,
+          ),
+        };
+      }
       return { kind: 'failed' };
     }
 
@@ -617,6 +680,18 @@ export class ConsumeSignupProofUseCase {
     `;
     const consumed = rows[0];
     if (rows.length !== 1 || !consumed) {
+      const expired = await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT id
+        FROM signup_phone_challenges
+        WHERE proof_hash = ${proofHash}
+          AND phone_hash = ${phoneHash}
+          AND status = 'VERIFIED'
+          AND proof_expires_at <= clock_timestamp()
+        LIMIT 1
+      `;
+      if (expired.length === 1) {
+        throw new SignupProofExpiredError();
+      }
       throw new SignupVerificationFailedError('Signup proof is not valid.');
     }
     await writeAudit(tx, 'SIGNUP_PHONE_PROOF_CONSUMED', consumed.id);
@@ -735,6 +810,40 @@ async function expireOpenChallenges(
   for (const row of expired) {
     await writeAudit(tx, 'SIGNUP_PHONE_CHALLENGE_EXPIRED', row.id);
   }
+}
+
+async function classifyClosedChallenge(
+  tx: Prisma.TransactionClient,
+  phoneHash: string,
+): Promise<{ kind: 'superseded' } | { kind: 'expired' } | { kind: 'failed' }> {
+  const latest = await tx.signupPhoneChallenge.findFirst({
+    where: { phoneHash },
+    orderBy: { createdAt: 'desc' },
+    select: { status: true },
+  });
+  if (latest?.status === SignupPhoneChallengeStatus.INVALIDATED) {
+    return { kind: 'superseded' };
+  }
+  if (latest?.status === SignupPhoneChallengeStatus.EXPIRED) {
+    return { kind: 'expired' };
+  }
+  return { kind: 'failed' };
+}
+
+async function resendWaitSeconds(
+  tx: Prisma.TransactionClient,
+  challengeId: string,
+  cooldownSeconds: number,
+): Promise<number | undefined> {
+  const rows = await tx.$queryRaw<Array<ClockCount>>`
+    SELECT GREATEST(0, ceil(extract(epoch FROM (
+      created_at + (${cooldownSeconds}::int * interval '1 second') - clock_timestamp()
+    ))))::int AS value
+    FROM signup_phone_challenges
+    WHERE id = ${challengeId}::uuid
+  `;
+  const value = rows[0]?.value;
+  return value === undefined ? undefined : asInt(value);
 }
 
 async function markExpiredIfDue(

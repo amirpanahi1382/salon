@@ -26,9 +26,11 @@ const describeIfDisposable = disposable ? describe : describe.skip;
 class FakeOtpy {
   sends: string[] = [];
   verifyCalls = 0;
-  mode: 'match' | 'always' | 'timeout' | 'failure' | 'hang' = 'match';
+  mode: 'match' | 'latest' | 'always' | 'timeout' | 'failure' | 'hang' = 'match';
   acceptedCode = '222222';
+  ttlSeconds = 299;
   duringVerify: (() => Promise<void>) | null = null;
+  private readonly latestCodes = new Map<string, string>();
   private hang: {
     resolve: (value: OtpSendReceipt) => void;
     reject: (error: Error) => void;
@@ -47,7 +49,8 @@ class FakeOtpy {
         this.hang = { resolve, reject };
       });
     }
-    return { requestId: 'receipt-test', ttlSeconds: 299 };
+    this.latestCodes.set(phone, this.acceptedCode);
+    return { requestId: 'receipt-test', ttlSeconds: this.ttlSeconds };
   }
 
   rejectHang(error: Error): void {
@@ -60,7 +63,7 @@ class FakeOtpy {
     this.hang = null;
   }
 
-  async verify(_phone: string, otpCode: string): Promise<boolean> {
+  async verify(phone: string, otpCode: string): Promise<boolean> {
     this.verifyCalls += 1;
     if (this.duringVerify) {
       await this.duringVerify();
@@ -70,6 +73,9 @@ class FakeOtpy {
     }
     if (this.mode === 'always') {
       return true;
+    }
+    if (this.mode === 'latest') {
+      return otpCode === this.latestCodes.get(phone);
     }
     return otpCode === this.acceptedCode;
   }
@@ -122,6 +128,9 @@ describeIfDisposable('phone signup challenge on a disposable database', () => {
     await prisma.client.signupPhoneChallenge.deleteMany();
     await prisma.client.platformMessageStopEvent.deleteMany();
     await prisma.client.platformMessageStop.deleteMany();
+    await prisma.client.platformAdmin.deleteMany({
+      where: { phone: { in: ['09121110099'] } },
+    });
 
     const config = app.get(AppConfigService);
     const disabledRef = await Test.createTestingModule({ imports: [AppModule] })
@@ -148,6 +157,7 @@ describeIfDisposable('phone signup challenge on a disposable database', () => {
     otp.verifyCalls = 0;
     otp.mode = 'match';
     otp.acceptedCode = '222222';
+    otp.ttlSeconds = 299;
     otp.duringVerify = null;
     // The route limit is 30/minute in one process. Reset the counter between
     // cases so the disposable suite can cover every phone without tripping it.
@@ -210,8 +220,10 @@ describeIfDisposable('phone signup challenge on a disposable database', () => {
     const idempotencyKey = key();
     const first = await start('+98 912 111 0002', idempotencyKey).expect(201);
     expect(first.body.outcome).toBe('pending');
-    expect(first.body.expiresInSeconds).toBeLessThanOrEqual(180);
+    expect(first.body.expiresInSeconds).toBeLessThanOrEqual(60);
     expect(first.body.expiresInSeconds).toBeGreaterThan(0);
+    expect(first.body.resendAvailableInSeconds).toBeLessThanOrEqual(60);
+    expect(first.body.resendAvailableInSeconds).toBeGreaterThan(0);
     expect(first.body).not.toHaveProperty('signupProof');
     const replay = await start('09121110002', idempotencyKey).expect(201);
     expect(replay.body.outcome).toBe('pending');
@@ -231,6 +243,21 @@ describeIfDisposable('phone signup challenge on a disposable database', () => {
     expect(names).not.toContain('signup_proof');
   });
 
+  it('uses the shorter of the provider TTL and the 60 second cap', async () => {
+    const cappedPhone = '09121110022';
+    const capped = await start(cappedPhone).expect(201);
+    expect(capped.body.expiresInSeconds).toBeLessThanOrEqual(60);
+    expect(capped.body.expiresInSeconds).toBeGreaterThan(0);
+
+    otp.ttlSeconds = 45;
+    const providerPhone = '09121110023';
+    const providerShorter = await start(providerPhone).expect(201);
+    // ceil(expires_at - clock_timestamp()) can round a full 45.00xs window up by one.
+    expect(providerShorter.body.expiresInSeconds).toBeLessThanOrEqual(46);
+    expect(providerShorter.body.expiresInSeconds).toBeLessThanOrEqual(60);
+    expect(providerShorter.body.expiresInSeconds).toBeGreaterThan(0);
+  });
+
   it('rejects a second start during cooldown and a different phone on the same key', async () => {
     const phone = '09121110003';
     const idempotencyKey = key();
@@ -238,6 +265,8 @@ describeIfDisposable('phone signup challenge on a disposable database', () => {
     const cooled = await start(phone, key());
     expect(cooled.status).toBe(429);
     expect(cooled.body.error).toBe('SIGNUP_RESEND_COOLDOWN');
+    expect(cooled.body.details.retryAfterSeconds).toBeGreaterThan(0);
+    expect(cooled.body.details.retryAfterSeconds).toBeLessThanOrEqual(60);
     expect(otp.sends).toHaveLength(1);
     const conflict = await start('09121110004', idempotencyKey);
     expect(conflict.status).toBe(409);
@@ -248,7 +277,7 @@ describeIfDisposable('phone signup challenge on a disposable database', () => {
   it('invalidates the earlier challenge on resend and enforces the send limit', async () => {
     const phone = '09121110005';
     const first = await start(phone).expect(201);
-    expect(first.body.expiresInSeconds).toBeLessThanOrEqual(180);
+    expect(first.body.expiresInSeconds).toBeLessThanOrEqual(60);
     const row = await prisma.client.signupPhoneChallenge.findFirstOrThrow({
       where: { status: SignupPhoneChallengeStatus.SENT },
       orderBy: { createdAt: 'desc' },
@@ -270,10 +299,11 @@ describeIfDisposable('phone signup challenge on a disposable database', () => {
     const limited = await start(phone);
     expect(limited.status).toBe(429);
     expect(limited.body.error).toBe('SIGNUP_SEND_LIMIT');
+    expect(limited.body.details.retryAfterSeconds).toBeGreaterThan(0);
     expect(otp.sends).toHaveLength(3);
   });
 
-  it('uses one failure response for a wrong code and for an expired challenge', async () => {
+  it('keeps a provider rejection generic but identifies a locally expired challenge', async () => {
     const wrongPhone = '09121110006';
     await start(wrongPhone).expect(201);
     const wrong = await verify(wrongPhone, '111111');
@@ -296,9 +326,8 @@ describeIfDisposable('phone signup challenge on a disposable database', () => {
       },
     });
     const expired = await verify(expiredPhone, '222222');
-    expect(expired.status).toBe(400);
-    expect(expired.body.error).toBe(wrong.body.error);
-    expect(expired.body.message).toBe(wrong.body.message);
+    expect(expired.status).toBe(409);
+    expect(expired.body.error).toBe('SIGNUP_CHALLENGE_EXPIRED');
     expect(otp.verifyCalls).toBe(callsBefore);
   });
 
@@ -453,8 +482,8 @@ describeIfDisposable('phone signup challenge on a disposable database', () => {
       await held.release();
       const late = await pending;
       pending = undefined;
-      expect(late.status).toBe(400);
-      expect(late.body.error).toBe('SIGNUP_VERIFICATION_FAILED');
+      expect(late.status).toBe(409);
+      expect(late.body.error).toBe('SIGNUP_CHALLENGE_EXPIRED');
       expect(otp.verifyCalls).toBe(calls);
       const saved = await prisma.client.signupPhoneChallenge.findUniqueOrThrow({
         where: { id: row.id },
@@ -529,7 +558,7 @@ describeIfDisposable('phone signup challenge on a disposable database', () => {
       await moveDeadline(prisma, row.id, 'proof_expires_at');
       await sleep(1_200);
       await held.release();
-      await expect(pending).rejects.toMatchObject({ code: 'SIGNUP_VERIFICATION_FAILED' });
+      await expect(pending).rejects.toMatchObject({ code: 'SIGNUP_PROOF_EXPIRED' });
       pending = undefined;
       const saved = await prisma.client.signupPhoneChallenge.findUniqueOrThrow({
         where: { id: row.id },
@@ -674,9 +703,85 @@ describeIfDisposable('phone signup challenge on a disposable database', () => {
     }
     const calls = otp.verifyCalls;
     const blocked = await verify(phone, '222222');
-    expect(blocked.status).toBe(400);
-    expect(blocked.body.error).toBe('SIGNUP_VERIFICATION_FAILED');
+    expect(blocked.status).toBe(429);
+    expect(blocked.body.error).toBe('SIGNUP_VERIFICATION_LIMIT');
+    expect(blocked.body.details.retryAfterSeconds).toBeGreaterThanOrEqual(0);
     expect(otp.verifyCalls).toBe(calls);
+  });
+
+  it('rejects a stale code after a confirmed resend', async () => {
+    const phone = '09121110024';
+    otp.acceptedCode = '111111';
+    await start(phone).expect(201);
+    const first = await prisma.client.signupPhoneChallenge.findFirstOrThrow({
+      where: { status: SignupPhoneChallengeStatus.SENT },
+      orderBy: { createdAt: 'desc' },
+    });
+    await age(first.phoneHash, 61);
+    otp.acceptedCode = '222222';
+    await start(phone).expect(201);
+    const challenges = await prisma.client.signupPhoneChallenge.findMany({
+      where: { phoneHash: first.phoneHash },
+      orderBy: { createdAt: 'asc' },
+    });
+    expect(challenges.map((item) => item.status)).toEqual([
+      SignupPhoneChallengeStatus.INVALIDATED,
+      SignupPhoneChallengeStatus.SENT,
+    ]);
+
+    otp.mode = 'latest';
+    const stale = await verify(phone, '111111');
+    expect(stale.status).toBe(400);
+    expect(stale.body.error).toBe('SIGNUP_VERIFICATION_FAILED');
+    expect(stale.body).not.toHaveProperty('signupProof');
+    const fresh = await verify(phone, '222222').expect(201);
+    expect(typeof fresh.body.signupProof).toBe('string');
+  });
+
+  it('reports a superseded challenge without calling the provider', async () => {
+    const phone = '09121110025';
+    await start(phone).expect(201);
+    const row = await prisma.client.signupPhoneChallenge.findFirstOrThrow({
+      where: { status: SignupPhoneChallengeStatus.SENT },
+      orderBy: { createdAt: 'desc' },
+    });
+    await prisma.client.$executeRaw`
+      UPDATE signup_phone_challenges
+      SET status = 'INVALIDATED',
+          invalidated_at = clock_timestamp(),
+          updated_at = clock_timestamp()
+      WHERE id = ${row.id}::uuid
+        AND status = 'SENT'
+    `;
+    const calls = otp.verifyCalls;
+    const superseded = await verify(phone, '222222');
+    expect(superseded.status).toBe(409);
+    expect(superseded.body.error).toBe('SIGNUP_CHALLENGE_SUPERSEDED');
+    expect(otp.verifyCalls).toBe(calls);
+  });
+
+  it('distinguishes an expired signup proof at completion', async () => {
+    const phone = '09121110026';
+    await start(phone).expect(201);
+    const challenge = await prisma.client.signupPhoneChallenge.findFirstOrThrow({
+      where: { status: SignupPhoneChallengeStatus.SENT },
+      orderBy: { createdAt: 'desc' },
+    });
+    otp.mode = 'always';
+    const verified = await verify(phone, '222222').expect(201);
+    const proof = verified.body.signupProof as string;
+    const row = await prisma.client.signupPhoneChallenge.findUniqueOrThrow({
+      where: { id: challenge.id },
+    });
+    await prisma.client.$executeRaw`
+      UPDATE signup_phone_challenges
+      SET proof_expires_at = clock_timestamp() - interval '1 second',
+          updated_at = clock_timestamp()
+      WHERE id = ${row.id}::uuid
+    `;
+    await expect(consume.execute(proof, phone)).rejects.toMatchObject({
+      code: 'SIGNUP_PROOF_EXPIRED',
+    });
   });
 
   it('rejects a second open challenge for the same phone hash', async () => {

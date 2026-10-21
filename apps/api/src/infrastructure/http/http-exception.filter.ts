@@ -86,6 +86,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
             ? 'A required service is temporarily unavailable'
             : 'An unexpected error occurred'
           : exception.message,
+        ...(exception.details === undefined ? {} : { details: exception.details }),
         requestId,
       });
       return;

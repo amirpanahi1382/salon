@@ -16,3 +16,4 @@ apps/api/uploads
 tmp
 .dart_tool/
 apps/mobile/build/
+.aider*
