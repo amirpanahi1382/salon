@@ -32,10 +32,19 @@ class OnboardingProgress extends StatelessWidget {
       explicitChildNodes: true,
       child: Directionality(
         textDirection: TextDirection.rtl,
-        child: Padding(
-          padding: const EdgeInsets.only(
-            top: AppTokens.space8,
-            bottom: AppTokens.space12,
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(12, 16, 12, 12),
+          decoration: BoxDecoration(
+            color: AppTokens.surfaceGlass,
+            borderRadius: BorderRadius.circular(AppTokens.radiusLg),
+            border: Border.all(color: AppTokens.line),
+            boxShadow: [
+              BoxShadow(
+                color: AppTokens.accentSecondary.withValues(alpha: 0.10),
+                blurRadius: 24,
+                spreadRadius: -8,
+              ),
+            ],
           ),
           child: LayoutBuilder(
             builder: (context, constraints) {
@@ -43,7 +52,7 @@ class OnboardingProgress extends StatelessWidget {
               return Stack(
                 children: [
                   PositionedDirectional(
-                    top: 12,
+                    top: 22,
                     start: connectorInset,
                     end: connectorInset,
                     child: Row(
@@ -97,7 +106,11 @@ class _Step extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final active = current || complete;
-    final color = active ? onboardingCurrentGreen : AppTokens.textSecondary;
+    final color = complete
+        ? onboardingCurrentGreen
+        : current
+        ? AppTokens.accent
+        : AppTokens.textSecondary;
     final status = current
         ? '، مرحله فعلی'
         : complete
@@ -113,41 +126,56 @@ class _Step extends StatelessWidget {
           children: [
             Container(
               key: onboardingStepCircleKey(index),
-              width: 26,
-              height: 26,
+              width: 44,
+              height: 44,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: current
+                color: complete
                     ? onboardingCurrentGreen
-                    : complete
-                    ? onboardingCurrentGreen.withValues(alpha: 0.16)
-                    : Colors.transparent,
+                    : current
+                    ? AppTokens.accentSecondary
+                    : AppTokens.surfaceElevated,
                 border: Border.all(
-                  color: active ? onboardingCurrentGreen : AppTokens.line,
-                  width: current ? 2 : 1,
+                  color: complete
+                      ? onboardingCurrentGreen
+                      : current
+                      ? AppTokens.accent
+                      : AppTokens.line,
+                  width: current ? 2 : 1.2,
                 ),
               ),
               child: Center(
                 child: complete
                     ? const Icon(
                         Icons.check,
-                        size: 15,
-                        color: onboardingCurrentGreen,
+                        size: 22,
+                        color: AppTokens.onAccent,
                       )
-                    : Text(
-                        '${index + 1}',
-                        style: TextStyle(
-                          color: current
-                              ? AppTokens.bg
-                              : AppTokens.textSecondary,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          height: 1,
-                        ),
+                    : Icon(
+                        _stageIcon(index),
+                        size: 21,
+                        color: current
+                            ? AppTokens.textPrimary
+                            : AppTokens.textSecondary,
                       ),
               ),
             ),
-            const SizedBox(height: AppTokens.space4),
+            const SizedBox(height: AppTokens.space8),
+            Text(
+              'مرحله ${index + 1}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: active
+                    ? color.withValues(alpha: 0.85)
+                    : AppTokens.textSecondary,
+                fontSize: 10,
+                fontWeight: FontWeight.w500,
+                height: 1.2,
+              ),
+            ),
+            const SizedBox(height: 2),
             Text(
               label,
               key: onboardingStepLabelKey(index),
@@ -157,7 +185,9 @@ class _Step extends StatelessWidget {
               style: TextStyle(
                 color: color,
                 fontSize: 12,
-                fontWeight: current ? FontWeight.w700 : FontWeight.w500,
+                fontWeight: current || complete
+                    ? FontWeight.w700
+                    : FontWeight.w500,
                 height: 1.35,
               ),
             ),
@@ -166,6 +196,12 @@ class _Step extends StatelessWidget {
       ),
     );
   }
+
+  IconData _stageIcon(int index) => switch (index) {
+    0 => Icons.person_add_alt_1_rounded,
+    1 => Icons.description_outlined,
+    _ => Icons.account_balance_wallet_outlined,
+  };
 }
 
 class _Connector extends StatelessWidget {
@@ -176,10 +212,19 @@ class _Connector extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 2,
-      color: active
-          ? onboardingCurrentGreen.withValues(alpha: 0.55)
-          : AppTokens.line,
+      height: 3,
+      decoration: BoxDecoration(
+        color: active ? onboardingCurrentGreen : AppTokens.line,
+        borderRadius: BorderRadius.circular(99),
+        boxShadow: active
+            ? [
+                BoxShadow(
+                  color: onboardingCurrentGreen.withValues(alpha: 0.28),
+                  blurRadius: 8,
+                ),
+              ]
+            : null,
+      ),
     );
   }
 }

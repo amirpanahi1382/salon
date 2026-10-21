@@ -36,7 +36,7 @@ class AppTheme {
       onPrimary: AppTokens.onAccent,
       surface: AppTokens.surface,
       onSurface: AppTokens.textPrimary,
-      secondary: AppTokens.surfaceElevated,
+      secondary: AppTokens.accentSecondary,
       onSecondary: AppTokens.textPrimary,
       error: AppTokens.danger,
       onError: AppTokens.textPrimary,
@@ -48,7 +48,9 @@ class AppTheme {
       brightness: Brightness.dark,
       colorScheme: scheme,
       fontFamily: fontFamily,
-      scaffoldBackgroundColor: AppTokens.bg,
+      // The app-level backdrop paints the layered glassmorphism background.
+      // Scaffolds stay transparent so every route shares the same visual field.
+      scaffoldBackgroundColor: Colors.transparent,
     );
 
     TextStyle vazir({
@@ -74,9 +76,21 @@ class AppTheme {
             displayColor: AppTokens.textPrimary,
           )
           .copyWith(
-            displaySmall: vazir(size: 24, weight: FontWeight.w600, height: 1.45),
-            headlineMedium: vazir(size: 36, weight: FontWeight.w500, height: 1.2),
-            headlineSmall: vazir(size: 22, weight: FontWeight.w500, height: 1.35),
+            displaySmall: vazir(
+              size: 24,
+              weight: FontWeight.w600,
+              height: 1.45,
+            ),
+            headlineMedium: vazir(
+              size: 36,
+              weight: FontWeight.w500,
+              height: 1.2,
+            ),
+            headlineSmall: vazir(
+              size: 22,
+              weight: FontWeight.w500,
+              height: 1.35,
+            ),
             titleLarge: vazir(size: 20, weight: FontWeight.w600, height: 1.4),
             titleMedium: vazir(size: 16, weight: FontWeight.w600, height: 1.5),
             titleSmall: vazir(size: 14, weight: FontWeight.w500, height: 1.45),
@@ -95,7 +109,7 @@ class AppTheme {
             ),
           ),
       appBarTheme: AppBarTheme(
-        backgroundColor: AppTokens.bg,
+        backgroundColor: Colors.transparent,
         foregroundColor: AppTokens.textPrimary,
         elevation: 0,
         scrolledUnderElevation: 0,
@@ -113,7 +127,7 @@ class AppTheme {
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: AppTokens.surface,
+        fillColor: AppTokens.surfaceGlass,
         alignLabelWithHint: true,
         contentPadding: const EdgeInsets.symmetric(
           horizontal: AppTokens.space16,
@@ -151,7 +165,10 @@ class AppTheme {
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           foregroundColor: AppTokens.textPrimary,
-          minimumSize: const Size(AppTokens.buttonHeight, AppTokens.buttonHeight),
+          minimumSize: const Size(
+            AppTokens.buttonHeight,
+            AppTokens.buttonHeight,
+          ),
           side: const BorderSide(color: AppTokens.line),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(AppTokens.radiusMd),

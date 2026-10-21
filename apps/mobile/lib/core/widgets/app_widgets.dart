@@ -8,6 +8,76 @@ import '../../shared/labels.dart';
 
 enum AppSurfaceTone { base, elevated, hero }
 
+/// Shared page backdrop inspired by the reference glassmorphism composition.
+/// It is presentation-only: route content remains unchanged above these layers.
+class AppBackdrop extends StatelessWidget {
+  const AppBackdrop({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return ColoredBox(
+      color: AppTokens.bg,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: RadialGradient(
+                center: const Alignment(0.92, -0.92),
+                radius: 1.15,
+                colors: [
+                  AppTokens.accentSecondary.withValues(alpha: 0.50),
+                  Colors.transparent,
+                ],
+              ),
+            ),
+          ),
+          DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: RadialGradient(
+                center: const Alignment(-0.95, 0.78),
+                radius: 1.25,
+                colors: [
+                  AppTokens.accentDeep.withValues(alpha: 0.42),
+                  Colors.transparent,
+                ],
+              ),
+            ),
+          ),
+          DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: RadialGradient(
+                center: const Alignment(0.82, 0.78),
+                radius: 1.05,
+                colors: [
+                  AppTokens.accent.withValues(alpha: 0.20),
+                  Colors.transparent,
+                ],
+              ),
+            ),
+          ),
+          DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topRight,
+                end: Alignment.bottomLeft,
+                colors: [
+                  AppTokens.surfaceGlass.withValues(alpha: 0.30),
+                  Colors.transparent,
+                  AppTokens.accentSecondary.withValues(alpha: 0.10),
+                ],
+              ),
+            ),
+          ),
+          child,
+        ],
+      ),
+    );
+  }
+}
+
 class AppSurface extends StatelessWidget {
   const AppSurface({
     super.key,
@@ -31,7 +101,8 @@ class AppSurface extends StatelessWidget {
       AppSurfaceTone.elevated => AppTokens.surfaceElevated,
       AppSurfaceTone.hero => AppTokens.surfaceElevated,
     };
-    final resolvedRadius = radius ??
+    final resolvedRadius =
+        radius ??
         (tone == AppSurfaceTone.hero ? AppTokens.radiusLg : AppTokens.radiusMd);
     final content = Padding(
       padding: padding ?? const EdgeInsets.all(AppTokens.space16),
@@ -39,7 +110,14 @@ class AppSurface extends StatelessWidget {
     );
     final box = DecoratedBox(
       decoration: BoxDecoration(
-        color: color,
+        color: tone == AppSurfaceTone.hero ? null : color,
+        gradient: tone == AppSurfaceTone.hero
+            ? LinearGradient(
+                begin: Alignment.topRight,
+                end: Alignment.bottomLeft,
+                colors: [AppTokens.surfaceElevated, AppTokens.surfaceGlass],
+              )
+            : null,
         borderRadius: BorderRadius.circular(resolvedRadius),
         border: Border.all(
           color: tone == AppSurfaceTone.hero
@@ -123,20 +201,20 @@ class MetricWidget extends StatelessWidget {
     final theme = Theme.of(context);
     final valueStyle = switch (size) {
       MetricSize.hero => theme.textTheme.headlineMedium?.copyWith(
-          fontSize: 40,
-          height: 0.95,
-          fontWeight: FontWeight.w600,
-          letterSpacing: 0.4,
-          color: emphasize ? AppTokens.accent : null,
-          leadingDistribution: TextLeadingDistribution.even,
-        ),
+        fontSize: 40,
+        height: 0.95,
+        fontWeight: FontWeight.w600,
+        letterSpacing: 0.4,
+        color: emphasize ? AppTokens.accent : null,
+        leadingDistribution: TextLeadingDistribution.even,
+      ),
       MetricSize.standard => theme.textTheme.headlineSmall,
       MetricSize.compact => theme.textTheme.headlineSmall?.copyWith(
-          fontSize: 22,
-          height: 1.1,
-          fontWeight: FontWeight.w500,
-          leadingDistribution: TextLeadingDistribution.even,
-        ),
+        fontSize: 22,
+        height: 1.1,
+        fontWeight: FontWeight.w500,
+        leadingDistribution: TextLeadingDistribution.even,
+      ),
     };
     final valueText = Text(
       '$value',
@@ -218,11 +296,7 @@ class MetricRow extends StatelessWidget {
 }
 
 class QuietStat extends StatelessWidget {
-  const QuietStat({
-    super.key,
-    required this.label,
-    required this.value,
-  });
+  const QuietStat({super.key, required this.label, required this.value});
 
   final String label;
   final Object value;
@@ -414,6 +488,7 @@ class AppTextField extends StatelessWidget {
   final ValueChanged<String>? onChanged;
   final List<TextInputFormatter>? inputFormatters;
   final String? errorText;
+
   /// When true, the prompt stays inside the empty field instead of floating above it.
   final bool hintOnly;
   final bool readOnly;
@@ -457,7 +532,10 @@ class AppTextField extends StatelessWidget {
             ),
             errorBorder: OutlineInputBorder(
               borderRadius: radius,
-              borderSide: const BorderSide(color: AppTokens.danger, width: 1.25),
+              borderSide: const BorderSide(
+                color: AppTokens.danger,
+                width: 1.25,
+              ),
             ),
             focusedErrorBorder: OutlineInputBorder(
               borderRadius: radius,
@@ -583,11 +661,7 @@ class ErrorView extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(
-              Icons.error_outline,
-              color: AppTokens.danger,
-              size: 28,
-            ),
+            const Icon(Icons.error_outline, color: AppTokens.danger, size: 28),
             const SizedBox(height: AppTokens.space12),
             Text(message, textAlign: TextAlign.center),
             if (onRetry != null) ...[
@@ -636,12 +710,7 @@ class EmptyStateView extends StatelessWidget {
               children: [
                 Icon(icon, size: 20, color: AppTokens.textSecondary),
                 const SizedBox(width: AppTokens.space8),
-                Expanded(
-                  child: Text(
-                    title,
-                    style: theme.textTheme.bodyMedium,
-                  ),
-                ),
+                Expanded(child: Text(title, style: theme.textTheme.bodyMedium)),
               ],
             )
           else ...[
@@ -785,15 +854,17 @@ class OpportunityTypeMark extends StatelessWidget {
       label: label,
       child: Row(
         children: [
-          Icon(opportunityTypeIcon(type), size: AppTokens.iconSize, color: color),
+          Icon(
+            opportunityTypeIcon(type),
+            size: AppTokens.iconSize,
+            color: color,
+          ),
           const SizedBox(width: AppTokens.space8),
           Expanded(
             child: Text(
               label,
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    color: color,
-                    fontWeight: FontWeight.w600,
-                  ),
+              style: Theme.of(context).textTheme.titleSmall
+                  ?.copyWith(color: color, fontWeight: FontWeight.w600),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),
@@ -833,7 +904,8 @@ class ActionStatusMark extends StatelessWidget {
           Flexible(
             child: Text(
               label,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: color),
+              style: Theme.of(context).textTheme.bodySmall
+                  ?.copyWith(color: color),
             ),
           ),
         ],
@@ -868,14 +940,18 @@ class OpportunityCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final startSide = Directionality.of(context) == TextDirection.rtl
-        ? Border(right: BorderSide(
-            color: opportunityTypeEmphasis(type).withValues(alpha: 0.75),
-            width: 2,
-          ))
-        : Border(left: BorderSide(
-            color: opportunityTypeEmphasis(type).withValues(alpha: 0.75),
-            width: 2,
-          ));
+        ? Border(
+            right: BorderSide(
+              color: opportunityTypeEmphasis(type).withValues(alpha: 0.75),
+              width: 2,
+            ),
+          )
+        : Border(
+            left: BorderSide(
+              color: opportunityTypeEmphasis(type).withValues(alpha: 0.75),
+              width: 2,
+            ),
+          );
     final content = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1075,5 +1151,6 @@ bool shouldLoadNextPage(ScrollNotification notification) {
   if (notification.metrics.maxScrollExtent <= 0) {
     return false;
   }
-  return notification.metrics.pixels >= notification.metrics.maxScrollExtent - 240;
+  return notification.metrics.pixels >=
+      notification.metrics.maxScrollExtent - 240;
 }

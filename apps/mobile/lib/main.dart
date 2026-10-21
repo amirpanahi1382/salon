@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/routing/app_router.dart';
 import 'core/state/providers.dart';
 import 'core/theme/app_theme.dart';
+import 'core/widgets/app_widgets.dart';
 import 'shared/labels.dart';
 
 void main() {
@@ -41,6 +42,8 @@ class _SalonAppState extends ConsumerState<SalonApp> {
       theme: AppTheme.app(),
       darkTheme: AppTheme.app(),
       themeMode: ThemeMode.dark,
+      builder: (context, child) =>
+          AppBackdrop(child: child ?? const SizedBox.shrink()),
       routerConfig: router,
     );
   }

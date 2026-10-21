@@ -2,14 +2,19 @@ import 'package:flutter/material.dart';
 
 /// Central visual tokens. Screens should use these instead of raw Color/EdgeInsets.
 abstract final class AppTokens {
-  static const Color bg = Color(0xFF12110F);
-  static const Color surface = Color(0xFF1C1A18);
-  static const Color surfaceElevated = Color(0xFF262320);
-  static const Color line = Color(0xFF3A3530);
-  static const Color accent = Color(0xFFC4A574);
-  static const Color accentMuted = Color(0x33C4A574);
-  static const Color textPrimary = Color(0xFFF4EFE6);
-  static const Color textSecondary = Color(0xFF9A938A);
+  // Warm dark palette inspired by the selected premium onboarding reference.
+  // Keep semantic success/warning/danger colors separate from the brand accent.
+  static const Color bg = Color(0xFF0B090F);
+  static const Color surface = Color(0xFF17131A);
+  static const Color surfaceElevated = Color(0xFF211B2B);
+  static const Color surfaceGlass = Color(0xCC211B2B);
+  static const Color line = Color(0xFF3A3040);
+  static const Color accent = Color(0xFFD39362);
+  static const Color accentDeep = Color(0xFFB96A41);
+  static const Color accentSecondary = Color(0xFF827CB6);
+  static const Color accentMuted = Color(0x33D39362);
+  static const Color textPrimary = Color(0xFFF7F2F3);
+  static const Color textSecondary = Color(0xFFC5B6BA);
   static const Color success = Color(0xFF7A9A86);
   static const Color warning = Color(0xFFD4A05A);
   static const Color danger = Color(0xFFC47A72);

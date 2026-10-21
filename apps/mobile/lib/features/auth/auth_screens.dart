@@ -54,7 +54,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       _error = null;
     });
     try {
-      await ref.read(authControllerProvider.notifier).loginWithPhone(phone, password);
+      await ref
+          .read(authControllerProvider.notifier)
+          .loginWithPhone(phone, password);
     } catch (error) {
       setState(() => _error = loginErrorText(error));
     } finally {
@@ -184,10 +186,9 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       }
     });
     try {
-      final challenge = await ref.read(authRepositoryProvider).startPhoneSignup(
-            phone: phone,
-            idempotencyKey: key,
-          );
+      final challenge = await ref
+          .read(authRepositoryProvider)
+          .startPhoneSignup(phone: phone, idempotencyKey: key);
       if (mounted) {
         final responseAt = widget.now();
         setState(() {
@@ -297,7 +298,9 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       }
     });
     try {
-      await ref.read(authRepositoryProvider).completePhoneSignup(
+      await ref
+          .read(authRepositoryProvider)
+          .completePhoneSignup(
             phone: body.phone,
             signupProof: body.proof,
             salonName: body.salonName,
@@ -306,10 +309,9 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
             passwordConfirmation: body.passwordConfirmation,
             idempotencyKey: key,
           );
-      await ref.read(authControllerProvider.notifier).loginWithPhone(
-            body.phone,
-            body.password,
-          );
+      await ref
+          .read(authControllerProvider.notifier)
+          .loginWithPhone(body.phone, body.password);
       if (mounted) {
         setState(() {
           _completeAmbiguous = false;
@@ -343,7 +345,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   Widget build(BuildContext context) {
     final otpStep = _step == 1;
     return Scaffold(
-      backgroundColor: otpStep ? SignupOtpVisuals.background : null,
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
         title: Text(
           AppStrings.registerTitle,
@@ -354,7 +356,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                 )
               : null,
         ),
-        backgroundColor: otpStep ? SignupOtpVisuals.background : null,
+        backgroundColor: Colors.transparent,
         foregroundColor: otpStep ? SignupOtpVisuals.text : null,
         elevation: otpStep ? 0 : null,
         scrolledUnderElevation: otpStep ? 0 : null,
@@ -454,8 +456,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                             label: _step == 0
                                 ? AppStrings.sendSignupCode
                                 : AppStrings.createAccount,
-                            onPressed:
-                                _step == 0 ? _sendCode : _createAccount,
+                            onPressed: _step == 0 ? _sendCode : _createAccount,
                             loading: _loading,
                           ),
                           TextButton(

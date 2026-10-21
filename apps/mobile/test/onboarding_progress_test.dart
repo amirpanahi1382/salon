@@ -27,7 +27,7 @@ void main() {
     expect(find.text('ثبت‌نام'), findsOneWidget);
     expect(find.text('تأیید قوانین'), findsOneWidget);
     expect(find.text('تسویه و فعال‌سازی'), findsOneWidget);
-    expect(_label(tester, 0).style?.color, onboardingCurrentGreen);
+    expect(_label(tester, 0).style?.color, AppTokens.accent);
     expect(_label(tester, 0).style?.fontWeight, FontWeight.w700);
     expect(_label(tester, 1).style?.color, AppTokens.textSecondary);
     expect(_label(tester, 2).style?.color, AppTokens.textSecondary);
@@ -59,8 +59,8 @@ void main() {
 
     expect(find.byIcon(Icons.check), findsOneWidget);
     expect(_label(tester, 0).style?.color, onboardingCurrentGreen);
-    expect(_label(tester, 0).style?.fontWeight, FontWeight.w500);
-    expect(_label(tester, 1).style?.color, onboardingCurrentGreen);
+    expect(_label(tester, 0).style?.fontWeight, FontWeight.w700);
+    expect(_label(tester, 1).style?.color, AppTokens.accent);
     expect(_label(tester, 1).style?.fontWeight, FontWeight.w700);
     expect(_label(tester, 2).style?.color, AppTokens.textSecondary);
   });
@@ -73,7 +73,7 @@ void main() {
       expect(find.byIcon(Icons.check), findsNWidgets(2));
       expect(_label(tester, 0).style?.color, onboardingCurrentGreen);
       expect(_label(tester, 1).style?.color, onboardingCurrentGreen);
-      expect(_label(tester, 2).style?.color, onboardingCurrentGreen);
+      expect(_label(tester, 2).style?.color, AppTokens.accent);
       expect(_label(tester, 2).style?.fontWeight, FontWeight.w700);
     },
   );
