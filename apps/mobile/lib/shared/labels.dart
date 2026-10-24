@@ -2,7 +2,7 @@ import 'jalali.dart';
 import 'models/models.dart';
 
 class AppStrings {
-  static const appName = 'توجه سالن';
+  static const appName = 'جذب مشتری';
   static const loginTitle = 'ورود';
   static const mobileNumber = 'شماره موبایل';
   static const confirmPassword = 'تکرار رمز عبور';
@@ -95,7 +95,7 @@ class AppStrings {
   static const deactivateServiceBody =
       'در مراجعه‌های جدید قابل انتخاب نخواهد بود، اما سوابق قبلی حفظ می‌شوند.';
   static const noServices = 'هنوز خدمتی ثبت نشده.';
-  static const attentionQuestion = 'توجه سالن باید کدام سمت بره؟';
+  static const attentionQuestion = 'پیام بده، مشتری جذب کن، سالن‌تو رونق بده!';
   static const caughtUpTitle = 'الان مورد فوری ندارید.';
   static const caughtUpBody = 'الان مشتری‌ای نیست که لازم باشد دنبالش بروید.';
   static const noCustomers = 'هنوز مشتری‌ای ثبت نشده.';

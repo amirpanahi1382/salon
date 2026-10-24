@@ -62,6 +62,10 @@ void main() {
     expect(find.text(AppStrings.visits), findsOneWidget);
     expect(find.text(AppStrings.opportunities), findsOneWidget);
     expect(find.text(AppStrings.profile), findsOneWidget);
-    expect(AppStrings.attentionQuestion, 'توجه سالن باید کدام سمت بره؟');
+    expect(AppStrings.appName, 'جذب مشتری');
+    expect(
+      AppStrings.attentionQuestion,
+      'پیام بده، مشتری جذب کن، سالن‌تو رونق بده!',
+    );
   });
 }
