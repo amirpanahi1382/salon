@@ -63,7 +63,6 @@ These capabilities exist in the repository (API + schema + tests; Flutter unless
 - Platform admin queue; worker sends Bale
 - Flutter multi-select (session, max 30) + composer + server-authoritative status after submit
 - Return commitment after SENT customer outreach (agreed future return time, not a booking); arrival creates an actual Visit; Flutter shows commitments vs completed visits and associated recorded revenue where present
-- Owner recovery outcome view (EVENT, Tehran Saturday week): SENT follow-ups, recorded return commitments, commitment-backed Visits + associated recorded revenue, separate OBSERVED counts; no rates or causal claims
 
 ### VIP outreach
 

@@ -1759,10 +1759,6 @@ describeIfDisposable('visit intentions on a disposable database', () => {
       .set('Idempotency-Key', `vi-sale-history-${randomUUID()}`)
       .send({ time: { precision: 'UNKNOWN' }, disclosedDisplayName: 'فروش' })
       .expect(201);
-    const recoveryBefore = await request(app.getHttpServer())
-      .get('/recovery/outcomes/summary')
-      .set('Authorization', `Bearer ${salon.token}`)
-      .expect(200);
     const deliveriesBefore = await prisma.client.messageDelivery.count({ where: { salonId: salon.tenantId } });
     const visitedAt = new Date(Date.now() - 60_000).toISOString();
     const plain = await request(app.getHttpServer())
@@ -1817,11 +1813,6 @@ describeIfDisposable('visit intentions on a disposable database', () => {
     expect(followIds).not.toContain(noSale.body.id);
     expect(followIds).not.toContain(withSale.body.id);
 
-    const recoveryAfter = await request(app.getHttpServer())
-      .get('/recovery/outcomes/summary')
-      .set('Authorization', `Bearer ${salon.token}`)
-      .expect(200);
-    expect(recoveryAfter.body).toEqual(recoveryBefore.body);
     expect(await prisma.client.messageDelivery.count({ where: { salonId: salon.tenantId } })).toBe(deliveriesBefore);
     expect(await prisma.client.vipRequest.findUniqueOrThrow({ where: { id: vip.requestId } })).toMatchObject({
       status: 'SUBMITTED',

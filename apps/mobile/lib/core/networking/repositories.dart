@@ -698,32 +698,6 @@ class ReturnCommitmentRepository {
       return send();
     }
   }
-
-  Future<RecoveryOutcomesSummary> outcomesSummary({DateTime? weekStart}) async {
-    final data = await _api.get(
-      '/recovery/outcomes/summary',
-      query: weekStart == null
-          ? null
-          : {'weekStart': toApiInstant(weekStart)},
-    );
-    return RecoveryOutcomesSummary.fromJson(asJsonMap(data));
-  }
-
-  Future<ItemPage<RecoveryOutcomeReturnItem>> outcomeReturns({
-    required String kind,
-    DateTime? weekStart,
-    String? cursor,
-  }) async {
-    final data = await _api.get(
-      '/recovery/outcomes/returns',
-      query: {
-        'kind': kind,
-        if (weekStart != null) 'weekStart': toApiInstant(weekStart),
-        if (cursor != null && cursor.isNotEmpty) 'cursor': cursor,
-      },
-    );
-    return parseItemPage(data, RecoveryOutcomeReturnItem.fromJson);
-  }
 }
 
 class AdminMessageRepository {

@@ -19,7 +19,6 @@ import 'package:salon_mobile/features/opportunities/opportunities_screen.dart';
 import 'package:salon_mobile/features/outreach/outreach_message_composer.dart';
 import 'package:salon_mobile/features/profile/profile_screen.dart';
 import 'package:salon_mobile/features/recovery/open_agreed_returns_screen.dart';
-import 'package:salon_mobile/features/recovery/recovery_outcomes_screen.dart';
 import 'package:salon_mobile/features/services/service_screens.dart';
 import 'package:salon_mobile/features/shell/app_shell.dart';
 import 'package:salon_mobile/features/visits/visits_screen.dart';
@@ -1087,15 +1086,16 @@ void main() {
     expect(find.text(AppStrings.metricReturningSalonCustomers), findsOneWidget);
     expect(find.text(toPersianDigits('3')), findsOneWidget);
     expect(find.text(toPersianDigits('4')), findsOneWidget);
-    expect(find.text(AppStrings.recoveryOutcomesTitle), findsOneWidget);
+    expect(find.text(AppStrings.followUpsTitle), findsOneWidget);
+    expect(find.text('نتیجه ارسال پیام‌ها'), findsNothing);
     expect(find.text('نتیجه پیگیری‌ها'), findsNothing);
     final overallY = tester
         .getTopLeft(find.text(AppStrings.overallPerformanceTitle))
         .dy;
-    final resultsY = tester
-        .getTopLeft(find.text(AppStrings.recoveryOutcomesTitle))
+    final followUpsY = tester
+        .getTopLeft(find.text(AppStrings.followUpsTitle))
         .dy;
-    expect(overallY, lessThan(resultsY));
+    expect(overallY, lessThan(followUpsY));
     expect(find.byType(MetricRow), findsNWidgets(3));
   });
 
@@ -1228,7 +1228,8 @@ void main() {
     expect(find.text('عرفان صابری'), findsNothing);
     expect(find.text(AppStrings.metricRevenueThisMonth), findsNothing);
     expect(find.text(AppStrings.overallPerformanceTitle), findsOneWidget);
-    expect(find.text(AppStrings.recoveryOutcomesTitle), findsOneWidget);
+    expect(find.text(AppStrings.followUpsTitle), findsOneWidget);
+    expect(find.text('نتیجه ارسال پیام‌ها'), findsNothing);
   });
 
   testWidgets('account no longer shows attention or overall performance', (
@@ -2547,10 +2548,6 @@ void main() {
           path: '/open-returns',
           builder: (context, state) => const OpenAgreedReturnsScreen(),
         ),
-        GoRoute(
-          path: '/recovery',
-          builder: (context, state) => const RecoveryOutcomesScreen(),
-        ),
       ],
     );
     await tester.pumpWidget(
@@ -2578,16 +2575,14 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text(AppStrings.recoveryOutcomesTitle), findsNothing);
-    expect(find.text(AppStrings.recoverySentFollowUps), findsNothing);
+    expect(find.text('نتیجه ارسال پیام‌ها'), findsNothing);
     expect(find.text(AppStrings.openAgreedReturnsTitle), findsOneWidget);
     await tester.tap(find.text(AppStrings.openAgreedReturnsTitle));
     await tester.pumpAndSettle();
     expect(find.text('عرفان صابری'), findsOneWidget);
     expect(find.text(AppStrings.callCustomer), findsOneWidget);
     expect(find.text(AppStrings.openAgreedReturnsTitle), findsWidgets);
-    expect(find.text(AppStrings.recoverySentFollowUps), findsNothing);
-    expect(find.text(AppStrings.recoveryCommitmentBackedReturns), findsNothing);
+    expect(find.text('نتیجه ارسال پیام‌ها'), findsNothing);
   });
 
   testWidgets('customer detail keeps an inactive historical service name', (

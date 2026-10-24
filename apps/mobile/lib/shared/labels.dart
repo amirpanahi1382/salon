@@ -240,20 +240,6 @@ class AppStrings {
       'زمان مراجعهٔ واقعی را ثبت کنید. این همان زمان توافق‌شده نیست.';
   static const agreedAtLabel = 'توافق شده';
   static const actualVisitLabel = 'مراجعه واقعی';
-  static const recoveryOutcomesTitle = 'نتیجه ارسال پیام‌ها';
-  static const recoveryOutcomesHint =
-      'این خلاصه ثبت‌های هفته انتخاب‌شده است؛ دلیل مراجعه را مشخص نمی‌کند.';
-  static const recoverySentFollowUps = 'پیگیری ارسال‌شده';
-  static const recoveryCommitmentsRecorded = 'زمان مراجعه توافق‌شده ثبت شد';
-  static const recoveryCommitmentBackedReturns = 'مراجعه با توافق ثبت‌شده';
-  static const recoveryCommitmentBackedRevenue = 'درآمد ثبت‌شده روی این مراجعه‌ها';
-  static const recoveryObservedReturns = 'مراجعه پس از پیام';
-  static const recoveryObservedWeaker =
-      'این ارتباط مشاهده‌شده است؛ توافق ثبت‌شده ندارد.';
-  static const recoveryOutcomesEmpty = 'در این هفته هنوز موردی ثبت نشده.';
-  static const recoveryPreviousWeek = 'هفته قبل';
-  static const recoveryCurrentWeek = 'هفته جاری';
-  static const recoveryOutcomesOpen = 'دیدن نتیجه ارسال پیام‌ها';
   static const overallPerformanceTitle = 'عملکرد کلی';
   static const metricSalonCustomers = 'مشتریان سالن';
   static const metricSalonCustomerSentMessages = 'پیام مشتریان سالن با ثبت ارسال';
@@ -261,7 +247,6 @@ class AppStrings {
   static const metricAgreedReturns = 'وقت توافق شده';
   static const metricMessageAssociatedReturns = 'مشتری برگشتی توسط پیام';
   static const metricReturningSalonCustomers = 'مشتری برگشتی سالن';
-  static const recoveryDrillDownHint = 'فهرست مراجعه‌ها';
   static const recoveryCommitmentBackedTitle = 'بازگشت ثبت‌شده پس از پیگیری';
   static const recoveryCommitmentBackedBody =
       'مشتری پس از پیگیری، زمان مراجعه اعلام کرد و مراجعه انجام شد.';

@@ -16,7 +16,6 @@ import { SalonModule } from './salon/salon.module';
 import { UserModule } from './user/user.module';
 import { CustomerModule } from './customer/customer.module';
 import { ObservedOutcomeModule } from './observed-outcome/observed-outcome.module';
-import { RecoveryOutcomesModule } from './recovery-outcomes/recovery-outcomes.module';
 import { ReturnCommitmentModule } from './return-commitment/return-commitment.module';
 import { VisitModule } from './visit/visit.module';
 import { ServiceModule } from './service/service.module';
@@ -100,7 +99,6 @@ import type { AppRequest } from './infrastructure/http/request-context';
     UserModule,
     CustomerModule,
     ObservedOutcomeModule,
-    RecoveryOutcomesModule,
     ReturnCommitmentModule,
     VisitModule,
     ServiceModule,

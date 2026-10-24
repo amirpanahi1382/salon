@@ -1,6 +1,6 @@
 import { ValidationError } from './errors.js';
 
-/** Owner recovery reporting timezone. Stored timestamps remain UTC instants. */
+/** Owner reporting timezone. Stored timestamps remain UTC instants. */
 export const OWNER_REPORTING_TIMEZONE = 'Asia/Tehran' as const;
 
 const DAYS_FROM_SATURDAY: Record<string, number> = {

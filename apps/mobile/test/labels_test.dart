@@ -152,7 +152,7 @@ void main() {
   });
 
   test('owner-required dashboard and navigation copy is exact', () {
-    expect(AppStrings.recoveryOutcomesTitle, 'نتیجه ارسال پیام‌ها');
+    expect(AppStrings.followUpsTitle, 'پیگیری‌ها');
     expect(AppStrings.overallPerformanceTitle, 'عملکرد کلی');
     expect(AppStrings.customers, 'مشتریان');
     expect(AppStrings.visits, 'نوبت انجام شده');

@@ -12,7 +12,6 @@ import { syntheticMobile } from './support/phone-account';
 const describeIfDb = process.env.DATABASE_URL ? describe : describe.skip;
 const password = 'correct-horse-battery';
 const adminPassword = 'platform-admin-pass';
-const WEEK_START = '2026-09-11T20:30:00.000Z';
 
 describeIfDb('Operational ReturnCommitment settlement without attribution (e2e)', () => {
   let app: INestApplication;
@@ -226,7 +225,7 @@ describeIfDb('Operational ReturnCommitment settlement without attribution (e2e)'
     ).toBe(true);
   });
 
-  it('TEST 3 complete-with-sale settles operations and does not enter CB headline revenue', async () => {
+  it('TEST 3 complete-with-sale settles operations and does not become COMMITMENT_BACKED', async () => {
     const salon = await registerOwner('ops-sale');
     const customer = await createCustomer(salon.token, 'Sale');
     const submittedAt = new Date('2026-09-12T08:00:00.000Z');
@@ -274,20 +273,19 @@ describeIfDb('Operational ReturnCommitment settlement without attribution (e2e)'
       .expect(200);
     expect(listed.body.items[0].actualVisitId).toBeNull();
     expect(listed.body.items[0].operationallyOpen).toBe(false);
+    expect(listed.body.items[0].commitmentBackedReturn).toBeNull();
     expect(await openCustomerIds(salon.token)).not.toContain(customer.id);
 
-    const summary = await request(app.getHttpServer())
-      .get('/recovery/outcomes/summary')
-      .query({ weekStart: WEEK_START })
+    const observed = await request(app.getHttpServer())
+      .get(`/customers/${customer.id}/observed-returns`)
       .set('Authorization', `Bearer ${salon.token}`)
       .expect(200);
-    expect(summary.body.commitmentBackedReturns).toBe(0);
-    expect(summary.body.commitmentBackedRecordedRevenue).toEqual({
-      recorded: false,
-      currency: 'IRR',
-      amount: null,
-    });
-    expect(summary.body.observedReturns).toBeGreaterThanOrEqual(1);
+    expect(
+      observed.body.items.some(
+        (row: { observedReturn: { visitId: string } }) =>
+          row.observedReturn.visitId === sold.body.visit.id,
+      ),
+    ).toBe(true);
 
     const intelligence = await request(app.getHttpServer())
       .get(`/intelligence/customers/${customer.id}`)
@@ -545,7 +543,7 @@ describeIfDb('Operational ReturnCommitment settlement without attribution (e2e)'
     expect(linked.body.operationallyOpen).toBe(false);
   });
 
-  it('TEST 12 unlinked COMPLETED revenue stays out of CB headline; explicit CB revenue stays in', async () => {
+  it('TEST 12 unlinked COMPLETED sale stays OBSERVED; explicit arrive stays COMMITMENT_BACKED', async () => {
     const salon = await registerOwner('ops-rev');
     const unlinkedCustomer = await createCustomer(salon.token, 'UnlinkedRev');
     const linkedCustomer = await createCustomer(salon.token, 'LinkedRev');
@@ -616,36 +614,32 @@ describeIfDb('Operational ReturnCommitment settlement without attribution (e2e)'
       })
       .expect(201);
 
-    const summary = await request(app.getHttpServer())
-      .get('/recovery/outcomes/summary')
-      .query({ weekStart: WEEK_START })
+    const unlinkedCommitments = await request(app.getHttpServer())
+      .get(`/customers/${unlinkedCustomer.id}/return-commitments`)
       .set('Authorization', `Bearer ${salon.token}`)
       .expect(200);
-    expect(summary.body.commitmentBackedReturns).toBe(1);
-    expect(summary.body.commitmentBackedRecordedRevenue).toEqual({
+    expect(unlinkedCommitments.body.items[0].actualVisitId).toBeNull();
+    expect(unlinkedCommitments.body.items[0].commitmentBackedReturn).toBeNull();
+    expect(unlinkedCommitments.body.items[0].operationallyOpen).toBe(false);
+
+    const unlinkedObserved = await request(app.getHttpServer())
+      .get(`/customers/${unlinkedCustomer.id}/observed-returns`)
+      .set('Authorization', `Bearer ${salon.token}`)
+      .expect(200);
+    expect(unlinkedObserved.body.items.length).toBeGreaterThanOrEqual(1);
+
+    const linkedCommitments = await request(app.getHttpServer())
+      .get(`/customers/${linkedCustomer.id}/return-commitments`)
+      .set('Authorization', `Bearer ${salon.token}`)
+      .expect(200);
+    expect(linkedCommitments.body.items[0].actualVisitId).toBe(arrived.body.actualVisitId);
+    expect(linkedCommitments.body.items[0].commitmentBackedReturn.associationKind).toBe(
+      'COMMITMENT_BACKED',
+    );
+    expect(linkedCommitments.body.items[0].commitmentBackedReturn.associatedRevenue).toEqual({
       recorded: true,
       currency: 'IRR',
       amount: '300000.00',
     });
-
-    const cb = await request(app.getHttpServer())
-      .get('/recovery/outcomes/returns')
-      .query({ kind: 'COMMITMENT_BACKED', weekStart: WEEK_START })
-      .set('Authorization', `Bearer ${salon.token}`)
-      .expect(200);
-    expect(cb.body.items).toHaveLength(1);
-    expect(cb.body.items[0].visitId).toBe(arrived.body.actualVisitId);
-
-    const observed = await request(app.getHttpServer())
-      .get('/recovery/outcomes/returns')
-      .query({ kind: 'OBSERVED', weekStart: WEEK_START })
-      .set('Authorization', `Bearer ${salon.token}`)
-      .expect(200);
-    expect(
-      observed.body.items.some((row: { customer: { id: string } }) => row.customer.id === unlinkedCustomer.id),
-    ).toBe(true);
-    expect(
-      observed.body.items.some((row: { visitId: string }) => row.visitId === arrived.body.actualVisitId),
-    ).toBe(false);
   });
 });

@@ -18,7 +18,7 @@ One product, **two NestJS deployables** plus a Flutter client:
 
 Do not merge API and worker into one HTTP process. Do not split domains into microservices.
 
-Internal API layout is use-case modules (`auth`, `agreement`, `activation`, `salon`, `user`, `customer`, `visit`, `service`, `transaction`, `intelligence`, `action`, `messaging`, `vip`, support and recovery/outcome modules) plus `infrastructure/*`.
+Internal API layout is use-case modules (`auth`, `agreement`, `activation`, `salon`, `user`, `customer`, `visit`, `service`, `transaction`, `intelligence`, `action`, `messaging`, `vip`, support, return-commitment, and observed-outcome modules) plus `infrastructure/*`.
 
 ---
 

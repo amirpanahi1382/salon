@@ -19,7 +19,6 @@ import '../../features/dashboard/dashboard_screen.dart';
 import '../../features/followups/follow_ups_screen.dart';
 import '../../features/opportunities/opportunities_screen.dart';
 import '../../features/recovery/open_agreed_returns_screen.dart';
-import '../../features/recovery/recovery_outcomes_screen.dart';
 import '../../features/profile/profile_screen.dart';
 import '../../features/services/service_screens.dart';
 import '../../features/shell/app_shell.dart';
@@ -185,10 +184,6 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/profile',
             builder: (context, state) => const ProfileScreen(),
-          ),
-          GoRoute(
-            path: '/recovery',
-            builder: (context, state) => const RecoveryOutcomesScreen(),
           ),
           GoRoute(
             path: '/open-returns',

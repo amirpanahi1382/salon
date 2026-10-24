@@ -70,7 +70,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     }
     final performance = _performance!;
     final theme = Theme.of(context);
-    final isOwnerOrManager = user?.role == 'OWNER' || user?.role == 'MANAGER';
     final isStaff = user?.role == 'STAFF';
     return Scaffold(
       appBar: AppBar(
@@ -132,24 +131,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                   ),
                 ),
                 const SizedBox(height: AppTokens.space16),
-                if (isOwnerOrManager)
-                  AppSurface(
-                    onTap: () => context.push('/recovery'),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Text(
-                          AppStrings.recoveryOutcomesTitle,
-                          style: theme.textTheme.titleMedium,
-                        ),
-                        const SizedBox(height: AppTokens.space8),
-                        Text(
-                          AppStrings.recoveryOutcomesOpen,
-                          style: theme.textTheme.bodySmall,
-                        ),
-                      ],
-                    ),
-                  ),
                 if (isStaff)
                   OpenAgreedReturnsEntry(
                     onTap: () => context.push('/open-returns'),
