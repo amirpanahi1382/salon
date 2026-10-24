@@ -13,7 +13,6 @@ import '../../shared/jalali.dart';
 import '../../shared/jalali_date_picker.dart';
 import '../../shared/labels.dart';
 import '../../shared/models/models.dart';
-import '../opportunities/opportunity_action_bar.dart';
 import '../outreach/manual_outreach_selection.dart';
 import '../outreach/manual_outreach_state.dart';
 import '../recovery/recovery_presentation.dart';
@@ -573,7 +572,6 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
   List<MessageDelivery> get _messages => _messagesPage.items;
   List<ReturnCommitment> get _commitments => _commitmentsPage.items;
   List<ObservedReturn> get _observedReturns => _observedPage.items;
-  Map<String, OpportunityAction> _openActions = const {};
   Object? _error;
   bool _loading = true;
   int _loadGeneration = 0;
@@ -611,9 +609,6 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
       final activity = await ref
           .read(customerRepositoryProvider)
           .listActivity(widget.customerId);
-      final openActions = await ref
-          .read(actionRepositoryProvider)
-          .listForCustomer(widget.customerId, status: 'OPEN');
       if (!mounted || generation != _loadGeneration) {
         return;
       }
@@ -626,11 +621,6 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
         _activity = activity.items;
         _activityCursor = activity.nextCursor;
         _activityHasMore = activity.hasMore;
-        _openActions = {
-          for (final action in openActions.items)
-            opportunityActionKey(action.customerId, action.opportunityType):
-                action,
-        };
         _loading = false;
       });
       await _loadRecovery();
@@ -1029,9 +1019,7 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
     final customer = _customer!;
     final intelligence = _intelligence;
     final canManage = ref.watch(authControllerProvider).user?.role != 'STAFF';
-    return OpportunityActionsScope(
-      onChanged: _load,
-      child: Scaffold(
+    return Scaffold(
       appBar: AppBar(
         title: Text(customer.fullName),
         actions: [
@@ -1129,70 +1117,6 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    StatusBadge(status: intelligence.status),
-                    const SizedBox(height: 16),
-                    Text(
-                      AppStrings.why,
-                      style: Theme.of(context).textTheme.titleSmall,
-                    ),
-                    const SizedBox(height: 8),
-                    Text(localizeIntelligenceCopy(intelligence.explanation)),
-                    if (intelligence.opportunities.isNotEmpty) ...[
-                      const SizedBox(height: 16),
-                      Text(
-                        AppStrings.recommended,
-                        style: Theme.of(context).textTheme.titleSmall,
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        localizeIntelligenceCopy(
-                          intelligence.opportunities.first.recommendedAction,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      const Text(
-                        AppStrings.recommendationNote,
-                        style: TextStyle(fontSize: 12),
-                      ),
-                      const SizedBox(height: 12),
-                      ...intelligence.opportunities.map(
-                        (opportunity) => Padding(
-                          padding: const EdgeInsets.only(bottom: 8),
-                          child: OpportunityActionBar(
-                            customerId: opportunity.customerId,
-                            opportunityType: opportunity.type,
-                            customerName: customer.fullName,
-                            destinationHint: maskCustomerPhone(customer.phoneNumber),
-                            openAction: _openActions[opportunityActionKey(
-                              opportunity.customerId,
-                              opportunity.type,
-                            )],
-                          ),
-                        ),
-                      ),
-                    ],
-                    if (intelligence.signals.isNotEmpty) ...[
-                      const SizedBox(height: 16),
-                      Wrap(
-                        spacing: 8,
-                        children: intelligence.signals
-                            .map(
-                              (signal) =>
-                                  Chip(label: Text(signalLabel(signal))),
-                            )
-                            .toList(),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-            ],
-            if (intelligence != null) ...[
-              AppCard(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
                     Text(
                       AppStrings.completedRevenueTitle,
                       style: Theme.of(context).textTheme.titleSmall,
@@ -1202,7 +1126,7 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                       '${intelligence.revenue?.totalRevenue ?? '0.00'} ${AppStrings.rial}',
                     ),
                     Text(
-                      '${toPersianDigits('${intelligence.revenue?.transactionCount ?? 0}')} تراکنش تکمیل‌شده · ${AppStrings.revenueUtcNote}',
+                      '${toPersianDigits('${intelligence.revenue?.transactionCount ?? 0}')} تراکنش تکمیل‌شده',
                     ),
                     if (intelligence.revenue?.averageSpendPerVisit != null)
                       Text(
@@ -1213,11 +1137,6 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                       Text(
                         '${AppStrings.avgRevenuePerTransaction} ${intelligence.revenue!.averageRevenuePerTransaction} ${AppStrings.rial}',
                       ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      AppStrings.revenueOnlyCompletedNote,
-                      style: TextStyle(fontSize: 12, height: 1.6),
-                    ),
                   ],
                 ),
               ),
@@ -1308,7 +1227,6 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
         ),
         ),
       ),
-    ),
     );
   }
 }

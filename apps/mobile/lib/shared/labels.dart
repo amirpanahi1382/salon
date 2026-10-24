@@ -154,7 +154,7 @@ class AppStrings {
   static const messageTextLabel = 'متن پیام';
   static const confirmSendMessage = 'ارسال شود؟';
   static const confirmSendMessageBody =
-      'پیام در صف ارسال قرار می‌گیرد. ارسال از بله یا به‌صورت دستی بعداً توسط پلتفرم انجام می‌شود.';
+      'پیام در صف ارسال توسط ادمین قرار می‌گیرد. از ارسال اطمینان دارید؟';
   static const sendMessage = 'ارسال';
   static const messageQueued = 'پیام در صف ارسال قرار گرفت.';
   static const messageSent = 'پیام با موفقیت ارسال شد.';
@@ -517,11 +517,8 @@ class AppStrings {
   static const metricRevenueThisMonth = 'درآمد این ماه';
   static const metricCompletedRevenue = 'درآمد ثبت‌شده';
   static const completedRevenueTitle = 'درآمد ثبت‌شده (ریال)';
-  static const revenueUtcNote = 'گزارش بر اساس ماه تقویمی UTC است.';
   static const avgSpendPerVisit = 'میانگین هزینه هر مراجعه';
   static const avgRevenuePerTransaction = 'میانگین هر تراکنش';
-  static const revenueOnlyCompletedNote =
-      'فقط مبلغ مراجعه‌های انجام‌شده اینجاست. همراه همان مراجعه ثبت می‌شود.';
   static const emptyVisitHistoryBody =
       'وقتی مشتری آمده و کارش تمام شده، مراجعه را همین‌جا ثبت کنید.';
   static const signedIn = 'وارد شده‌اید';

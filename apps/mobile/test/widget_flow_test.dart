@@ -1562,7 +1562,7 @@ void main() {
     expect(find.text('هنوز پیام ارسالی ثبت نشده.'), findsOneWidget);
   });
 
-  testWidgets('customer detail renders status reason action and visits', (
+  testWidgets('customer detail renders revenue and visits without status card', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -1600,9 +1600,11 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('در آستانه از دست رفتن'), findsWidgets);
-    expect(find.textContaining('۵۲'), findsWidgets);
-    expect(find.textContaining('یک پیام یادآوری بفرستید'), findsOneWidget);
+    expect(find.text('در آستانه از دست رفتن'), findsNothing);
+    expect(find.text('مشتری جدید'), findsNothing);
+    expect(find.text('چرا'), findsNothing);
+    expect(find.text('درآمد ثبت‌شده (ریال)'), findsOneWidget);
+    expect(find.textContaining('یک پیام یادآوری بفرستید'), findsNothing);
     await tester.drag(find.byType(ListView), const Offset(0, -800));
     await tester.pumpAndSettle();
     expect(find.text('Hair Service · 8000000.00 ریال'), findsOneWidget);
