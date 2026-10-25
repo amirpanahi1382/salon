@@ -143,4 +143,46 @@ export class MessageRepository {
       take: MESSAGE_LIST_LIMIT + 1,
     });
   }
+
+  /**
+   * All ordinary (non-VIP) MessageRequests for the salon, newest first.
+   * Does not restrict to today's business date or latest-per-customer.
+   * Body text is omitted from the select.
+   */
+  listOrdinaryHistory(tenantId: string, cursor?: { requestedAt: Date; id: string }) {
+    return this.prisma.client.messageRequest.findMany({
+      where: {
+        salonId: tenantId,
+        customerId: { not: null },
+        vipRequestId: null,
+        ...(cursor
+          ? {
+              OR: [
+                { requestedAt: { lt: cursor.requestedAt } },
+                { requestedAt: cursor.requestedAt, id: { lt: cursor.id } },
+              ],
+            }
+          : {}),
+      },
+      select: {
+        id: true,
+        customerId: true,
+        opportunityType: true,
+        status: true,
+        requestedAt: true,
+        recipientPhoneNumber: true,
+        customer: { select: { firstName: true, lastName: true } },
+        deliveries: {
+          select: {
+            status: true,
+            mode: true,
+            submittedAt: true,
+          },
+          take: 1,
+        },
+      },
+      orderBy: [{ requestedAt: 'desc' as const }, { id: 'desc' as const }],
+      take: MESSAGE_LIST_LIMIT + 1,
+    });
+  }
 }

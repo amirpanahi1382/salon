@@ -8,9 +8,10 @@ import { RolesGuard } from '../infrastructure/auth/roles.guard';
 import { UuidParam } from '../infrastructure/http/uuid-param';
 import { GetCustomerIntelligenceUseCase } from './get-customer-intelligence.use-case';
 import { GetIntelligenceSummaryUseCase } from './get-intelligence-summary.use-case';
-import { IntelligenceQueryDto } from './intelligence.dto';
+import { IntelligenceQueryDto, RevenueDropsQueryDto } from './intelligence.dto';
 import { ListCustomerSegmentsUseCase } from './list-customer-segments.use-case';
 import { ListOpportunitiesUseCase } from './list-opportunities.use-case';
+import { ListRevenueDropsUseCase } from './list-revenue-drops.use-case';
 
 @ApiTags('intelligence')
 @ApiBearerAuth()
@@ -23,6 +24,7 @@ export class IntelligenceController {
     private readonly listOpportunities: ListOpportunitiesUseCase,
     private readonly listSegments: ListCustomerSegmentsUseCase,
     private readonly getSummary: GetIntelligenceSummaryUseCase,
+    private readonly listRevenueDrops: ListRevenueDropsUseCase,
   ) {}
 
   @Get('summary')
@@ -31,6 +33,18 @@ export class IntelligenceController {
   })
   summary(@CurrentUser() user: AuthenticatedPrincipal) {
     return this.getSummary.execute(user);
+  }
+
+  @Get('revenue-drops')
+  @ApiOperation({
+    summary:
+      'Customers whose COMPLETED (non-VOIDED) transaction revenue in the previous comparable Jalali month window exceeds revenue in the current Jalali month to as-of, Asia/Tehran. Cursor carries a fixed asOf for the browsing session; refresh omits the cursor. Live ledger read (not a DB snapshot). Not the visit-lapse REVENUE_DROP workspace proxy.',
+  })
+  revenueDrops(
+    @CurrentUser() user: AuthenticatedPrincipal,
+    @Query() query: RevenueDropsQueryDto,
+  ) {
+    return this.listRevenueDrops.execute(user, query.cursor);
   }
 
   @Get('opportunities')

@@ -23,7 +23,8 @@ import { RolesGuard } from '../infrastructure/auth/roles.guard';
 import { requireIdempotencyKey } from '../infrastructure/http/idempotency';
 import { UuidParam } from '../infrastructure/http/uuid-param';
 import { VIP_SAMPLE_WORK_FIELD, VIP_SAMPLE_WORK_MAX_BYTES } from './vip.constants';
-import { CreateVipRequestDto, SalonVipListsQueryDto } from './vip.dto';
+import { CreateVipRequestDto, SalonVipListsQueryDto, SalonVipRequestHistoryQueryDto } from './vip.dto';
+import { ListSalonVipRequestHistoryUseCase } from './list-salon-vip-request-history.use-case';
 import {
   CreateVipRequestUseCase,
   DownloadVipSampleWorkUseCase,
@@ -45,6 +46,7 @@ export class SalonVipController {
     private readonly capability: GetVipCapabilityUseCase,
     private readonly regions: ListVipRegionsUseCase,
     private readonly lists: ListActiveVipListsUseCase,
+    private readonly requestHistory: ListSalonVipRequestHistoryUseCase,
     private readonly createRequest: CreateVipRequestUseCase,
     private readonly getRequest: GetSalonVipRequestUseCase,
     private readonly uploadSample: UploadVipSampleWorkUseCase,
@@ -76,6 +78,18 @@ export class SalonVipController {
   })
   list(@CurrentUser() user: AuthenticatedPrincipal, @Query() query: SalonVipListsQueryDto) {
     return this.lists.execute(user, query.regionCode);
+  }
+
+  @Get('requests')
+  @ApiOperation({
+    summary:
+      'Read-only paginated history of every VipRequest for this salon, including after entitlement revocation. Live progress derives expiry display from reservedUntil; this GET does not cancel drafts. Target-list phones are never returned. GET /vip/capability remains the bounded recent summary.',
+  })
+  listRequests(
+    @CurrentUser() user: AuthenticatedPrincipal,
+    @Query() query: SalonVipRequestHistoryQueryDto,
+  ) {
+    return this.requestHistory.execute(user, query.cursor);
   }
 
   @Post('requests')

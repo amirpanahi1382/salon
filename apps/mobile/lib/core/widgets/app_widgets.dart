@@ -722,12 +722,14 @@ class EmptyStateView extends StatelessWidget {
               textAlign: TextAlign.center,
             ),
           ],
-          const SizedBox(height: AppTokens.space8),
-          Text(
-            body,
-            style: theme.textTheme.bodySmall,
-            textAlign: compact ? TextAlign.start : TextAlign.center,
-          ),
+          if (body.isNotEmpty) ...[
+            const SizedBox(height: AppTokens.space8),
+            Text(
+              body,
+              style: theme.textTheme.bodySmall,
+              textAlign: compact ? TextAlign.start : TextAlign.center,
+            ),
+          ],
           if (action != null) ...[
             const SizedBox(height: AppTokens.space16),
             action!,

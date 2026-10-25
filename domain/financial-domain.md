@@ -78,6 +78,11 @@ Create/update service, create/void transaction: `OWNER`, `MANAGER` only.
 
 - `totalRevenue` — sum of completed amounts  
 - `transactionCount` — completed rows  
+
+## Opportunities monetary revenue drop
+
+`GET /intelligence/revenue-drops` compares **COMPLETED** transaction amounts only (VOIDED excluded) across comparable Jalali calendar months in **Asia/Tehran**. The previous window runs from the previous month start through the comparable elapsed point of that month (clamped when the previous month is shorter). The current window runs from the current month start through the report instant. Difference = previous comparable − current. The list cursor carries a validated fixed `asOf` so every page in one browsing session reuses the same Jalali windows; omitting the cursor (refresh) starts a new evaluation. Fixing `asOf` is not a database snapshot: voids or new COMPLETED rows that commit while paging can still change later pages. Visit counts are not used. This endpoint is not the visit-lapse `REVENUE_DROP` workspace filter.
+
 - `averageRevenuePerTransaction` — total / completed count (null if count is 0)  
 - `averageSpendPerVisit` — sum of completed amounts **with a visitId** / distinct linked visits (null if none; unlinked transactions are excluded)  
 - `lastRevenueAt` — max completed `occurredAt`  

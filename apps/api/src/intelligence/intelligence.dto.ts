@@ -25,6 +25,13 @@ export class IntelligenceQueryDto {
   cursor?: string;
 }
 
+export class RevenueDropsQueryDto {
+  @ApiPropertyOptional({ description: 'Opaque cursor from the previous page' })
+  @IsOptional()
+  @IsString()
+  cursor?: string;
+}
+
 export class BehaviorMetricsDto {
   @ApiProperty()
   visitCount!: number;

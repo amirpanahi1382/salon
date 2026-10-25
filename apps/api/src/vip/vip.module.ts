@@ -13,6 +13,7 @@ import {
   GetAdminVipOutreachSalonUseCase,
   ListAdminVipOutreachSalonsUseCase,
 } from './admin-vip-outreach.use-cases';
+import { ListSalonVipRequestHistoryUseCase } from './list-salon-vip-request-history.use-case';
 import { VipRepository } from './vip.repository';
 import {
   CreateVipRequestUseCase,
@@ -60,6 +61,7 @@ import {
     GetVipCapabilityUseCase,
     ListVipRegionsUseCase,
     ListActiveVipListsUseCase,
+    ListSalonVipRequestHistoryUseCase,
     CreateVipRequestUseCase,
     UploadVipSampleWorkUseCase,
     SubmitVipRequestUseCase,

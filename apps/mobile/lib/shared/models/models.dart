@@ -1085,6 +1085,8 @@ class VipRequest {
     required this.status,
     this.sampleWorks = const [],
     this.progress,
+    this.createdAt,
+    this.submittedAt,
   });
 
   final String id;
@@ -1097,6 +1099,8 @@ class VipRequest {
   final String status;
   final List<VipSampleWork> sampleWorks;
   final VipRequestProgress? progress;
+  final DateTime? createdAt;
+  final DateTime? submittedAt;
 
   factory VipRequest.fromJson(Map<String, dynamic> json) {
     return VipRequest(
@@ -1117,6 +1121,8 @@ class VipRequest {
       progress: json['progress'] is Map
           ? VipRequestProgress.fromJson(asJsonMap(json['progress']))
           : null,
+      createdAt: _parseDate(json['createdAt']),
+      submittedAt: _parseDate(json['submittedAt']),
     );
   }
 }
@@ -1811,6 +1817,194 @@ class OpportunityWorkspaceRow {
       commitmentExpectedAt: _parseDate(json['commitmentExpectedAt']),
       returnEvidenceKind: json['returnEvidenceKind'] as String?,
       previousVisitAt: _parseDate(json['previousVisitAt']),
+    );
+  }
+}
+
+class RevenueDropItem {
+  const RevenueDropItem({
+    required this.customerId,
+    required this.firstName,
+    required this.lastName,
+    required this.phoneNumber,
+    required this.previousComparableAmount,
+    required this.currentAmount,
+    required this.differenceAmount,
+    required this.currency,
+  });
+
+  final String customerId;
+  final String firstName;
+  final String lastName;
+  final String phoneNumber;
+  final String previousComparableAmount;
+  final String currentAmount;
+  final String differenceAmount;
+  final String currency;
+
+  String get fullName => '$firstName $lastName'.trim();
+
+  factory RevenueDropItem.fromJson(Map<String, dynamic> json) {
+    return RevenueDropItem(
+      customerId: json['customerId'] as String,
+      firstName: json['firstName'] as String? ?? '',
+      lastName: json['lastName'] as String? ?? '',
+      phoneNumber: json['phoneNumber'] as String? ?? '',
+      previousComparableAmount: json['previousComparableAmount'] as String? ?? '0.00',
+      currentAmount: json['currentAmount'] as String? ?? '0.00',
+      differenceAmount: json['differenceAmount'] as String? ?? '0.00',
+      currency: json['currency'] as String? ?? 'IRR',
+    );
+  }
+}
+
+class RevenueDropPage {
+  const RevenueDropPage({
+    required this.asOf,
+    required this.explanation,
+    required this.items,
+    required this.hasMore,
+    this.nextCursor,
+    required this.currentWindowStart,
+    required this.currentWindowEnd,
+    required this.previousWindowStart,
+    required this.previousWindowEnd,
+  });
+
+  final DateTime asOf;
+  final String explanation;
+  final List<RevenueDropItem> items;
+  final bool hasMore;
+  final String? nextCursor;
+  final DateTime currentWindowStart;
+  final DateTime currentWindowEnd;
+  final DateTime previousWindowStart;
+  final DateTime previousWindowEnd;
+
+  factory RevenueDropPage.fromJson(Object? json) {
+    final map = asJsonMap(json);
+    final current = asJsonMap(map['currentWindow']);
+    final previous = asJsonMap(map['previousComparableWindow']);
+    final page = parseItemPage(json, RevenueDropItem.fromJson);
+    return RevenueDropPage(
+      asOf: DateTime.parse(map['asOf'] as String),
+      explanation: map['explanation'] as String? ?? '',
+      items: page.items,
+      hasMore: page.hasMore,
+      nextCursor: page.nextCursor,
+      currentWindowStart: DateTime.parse(current['startInclusive'] as String),
+      currentWindowEnd: DateTime.parse(current['endInclusive'] as String),
+      previousWindowStart: DateTime.parse(previous['startInclusive'] as String),
+      previousWindowEnd: DateTime.parse(previous['endInclusive'] as String),
+    );
+  }
+}
+
+class OrdinaryMessageHistoryItem {
+  const OrdinaryMessageHistoryItem({
+    required this.id,
+    required this.customerId,
+    required this.customerDisplayName,
+    required this.destinationHint,
+    required this.requestStatus,
+    required this.displayStatus,
+    this.deliveryStatus,
+    this.deliveryMode,
+    this.opportunityType,
+    required this.requestedAt,
+    this.submittedAt,
+  });
+
+  final String id;
+  final String customerId;
+  final String customerDisplayName;
+  final String destinationHint;
+  final String requestStatus;
+  final String displayStatus;
+  final String? deliveryStatus;
+  final String? deliveryMode;
+  final String? opportunityType;
+  final DateTime requestedAt;
+  final DateTime? submittedAt;
+
+  factory OrdinaryMessageHistoryItem.fromJson(Map<String, dynamic> json) {
+    return OrdinaryMessageHistoryItem(
+      id: json['id'] as String,
+      customerId: json['customerId'] as String,
+      customerDisplayName: json['customerDisplayName'] as String? ?? '',
+      destinationHint: json['destinationHint'] as String? ?? '',
+      requestStatus: json['requestStatus'] as String? ?? '',
+      displayStatus: json['displayStatus'] as String? ?? 'QUEUED',
+      deliveryStatus: json['deliveryStatus'] as String?,
+      deliveryMode: json['deliveryMode'] as String?,
+      opportunityType: json['opportunityType'] as String?,
+      requestedAt: DateTime.parse(json['requestedAt'] as String),
+      submittedAt: _parseDate(json['submittedAt']),
+    );
+  }
+}
+
+class VipRequestHistoryItem {
+  const VipRequestHistoryItem({
+    required this.request,
+    required this.recordedSendCount,
+    required this.manualRecordedSendCount,
+    required this.stillQueuedOrInProgressCount,
+    this.intentionRecipientCount,
+    this.visitedRecipientCount,
+    this.recipientDenominator,
+    required this.metricsAvailability,
+  });
+
+  final VipRequest request;
+  final int recordedSendCount;
+  final int manualRecordedSendCount;
+  final int stillQueuedOrInProgressCount;
+  final int? intentionRecipientCount;
+  final int? visitedRecipientCount;
+  final int? recipientDenominator;
+  final String metricsAvailability;
+
+  bool get metricsAvailable => metricsAvailability == 'AVAILABLE';
+
+  factory VipRequestHistoryItem.fromJson(Map<String, dynamic> json) {
+    return VipRequestHistoryItem(
+      request: VipRequest.fromJson(json),
+      recordedSendCount: json['recordedSendCount'] as int? ?? 0,
+      manualRecordedSendCount: json['manualRecordedSendCount'] as int? ?? 0,
+      stillQueuedOrInProgressCount: json['stillQueuedOrInProgressCount'] as int? ?? 0,
+      intentionRecipientCount: json['intentionRecipientCount'] as int?,
+      visitedRecipientCount: json['visitedRecipientCount'] as int?,
+      recipientDenominator: json['recipientDenominator'] as int?,
+      metricsAvailability: json['metricsAvailability'] as String? ?? 'UNAVAILABLE',
+    );
+  }
+}
+
+class VipRequestHistoryPage {
+  const VipRequestHistoryPage({
+    required this.entitled,
+    required this.explanation,
+    required this.items,
+    required this.hasMore,
+    this.nextCursor,
+  });
+
+  final bool entitled;
+  final String explanation;
+  final List<VipRequestHistoryItem> items;
+  final bool hasMore;
+  final String? nextCursor;
+
+  factory VipRequestHistoryPage.fromJson(Object? json) {
+    final map = asJsonMap(json);
+    final page = parseItemPage(json, VipRequestHistoryItem.fromJson);
+    return VipRequestHistoryPage(
+      entitled: map['entitled'] as bool? ?? false,
+      explanation: map['explanation'] as String? ?? '',
+      items: page.items,
+      hasMore: page.hasMore,
+      nextCursor: page.nextCursor,
     );
   }
 }

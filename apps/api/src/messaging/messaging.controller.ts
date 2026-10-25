@@ -11,6 +11,7 @@ import { OpportunityTypeParam } from '../action/opportunity-type.param';
 import { ListCustomerMessagesQueryDto, SendOpportunityMessageDto } from './message.dto';
 import { GetMessageUseCase, ListCustomerMessagesUseCase } from './get-message.use-case';
 import { ListManualOutreachUseCase } from './list-manual-outreach.use-case';
+import { ListOrdinaryMessageHistoryUseCase } from './list-ordinary-message-history.use-case';
 import { SendManualOutreachMessageUseCase } from './send-manual-outreach-message.use-case';
 import { SendOpportunityMessageUseCase } from './send-opportunity-message.use-case';
 
@@ -26,6 +27,7 @@ export class MessagingController {
     private readonly getMessage: GetMessageUseCase,
     private readonly listCustomerMessages: ListCustomerMessagesUseCase,
     private readonly listManualOutreach: ListManualOutreachUseCase,
+    private readonly listOrdinaryHistory: ListOrdinaryMessageHistoryUseCase,
   ) {}
 
   @Post('intelligence/opportunities/:opportunityType/customers/:customerId/messages')
@@ -92,6 +94,18 @@ export class MessagingController {
     @Query() query: ListCustomerMessagesQueryDto,
   ) {
     return this.listManualOutreach.execute(user, query);
+  }
+
+  @Get('messages/history')
+  @ApiOperation({
+    summary:
+      'Paginated history of this salon’s ordinary (non-VIP) MessageRequests. Excludes VIP. Does not return message bodies. SENT is a recorded send, not delivery.',
+  })
+  listHistory(
+    @CurrentUser() user: AuthenticatedPrincipal,
+    @Query() query: ListCustomerMessagesQueryDto,
+  ) {
+    return this.listOrdinaryHistory.execute(user, query.cursor);
   }
 
   @Get('messages/:id')

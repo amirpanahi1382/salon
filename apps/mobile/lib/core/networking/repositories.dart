@@ -398,6 +398,16 @@ class IntelligenceRepository {
     ) as Map<String, dynamic>;
     return CustomerIntelligence.fromJson(data);
   }
+
+  Future<RevenueDropPage> revenueDrops({String? cursor}) async {
+    final data = await _api.get(
+      '/intelligence/revenue-drops',
+      query: {
+        if (cursor != null && cursor.isNotEmpty) 'cursor': cursor,
+      },
+    );
+    return RevenueDropPage.fromJson(data);
+  }
 }
 
 class ActionRepository {
@@ -544,6 +554,16 @@ class MessageRepository {
       query: cursor == null ? null : {'cursor': cursor},
     );
     return parseItemPage(data, ManualOutreachRequest.fromJson);
+  }
+
+  Future<ItemPage<OrdinaryMessageHistoryItem>> listOrdinaryHistory({
+    String? cursor,
+  }) async {
+    final data = await _api.get(
+      '/messages/history',
+      query: cursor == null ? null : {'cursor': cursor},
+    );
+    return parseItemPage(data, OrdinaryMessageHistoryItem.fromJson);
   }
 
   Future<ItemPage<MessageDelivery>> listForCustomer(
@@ -963,6 +983,16 @@ class VipRepository {
 
   Future<VipCapability> capability() async {
     return VipCapability.fromJson(asJsonMap(await _api.get('/vip/capability')));
+  }
+
+  Future<VipRequestHistoryPage> requestHistory({String? cursor}) async {
+    final data = await _api.get(
+      '/vip/requests',
+      query: {
+        if (cursor != null && cursor.isNotEmpty) 'cursor': cursor,
+      },
+    );
+    return VipRequestHistoryPage.fromJson(data);
   }
 
   Future<List<VipRegion>> regions() async {

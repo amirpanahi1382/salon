@@ -60,12 +60,16 @@ class FakeIntelligenceRepository extends IntelligenceRepository {
     this.summaryData,
     this.opportunitiesData = const [],
     this.customerIntelligence,
+    this.revenueDropPage,
   }) : super(_client());
 
   IntelligenceSummary? summaryData;
   List<Opportunity> opportunitiesData;
   CustomerIntelligence? customerIntelligence;
+  RevenueDropPage? revenueDropPage;
   Object? error;
+  int revenueDropCalls = 0;
+  Completer<RevenueDropPage>? revenueDropGate;
 
   @override
   Future<IntelligenceSummary> summary() async {
@@ -95,6 +99,28 @@ class FakeIntelligenceRepository extends IntelligenceRepository {
       throw error!;
     }
     return customerIntelligence!;
+  }
+
+  @override
+  Future<RevenueDropPage> revenueDrops({String? cursor}) async {
+    revenueDropCalls += 1;
+    if (revenueDropGate != null) {
+      return revenueDropGate!.future;
+    }
+    if (error != null) {
+      throw error!;
+    }
+    return revenueDropPage ??
+        RevenueDropPage(
+          asOf: DateTime.utc(2026, 10, 22, 8, 30),
+          explanation: 'مبالغ فقط از تراکنش‌های تکمیل‌شده',
+          items: const [],
+          hasMore: false,
+          currentWindowStart: DateTime.utc(2026, 9, 22),
+          currentWindowEnd: DateTime.utc(2026, 10, 22, 8, 30),
+          previousWindowStart: DateTime.utc(2026, 8, 22),
+          previousWindowEnd: DateTime.utc(2026, 9, 21),
+        );
   }
 }
 
@@ -300,15 +326,21 @@ class FakeActionRepository extends ActionRepository {
 }
 
 class FakeMessageRepository extends MessageRepository {
-  FakeMessageRepository({this.next, this.manualOutreach = const []})
-    : super(_client());
+  FakeMessageRepository({
+    this.next,
+    this.manualOutreach = const [],
+    this.ordinaryHistory = const [],
+  }) : super(_client());
 
   MessageDelivery? next;
   List<ManualOutreachRequest> manualOutreach;
+  List<OrdinaryMessageHistoryItem> ordinaryHistory;
   Object? error;
   int sendCalls = 0;
   int listManualCalls = 0;
+  int listOrdinaryHistoryCalls = 0;
   String? lastText;
+  Completer<ItemPage<OrdinaryMessageHistoryItem>>? ordinaryHistoryGate;
 
   @override
   Future<MessageDelivery> send({
@@ -389,6 +421,20 @@ class FakeMessageRepository extends MessageRepository {
   }
 
   @override
+  Future<ItemPage<OrdinaryMessageHistoryItem>> listOrdinaryHistory({
+    String? cursor,
+  }) async {
+    listOrdinaryHistoryCalls += 1;
+    if (ordinaryHistoryGate != null) {
+      return ordinaryHistoryGate!.future;
+    }
+    if (error != null) {
+      throw error!;
+    }
+    return ItemPage(items: ordinaryHistory, hasMore: false);
+  }
+
+  @override
   Future<ItemPage<MessageDelivery>> listForCustomer(
     String customerId, {
     String? cursor,
@@ -453,6 +499,7 @@ class FakeVipRepository extends VipRepository {
     this.listsByCode = const {},
     this.listsError,
     this.createError,
+    this.historyItems = const [],
   }) : super(_client());
 
   final bool entitled;
@@ -460,12 +507,32 @@ class FakeVipRepository extends VipRepository {
   final Map<String, List<VipTargetList>> listsByCode;
   final Object? listsError;
   final Object? createError;
+  final List<VipRequestHistoryItem> historyItems;
   final List<String> regionRequests = [];
   final List<String> listRequests = [];
+  int requestHistoryCalls = 0;
+  Completer<VipRequestHistoryPage>? requestHistoryGate;
 
   @override
   Future<VipCapability> capability() async {
     return VipCapability(entitled: entitled, remainingQuota: 100, usedQuota: 0);
+  }
+
+  @override
+  Future<VipRequestHistoryPage> requestHistory({String? cursor}) async {
+    requestHistoryCalls += 1;
+    if (requestHistoryGate != null) {
+      return requestHistoryGate!.future;
+    }
+    return VipRequestHistoryPage(
+      entitled: entitled,
+      explanation: entitled
+          ? 'همهٔ درخواست‌های VIP این سالن'
+          : 'ارسال VIP جدید برای این سالن فعال نیست؛ تاریخچهٔ قبلی نمایش داده می‌شود.',
+      // History remains visible after entitlement revocation.
+      items: historyItems,
+      hasMore: false,
+    );
   }
 
   @override
@@ -952,28 +1019,6 @@ Customer _customer() {
   );
 }
 
-OpportunityWorkspaceRow _workspaceRow({
-  String rowKind = 'SALON_CUSTOMER',
-  String stableId = 'SALON_CUSTOMER:c1',
-  String displayName = 'Sara Ahmadi',
-  String? customerId = 'c1',
-  String? messageState = 'QUEUED',
-  String? messageRequestId = 'm1',
-  String? deliveryMode,
-  DateTime? previousVisitAt,
-}) {
-  return OpportunityWorkspaceRow(
-    rowKind: rowKind,
-    stableId: stableId,
-    displayName: displayName,
-    customerId: customerId,
-    messageState: messageState,
-    deliveryMode: deliveryMode,
-    messageRequestId: messageRequestId,
-    previousVisitAt: previousVisitAt,
-  );
-}
-
 Opportunity _opportunity() {
   return const Opportunity(
     type: 'REACTIVATION',
@@ -1447,108 +1492,121 @@ void main() {
     expect(find.text('تلاش مجدد'), findsOneWidget);
   });
 
-  testWidgets('opportunities v2 shows four filters and factual message rows', (
+  testWidgets('opportunities shows three sections with monetary revenue drop', (
     tester,
   ) async {
-    final workspace = FakeOpportunitiesRepository(
-      pages: {
-        'ALL': [
-          _workspaceRow(),
-          _workspaceRow(
-            rowKind: 'VIP_RECIPIENT',
-            stableId: 'VIP_RECIPIENT:m-vip',
-            displayName: 'VIP Guest',
-            customerId: null,
-            messageState: 'SENT',
-            messageRequestId: 'm-vip',
-            deliveryMode: 'MANUAL',
-          ),
-        ],
-        'SALON_MESSAGES': [_workspaceRow(messageState: 'FAILED')],
-        'VIP': [
-          _workspaceRow(
-            rowKind: 'VIP_RECIPIENT',
-            stableId: 'VIP_RECIPIENT:m-vip',
-            displayName: 'VIP Guest',
-            customerId: null,
-            messageState: 'SENT',
-            messageRequestId: 'm-vip',
-            deliveryMode: 'MANUAL',
-          ),
-          _workspaceRow(
-            rowKind: 'VIP_RECIPIENT',
-            stableId: 'VIP_RECIPIENT:m-bale',
-            displayName: 'VIP Provider',
-            customerId: null,
-            messageState: 'SENT',
-            messageRequestId: 'm-bale',
-            deliveryMode: 'BALE',
-          ),
-        ],
-        'REVENUE_DROP': [
-          _workspaceRow(
-            stableId: 'SALON_CUSTOMER:c-drop',
-            displayName: 'Lapse Customer',
+    final intelligence = FakeIntelligenceRepository(
+      revenueDropPage: RevenueDropPage(
+        asOf: DateTime.utc(2026, 10, 22, 8, 30),
+        explanation: 'مبالغ فقط از تراکنش‌های تکمیل‌شده',
+        items: const [
+          RevenueDropItem(
             customerId: 'c-drop',
-            messageState: null,
-            messageRequestId: null,
-            previousVisitAt: DateTime.utc(2026, 8, 1),
+            firstName: 'Lapse',
+            lastName: 'Customer',
+            phoneNumber: '09123334444',
+            previousComparableAmount: '5000000.00',
+            currentAmount: '1500000.00',
+            differenceAmount: '3500000.00',
+            currency: 'IRR',
           ),
         ],
-      },
+        hasMore: false,
+        currentWindowStart: DateTime.utc(2026, 9, 22),
+        currentWindowEnd: DateTime.utc(2026, 10, 22, 8, 30),
+        previousWindowStart: DateTime.utc(2026, 8, 22),
+        previousWindowEnd: DateTime.utc(2026, 9, 21),
+      ),
+    );
+    final messages = FakeMessageRepository(
+      ordinaryHistory: [
+        OrdinaryMessageHistoryItem(
+          id: 'm-failed',
+          customerId: 'c1',
+          customerDisplayName: 'Sara Ahmadi',
+          destinationHint: '0912****111',
+          requestStatus: 'FAILED',
+          displayStatus: 'FAILED',
+          deliveryStatus: 'FAILED',
+          requestedAt: DateTime.utc(2026, 10, 1),
+        ),
+      ],
+    );
+    final vip = FakeVipRepository(
+      entitled: true,
+      historyItems: [
+        VipRequestHistoryItem(
+          request: const VipRequest(
+            id: 'vip-1',
+            salonId: 's1',
+            salonName: 'Rose Salon',
+            listId: 'list-1',
+            listName: 'Tehran VIP A',
+            requestedCount: 20,
+            geographicRange: 'تهران',
+            status: 'SUBMITTED',
+          ),
+          recordedSendCount: 5,
+          manualRecordedSendCount: 2,
+          stillQueuedOrInProgressCount: 3,
+          intentionRecipientCount: 1,
+          visitedRecipientCount: 1,
+          recipientDenominator: 20,
+          metricsAvailability: 'AVAILABLE',
+        ),
+      ],
     );
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
-          opportunitiesRepositoryProvider.overrideWithValue(workspace),
-          vipRepositoryProvider.overrideWithValue(
-            FakeVipRepository(entitled: true),
-          ),
+          intelligenceRepositoryProvider.overrideWithValue(intelligence),
+          messageRepositoryProvider.overrideWithValue(messages),
+          vipRepositoryProvider.overrideWithValue(vip),
         ],
         child: const MaterialApp(home: OpportunitiesScreen()),
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.widgetWithText(ChoiceChip, 'همه'), findsOneWidget);
-    expect(find.widgetWithText(ChoiceChip, 'ارسال پیام'), findsOneWidget);
-    expect(find.widgetWithText(ChoiceChip, 'ارسال پیام vip'), findsOneWidget);
+    expect(find.widgetWithText(ChoiceChip, 'همه'), findsNothing);
     expect(find.widgetWithText(ChoiceChip, 'افت درآمد'), findsOneWidget);
-    expect(find.text('برگشت مشتری قدیمی'), findsNothing);
-    expect(find.text('دعوت دوباره'), findsNothing);
-    expect(find.text('Sara Ahmadi'), findsOneWidget);
-    expect(find.textContaining('VIP'), findsWidgets);
-    expect(find.text('در آستانه از دست رفتن'), findsNothing);
-
-    await tester.tap(find.widgetWithText(ChoiceChip, 'ارسال پیام'));
-    await tester.pumpAndSettle();
-    expect(find.text('ارسال ناموفق'), findsOneWidget);
-    expect(find.text('در صف ارسال'), findsNothing);
-
-    await tester.tap(find.widgetWithText(ChoiceChip, 'ارسال پیام vip'));
-    await tester.pumpAndSettle();
-    expect(find.text('VIP Guest'), findsOneWidget);
-    expect(find.textContaining('ارسال دستی ثبت شده'), findsOneWidget);
-    expect(find.textContaining('VIP · ارسال شده'), findsOneWidget);
-
-    await tester.tap(find.widgetWithText(ChoiceChip, 'افت درآمد'));
-    await tester.pumpAndSettle();
+    expect(find.widgetWithText(ChoiceChip, 'پیام‌های VIP'), findsOneWidget);
+    expect(find.widgetWithText(ChoiceChip, 'ارسال پیام عادی'), findsOneWidget);
     expect(find.text('Lapse Customer'), findsOneWidget);
-    expect(find.text('انتخاب چند مشتری برای ارسال پیام'), findsOneWidget);
+    expect(find.textContaining('3500000.00'), findsOneWidget);
     expect(
-      workspace.filters,
-      containsAll(['ALL', 'SALON_MESSAGES', 'VIP', 'REVENUE_DROP']),
+      find.text(
+        'مشتریانی که درآمدشان از ابتدای این ماه تا امروز، نسبت به بازهٔ مشابه ماه قبل کمتر شده است.',
+      ),
+      findsOneWidget,
     );
+    expect(find.textContaining('مبالغ فقط از تراکنش‌های تکمیل‌شده'), findsNothing);
+    expect(find.text('انتخاب چند مشتری برای ارسال پیام'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(ChoiceChip, 'پیام‌های VIP'));
+    await tester.pumpAndSettle();
+    expect(find.text('Tehran VIP A'), findsOneWidget);
+    expect(find.textContaining('ارسال ثبت‌شده'), findsWidgets);
+    expect(find.textContaining('نیت مراجعه ثبت‌شده'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(ChoiceChip, 'ارسال پیام عادی'));
+    await tester.pumpAndSettle();
+    expect(find.text('Sara Ahmadi'), findsOneWidget);
+    expect(find.textContaining('ناموفق'), findsOneWidget);
+    expect(intelligence.revenueDropCalls, greaterThan(0));
+    expect(vip.requestHistoryCalls, greaterThan(0));
+    expect(messages.listOrdinaryHistoryCalls, greaterThan(0));
   });
 
-  testWidgets('opportunities v2 distinguishes loading error and empty', (
+  testWidgets('opportunities distinguishes loading error and empty', (
     tester,
   ) async {
-    final workspace = FakeOpportunitiesRepository()
+    final intelligence = FakeIntelligenceRepository()
       ..error = const NetworkException();
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
-          opportunitiesRepositoryProvider.overrideWithValue(workspace),
+          intelligenceRepositoryProvider.overrideWithValue(intelligence),
+          messageRepositoryProvider.overrideWithValue(FakeMessageRepository()),
           vipRepositoryProvider.overrideWithValue(FakeVipRepository()),
         ],
         child: const MaterialApp(home: OpportunitiesScreen()),
@@ -1556,10 +1614,20 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('ارتباط با سامانه سالن برقرار نشد.'), findsOneWidget);
-    workspace.error = null;
+    intelligence.error = null;
     await tester.tap(find.text('تلاش مجدد'));
     await tester.pumpAndSettle();
-    expect(find.text('هنوز پیام ارسالی ثبت نشده.'), findsOneWidget);
+    expect(find.textContaining('افت درآمد'), findsWidgets);
+    expect(
+      find.text('فعلاً مشتری‌ای با افت درآمد در این بازه ندارید.'),
+      findsOneWidget,
+    );
+    expect(
+      find.text(
+        'مشتریانی که درآمدشان از ابتدای این ماه تا امروز، نسبت به بازهٔ مشابه ماه قبل کمتر شده است.',
+      ),
+      findsNothing,
+    );
   });
 
   testWidgets('customer detail renders revenue and visits without status card', (
@@ -2798,9 +2866,6 @@ void main() {
             ),
           ),
           vipRepositoryProvider.overrideWithValue(FakeVipRepository()),
-          opportunitiesRepositoryProvider.overrideWithValue(
-            FakeOpportunitiesRepository(),
-          ),
           intelligenceRepositoryProvider.overrideWithValue(
             FakeIntelligenceRepository(opportunitiesData: [_opportunity()]),
           ),
@@ -2911,33 +2976,12 @@ void main() {
   });
 
   testWidgets(
-    'submitted outreach stays visible, disabled, and shows server status',
+    'submitted outreach stays visible on ordinary history after compose',
     (tester) async {
       tester.view.physicalSize = const Size(800, 1800);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
       final messages = FakeMessageRepository();
-      final workspace = FakeOpportunitiesRepository(
-        resolve: (filter) {
-          if (filter == 'VIP' || filter == 'REVENUE_DROP') {
-            return const [];
-          }
-          return [
-            for (final item in messages.manualOutreach)
-              _workspaceRow(
-                stableId: 'SALON_CUSTOMER:${item.customerId}',
-                displayName: item.customerName,
-                customerId: item.customerId,
-                messageState: item.status == 'DISPATCHED'
-                    ? 'IN_PIPELINE'
-                    : item.status == 'SENT'
-                    ? 'SENT'
-                    : 'QUEUED',
-                messageRequestId: item.messageRequestId,
-              ),
-          ];
-        },
-      );
       final router = GoRouter(
         initialLocation: '/customers',
         routes: [
@@ -2971,7 +3015,6 @@ void main() {
             ),
             vipRepositoryProvider.overrideWithValue(FakeVipRepository()),
             salonRepositoryProvider.overrideWithValue(FakeSalonRepository()),
-            opportunitiesRepositoryProvider.overrideWithValue(workspace),
             intelligenceRepositoryProvider.overrideWithValue(
               FakeIntelligenceRepository(opportunitiesData: [_opportunity()]),
             ),
@@ -3012,72 +3055,103 @@ void main() {
           .pop();
       await tester.pumpAndSettle();
 
-      expect(find.text('Sara Ahmadi'), findsWidgets);
+      // Submitted customer leaves the pending composer list; the other stays.
       expect(find.text('Maryam Karimi'), findsOneWidget);
-      expect(find.text('در صف ارسال'), findsOneWidget);
       expect(find.text('ایجاد پیام مناسب'), findsOneWidget);
 
-      final callsBeforeReload = workspace.listCalls;
-      await tester.tap(find.widgetWithText(ChoiceChip, 'همه'));
+      messages.ordinaryHistory = [
+        for (final item in messages.manualOutreach)
+          OrdinaryMessageHistoryItem(
+            id: item.messageRequestId,
+            customerId: item.customerId,
+            customerDisplayName: item.customerName,
+            destinationHint: '0912****111',
+            requestStatus: item.status,
+            displayStatus: item.status == 'DISPATCHED'
+                ? 'PROCESSING'
+                : item.status == 'SENT'
+                ? 'SENT'
+                : 'QUEUED',
+            requestedAt: item.requestedAt,
+          ),
+      ];
+      final callsBefore = messages.listOrdinaryHistoryCalls;
+      await tester.tap(find.widgetWithText(ChoiceChip, 'افت درآمد'));
       await tester.pumpAndSettle();
-      await tester.tap(find.widgetWithText(ChoiceChip, 'ارسال پیام'));
+      await tester.tap(find.widgetWithText(ChoiceChip, 'ارسال پیام عادی'));
       await tester.pumpAndSettle();
       expect(find.text('Sara Ahmadi'), findsWidgets);
-      expect(find.text('Maryam Karimi'), findsOneWidget);
-      expect(find.text('در صف ارسال'), findsOneWidget);
-      expect(find.text('ایجاد پیام مناسب'), findsOneWidget);
-      expect(workspace.listCalls, greaterThan(callsBeforeReload));
+      expect(find.textContaining('در صف'), findsOneWidget);
+      expect(messages.listOrdinaryHistoryCalls, greaterThan(callsBefore));
     },
   );
 
   testWidgets(
-    'outreach list shows dispatched status from the server after reload',
+    'ordinary message history maps queued processing and recorded send',
     (tester) async {
       tester.view.physicalSize = const Size(800, 1400);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
-      final workspace = FakeOpportunitiesRepository(
-        pages: {
-          'ALL': const [],
-          'SALON_MESSAGES': [
-            _workspaceRow(messageState: 'IN_PIPELINE'),
-            _workspaceRow(
-              stableId: 'SALON_CUSTOMER:c2',
-              displayName: 'Maryam Karimi',
-              customerId: 'c2',
-              messageState: 'QUEUED',
-              messageRequestId: 'm2',
-            ),
-            _workspaceRow(
-              stableId: 'SALON_CUSTOMER:c3',
-              displayName: 'Neda Rezaei',
-              customerId: 'c3',
-              messageState: 'SENT',
-              messageRequestId: 'm3',
-            ),
-          ],
-        },
+      final messages = FakeMessageRepository(
+        ordinaryHistory: [
+          OrdinaryMessageHistoryItem(
+            id: 'm1',
+            customerId: 'c1',
+            customerDisplayName: 'Sara Ahmadi',
+            destinationHint: '0912****111',
+            requestStatus: 'DISPATCHED',
+            displayStatus: 'PROCESSING',
+            deliveryStatus: 'PROCESSING',
+            requestedAt: DateTime.utc(2026, 10, 1),
+          ),
+          OrdinaryMessageHistoryItem(
+            id: 'm2',
+            customerId: 'c2',
+            customerDisplayName: 'Maryam Karimi',
+            destinationHint: '0912****222',
+            requestStatus: 'QUEUED',
+            displayStatus: 'QUEUED',
+            requestedAt: DateTime.utc(2026, 10, 2),
+          ),
+          OrdinaryMessageHistoryItem(
+            id: 'm3',
+            customerId: 'c3',
+            customerDisplayName: 'Neda Rezaei',
+            destinationHint: '0912****333',
+            requestStatus: 'SENT',
+            displayStatus: 'SENT',
+            deliveryStatus: 'SENT',
+            requestedAt: DateTime.utc(2026, 10, 3),
+          ),
+        ],
       );
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
-            opportunitiesRepositoryProvider.overrideWithValue(workspace),
+            intelligenceRepositoryProvider.overrideWithValue(
+              FakeIntelligenceRepository(),
+            ),
+            messageRepositoryProvider.overrideWithValue(messages),
             vipRepositoryProvider.overrideWithValue(FakeVipRepository()),
           ],
           child: const MaterialApp(home: OpportunitiesScreen()),
         ),
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.widgetWithText(ChoiceChip, 'ارسال پیام'));
+      await tester.tap(find.widgetWithText(ChoiceChip, 'ارسال پیام عادی'));
       await tester.pumpAndSettle();
       expect(find.text('Sara Ahmadi'), findsOneWidget);
       expect(find.text('Maryam Karimi'), findsOneWidget);
       expect(find.text('Neda Rezaei'), findsOneWidget);
-      expect(find.text('ارسال به اجرا'), findsOneWidget);
-      expect(find.text('در صف ارسال'), findsOneWidget);
-      expect(find.text('ارسال شده'), findsOneWidget);
+      expect(find.textContaining('در حال پردازش'), findsOneWidget);
+      expect(find.textContaining('در صف'), findsOneWidget);
+      expect(find.textContaining('ارسال ثبت‌شده ·'), findsOneWidget);
+      expect(
+        find.textContaining('ارسال ثبت‌شده» به‌معنای'),
+        findsNothing,
+      );
       expect(find.text('ایجاد پیام مناسب'), findsNothing);
-      expect(workspace.filters, contains('SALON_MESSAGES'));
+      expect(messages.listOrdinaryHistoryCalls, greaterThan(0));
     },
   );
 
@@ -3158,29 +3232,97 @@ void main() {
     expect(find.text('ارسال پیام vip'), findsOneWidget);
   });
 
-  testWidgets('non-VIP salon hides opportunities VIP chip', (tester) async {
+  testWidgets('revoked VIP entitlement still shows request history', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
-          opportunitiesRepositoryProvider.overrideWithValue(
-            FakeOpportunitiesRepository(),
+          intelligenceRepositoryProvider.overrideWithValue(
+            FakeIntelligenceRepository(),
           ),
+          messageRepositoryProvider.overrideWithValue(FakeMessageRepository()),
+          vipRepositoryProvider.overrideWithValue(
+            FakeVipRepository(
+              entitled: false,
+              historyItems: [
+                VipRequestHistoryItem(
+                  request: const VipRequest(
+                    id: 'vip-hist',
+                    salonId: 's1',
+                    salonName: 'Rose Salon',
+                    listId: 'list-1',
+                    listName: 'Historical VIP List',
+                    requestedCount: 30,
+                    geographicRange: 'تهران',
+                    status: 'SUBMITTED',
+                  ),
+                  recordedSendCount: 4,
+                  manualRecordedSendCount: 4,
+                  stillQueuedOrInProgressCount: 0,
+                  intentionRecipientCount: 1,
+                  visitedRecipientCount: 0,
+                  recipientDenominator: 30,
+                  metricsAvailability: 'AVAILABLE',
+                ),
+              ],
+            ),
+          ),
+        ],
+        child: const MaterialApp(home: OpportunitiesScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(ChoiceChip, 'پیام‌های VIP'));
+    await tester.pumpAndSettle();
+    expect(find.text('Historical VIP List'), findsOneWidget);
+    expect(find.text('ارسال پیام vip'), findsNothing);
+    expect(
+      find.text('ثبت درخواست VIP جدید نیاز به فعال‌سازی جداگانه توسط مدیر پلتفرم دارد.'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('پس از فعال‌سازی توسط پلتفرم'), findsNothing);
+    expect(find.textContaining('تاریخچهٔ درخواست‌ها اینجا نمایش داده می‌شود'), findsNothing);
+  });
+
+  testWidgets('non-VIP salon with no history shows unavailable empty', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          intelligenceRepositoryProvider.overrideWithValue(
+            FakeIntelligenceRepository(),
+          ),
+          messageRepositoryProvider.overrideWithValue(FakeMessageRepository()),
           vipRepositoryProvider.overrideWithValue(FakeVipRepository()),
         ],
         child: const MaterialApp(home: OpportunitiesScreen()),
       ),
     );
     await tester.pumpAndSettle();
+    expect(find.widgetWithText(ChoiceChip, 'پیام‌های VIP'), findsOneWidget);
+    await tester.tap(find.widgetWithText(ChoiceChip, 'پیام‌های VIP'));
+    await tester.pumpAndSettle();
+    expect(find.text('هنوز درخواست VIP ثبت نشده است.'), findsOneWidget);
+    expect(
+      find.text('ثبت درخواست VIP جدید نیاز به فعال‌سازی جداگانه توسط مدیر پلتفرم دارد.'),
+      findsOneWidget,
+    );
+    expect(find.text('ارسال VIP برای این سالن فعال نیست.'), findsNothing);
     expect(find.text('ارسال پیام vip'), findsNothing);
   });
 
-  testWidgets('entitled salon shows opportunities VIP chip', (tester) async {
+  testWidgets('entitled salon can open VIP create from opportunities', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
-          opportunitiesRepositoryProvider.overrideWithValue(
-            FakeOpportunitiesRepository(),
+          intelligenceRepositoryProvider.overrideWithValue(
+            FakeIntelligenceRepository(),
           ),
+          messageRepositoryProvider.overrideWithValue(FakeMessageRepository()),
           vipRepositoryProvider.overrideWithValue(
             FakeVipRepository(entitled: true),
           ),
@@ -3189,8 +3331,89 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(ChoiceChip, 'پیام‌های VIP'));
+    await tester.pumpAndSettle();
     expect(find.text('ارسال پیام vip'), findsOneWidget);
+    expect(find.text('هنوز درخواست VIP ثبت نشده است.'), findsOneWidget);
+    expect(
+      find.text('ثبت درخواست VIP جدید نیاز به فعال‌سازی جداگانه توسط مدیر پلتفرم دارد.'),
+      findsNothing,
+    );
   });
+
+  testWidgets(
+    'opportunities ignores stale deferred responses after section switch',
+    (tester) async {
+      final revenueGate = Completer<RevenueDropPage>();
+      final ordinaryGate =
+          Completer<ItemPage<OrdinaryMessageHistoryItem>>();
+      final intelligence = FakeIntelligenceRepository(
+        revenueDropPage: RevenueDropPage(
+          asOf: DateTime.utc(2026, 10, 22, 8, 30),
+          explanation: 'stale-revenue',
+          items: const [
+            RevenueDropItem(
+              customerId: 'c-stale',
+              firstName: 'Stale',
+              lastName: 'Revenue',
+              phoneNumber: '09120000000',
+              previousComparableAmount: '9.00',
+              currentAmount: '1.00',
+              differenceAmount: '8.00',
+              currency: 'IRR',
+            ),
+          ],
+          hasMore: false,
+          currentWindowStart: DateTime.utc(2026, 9, 22),
+          currentWindowEnd: DateTime.utc(2026, 10, 22, 8, 30),
+          previousWindowStart: DateTime.utc(2026, 8, 22),
+          previousWindowEnd: DateTime.utc(2026, 9, 21),
+        ),
+      )..revenueDropGate = revenueGate;
+      final messages = FakeMessageRepository(
+        ordinaryHistory: [
+          OrdinaryMessageHistoryItem(
+            id: 'm-live',
+            customerId: 'c-live',
+            customerDisplayName: 'Live Ordinary',
+            destinationHint: '0912****000',
+            requestStatus: 'QUEUED',
+            displayStatus: 'QUEUED',
+            requestedAt: DateTime.utc(2026, 10, 3),
+          ),
+        ],
+      )..ordinaryHistoryGate = ordinaryGate;
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            intelligenceRepositoryProvider.overrideWithValue(intelligence),
+            messageRepositoryProvider.overrideWithValue(messages),
+            vipRepositoryProvider.overrideWithValue(FakeVipRepository()),
+          ],
+          child: const MaterialApp(home: OpportunitiesScreen()),
+        ),
+      );
+      await tester.pump();
+      expect(find.byType(LoadingSkeleton), findsOneWidget);
+
+      await tester.tap(find.widgetWithText(ChoiceChip, 'ارسال پیام عادی'));
+      await tester.pump();
+
+      ordinaryGate.complete(
+        ItemPage(items: messages.ordinaryHistory, hasMore: false),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Live Ordinary'), findsOneWidget);
+      expect(find.text('Stale Revenue'), findsNothing);
+
+      revenueGate.complete(intelligence.revenueDropPage!);
+      await tester.pumpAndSettle();
+      expect(find.text('Live Ordinary'), findsOneWidget);
+      expect(find.text('Stale Revenue'), findsNothing);
+      expect(find.textContaining('8.00'), findsNothing);
+    },
+  );
 
   testWidgets('VIP queue items hide Bale and keep manual send', (tester) async {
     await tester.pumpWidget(

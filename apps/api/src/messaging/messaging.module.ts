@@ -19,6 +19,7 @@ import {
 import { MessagingController } from './messaging.controller';
 import { GetMessageUseCase, ListCustomerMessagesUseCase } from './get-message.use-case';
 import { ListManualOutreachUseCase } from './list-manual-outreach.use-case';
+import { ListOrdinaryMessageHistoryUseCase } from './list-ordinary-message-history.use-case';
 import { MessageRepository } from './message.repository';
 import { SendManualOutreachMessageUseCase } from './send-manual-outreach-message.use-case';
 import { SendOpportunityMessageUseCase } from './send-opportunity-message.use-case';
@@ -39,6 +40,7 @@ import {
     GetMessageUseCase,
     ListCustomerMessagesUseCase,
     ListManualOutreachUseCase,
+    ListOrdinaryMessageHistoryUseCase,
     ListAdminMessageQueueUseCase,
     GetAdminMessageUseCase,
     SelectMessageDeliveryModeUseCase,

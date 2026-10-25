@@ -112,6 +112,13 @@ export class SalonVipListsQueryDto {
   regionCode?: string;
 }
 
+export class SalonVipRequestHistoryQueryDto {
+  @ApiPropertyOptional({ description: 'Opaque cursor from the previous page' })
+  @IsOptional()
+  @IsString()
+  cursor?: string;
+}
+
 export class VipTargetListSummaryDto {
   @ApiProperty()
   id!: string;

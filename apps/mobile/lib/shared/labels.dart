@@ -359,18 +359,35 @@ class AppStrings {
   static const workspaceEmptyAllTitle = 'هنوز پیام ارسالی ثبت نشده.';
   static const workspaceEmptyAllBody =
       'وقتی برای مشتری یا مخاطب VIP پیام در صف قرار بگیرد، اینجا دیده می‌شود.';
-  static const workspaceEmptySalonTitle = 'هنوز پیام مشتری سالن ثبت نشده.';
+  static const workspaceEmptySalonTitle = 'هنوز پیام عادی ثبت نشده.';
   static const workspaceEmptySalonBody =
-      'پس از ایجاد پیام از مشتریان یا افت درآمد، وضعیت ارسال اینجا می‌آید.';
-  static const workspaceEmptyVipTitle = 'هنوز پیام VIP ثبت نشده.';
-  static const workspaceEmptyVipBody =
-      'فقط پیام‌هایی که از مسیر VIP وارد صف ارسال شده‌اند اینجا هستند.';
+      'همهٔ درخواست‌های پیام عادی این سالن، با وضعیت صف و اجرا، اینجا می‌آیند.';
+  static const workspaceEmptyVipTitle = 'هنوز درخواست VIP ثبت نشده است.';
+  static const vipNewRequestRequiresAdmin =
+      'ثبت درخواست VIP جدید نیاز به فعال‌سازی جداگانه توسط مدیر پلتفرم دارد.';
+  static const revenueDropSalonExplanation =
+      'مشتریانی که درآمدشان از ابتدای این ماه تا امروز، نسبت به بازهٔ مشابه ماه قبل کمتر شده است.';
   static const workspaceEmptyRevenueDropTitle =
-      'مشتری‌ای با افت مراجعه در این بازه نیست.';
-  static const workspaceEmptyRevenueDropBody =
-      'مشتریانی که ماه قبل مراجعه داشته‌اند و این ماه هنوز مراجعه نکرده‌اند اینجا می‌آیند.';
+      'فعلاً مشتری‌ای با افت درآمد در این بازه ندارید.';
   static const workspaceVipBadge = 'VIP';
   static const workspacePendingSelectionTitle = 'مشتریان انتخاب‌شده برای ارسال';
+  static const opportunitiesSectionRevenueDrop = 'افت درآمد';
+  static const opportunitiesSectionVip = 'پیام‌های VIP';
+  static const opportunitiesSectionOrdinary = 'ارسال پیام عادی';
+  static const revenueDropPreviousLabel = 'ماه قبلِ قابل‌مقایسه';
+  static const revenueDropCurrentLabel = 'از ابتدای ماه جاری تا الآن';
+  static const revenueDropDifferenceLabel = 'اختلاف';
+  static const ordinaryMessageStatusQueued = 'در صف';
+  static const ordinaryMessageStatusProcessing = 'در حال پردازش';
+  static const ordinaryMessageStatusSent = 'ارسال ثبت‌شده';
+  static const ordinaryMessageStatusFailed = 'ناموفق';
+  static const ordinaryMessageStatusCancelled = 'لغو شده';
+  static const vipHistoryRecordedSends = 'ارسال ثبت‌شده';
+  static const vipHistoryInProgress = 'در صف / در حال رسیدگی';
+  static const vipHistoryIntentions = 'نیت مراجعه ثبت‌شده';
+  static const vipHistoryVisited = 'مراجعهٔ لینک‌شده';
+  static const vipHistoryMetricsUnavailable = 'شمارش برای این درخواست در دسترس نیست.';
+  static const vipHistoryOpenRequest = 'جزئیات درخواست';
   static const logout = 'خروج';
   static const retry = 'تلاش مجدد';
   static const loadMore = 'نمایش موارد بیشتر';
