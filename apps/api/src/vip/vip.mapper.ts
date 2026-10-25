@@ -7,21 +7,26 @@ import {
 } from '@salon/shared';
 import type { SalonVipProgressFact } from './vip.repository';
 import type { VipRequestDto, VipSampleWorkDto, VipTargetListSummaryDto } from './vip.dto';
+import { isVipListRequestableBySalons } from './vip-list-request-counts';
 
-export function toListSummary(row: {
-  id: string;
-  name: string;
-  regionCode?: string | null;
-  status: VipTargetListSummaryDto['status'];
-  catalogMembership: VipTargetListSummaryDto['catalogMembership'];
-  contactCount: number;
-  reservedBySalonId: string | null;
-  reservedBySalon: { name: string } | null;
-  createdAt: Date;
-  updatedAt: Date;
-  requests: Array<{ id: string }>;
-}): VipTargetListSummaryDto {
+export function toListSummary(
+  row: {
+    id: string;
+    name: string;
+    regionCode?: string | null;
+    status: VipTargetListSummaryDto['status'];
+    catalogMembership: VipTargetListSummaryDto['catalogMembership'];
+    contactCount: number;
+    reservedBySalonId: string | null;
+    reservedBySalon: { name: string } | null;
+    createdAt: Date;
+    updatedAt: Date;
+    requests: Array<{ id: string }>;
+  },
+  requestCounts?: { totalRequestCount: number; openRequestCount: number },
+): VipTargetListSummaryDto {
   const regionCode = row.regionCode && isVipRegionCode(row.regionCode) ? row.regionCode : null;
+  const requestableBySalons = isVipListRequestableBySalons(row);
   return {
     id: row.id,
     name: row.name,
@@ -35,6 +40,9 @@ export function toListSummary(row: {
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     attentionRequestId: row.requests[0]?.id ?? null,
+    requestableBySalons,
+    totalRequestCount: requestCounts?.totalRequestCount ?? 0,
+    openRequestCount: requestCounts?.openRequestCount ?? 0,
   };
 }
 

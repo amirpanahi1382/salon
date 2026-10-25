@@ -36,6 +36,7 @@ import {
   GetAdminVipOutreachSalonUseCase,
   ListAdminVipOutreachSalonsUseCase,
 } from './admin-vip-outreach.use-cases';
+import { GetAdminSalonProfileUseCase } from './admin-salon-profile.use-case';
 import {
   DeleteVipListUseCase,
   DispatchVipRequestUseCase,
@@ -64,6 +65,7 @@ export class AdminVipController {
     private readonly grantEntitlement: GrantVipEntitlementUseCase,
     private readonly revokeEntitlement: RevokeVipEntitlementUseCase,
     private readonly listSalons: ListAdminSalonsUseCase,
+    private readonly salonProfile: GetAdminSalonProfileUseCase,
     private readonly exportRequest: ExportVipRequestExcelUseCase,
     private readonly downloadImage: DownloadVipSampleWorkUseCase,
     private readonly dispatchRequest: DispatchVipRequestUseCase,
@@ -150,7 +152,10 @@ export class AdminVipController {
   }
 
   @Patch('lists/:id')
-  @ApiOperation({ summary: 'Rename or activate/deactivate a VIP target list' })
+  @ApiOperation({
+    summary:
+      'Rename or activate/deactivate a VIP target list. Activation requires a canonical Tehran region 01–14 and makes an unreserved list requestable by entitled salons in that region.',
+  })
   patch(
     @CurrentPlatformAdmin() admin: PlatformAdminPrincipal,
     @Param('id', UuidParam) id: string,
@@ -173,6 +178,15 @@ export class AdminVipController {
   @ApiOperation({ summary: 'List salons and VIP entitlement state' })
   salons(@Query() query: ListAdminSalonsQueryDto) {
     return this.listSalons.execute(query);
+  }
+
+  @Get('salons/:salonId/profile')
+  @ApiOperation({
+    summary:
+      'Admin read model: salon VIP entitlement plus all-time VIP/ordinary request and recorded-send counts. Not a messaging write path. Live read.',
+  })
+  salonProfileById(@Param('salonId', UuidParam) salonId: string) {
+    return this.salonProfile.execute(salonId);
   }
 
   @Post('entitlements')

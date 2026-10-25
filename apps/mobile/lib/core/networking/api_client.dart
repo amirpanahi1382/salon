@@ -143,9 +143,15 @@ class ApiClient {
     );
   }
 
-  Future<void> delete(String path) async {
+  Future<void> delete(
+    String path, {
+    Map<String, String>? headers,
+  }) async {
     try {
-      await _dio.delete<dynamic>(path);
+      await _dio.delete<dynamic>(
+        path,
+        options: headers == null ? null : Options(headers: headers),
+      );
     } on DioException catch (error) {
       throw mapDioException(error);
     }

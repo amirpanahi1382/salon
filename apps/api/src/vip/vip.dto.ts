@@ -27,6 +27,12 @@ export class PatchVipListDto {
   @ValidateIf((_, value) => value !== undefined)
   @IsIn(['ACTIVE', 'INACTIVE'])
   availability?: 'ACTIVE' | 'INACTIVE';
+
+  @ApiPropertyOptional({ enum: VIP_REGION_CODES })
+  @ValidateIf((_, value) => value !== undefined)
+  @IsString()
+  @IsIn([...VIP_REGION_CODES])
+  regionCode?: string;
 }
 
 export class GrantVipEntitlementDto {
@@ -159,6 +165,24 @@ export class VipTargetListSummaryDto {
     type: String,
   })
   attentionRequestId!: string | null;
+
+  @ApiProperty({
+    description:
+      'True only when ACTIVE, unreserved, ORIGINAL_TEHRAN, and a canonical Tehran region 01–14 — the same predicate salons use to browse and reserve.',
+  })
+  requestableBySalons!: boolean;
+
+  @ApiProperty({
+    description:
+      'COUNT(*) of vip_requests for this list, including CANCELLED and drafts.',
+  })
+  totalRequestCount!: number;
+
+  @ApiProperty({
+    description:
+      'vip_requests in AWAITING_SAMPLE_WORK, SUBMITTED, MANUAL_QUEUED, or BALE_NOT_IMPLEMENTED. CANCELLED excluded.',
+  })
+  openRequestCount!: number;
 }
 
 export class VipTargetContactDto {

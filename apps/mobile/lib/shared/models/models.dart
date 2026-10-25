@@ -980,6 +980,10 @@ class VipTargetList {
     this.createdAt,
     this.attentionRequestId,
     this.reservedBySalonName,
+    this.catalogMembership,
+    this.requestableBySalons = false,
+    this.totalRequestCount = 0,
+    this.openRequestCount = 0,
     this.request,
     this.contacts = const [],
   });
@@ -994,6 +998,10 @@ class VipTargetList {
   final DateTime? createdAt;
   final String? attentionRequestId;
   final String? reservedBySalonName;
+  final String? catalogMembership;
+  final bool requestableBySalons;
+  final int totalRequestCount;
+  final int openRequestCount;
   final VipRequest? request;
   final List<VipContact> contacts;
 
@@ -1015,6 +1023,10 @@ class VipTargetList {
           : null,
       attentionRequestId: json['attentionRequestId'] as String?,
       reservedBySalonName: json['reservedBySalonName'] as String?,
+      catalogMembership: json['catalogMembership'] as String?,
+      requestableBySalons: json['requestableBySalons'] as bool? ?? false,
+      totalRequestCount: json['totalRequestCount'] as int? ?? 0,
+      openRequestCount: json['openRequestCount'] as int? ?? 0,
       request: json['request'] is Map
           ? VipRequest.fromJson(asJsonMap(json['request']))
           : null,
@@ -1530,6 +1542,58 @@ class ObservedReturn {
       associatedRevenue: AssociatedRevenue.fromJson(
         asJsonMap(json['associatedRevenue']),
       ),
+    );
+  }
+}
+
+class AdminSalonProfile {
+  const AdminSalonProfile({
+    required this.salonId,
+    required this.salonName,
+    required this.accessState,
+    required this.entitled,
+    required this.asOf,
+    required this.explanation,
+    required this.distinctVipListsRequested,
+    required this.vipRequestCount,
+    required this.vipOpenRequestCount,
+    required this.ordinaryMessageRequestCount,
+    required this.vipRecordedSendCount,
+    required this.ordinaryRecordedSendCount,
+  });
+
+  final String salonId;
+  final String salonName;
+  final String accessState;
+  final bool entitled;
+  final DateTime asOf;
+  final String explanation;
+  final int distinctVipListsRequested;
+  final int vipRequestCount;
+  final int vipOpenRequestCount;
+  final int ordinaryMessageRequestCount;
+  final int vipRecordedSendCount;
+  final int ordinaryRecordedSendCount;
+
+  factory AdminSalonProfile.fromJson(Map<String, dynamic> json) {
+    final counts = json['counts'] is Map
+        ? asJsonMap(json['counts'])
+        : const <String, dynamic>{};
+    return AdminSalonProfile(
+      salonId: json['salonId'] as String,
+      salonName: json['salonName'] as String,
+      accessState: json['accessState'] as String? ?? '',
+      entitled: json['entitled'] as bool? ?? false,
+      asOf: DateTime.parse(json['asOf'] as String),
+      explanation: json['explanation'] as String? ?? '',
+      distinctVipListsRequested: counts['distinctVipListsRequested'] as int? ?? 0,
+      vipRequestCount: counts['vipRequestCount'] as int? ?? 0,
+      vipOpenRequestCount: counts['vipOpenRequestCount'] as int? ?? 0,
+      ordinaryMessageRequestCount:
+          counts['ordinaryMessageRequestCount'] as int? ?? 0,
+      vipRecordedSendCount: counts['vipRecordedSendCount'] as int? ?? 0,
+      ordinaryRecordedSendCount:
+          counts['ordinaryRecordedSendCount'] as int? ?? 0,
     );
   }
 }

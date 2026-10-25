@@ -203,10 +203,6 @@ class _AdminVipOutreachFoldersScreenState
         appBar: AppBar(
           title: const Text(AppStrings.adminVipMessagingTitle),
           actions: [
-            TextButton(
-              onPressed: () => context.go('/admin/vip'),
-              child: const Text(AppStrings.adminVipLists),
-            ),
             IconButton(
               onPressed: () => ref.read(authControllerProvider.notifier).logout(),
               icon: const Icon(Icons.logout),
@@ -220,6 +216,37 @@ class _AdminVipOutreachFoldersScreenState
                 : ListView(
                     padding: const EdgeInsets.all(AppTokens.space16),
                     children: [
+                      LayoutBuilder(
+                        builder: (context, constraints) {
+                          final stacked = constraints.maxWidth < 420;
+                          final lists = FilledButton.tonal(
+                            onPressed: () => context.go('/admin/vip'),
+                            child: const Text(AppStrings.adminVipLists),
+                          );
+                          final activate = FilledButton.tonal(
+                            onPressed: () => context.go('/admin/vip/salons'),
+                            child: const Text(AppStrings.adminVipActivateSalons),
+                          );
+                          if (stacked) {
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                lists,
+                                const SizedBox(height: AppTokens.space8),
+                                activate,
+                              ],
+                            );
+                          }
+                          return Row(
+                            children: [
+                              Expanded(child: lists),
+                              const SizedBox(width: AppTokens.space8),
+                              Expanded(child: activate),
+                            ],
+                          );
+                        },
+                      ),
+                      const SizedBox(height: AppTokens.space16),
                       TextField(
                         controller: _search,
                         textInputAction: TextInputAction.search,

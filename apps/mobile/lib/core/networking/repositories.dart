@@ -1121,6 +1121,7 @@ class VipRepository {
     String id, {
     String? name,
     String? availability,
+    String? regionCode,
   }) async {
     return VipTargetList.fromJson(
       asJsonMap(
@@ -1129,6 +1130,7 @@ class VipRepository {
           data: {
             'name': ?name,
             'availability': ?availability,
+            'regionCode': ?regionCode,
           },
         ),
       ),
@@ -1148,6 +1150,19 @@ class VipRepository {
       '/admin/vip/entitlements',
       data: {'salonId': salonId},
       headers: {'Idempotency-Key': key},
+    );
+  }
+
+  Future<void> revokeEntitlement(String salonId, String key) async {
+    await _api.delete(
+      '/admin/vip/entitlements/$salonId',
+      headers: {'Idempotency-Key': key},
+    );
+  }
+
+  Future<AdminSalonProfile> adminSalonProfile(String salonId) async {
+    return AdminSalonProfile.fromJson(
+      asJsonMap(await _api.get('/admin/vip/salons/$salonId/profile')),
     );
   }
 

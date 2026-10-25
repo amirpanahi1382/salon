@@ -8,6 +8,7 @@ import {
   VIP_RESERVATION_TTL_MS,
 } from '@salon/shared';
 import { PrismaService } from '../infrastructure/database/prisma.service';
+import { salonRequestableListWhere, vipListRequestableJoinSql, VIP_LIST_REQUESTABLE_SQL } from './vip-list-request-counts';
 import {
   VIP_RECIPIENT_PROGRESS_COUNTS,
   VIP_RECIPIENT_STOP_JOIN,
@@ -105,12 +106,7 @@ export class VipRepository {
 
   listActiveListsByRegion(regionCode: string) {
     return this.prisma.client.vipTargetList.findMany({
-      where: {
-        regionCode,
-        status: 'ACTIVE',
-        catalogMembership: 'ORIGINAL_TEHRAN',
-        reservedBySalonId: null,
-      },
+      where: salonRequestableListWhere(regionCode),
       select: {
         id: true,
         name: true,
@@ -147,9 +143,7 @@ export class VipRepository {
           FROM vip_target_contacts ct
           JOIN vip_target_lists listed ON listed.id = ct.list_id
           WHERE listed.region_code = c.code
-            AND listed.status = 'ACTIVE'
-            AND listed.catalog_membership = 'ORIGINAL_TEHRAN'::"VipCatalogMembership"
-            AND listed.reserved_by_salon_id IS NULL
+            AND ${vipListRequestableJoinSql('listed')}
             AND NOT EXISTS (
               SELECT 1
               FROM platform_message_stops s
@@ -160,9 +154,7 @@ export class VipRepository {
       FROM catalog c
       LEFT JOIN vip_target_lists l
         ON l.region_code = c.code
-       AND l.status = 'ACTIVE'
-       AND l.catalog_membership = 'ORIGINAL_TEHRAN'::"VipCatalogMembership"
-       AND l.reserved_by_salon_id IS NULL
+       AND ${vipListRequestableJoinSql('l')}
       GROUP BY c.code, c.name, c.sort
       ORDER BY c.sort
     `;
@@ -293,8 +285,51 @@ export class VipRepository {
         reserved_at = ${now},
         updated_at = ${now}
       WHERE id = ${listId}::uuid
-        AND status = 'ACTIVE'
-        AND catalog_membership = 'ORIGINAL_TEHRAN'::"VipCatalogMembership"
+        AND ${VIP_LIST_REQUESTABLE_SQL}
+      RETURNING id
+    `;
+    return updated.length === 1;
+  }
+
+  /**
+   * Activate only if the list is still unreserved. Does not clear reservation fields.
+   * Returns false when the list is IN_USE, reserved, missing, or not in an activatable status.
+   */
+  async tryActivateUnreservedList(
+    tx: Prisma.TransactionClient,
+    input: { id: string; regionCode: string; name?: string; now: Date },
+  ): Promise<boolean> {
+    const updated = await tx.$queryRaw<Array<{ id: string }>>`
+      UPDATE vip_target_lists
+      SET
+        status = 'ACTIVE',
+        region_code = ${input.regionCode},
+        catalog_membership = 'ORIGINAL_TEHRAN'::"VipCatalogMembership",
+        ${input.name ? Prisma.sql`name = ${input.name},` : Prisma.sql``}
+        updated_at = ${input.now}
+      WHERE id = ${input.id}::uuid
+        AND status IN ('PENDING', 'INACTIVE', 'ACTIVE')
+        AND reserved_by_salon_id IS NULL
+      RETURNING id
+    `;
+    return updated.length === 1;
+  }
+
+  /**
+   * Deactivate only if the list is still unreserved. Leaves region, catalog, and reservation fields unchanged.
+   */
+  async tryDeactivateUnreservedList(
+    tx: Prisma.TransactionClient,
+    input: { id: string; name?: string; now: Date },
+  ): Promise<boolean> {
+    const updated = await tx.$queryRaw<Array<{ id: string }>>`
+      UPDATE vip_target_lists
+      SET
+        status = 'INACTIVE',
+        ${input.name ? Prisma.sql`name = ${input.name},` : Prisma.sql``}
+        updated_at = ${input.now}
+      WHERE id = ${input.id}::uuid
+        AND status IN ('PENDING', 'INACTIVE', 'ACTIVE')
         AND reserved_by_salon_id IS NULL
       RETURNING id
     `;

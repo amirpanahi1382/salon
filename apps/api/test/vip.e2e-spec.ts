@@ -237,12 +237,8 @@ describeIfDb('VIP outreach (e2e)', () => {
     await request(app.getHttpServer())
       .patch(`/admin/vip/lists/${listId}`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ availability: 'ACTIVE' })
+      .send({ availability: 'ACTIVE', regionCode: '02' })
       .expect(200);
-    await prisma.client.vipTargetList.update({
-      where: { id: listId },
-      data: { regionCode: '02', catalogMembership: 'ORIGINAL_TEHRAN' },
-    });
 
     const lists = await request(app.getHttpServer())
       .get('/vip/lists')
@@ -317,7 +313,7 @@ describeIfDb('VIP outreach (e2e)', () => {
     await request(app.getHttpServer())
       .patch(`/admin/vip/lists/${listId}`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ name: 'لیست ونک', availability: 'ACTIVE' })
+      .send({ name: 'لیست ونک', availability: 'ACTIVE', regionCode: '01' })
       .expect(200);
     await classifyOriginal(listId);
 
@@ -428,7 +424,7 @@ describeIfDb('VIP outreach (e2e)', () => {
     await request(app.getHttpServer())
       .patch(`/admin/vip/lists/${listId}`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ availability: 'ACTIVE' })
+      .send({ availability: 'ACTIVE', regionCode: '01' })
       .expect(200);
     await classifyOriginal(listId);
     const created = await request(app.getHttpServer())
@@ -479,13 +475,13 @@ describeIfDb('VIP outreach (e2e)', () => {
     await request(app.getHttpServer())
       .patch(`/admin/vip/lists/${listA}`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ availability: 'ACTIVE' })
+      .send({ availability: 'ACTIVE', regionCode: '01' })
       .expect(200);
     await classifyOriginal(listA);
     await request(app.getHttpServer())
       .patch(`/admin/vip/lists/${listB}`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ availability: 'ACTIVE' })
+      .send({ availability: 'ACTIVE', regionCode: '01' })
       .expect(200);
     await classifyOriginal(listB);
 
@@ -559,7 +555,7 @@ describeIfDb('VIP outreach (e2e)', () => {
       await request(app.getHttpServer())
         .patch(`/admin/vip/lists/${listId}`)
         .set('Authorization', `Bearer ${adminToken}`)
-        .send({ availability: 'ACTIVE' })
+        .send({ availability: 'ACTIVE', regionCode: '01' })
         .expect(200);
       await classifyOriginal(listId);
     }
@@ -601,7 +597,7 @@ describeIfDb('VIP outreach (e2e)', () => {
       await request(app.getHttpServer())
         .patch(`/admin/vip/lists/${listId}`)
         .set('Authorization', `Bearer ${adminToken}`)
-        .send({ availability: 'ACTIVE' })
+        .send({ availability: 'ACTIVE', regionCode: '01' })
         .expect(200);
       await classifyOriginal(listId);
     }
@@ -639,7 +635,7 @@ describeIfDb('VIP outreach (e2e)', () => {
     await request(app.getHttpServer())
       .patch(`/admin/vip/lists/${listId}`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ availability: 'ACTIVE' })
+      .send({ availability: 'ACTIVE', regionCode: '01' })
       .expect(200);
     await classifyOriginal(listId);
 
@@ -664,7 +660,7 @@ describeIfDb('VIP outreach (e2e)', () => {
     await request(app.getHttpServer())
       .patch(`/admin/vip/lists/${listId}`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ availability: 'ACTIVE' })
+      .send({ availability: 'ACTIVE', regionCode: '01' })
       .expect(200);
     await classifyOriginal(listId);
     const key = `same-${randomUUID()}`;
@@ -729,7 +725,7 @@ describeIfDb('VIP outreach (e2e)', () => {
       await request(app.getHttpServer())
         .patch(`/admin/vip/lists/${listId}`)
         .set('Authorization', `Bearer ${adminToken}`)
-        .send({ availability: 'ACTIVE' })
+        .send({ availability: 'ACTIVE', regionCode: '01' })
         .expect(200);
       await classifyOriginal(listId);
     }
@@ -769,7 +765,7 @@ describeIfDb('VIP outreach (e2e)', () => {
       await request(app.getHttpServer())
         .patch(`/admin/vip/lists/${listId}`)
         .set('Authorization', `Bearer ${adminToken}`)
-        .send({ availability: 'ACTIVE' })
+        .send({ availability: 'ACTIVE', regionCode: '01' })
         .expect(200);
       await classifyOriginal(listId);
     }
@@ -819,7 +815,7 @@ describeIfDb('VIP outreach (e2e)', () => {
       await request(app.getHttpServer())
         .patch(`/admin/vip/lists/${listId}`)
         .set('Authorization', `Bearer ${adminToken}`)
-        .send({ availability: 'ACTIVE' })
+        .send({ availability: 'ACTIVE', regionCode: '01' })
         .expect(200);
       await classifyOriginal(listId);
     }
@@ -858,7 +854,7 @@ describeIfDb('VIP outreach (e2e)', () => {
     await request(app.getHttpServer())
       .patch(`/admin/vip/lists/${listId}`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ availability: 'ACTIVE' })
+      .send({ availability: 'ACTIVE', regionCode: '01' })
       .expect(200);
     await classifyOriginal(listId);
 
@@ -888,7 +884,7 @@ describeIfDb('VIP outreach (e2e)', () => {
     await request(app.getHttpServer())
       .patch(`/admin/vip/lists/${listId}`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ availability: 'ACTIVE' })
+      .send({ availability: 'ACTIVE', regionCode: '01' })
       .expect(200);
     await classifyOriginal(listId);
     const created = await request(app.getHttpServer())
@@ -932,7 +928,7 @@ describeIfDb('VIP outreach (e2e)', () => {
     await request(app.getHttpServer())
       .patch(`/admin/vip/lists/${listId}`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ name: 'نام اولیه', availability: 'ACTIVE' })
+      .send({ name: 'نام اولیه', availability: 'ACTIVE', regionCode: '01' })
       .expect(200);
     await classifyOriginal(listId);
     const created = await request(app.getHttpServer())
@@ -1045,7 +1041,7 @@ describeIfDb('VIP outreach (e2e)', () => {
     await request(app.getHttpServer())
       .patch(`/admin/vip/lists/${listId}`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ availability: 'ACTIVE' })
+      .send({ availability: 'ACTIVE', regionCode: '01' })
       .expect(200);
     await classifyOriginal(listId);
     const created = await request(app.getHttpServer())
@@ -1080,7 +1076,7 @@ describeIfDb('VIP outreach (e2e)', () => {
     await request(app.getHttpServer())
       .patch(`/admin/vip/lists/${listId}`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ availability: 'ACTIVE' })
+      .send({ availability: 'ACTIVE', regionCode: '01' })
       .expect(200);
     await classifyOriginal(listId);
     const created = await request(app.getHttpServer())
@@ -1308,43 +1304,35 @@ describeIfDb('VIP outreach (e2e)', () => {
       data: { name: 'e2e-region-01-unclassified', regionCode: '01' },
     });
 
-    for (const listId of [region01Active, region01Other, region02Active, unnamedHistorical, inUseRegional]) {
+    for (const listId of [region01Active, region01Other, inUseRegional]) {
       await request(app.getHttpServer())
         .patch(`/admin/vip/lists/${listId}`)
         .set('Authorization', `Bearer ${adminToken}`)
-        .send({ availability: 'ACTIVE' })
+        .send({ availability: 'ACTIVE', regionCode: '01' })
         .expect(200);
     }
     await request(app.getHttpServer())
+      .patch(`/admin/vip/lists/${region02Active}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ availability: 'ACTIVE', regionCode: '02' })
+      .expect(200);
+    await request(app.getHttpServer())
       .patch(`/admin/vip/lists/${inactiveRegional}`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ availability: 'ACTIVE' })
+      .send({ availability: 'ACTIVE', regionCode: '01' })
       .expect(200);
     await request(app.getHttpServer())
       .patch(`/admin/vip/lists/${inactiveRegional}`)
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ availability: 'INACTIVE' })
       .expect(200);
-    await request(app.getHttpServer())
-      .patch(`/admin/vip/lists/${unclassifiedActive}`)
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({ availability: 'ACTIVE' })
-      .expect(200);
-    await prisma.client.vipTargetList.updateMany({
-      where: {
-        id: {
-          in: [
-            region01Active,
-            region01Other,
-            region02Active,
-            region11Pending,
-            region14Pending,
-            inUseRegional,
-            inactiveRegional,
-          ],
-        },
-      },
-      data: { catalogMembership: 'ORIGINAL_TEHRAN' },
+    await prisma.client.vipTargetList.update({
+      where: { id: unnamedHistorical },
+      data: { status: 'ACTIVE', regionCode: null, catalogMembership: null },
+    });
+    await prisma.client.vipTargetList.update({
+      where: { id: unclassifiedActive },
+      data: { status: 'ACTIVE', regionCode: '01', catalogMembership: null },
     });
 
     const held = await request(app.getHttpServer())
@@ -1542,7 +1530,7 @@ describeIfDb('VIP outreach (e2e)', () => {
     await request(app.getHttpServer())
       .patch(`/admin/vip/lists/${listId}`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ availability: 'ACTIVE' })
+      .send({ availability: 'ACTIVE', regionCode: '01' })
       .expect(200);
     await request(app.getHttpServer())
       .post('/vip/requests')
@@ -1593,13 +1581,12 @@ describeIfDb('VIP outreach (e2e)', () => {
     });
   }
 
-  async function activate(listId: string) {
+  async function activate(listId: string, regionCode = '01') {
     await request(app.getHttpServer())
       .patch(`/admin/vip/lists/${listId}`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ availability: 'ACTIVE' })
+      .send({ availability: 'ACTIVE', regionCode })
       .expect(200);
-    await classifyOriginal(listId);
   }
 
   async function submitVip(owner: { token: string }, listId: string, count: 30 | 50 | 100, geo: string) {

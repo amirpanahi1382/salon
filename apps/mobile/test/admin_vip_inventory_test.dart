@@ -1,6 +1,9 @@
-import 'dart:async';
+import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
@@ -8,15 +11,35 @@ import 'package:salon_mobile/core/networking/api_client.dart';
 import 'package:salon_mobile/core/networking/repositories.dart';
 import 'package:salon_mobile/core/state/providers.dart';
 import 'package:salon_mobile/core/storage/session_store.dart';
+import 'package:salon_mobile/core/theme/app_theme.dart';
+import 'package:salon_mobile/core/theme/app_tokens.dart';
 import 'package:salon_mobile/features/admin/admin_vip_screen.dart';
 import 'package:salon_mobile/shared/labels.dart';
 import 'package:salon_mobile/shared/models/models.dart';
 
-VipTargetList _list(String id, String name) => VipTargetList(
+VipTargetList _list(
+  String id,
+  String name, {
+  bool requestable = false,
+  int total = 0,
+  int open = 0,
+  String status = 'ACTIVE',
+  String? catalogMembership,
+  String? regionCode,
+  String? regionName,
+  int contactCount = 2,
+}) =>
+    VipTargetList(
       id: id,
       name: name,
-      status: 'ACTIVE',
-      contactCount: 2,
+      status: status,
+      contactCount: contactCount,
+      catalogMembership: catalogMembership,
+      regionCode: regionCode,
+      regionName: regionName,
+      requestableBySalons: requestable,
+      totalRequestCount: total,
+      openRequestCount: open,
     );
 
 AdminVipInventoryPage _page({
@@ -40,10 +63,8 @@ class _Inventory extends VipRepository {
       : super(ApiClient(baseUrl: 'http://example.test', sessionStore: MemorySessionStore()));
 
   final calls = <String?>[];
-  Completer<AdminVipInventoryPage>? originalGate;
-  bool holdOriginal = false;
-  AdminVipInventoryPage original = _page(items: [_list('orig-1', 'لیست اصلی')]);
-  AdminVipInventoryPage all = _page(items: [_list('all-1', 'لیست همه')]);
+  final patches = <Map<String, String?>>[];
+  AdminVipInventoryPage page = _page(items: [_list('all-1', 'لیست همه')]);
   AdminVipInventoryPage? second;
 
   @override
@@ -52,12 +73,8 @@ class _Inventory extends VipRepository {
     String? catalogMembership,
   }) async {
     calls.add(catalogMembership);
-    if (cursor != null) return second ?? _page(items: [_list('orig-2', 'ادامه اصلی')]);
-    if (catalogMembership == 'ORIGINAL_TEHRAN' && holdOriginal) {
-      return (originalGate ??= Completer()).future;
-    }
-    if (catalogMembership == 'ORIGINAL_TEHRAN') return original;
-    return all;
+    if (cursor != null) return second ?? _page(items: [_list('all-2', 'ادامه')]);
+    return page;
   }
 
   @override
@@ -65,68 +82,138 @@ class _Inventory extends VipRepository {
       const ItemPage(items: [], hasMore: false);
 
   @override
-  Future<VipTargetList> adminGetList(String id) async => _list(id, 'لیست اصلی');
+  Future<VipTargetList> adminGetList(String id) async {
+    return page.items.firstWhere(
+      (item) => item.id == id,
+      orElse: () => _list(id, 'لیست همه'),
+    );
+  }
+
+  @override
+  Future<VipTargetList> patchList(
+    String id, {
+    String? name,
+    String? availability,
+    String? regionCode,
+  }) async {
+    patches.add({
+      'id': id,
+      'name': name,
+      'availability': availability,
+      'regionCode': regionCode,
+    });
+    page = _page(
+      items: page.items
+          .map(
+            (item) => item.id == id
+                ? _list(
+                    id,
+                    name ?? item.name,
+                    requestable: availability == 'ACTIVE' && regionCode != null,
+                    status: availability ?? item.status,
+                    catalogMembership:
+                        availability == 'ACTIVE' ? 'ORIGINAL_TEHRAN' : item.catalogMembership,
+                    regionCode: regionCode ?? item.regionCode,
+                    regionName: regionCode != null ? 'منطقه $regionCode' : item.regionName,
+                    total: item.totalRequestCount,
+                    open: item.openRequestCount,
+                    contactCount: item.contactCount,
+                  )
+                : item,
+          )
+          .toList(),
+      listCount: page.listCount,
+      contactRowCount: page.contactRowCount,
+    );
+    return page.items.firstWhere((item) => item.id == id);
+  }
 }
 
-Future<void> _pump(WidgetTester tester, _Inventory repository, {GoRouter? router}) async {
-  tester.view.physicalSize = const Size(900, 1600);
+Future<void> _savePng(WidgetTester tester, String filename) async {
+  final boundary = tester.renderObject<RenderRepaintBoundary>(
+    find.byKey(const ValueKey('admin-vip-screenshot')),
+  );
+  await tester.runAsync(() async {
+    final image = await boundary.toImage(pixelRatio: 1);
+    final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+    final file = File('/Users/amir-panahi/Desktop/salon-admin-vip-screenshots/$filename')
+      ..parent.createSync(recursive: true);
+    file.writeAsBytesSync(bytes!.buffer.asUint8List());
+  });
+}
+
+Future<void> _pump(WidgetTester tester, _Inventory repository, {GoRouter? router, Size? size}) async {
+  tester.view.physicalSize = size ?? const Size(900, 1600);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.resetPhysicalSize);
+  Widget wrap(Widget child) => RepaintBoundary(
+        key: const ValueKey('admin-vip-screenshot'),
+        child: ColoredBox(
+          color: AppTokens.bg,
+          child: Directionality(
+            textDirection: TextDirection.rtl,
+            child: child,
+          ),
+        ),
+      );
   await tester.pumpWidget(
     ProviderScope(
       overrides: [vipRepositoryProvider.overrideWithValue(repository)],
       child: router == null
-          ? const MaterialApp(home: AdminVipScreen())
-          : MaterialApp.router(routerConfig: router),
+          ? MaterialApp(
+              theme: AppTheme.app(),
+              locale: AppTheme.locale,
+              home: wrap(const AdminVipScreen()),
+            )
+          : MaterialApp.router(
+              theme: AppTheme.app(),
+              locale: AppTheme.locale,
+              builder: (context, child) => wrap(child ?? const SizedBox.shrink()),
+              routerConfig: router,
+            ),
     ),
   );
 }
 
+Future<void> loadVazirmatn() async {
+  final loader = FontLoader('Vazirmatn')
+    ..addFont(rootBundle.load('assets/fonts/Vazirmatn-Regular.ttf'))
+    ..addFont(rootBundle.load('assets/fonts/Vazirmatn-Medium.ttf'))
+    ..addFont(rootBundle.load('assets/fonts/Vazirmatn-SemiBold.ttf'));
+  await loader.load();
+}
+
 void main() {
-  testWidgets('defaults to the original collection and does not show unclassified lists', (tester) async {
+  setUpAll(loadVazirmatn);
+
+  testWidgets('inventory lists every list without the original-Tehran filter', (tester) async {
     final repository = _Inventory()
-      ..original = _page(items: const [], listCount: 0, contactRowCount: 0)
-      ..all = _page(items: [_list('regional-1', 'لیست منطقه‌ای')]);
+      ..page = _page(items: [
+        _list('regional-1', 'لیست منطقه‌ای', total: 3, open: 1),
+        _list('orig-1', 'لیست اصلی', requestable: true),
+      ], listCount: 2, contactRowCount: 4);
     await _pump(tester, repository);
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.byKey(const ValueKey('vip-view-original')));
-    expect(repository.calls.first, 'ORIGINAL_TEHRAN');
-    expect(
-      tester.widget<ChoiceChip>(find.byKey(const ValueKey('vip-view-original'))).selected,
-      isTrue,
-    );
-    expect(find.text(AppStrings.vipOriginalCollectionEmpty), findsOneWidget);
-    expect(find.text('لیست منطقه‌ای'), findsNothing);
-    expect(find.text('0 لیست · 0 مخاطب'), findsOneWidget);
+    expect(repository.calls, [null]);
+    expect(find.byKey(const ValueKey('vip-view-original')), findsNothing);
+    expect(find.byKey(const ValueKey('vip-view-all')), findsNothing);
+    expect(find.text('لیست منطقه‌ای'), findsOneWidget);
+    expect(find.text('لیست اصلی'), findsOneWidget);
+    expect(find.text(AppStrings.vipGrant), findsNothing);
+    expect(find.text(AppStrings.searchSalons), findsNothing);
+    expect(find.text('2 لیست · 4 مخاطب'), findsOneWidget);
+    expect(find.textContaining(AppStrings.adminVipListRequestTotal), findsWidgets);
   });
 
-  testWidgets('ignores a stale original response after switching to all lists', (tester) async {
-    final repository = _Inventory()..holdOriginal = true;
-    await _pump(tester, repository);
-    await tester.pump();
-    expect(repository.calls, ['ORIGINAL_TEHRAN']);
-    await tester.ensureVisible(find.byKey(const ValueKey('vip-view-all')));
-    await tester.tap(find.byKey(const ValueKey('vip-view-all')));
-    await tester.pump();
-    await tester.pump();
-    expect(find.text('لیست همه'), findsOneWidget);
-    repository.originalGate!.complete(_page(items: [_list('orig-1', 'لیست اصلی')]));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 20));
-    expect(find.text('لیست همه'), findsOneWidget);
-    expect(find.text('لیست اصلی'), findsNothing);
-    expect(repository.calls, ['ORIGINAL_TEHRAN', null]);
-  });
-
-  testWidgets('paginates the selected view and resets the cursor when the view changes', (tester) async {
+  testWidgets('paginates the full inventory', (tester) async {
     final repository = _Inventory()
-      ..original = _page(
-        items: [_list('orig-1', 'صفحه اول')],
+      ..page = _page(
+        items: [_list('all-1', 'صفحه اول')],
         hasMore: true,
         nextCursor: 'page-2',
         listCount: 2,
       )
-      ..second = _page(items: [_list('orig-2', 'صفحه دوم')], listCount: 2);
+      ..second = _page(items: [_list('all-2', 'صفحه دوم')], listCount: 2);
     await _pump(tester, repository);
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.byKey(const ValueKey('vip-lists-load-more')));
@@ -134,15 +221,10 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('صفحه اول'), findsOneWidget);
     expect(find.text('صفحه دوم'), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('vip-view-all')));
-    await tester.pumpAndSettle();
-    expect(find.text('صفحه اول'), findsNothing);
-    await tester.ensureVisible(find.text('لیست همه'));
-    expect(find.text('لیست همه'), findsOneWidget);
-    expect(repository.calls, ['ORIGINAL_TEHRAN', 'ORIGINAL_TEHRAN', null]);
+    expect(repository.calls, [null, null]);
   });
 
-  testWidgets('opens list detail by name and returns to the inventory view', (tester) async {
+  testWidgets('opens list detail by name and returns to inventory', (tester) async {
     final repository = _Inventory();
     final router = GoRouter(
       initialLocation: '/admin/vip',
@@ -156,16 +238,151 @@ void main() {
     );
     await _pump(tester, repository, router: router);
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('لیست اصلی'));
-    await tester.tap(find.text('لیست اصلی'));
+    await tester.ensureVisible(find.text('لیست همه'));
+    await tester.tap(find.text('لیست همه'));
     await tester.pumpAndSettle();
-    expect(find.text('orig-1'), findsNothing);
-    expect(find.text('لیست اصلی'), findsWidgets);
+    expect(find.text('لیست همه'), findsWidgets);
     await tester.pageBack();
     await tester.pumpAndSettle();
-    expect(
-      tester.widget<ChoiceChip>(find.byKey(const ValueKey('vip-view-original'))).selected,
-      isTrue,
+    expect(find.text('لیست همه'), findsOneWidget);
+  });
+
+  testWidgets('empty inventory uses the all-lists empty copy', (tester) async {
+    final repository = _Inventory()
+      ..page = _page(items: const [], listCount: 0, contactRowCount: 0);
+    await _pump(tester, repository);
+    await tester.pumpAndSettle();
+    expect(find.text(AppStrings.vipNoLists), findsOneWidget);
+    expect(find.text(AppStrings.vipOriginalCollectionEmpty), findsNothing);
+  });
+
+  testWidgets('shows pending, requestable, missing-region, and IN_USE locked lists', (tester) async {
+    final repository = _Inventory()
+      ..page = _page(
+        items: [
+          _list(
+            'imported-1',
+            'لیست واردشده فعال',
+            status: 'ACTIVE',
+            contactCount: 3,
+          ),
+          _list(
+            'reviewed-1',
+            'لیست بررسی‌شده',
+            requestable: true,
+            catalogMembership: 'ORIGINAL_TEHRAN',
+            regionCode: '01',
+            regionName: 'شمال',
+            total: 2,
+            open: 1,
+          ),
+          _list(
+            'inuse-1',
+            'لیست رزروشده',
+            status: 'IN_USE',
+            catalogMembership: 'ORIGINAL_TEHRAN',
+            regionCode: '01',
+            regionName: 'شمال',
+            total: 1,
+            open: 1,
+          ),
+        ],
+        listCount: 3,
+        contactRowCount: 7,
+      );
+    final router = GoRouter(
+      initialLocation: '/admin/vip',
+      routes: [
+        GoRoute(path: '/admin/vip', builder: (context, state) => const AdminVipScreen()),
+        GoRoute(
+          path: '/admin/vip/:id',
+          builder: (_, state) => AdminVipListDetailScreen(listId: state.pathParameters['id']!),
+        ),
+      ],
     );
+    await _pump(tester, repository, router: router);
+    await tester.pumpAndSettle();
+    expect(find.text('3 لیست · 7 مخاطب'), findsOneWidget);
+    expect(find.textContaining(AppStrings.adminVipMissingRegionReason), findsOneWidget);
+    expect(find.textContaining(AppStrings.adminVipRequestable), findsOneWidget);
+    expect(find.textContaining('${AppStrings.vipActive} ·'), findsOneWidget);
+    await _savePng(tester, 'admin-vip-inventory-nonzero.png');
+
+    await tester.tap(find.text('لیست واردشده فعال'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('vip-unavailability-reason')), findsOneWidget);
+    expect(find.textContaining(AppStrings.adminVipMissingRegionReason), findsWidgets);
+    expect(find.text(AppStrings.vipActive), findsNothing);
+    expect(tester.widget<FilledButton>(find.byKey(const ValueKey('vip-activate-list'))).onPressed, isNotNull);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('لیست بررسی‌شده'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining(AppStrings.adminVipRequestable), findsWidgets);
+    expect(find.text(AppStrings.vipActive), findsWidgets);
+    expect(find.byKey(const ValueKey('vip-unavailability-reason')), findsNothing);
+    expect(tester.widget<FilledButton>(find.byKey(const ValueKey('vip-activate-list'))).onPressed, isNull);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('لیست رزروشده'));
+    await tester.pumpAndSettle();
+    expect(find.text(AppStrings.adminVipInUseCannotChange), findsOneWidget);
+    expect(find.textContaining(AppStrings.adminVipInUseReason), findsWidgets);
+    expect(tester.widget<FilledButton>(find.byKey(const ValueKey('vip-activate-list'))).onPressed, isNull);
+    expect(tester.widget<FilledButton>(find.byKey(const ValueKey('vip-deactivate-list'))).onPressed, isNull);
+  });
+
+  testWidgets('activation requires a canonical region then patches availability and region together', (tester) async {
+    final repository = _Inventory()
+      ..page = _page(
+        items: [
+          _list('pending-1', 'لیست در انتظار', status: 'PENDING', contactCount: 3),
+        ],
+      );
+    final router = GoRouter(
+      initialLocation: '/admin/vip',
+      routes: [
+        GoRoute(path: '/admin/vip', builder: (context, state) => const AdminVipScreen()),
+        GoRoute(
+          path: '/admin/vip/:id',
+          builder: (_, state) => AdminVipListDetailScreen(listId: state.pathParameters['id']!),
+        ),
+      ],
+    );
+    await _pump(tester, repository, router: router);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('لیست در انتظار'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('vip-activate-list')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining(AppStrings.adminVipActivateListConfirm), findsOneWidget);
+    expect(
+      tester.widget<FilledButton>(find.byKey(const ValueKey('vip-activate-confirm'))).onPressed,
+      isNull,
+    );
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('vip-activate-region-03')),
+      80,
+      scrollable: find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.byType(Scrollable),
+      ),
+    );
+    await tester.tap(find.byKey(const ValueKey('vip-activate-region-03')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('03 — '), findsWidgets);
+    await tester.tap(find.byKey(const ValueKey('vip-activate-confirm')));
+    await tester.pumpAndSettle();
+    expect(repository.patches, [
+      {
+        'id': 'pending-1',
+        'name': null,
+        'availability': 'ACTIVE',
+        'regionCode': '03',
+      },
+    ]);
+    expect(find.textContaining(AppStrings.adminVipRequestable), findsWidgets);
   });
 }

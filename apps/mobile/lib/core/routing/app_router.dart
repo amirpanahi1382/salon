@@ -9,6 +9,8 @@ import '../../features/admin/admin_support_screen.dart';
 import '../../features/profile/support_conversation_screen.dart';
 import '../../features/admin/admin_vip_screen.dart';
 import '../../features/admin/admin_vip_outreach_screen.dart';
+import '../../features/admin/admin_vip_salon_access_screen.dart';
+import '../../features/admin/admin_vip_salon_profile_screen.dart';
 import '../../features/activation/payment_screen.dart';
 import '../../features/agreement/agreement_screen.dart';
 import '../../features/auth/auth_screens.dart';
@@ -107,6 +109,16 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/admin/vip/outreach',
         builder: (context, state) => const AdminVipOutreachFoldersScreen(),
+      ),
+      GoRoute(
+        path: '/admin/vip/salons/:salonId',
+        builder: (context, state) => AdminVipSalonProfileScreen(
+          salonId: state.pathParameters['salonId']!,
+        ),
+      ),
+      GoRoute(
+        path: '/admin/vip/salons',
+        builder: (context, state) => const AdminVipSalonAccessScreen(),
       ),
       GoRoute(
         path: '/admin/vip',

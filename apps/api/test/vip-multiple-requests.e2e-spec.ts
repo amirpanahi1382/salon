@@ -163,12 +163,8 @@ describeIfDb('VIP multiple requests and rolling quota (e2e)', () => {
     await request(app.getHttpServer())
       .patch(`/admin/vip/lists/${listId}`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ availability: 'ACTIVE' })
+      .send({ availability: 'ACTIVE', regionCode: '03' })
       .expect(200);
-    await prisma.client.vipTargetList.update({
-      where: { id: listId },
-      data: { catalogMembership: 'ORIGINAL_TEHRAN', regionCode: '03' },
-    });
     return listId;
   }
 
@@ -639,7 +635,11 @@ describeIfDb('VIP multiple requests and rolling quota (e2e)', () => {
       .patch(`/admin/vip/lists/${listId}`)
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ availability: 'ACTIVE' })
-      .expect(200);
+      .expect(400);
+    await prisma.client.vipTargetList.update({
+      where: { id: listId },
+      data: { status: 'ACTIVE' },
+    });
     const unclassified = await createRequest(owner, listId, 30);
     expect(unclassified.status).toBe(409);
     expect(await prisma.client.vipRequest.count({ where: { listId } })).toBe(0);

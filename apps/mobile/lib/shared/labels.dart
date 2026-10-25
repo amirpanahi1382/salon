@@ -195,6 +195,55 @@ class AppStrings {
   static const adminMarkRecipientSent = 'ارسال دستی شد';
   static const adminUnknownDestination = 'نامشخص (نشانی تاریخی تأیید نشده)';
   static const adminVipLists = 'لیست‌های VIP';
+  static const adminVipActivateSalons = 'فعال‌سازی سالن';
+  static const adminVipSalonAccessTitle = 'فعال‌سازی VIP سالن‌ها';
+  static const adminVipSalonProfileTitle = 'نمایه سالن';
+  static const adminVipEnable = 'فعال‌سازی VIP';
+  static const adminVipDisable = 'غیرفعال‌سازی VIP';
+  static const adminVipEnableConfirmTitle = 'فعال‌سازی VIP';
+  static const adminVipDisableConfirmTitle = 'غیرفعال‌سازی VIP';
+  static String adminVipEnableConfirmBody(String salonName) =>
+      'فعال‌سازی VIP برای «$salonName» فقط اجازهٔ ثبت درخواست VIP جدید می‌دهد. تأیید فیش و دسترسی محصول را عوض نمی‌کند.';
+  static String adminVipDisableConfirmBody(String salonName) =>
+      'غیرفعال‌سازی VIP برای «$salonName» درخواست جدید را می‌بندد. تاریخچهٔ درخواست‌ها و ارسال‌های ثبت‌شده پاک نمی‌شود.';
+  static const adminVipEnabled = 'دسترسی VIP فعال شد.';
+  static const adminVipDisabled = 'دسترسی VIP غیرفعال شد.';
+  static const adminVipLiveRead =
+      'شمارش زنده از ردیف‌های ذخیره‌شده است؛ صف ارسال، تحویل قطعی یا مراجعه نیست.';
+  static const adminVipDistinctLists = 'لیست‌های VIP درخواست‌شده (متمایز)';
+  static const adminVipRequestTotal = 'کل درخواست‌های VIP (شامل لغو)';
+  static const adminVipRequestOpen = 'درخواست VIP باز / در جریان';
+  static const adminVipOrdinaryRequests = 'درخواست پیام عادی (غیر VIP)';
+  static const adminVipRecordedSends = 'ارسال ثبت‌شده VIP';
+  static const adminVipOrdinaryRecordedSends = 'ارسال ثبت‌شده عادی';
+  static const adminVipRequestable = 'قابل درخواست برای سالن';
+  static const adminVipNotRequestable = 'برای سالن قابل رزرو نیست';
+  static const adminVipNotYetAvailable = 'هنوز برای سالن قابل رزرو نیست';
+  static const adminVipUnclassified =
+      'این لیست در انبار ادمین دیده می‌شود ولی تا فعال‌سازی با منطقهٔ کانونی برای سالن قابل رزرو نیست.';
+  static const adminVipRegionMissing = 'منطقهٔ کانونی ثبت نشده است';
+  static const adminVipPendingReason =
+      'این لیست هنوز فعال نشده و برای سالن قابل رزرو نیست.';
+  static const adminVipInactiveReason =
+      'این لیست غیرفعال است و برای سالن قابل رزرو نیست.';
+  static const adminVipMissingRegionReason =
+      'منطقهٔ کانونی ثبت نشده است. تا انتخاب یکی از مناطق ۰۱ تا ۱۴ و تأیید فعال‌سازی، سالن این لیست را نمی‌بیند.';
+  static const adminVipNeedsActivationConfirm =
+      'منطقه ثبت شده، ولی فعال‌سازی هنوز کامل نیست. با تأیید فعال‌سازی، سالن‌های دارای دسترسی VIP در همین منطقه می‌توانند آن را ببینند و رزرو کنند.';
+  static const adminVipInUseReason =
+      'این لیست رزرو شده و برای سالن دیگری قابل درخواست نیست.';
+  static const adminVipInUseCannotChange =
+      'این لیست برای یک درخواست رزرو شده است. تا آزاد شدن رزرو نمی‌توان آن را فعال یا غیرفعال کرد.';
+  static const adminVipActivateList = 'فعال کردن لیست';
+  static const adminVipDeactivateList = 'غیرفعال کردن لیست';
+  static const adminVipSelectRegion = 'منطقه را انتخاب کنید';
+  static const adminVipSelectedRegion = 'منطقهٔ انتخاب‌شده';
+  static const adminVipActivateListConfirm =
+      'با فعال‌سازی، این لیستِ رزرونشده برای سالن‌های دارای دسترسی VIP در منطقهٔ انتخاب‌شده قابل مشاهده و درخواست می‌شود. فعال‌سازی دسترسی VIP سالن را نمی‌دهد.';
+  static const adminVipDeactivateListConfirm =
+      'غیرفعال‌سازی لیست را از رزرو سالن‌ها خارج می‌کند. تاریخچهٔ درخواست پاک نمی‌شود.';
+  static const adminVipListRequestTotal = 'کل درخواست سالن‌ها (شامل لغو)';
+  static const adminVipListRequestOpen = 'درخواست باز / در جریان';
   static const vipOriginalTehranLists = 'لیست‌های اصلی تهران';
   static const vipAllLists = 'همهٔ لیست‌ها';
   static const vipOriginalCollectionEmpty = 'لیست‌های اصلی تهران هنوز مشخص نشده‌اند';

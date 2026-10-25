@@ -1,5 +1,4 @@
 import 'dart:typed_data';
-import 'dart:async';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -14,6 +13,7 @@ import '../../core/widgets/app_widgets.dart';
 import '../../shared/labels.dart';
 import '../../shared/models/models.dart';
 import '../../shared/platform/excel_file_saver.dart';
+import '../../shared/vip_regions.dart';
 import 'admin_messaging_shell.dart';
 
 class AdminVipScreen extends ConsumerStatefulWidget {
@@ -23,26 +23,11 @@ class AdminVipScreen extends ConsumerStatefulWidget {
   ConsumerState<AdminVipScreen> createState() => _AdminVipScreenState();
 }
 
-enum AdminVipListView { originalTehran, all }
-
-extension on AdminVipListView {
-  String? get catalogMembership =>
-      this == AdminVipListView.originalTehran ? 'ORIGINAL_TEHRAN' : null;
-}
-
 class _AdminVipScreenState extends ConsumerState<AdminVipScreen> {
-  AdminVipListView _view = AdminVipListView.originalTehran;
   late final CursorPageState<VipTargetList> _lists = CursorPageState(
     keyOf: (list) => list.id,
     changed: () { if (mounted) setState(() {}); },
   );
-  late final CursorPageState<AdminSalonSummary> _salons = CursorPageState(
-    keyOf: (salon) => salon.id,
-    changed: () { if (mounted) setState(() {}); },
-  );
-  final TextEditingController _salonSearchController = TextEditingController();
-  Timer? _searchDebounce;
-  String _salonSearch = '';
   int _listGeneration = 0;
   int? _listCount;
   int? _contactRowCount;
@@ -52,27 +37,7 @@ class _AdminVipScreenState extends ConsumerState<AdminVipScreen> {
   void initState() {
     super.initState();
     _loadLists();
-    _loadMoreSalons();
   }
-
-  @override
-  void dispose() {
-    _searchDebounce?.cancel();
-    _salonSearchController.dispose();
-    super.dispose();
-  }
-
-  void _searchSalons(String value) {
-    _searchDebounce?.cancel();
-    _searchDebounce = Timer(const Duration(milliseconds: 300), () {
-      _salonSearch = value.trim();
-      _salons.reset();
-      _loadMoreSalons();
-    });
-  }
-
-  Future<void> _loadMoreSalons() => _salons.load((cursor) =>
-      ref.read(vipRepositoryProvider).adminSalons(cursor: cursor, q: _salonSearch));
 
   Future<void> _loadLists({bool reset = false}) async {
     if (reset) {
@@ -83,12 +48,8 @@ class _AdminVipScreenState extends ConsumerState<AdminVipScreen> {
       _lists.reset();
     }
     final generation = _listGeneration;
-    final membership = _view.catalogMembership;
     await _lists.load((cursor) async {
-      final page = await ref.read(vipRepositoryProvider).adminLists(
-            cursor: cursor,
-            catalogMembership: membership,
-          );
+      final page = await ref.read(vipRepositoryProvider).adminLists(cursor: cursor);
       if (generation == _listGeneration && cursor == null) {
         _listCount = page.listCount;
         _contactRowCount = page.contactRowCount;
@@ -100,16 +61,7 @@ class _AdminVipScreenState extends ConsumerState<AdminVipScreen> {
 
   Future<void> _loadMoreLists() => _loadLists();
 
-  void _selectView(AdminVipListView next) {
-    if (next == _view) return;
-    setState(() => _view = next);
-    _loadLists(reset: true);
-  }
-
-  Future<void> _refresh() async {
-    _salons.reset();
-    await Future.wait([_loadLists(reset: true), _loadMoreSalons()]);
-  }
+  Future<void> _refresh() => _loadLists(reset: true);
 
   Future<void> _import() async {
     final file = await FilePicker.pickFile(
@@ -135,7 +87,6 @@ class _AdminVipScreenState extends ConsumerState<AdminVipScreen> {
       return;
     }
     if (!mounted) return;
-    setState(() => _view = AdminVipListView.all);
     await _loadLists(reset: true);
     if (!mounted) return;
     await context.push('/admin/vip/${imported.id}');
@@ -171,76 +122,11 @@ class _AdminVipScreenState extends ConsumerState<AdminVipScreen> {
           icon: const Icon(Icons.upload_file_outlined),
           label: const Text(AppStrings.vipImportExcel),
         ),
-        body: ListView(
+        body: RefreshIndicator(
+          onRefresh: _refresh,
+          child: ListView(
                     padding: const EdgeInsets.all(AppTokens.space16),
                     children: [
-                      const SectionHeader(AppStrings.vipGrant),
-                      TextField(
-                        controller: _salonSearchController,
-                        onChanged: _searchSalons,
-                        decoration: const InputDecoration(
-                          labelText: AppStrings.searchSalons,
-                          prefixIcon: Icon(Icons.search),
-                        ),
-                      ),
-                      if (_salons.loading && _salons.items.isEmpty)
-                        const LoadingSkeleton(lines: 2),
-                      if (_salons.empty)
-                        const EmptyStateView(title: AppStrings.noSalons, body: AppStrings.noSalons),
-                      ..._salons.items.map(
-                        (salon) => ListTile(
-                          key: ValueKey(salon.id),
-                          title: Text(salon.name),
-                          subtitle: Text(
-                            salon.entitled ? AppStrings.vipActive : AppStrings.vipInactive,
-                          ),
-                          trailing: salon.entitled
-                              ? null
-                              : TextButton(
-                                  onPressed: () async {
-                                    await ref.read(vipRepositoryProvider).grantEntitlement(
-                                          salon.id,
-                                          createRequestId(),
-                                        );
-                                    await _refresh();
-                                  },
-                                  child: const Text(AppStrings.activate),
-                                ),
-                        ),
-                      ),
-                      if (_salons.error != null)
-                        ErrorView(
-                          message: friendlyError(_salons.error!),
-                          onRetry: _loadMoreSalons,
-                        ),
-                      if (_salons.loading && _salons.items.isNotEmpty)
-                        const Center(child: CircularProgressIndicator()),
-                      if (_salons.hasMore && !_salons.loading && _salons.error == null)
-                        TextButton(
-                          onPressed: _loadMoreSalons,
-                          child: const Text(AppStrings.loadMore),
-                        ),
-                      const SizedBox(height: AppTokens.space24),
-                      const SectionHeader(AppStrings.adminVipLists),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          ChoiceChip(
-                            key: const ValueKey('vip-view-original'),
-                            label: const Text(AppStrings.vipOriginalTehranLists),
-                            selected: _view == AdminVipListView.originalTehran,
-                            onSelected: (_) => _selectView(AdminVipListView.originalTehran),
-                          ),
-                          ChoiceChip(
-                            key: const ValueKey('vip-view-all'),
-                            label: const Text(AppStrings.vipAllLists),
-                            selected: _view == AdminVipListView.all,
-                            onSelected: (_) => _selectView(AdminVipListView.all),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: AppTokens.space8),
                       const Padding(
                         padding: EdgeInsets.only(bottom: AppTokens.space8),
                         child: Text(AppStrings.vipImportHelp),
@@ -262,13 +148,9 @@ class _AdminVipScreenState extends ConsumerState<AdminVipScreen> {
                           onRetry: () => _loadLists(reset: true),
                         ),
                       if (_lists.empty)
-                        EmptyStateView(
-                          title: _view == AdminVipListView.originalTehran
-                              ? AppStrings.vipOriginalCollectionEmpty
-                              : AppStrings.vipNoLists,
-                          body: _view == AdminVipListView.originalTehran
-                              ? AppStrings.vipOriginalCollectionEmptyBody
-                              : AppStrings.vipImportHelp,
+                        const EmptyStateView(
+                          title: AppStrings.vipNoLists,
+                          body: AppStrings.vipImportHelp,
                         ),
                       ..._lists.items.map((list) => _adminListCard(list)),
                       if (_lists.error != null && _lists.items.isNotEmpty)
@@ -286,6 +168,7 @@ class _AdminVipScreenState extends ConsumerState<AdminVipScreen> {
                         ),
                     ],
                   ),
+        ),
       ),
     );
   }
@@ -316,10 +199,16 @@ class _AdminVipScreenState extends ConsumerState<AdminVipScreen> {
           subtitle: Text(
             [
               if (list.regionName != null) '${list.regionCode} — ${list.regionName}',
-              attention
-                  ? '${AppStrings.vipNeedsReview} · ${_statusLabel(list.status)} · ${list.contactCount}'
-                  : '${_statusLabel(list.status)} · ${list.contactCount}',
+              if (list.regionName == null) AppStrings.adminVipRegionMissing,
+              '${adminVipAvailabilityLabel(list)} · ${list.contactCount} مخاطب',
+              list.requestableBySalons
+                  ? AppStrings.adminVipRequestable
+                  : AppStrings.adminVipNotRequestable,
+              if (adminVipUnavailabilityReason(list) != null) adminVipUnavailabilityReason(list)!,
+              '${AppStrings.adminVipListRequestTotal} ${list.totalRequestCount} · ${AppStrings.adminVipListRequestOpen} ${list.openRequestCount}',
+              if (attention) AppStrings.vipNeedsReview,
             ].join('\n'),
+            maxLines: 8,
           ),
           trailing: attention
               ? Text(
@@ -334,18 +223,54 @@ class _AdminVipScreenState extends ConsumerState<AdminVipScreen> {
     );
   }
 
-  String _statusLabel(String status) {
-    switch (status) {
-      case 'ACTIVE':
-        return AppStrings.vipActive;
-      case 'INACTIVE':
-        return AppStrings.vipInactive;
-      case 'IN_USE':
-        return AppStrings.vipInUse;
-      default:
-        return AppStrings.vipPending;
-    }
+}
+
+String vipListStatusLabel(String status) {
+  switch (status) {
+    case 'ACTIVE':
+      return AppStrings.vipActive;
+    case 'INACTIVE':
+      return AppStrings.vipInactive;
+    case 'IN_USE':
+      return AppStrings.vipInUse;
+    default:
+      return AppStrings.vipPending;
   }
+}
+
+String adminVipAvailabilityLabel(VipTargetList list) {
+  if (list.requestableBySalons) {
+    return AppStrings.vipActive;
+  }
+  if (list.status == 'IN_USE') {
+    return AppStrings.vipInUse;
+  }
+  if (list.status == 'INACTIVE') {
+    return AppStrings.vipInactive;
+  }
+  if (list.status == 'PENDING') {
+    return AppStrings.vipPending;
+  }
+  return AppStrings.adminVipNotYetAvailable;
+}
+
+String? adminVipUnavailabilityReason(VipTargetList list) {
+  if (list.requestableBySalons) {
+    return null;
+  }
+  if (list.status == 'IN_USE') {
+    return AppStrings.adminVipInUseReason;
+  }
+  if (list.status == 'PENDING') {
+    return AppStrings.adminVipPendingReason;
+  }
+  if (list.status == 'INACTIVE') {
+    return AppStrings.adminVipInactiveReason;
+  }
+  if (!isVipCanonicalRegionCode(list.regionCode)) {
+    return AppStrings.adminVipMissingRegionReason;
+  }
+  return AppStrings.adminVipNeedsActivationConfirm;
 }
 
 class AdminVipListDetailScreen extends ConsumerStatefulWidget {
@@ -385,6 +310,54 @@ class _AdminVipListDetailScreenState extends ConsumerState<AdminVipListDetailScr
       }
       setState(() => _error = error);
     }
+  }
+
+  Future<void> _confirmAvailability(VipTargetList list, String availability) async {
+    final activate = availability == 'ACTIVE';
+    if (!activate) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text(AppStrings.adminVipDeactivateList),
+          content: const Text(AppStrings.adminVipDeactivateListConfirm),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text(AppStrings.cancel),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text(AppStrings.confirm),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true) {
+        return;
+      }
+      await _run(() async {
+        await ref.read(vipRepositoryProvider).patchList(
+              list.id,
+              availability: availability,
+            );
+      });
+      return;
+    }
+
+    final selected = await showDialog<String>(
+      context: context,
+      builder: (context) => _ActivateVipListDialog(list: list),
+    );
+    if (selected == null) {
+      return;
+    }
+    await _run(() async {
+      await ref.read(vipRepositoryProvider).patchList(
+            list.id,
+            availability: 'ACTIVE',
+            regionCode: selected,
+          );
+    });
   }
 
   Future<void> _rename(VipTargetList list) async {
@@ -449,28 +422,21 @@ class _AdminVipListDetailScreenState extends ConsumerState<AdminVipListDetailScr
                   children: [
                     Wrap(
                       spacing: 8,
+                      runSpacing: 8,
                       children: [
-                        TextButton(
-                          onPressed: _busy
+                        FilledButton.tonal(
+                          key: const ValueKey('vip-activate-list'),
+                          onPressed: _busy || list.status == 'IN_USE' || list.requestableBySalons
                               ? null
-                              : () => _run(
-                                    () => ref.read(vipRepositoryProvider).patchList(
-                                          list.id,
-                                          availability: 'ACTIVE',
-                                        ),
-                                  ),
-                          child: const Text(AppStrings.vipActive),
+                              : () => _confirmAvailability(list, 'ACTIVE'),
+                          child: const Text(AppStrings.adminVipActivateList),
                         ),
-                        TextButton(
-                          onPressed: _busy
+                        FilledButton.tonal(
+                          key: const ValueKey('vip-deactivate-list'),
+                          onPressed: _busy || list.status == 'IN_USE'
                               ? null
-                              : () => _run(
-                                    () => ref.read(vipRepositoryProvider).patchList(
-                                          list.id,
-                                          availability: 'INACTIVE',
-                                        ),
-                                  ),
-                          child: const Text(AppStrings.vipInactive),
+                              : () => _confirmAvailability(list, 'INACTIVE'),
+                          child: const Text(AppStrings.adminVipDeactivateList),
                         ),
                         TextButton(
                           onPressed: _busy ? null : () => _rename(list),
@@ -478,8 +444,34 @@ class _AdminVipListDetailScreenState extends ConsumerState<AdminVipListDetailScr
                         ),
                       ],
                     ),
-                    if (list.regionName != null)
-                      Text('${list.regionCode} — ${list.regionName}'),
+                    if (list.status == 'IN_USE') ...[
+                      const SizedBox(height: 8),
+                      const Text(AppStrings.adminVipInUseCannotChange),
+                    ],
+                    const SizedBox(height: 12),
+                    Text('${AppStrings.vipListNameLabel}: ${list.name}'),
+                    Text('${AppStrings.vipContactCountLabel}: ${list.contactCount}'),
+                    Text(
+                      adminVipAvailabilityLabel(list),
+                      key: const ValueKey('vip-availability-label'),
+                    ),
+                    Text(
+                      list.regionName != null
+                          ? '${list.regionCode} — ${list.regionName}'
+                          : AppStrings.adminVipRegionMissing,
+                    ),
+                    Text(
+                      list.requestableBySalons
+                          ? AppStrings.adminVipRequestable
+                          : AppStrings.adminVipNotRequestable,
+                    ),
+                    if (adminVipUnavailabilityReason(list) != null)
+                      Text(
+                        adminVipUnavailabilityReason(list)!,
+                        key: const ValueKey('vip-unavailability-reason'),
+                      ),
+                    Text('${AppStrings.adminVipListRequestTotal}: ${list.totalRequestCount}'),
+                    Text('${AppStrings.adminVipListRequestOpen}: ${list.openRequestCount}'),
                     if (list.needsAttention) ...[
                       const SizedBox(height: 8),
                       Text(
@@ -549,6 +541,74 @@ class _AdminVipListDetailScreenState extends ConsumerState<AdminVipListDetailScr
                     ),
                   ],
                 ),
+    );
+  }
+}
+
+class _ActivateVipListDialog extends StatefulWidget {
+  const _ActivateVipListDialog({required this.list});
+
+  final VipTargetList list;
+
+  @override
+  State<_ActivateVipListDialog> createState() => _ActivateVipListDialogState();
+}
+
+class _ActivateVipListDialogState extends State<_ActivateVipListDialog> {
+  late String? _regionCode = isVipCanonicalRegionCode(widget.list.regionCode)
+      ? widget.list.regionCode
+      : null;
+
+  @override
+  Widget build(BuildContext context) {
+    final selected = vipCanonicalRegionByCode(_regionCode);
+    return AlertDialog(
+      title: const Text(AppStrings.adminVipActivateList),
+      content: SizedBox(
+        width: 420,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(AppStrings.adminVipActivateListConfirm),
+            const SizedBox(height: 12),
+            Text(
+              selected == null
+                  ? AppStrings.adminVipSelectRegion
+                  : '${AppStrings.adminVipSelectedRegion}: ${selected.code} — ${selected.name}',
+              key: const ValueKey('vip-activate-selected-region'),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 240,
+              child: ListView(
+                children: [
+                  for (final region in kVipCanonicalRegions)
+                    ListTile(
+                      key: ValueKey('vip-activate-region-${region.code}'),
+                      title: Text('${region.code} — ${region.name}'),
+                      selected: _regionCode == region.code,
+                      onTap: () => setState(() => _regionCode = region.code),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text(AppStrings.cancel),
+        ),
+        FilledButton(
+          key: const ValueKey('vip-activate-confirm'),
+          onPressed: _regionCode == null
+              ? null
+              : () => Navigator.pop(context, _regionCode),
+          child: const Text(AppStrings.confirm),
+        ),
+      ],
     );
   }
 }

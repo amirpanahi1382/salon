@@ -7,7 +7,7 @@ import 'package:salon_mobile/core/networking/api_client.dart';
 import 'package:salon_mobile/core/networking/repositories.dart';
 import 'package:salon_mobile/core/state/providers.dart';
 import 'package:salon_mobile/core/storage/session_store.dart';
-import 'package:salon_mobile/features/admin/admin_vip_screen.dart';
+import 'package:salon_mobile/features/admin/admin_vip_salon_access_screen.dart';
 import 'package:salon_mobile/shared/labels.dart';
 import 'package:salon_mobile/shared/models/models.dart';
 
@@ -72,7 +72,7 @@ Future<void> _pump(WidgetTester tester, _Salons repository) async {
   await tester.pumpWidget(
     ProviderScope(
       overrides: [vipRepositoryProvider.overrideWithValue(repository)],
-      child: const MaterialApp(home: AdminVipScreen()),
+      child: const MaterialApp(home: AdminVipSalonAccessScreen()),
     ),
   );
   await tester.pumpAndSettle();
