@@ -108,6 +108,116 @@ class AdminVipIntentionDialogState extends State<AdminVipIntentionDialog> {
   }
 }
 
+class _AdminVipQuickActions extends StatelessWidget {
+  const _AdminVipQuickActions({
+    required this.onLists,
+    required this.onSalonAccess,
+  });
+
+  final VoidCallback onLists;
+  final VoidCallback onSalonAccess;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      key: const Key('admin-vip-quick-actions'),
+      height: 72,
+      padding: const EdgeInsets.all(5),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topRight,
+          end: Alignment.bottomLeft,
+          colors: [
+            AppTokens.surfaceGlass.withValues(alpha: 0.94),
+            AppTokens.surfaceElevated.withValues(alpha: 0.82),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(AppTokens.radiusLg),
+        border: Border.all(color: AppTokens.line.withValues(alpha: 0.90)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.20),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Row(
+        textDirection: TextDirection.rtl,
+        children: [
+          Expanded(
+            child: _AdminVipQuickAction(
+              key: const Key('admin-vip-lists-action'),
+              icon: Icons.format_list_bulleted_rounded,
+              label: AppStrings.adminVipLists,
+              onTap: onLists,
+            ),
+          ),
+          Container(
+            width: 1,
+            height: 34,
+            color: AppTokens.line.withValues(alpha: 0.75),
+          ),
+          Expanded(
+            child: _AdminVipQuickAction(
+              key: const Key('admin-vip-salon-access-action'),
+              icon: Icons.storefront_outlined,
+              label: AppStrings.adminVipActivateSalons,
+              onTap: onSalonAccess,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AdminVipQuickAction extends StatelessWidget {
+  const _AdminVipQuickAction({
+    super.key,
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppTokens.radiusMd + 3),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 22, color: AppTokens.textPrimary),
+              const SizedBox(width: AppTokens.space8),
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                        color: AppTokens.textPrimary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class AdminVipOutreachFoldersScreen extends ConsumerStatefulWidget {
   const AdminVipOutreachFoldersScreen({super.key});
 
@@ -216,35 +326,9 @@ class _AdminVipOutreachFoldersScreenState
                 : ListView(
                     padding: const EdgeInsets.all(AppTokens.space16),
                     children: [
-                      LayoutBuilder(
-                        builder: (context, constraints) {
-                          final stacked = constraints.maxWidth < 420;
-                          final lists = FilledButton.tonal(
-                            onPressed: () => context.go('/admin/vip'),
-                            child: const Text(AppStrings.adminVipLists),
-                          );
-                          final activate = FilledButton.tonal(
-                            onPressed: () => context.go('/admin/vip/salons'),
-                            child: const Text(AppStrings.adminVipActivateSalons),
-                          );
-                          if (stacked) {
-                            return Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                lists,
-                                const SizedBox(height: AppTokens.space8),
-                                activate,
-                              ],
-                            );
-                          }
-                          return Row(
-                            children: [
-                              Expanded(child: lists),
-                              const SizedBox(width: AppTokens.space8),
-                              Expanded(child: activate),
-                            ],
-                          );
-                        },
+                      _AdminVipQuickActions(
+                        onLists: () => context.go('/admin/vip'),
+                        onSalonAccess: () => context.go('/admin/vip/salons'),
                       ),
                       const SizedBox(height: AppTokens.space16),
                       TextField(

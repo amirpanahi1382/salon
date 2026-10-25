@@ -131,7 +131,7 @@ void main() {
     expect(repo.grants, 1);
   });
 
-  testWidgets('outreach header stacks VIP list and salon access actions', (tester) async {
+  testWidgets('outreach header shows horizontal glass VIP actions', (tester) async {
     tester.view.physicalSize = const Size(320, 720);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -150,6 +150,10 @@ void main() {
     final activate = tester.getRect(find.text(AppStrings.adminVipActivateSalons));
     expect(lists.width, lessThan(320));
     expect(activate.width, lessThan(320));
+    expect((lists.center.dy - activate.center.dy).abs(), lessThan(2));
+    expect(find.byKey(const Key('admin-vip-quick-actions')), findsOneWidget);
+    expect(find.byIcon(Icons.format_list_bulleted_rounded), findsOneWidget);
+    expect(find.byIcon(Icons.storefront_outlined), findsOneWidget);
   });
 
   testWidgets('salon profile shows nonzero live counts', (tester) async {
