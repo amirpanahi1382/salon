@@ -3,6 +3,12 @@ import 'package:shamsi_date/shamsi_date.dart';
 import 'package:salon_mobile/shared/jalali.dart';
 
 void main() {
+  test('fromPersianDigits maps Persian and Arabic-Indic digits', () {
+    expect(fromPersianDigits('۲۰'), '20');
+    expect(fromPersianDigits('٥٠٠'), '500');
+    expect(fromPersianDigits('12۳۴'), '1234');
+  });
+
   test('formats Jalali dates with Persian digits', () {
     final local = DateTime(2026, 9, 7, 14, 30);
     final jalali = jalaliFromLocal(local);

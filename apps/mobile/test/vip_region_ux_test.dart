@@ -10,6 +10,7 @@ import 'package:salon_mobile/core/networking/repositories.dart';
 import 'package:salon_mobile/core/state/providers.dart';
 import 'package:salon_mobile/core/storage/session_store.dart';
 import 'package:salon_mobile/features/vip/salon_vip_section.dart';
+import 'package:salon_mobile/features/vip/vip_request_form_widgets.dart';
 import 'package:salon_mobile/shared/labels.dart';
 import 'package:salon_mobile/shared/models/models.dart';
 
@@ -39,6 +40,7 @@ class _FakeVipRepository extends VipRepository {
   final VipCapability? capabilityValue;
   final Future<VipCapability> Function()? capabilityImpl;
   final List<String> listRequests = [];
+  final List<Map<String, Object>> createCalls = [];
 
   @override
   Future<VipCapability> capability() {
@@ -74,6 +76,11 @@ class _FakeVipRepository extends VipRepository {
     required String geographicRange,
     required String idempotencyKey,
   }) async {
+    createCalls.add({
+      'listId': listId,
+      'requestedCount': requestedCount,
+      'geographicRange': geographicRange,
+    });
     if (createError != null) {
       throw createError!;
     }
@@ -139,7 +146,7 @@ Future<void> _pump(
   WidgetTester tester,
   _FakeVipRepository repo,
 ) async {
-  tester.view.physicalSize = const Size(800, 1400);
+  tester.view.physicalSize = const Size(800, 2000);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.resetPhysicalSize);
   await tester.pumpWidget(
@@ -148,6 +155,19 @@ Future<void> _pump(
       child: const MaterialApp(home: Scaffold(body: SalonVipSection())),
     ),
   );
+  await tester.pumpAndSettle();
+}
+
+Finder vipSize(int value) => find.byKey(Key('vip-request-size-$value'));
+
+VipRequestSizeChip sizeChip(WidgetTester tester, int value) {
+  return tester.widget<VipRequestSizeChip>(vipSize(value));
+}
+
+Future<void> _chooseRegion01(WidgetTester tester) async {
+  await tester.tap(find.text(AppStrings.vipSelectRegion));
+  await tester.pumpAndSettle();
+  await tester.tap(find.textContaining('01 — '));
   await tester.pumpAndSettle();
 }
 
@@ -191,7 +211,7 @@ void main() {
     expect(find.text('VIP-02-01'), findsNothing);
     expect(find.textContaining('0912'), findsNothing);
 
-    await tester.tap(find.textContaining('01 — '));
+    await tester.tap(find.byKey(const Key('vip-region-picker')));
     await tester.pumpAndSettle();
     await tester.tap(find.textContaining('02 — '));
     await tester.pumpAndSettle();
@@ -213,7 +233,7 @@ void main() {
     expect(find.text(AppStrings.vipNoActiveListsInRegion), findsWidgets);
     expect(find.text('VIP-11-01'), findsNothing);
 
-    await tester.tap(find.textContaining('11 — '));
+    await tester.tap(find.byKey(const Key('vip-region-picker')));
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.textContaining('14 — ', skipOffstage: false));
     await tester.pumpAndSettle();
@@ -236,12 +256,11 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.textContaining('01 — '));
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(ChoiceChip, '30'));
+    await tester.tap(vipSize(30));
     await tester.pumpAndSettle();
     await tester.tap(find.text('VIP-01-08'));
     await tester.pumpAndSettle();
-    final hundred = tester.widget<ChoiceChip>(find.widgetWithText(ChoiceChip, '100'));
-    expect(hundred.onSelected, isNull);
+    expect(sizeChip(tester, 100).onSelected, isNull);
   });
 
   testWidgets('list load error is not treated as an empty region', (tester) async {
@@ -281,10 +300,11 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.textContaining('01 — '));
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(ChoiceChip, '30'));
+    await tester.tap(vipSize(30));
     await tester.pumpAndSettle();
     await tester.tap(find.text('VIP-01-01'));
     await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text(AppStrings.sendMessageAction));
     await tester.tap(find.text(AppStrings.sendMessageAction));
     await tester.pumpAndSettle();
     expect(find.text(AppStrings.vipListUnavailable), findsOneWidget);
@@ -348,9 +368,9 @@ void main() {
       ),
     );
     await _pump(tester, repo);
-    expect(tester.widget<ChoiceChip>(find.widgetWithText(ChoiceChip, '30')).onSelected, isNotNull);
-    expect(tester.widget<ChoiceChip>(find.widgetWithText(ChoiceChip, '50')).onSelected, isNull);
-    expect(tester.widget<ChoiceChip>(find.widgetWithText(ChoiceChip, '100')).onSelected, isNull);
+    expect(sizeChip(tester, 30).onSelected, isNotNull);
+    expect(sizeChip(tester, 50).onSelected, isNull);
+    expect(sizeChip(tester, 100).onSelected, isNull);
   });
 
   testWidgets('an older capability response cannot replace a newer one', (tester) async {
@@ -375,7 +395,11 @@ void main() {
     );
     await tester.pump();
     expect(find.byType(LoadingSkeleton), findsOneWidget);
-    await tester.fling(find.byType(ListView), const Offset(0, 400), 1200);
+    await tester.fling(
+      find.byKey(const Key('vip-request-form-scroll')),
+      const Offset(0, 400),
+      1200,
+    );
     await tester.pump();
     await tester.pump(const Duration(seconds: 1));
     second.complete(
@@ -422,7 +446,7 @@ void main() {
     await _pump(tester, repo);
     expect(find.text(AppStrings.vipQuotaBelowMinimum(20)), findsWidgets);
     expect(find.text(AppStrings.vipQuotaExhausted), findsNothing);
-    expect(find.byType(ChoiceChip), findsNothing);
+    expect(find.byType(VipRequestSizeChip), findsNothing);
     expect(find.text(AppStrings.sendMessageAction), findsNothing);
   });
 
@@ -476,17 +500,21 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.textContaining('01 — '));
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(ChoiceChip, '100'));
+    await tester.tap(vipSize(100));
     await tester.pumpAndSettle();
     await tester.tap(find.text('VIP-01-01'));
     await tester.pumpAndSettle();
     expect(tester.widget<FilledButton>(find.widgetWithText(FilledButton, AppStrings.sendMessageAction)).onPressed, isNotNull);
-    await tester.fling(find.byType(ListView).first, const Offset(0, 400), 1200);
+    final refresh = tester
+        .state<RefreshIndicatorState>(find.byType(RefreshIndicator))
+        .show();
     await tester.pump();
     await tester.pump(const Duration(seconds: 1));
+    await refresh;
     await tester.pumpAndSettle();
-    expect(tester.widget<ChoiceChip>(find.widgetWithText(ChoiceChip, '100')).onSelected, isNull);
-    expect(tester.widget<ChoiceChip>(find.widgetWithText(ChoiceChip, '30')).onSelected, isNotNull);
+    expect(calls, 2);
+    expect(sizeChip(tester, 100).onSelected, isNull);
+    expect(sizeChip(tester, 30).onSelected, isNotNull);
     expect(tester.widget<FilledButton>(find.widgetWithText(FilledButton, AppStrings.sendMessageAction)).onPressed, isNull);
     expect(calls, 2);
   });
@@ -527,6 +555,148 @@ void main() {
     expect(find.text(AppStrings.vipInProgressRequests), findsOneWidget);
     expect(find.text('${AppStrings.vipListNameLabel}: VIP-03-01'), findsOneWidget);
     expect(find.text(AppStrings.vipInProgressRequestsTruncated), findsNothing);
+  });
+
+  testWidgets('quota card uses the capability remaining value', (tester) async {
+    final repo = _FakeVipRepository(
+      regionItems: _regions(),
+      capabilityValue: const VipCapability(
+        entitled: true,
+        remainingQuota: 370,
+        usedQuota: 130,
+      ),
+    );
+    await _pump(tester, repo);
+    expect(find.text(AppStrings.vipRemainingQuota(370)), findsOneWidget);
+    expect(find.text(AppStrings.vipRemainingQuota(500)), findsNothing);
+    expect(find.text(AppStrings.vipIntendedDiscount), findsOneWidget);
+    expect(find.text(AppStrings.vipOrderSummary), findsOneWidget);
+    expect(find.text(AppStrings.vipNoDiscount), findsWidgets);
+    expect(find.text(AppStrings.vipSummaryPercentValue('15')), findsNothing);
+  });
+
+  testWidgets('summary reflects region, list, count, and no-discount by default', (
+    tester,
+  ) async {
+    final repo = _FakeVipRepository(
+      regionItems: _regions(),
+      listsByCode: {
+        '01': [_list(id: 'a', name: 'VIP-01-01', regionCode: '01', contactCount: 100)],
+      },
+    );
+    await _pump(tester, repo);
+    expect(find.text(AppStrings.vipSummaryUnset), findsWidgets);
+    await _chooseRegion01(tester);
+    await tester.tap(vipSize(100));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('VIP-01-01'));
+    await tester.pumpAndSettle();
+    expect(find.text(AppStrings.vipSummaryRecipientCount(100)), findsWidgets);
+    expect(find.text('VIP-01-01'), findsWidgets);
+    expect(find.text(AppStrings.vipNoDiscount), findsWidgets);
+    expect(
+      tester
+          .widget<FilledButton>(
+            find.widgetWithText(FilledButton, AppStrings.sendMessageAction),
+          )
+          .onPressed,
+      isNotNull,
+    );
+  });
+
+  testWidgets('percentage discount blocks create and is not sent', (tester) async {
+    final repo = _FakeVipRepository(
+      regionItems: _regions(),
+      listsByCode: {
+        '01': [_list(id: 'a', name: 'VIP-01-01', regionCode: '01', contactCount: 100)],
+      },
+    );
+    await _pump(tester, repo);
+    await _chooseRegion01(tester);
+    await tester.tap(vipSize(30));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('VIP-01-01'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const Key('vip-discount-percent')));
+    await tester.tap(find.byKey(const Key('vip-discount-percent')));
+    await tester.pumpAndSettle();
+    expect(find.text(AppStrings.vipDiscountUnavailable), findsNothing);
+    expect(find.byKey(const Key('vip-discount-amount')), findsOneWidget);
+    await tester.enterText(find.byKey(const Key('vip-discount-amount')), '20');
+    await tester.pumpAndSettle();
+    expect(find.text(AppStrings.vipSummaryPercentValue('20')), findsOneWidget);
+    expect(find.text(AppStrings.vipSummaryPercentValue('15')), findsNothing);
+    expect(find.text(AppStrings.vipSummaryRange), findsNothing);
+    expect(
+      tester
+          .widget<FilledButton>(
+            find.widgetWithText(FilledButton, AppStrings.sendMessageAction),
+          )
+          .onPressed,
+      isNull,
+    );
+    await tester.tap(find.text(AppStrings.sendMessageAction));
+    await tester.pumpAndSettle();
+    expect(repo.createCalls, isEmpty);
+  });
+
+  testWidgets('IRR discount blocks create and can be cleared back to no-discount', (
+    tester,
+  ) async {
+    final repo = _FakeVipRepository(
+      regionItems: _regions(),
+      listsByCode: {
+        '01': [_list(id: 'a', name: 'VIP-01-01', regionCode: '01', contactCount: 100)],
+      },
+    );
+    await _pump(tester, repo);
+    await _chooseRegion01(tester);
+    await tester.tap(vipSize(50));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('VIP-01-01'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const Key('vip-discount-rial')));
+    await tester.tap(find.byKey(const Key('vip-discount-rial')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('vip-discount-amount')), '۵۰۰۰۰');
+    await tester.pumpAndSettle();
+    expect(find.text(AppStrings.vipSummaryRialValue('50000')), findsOneWidget);
+    expect(find.text(AppStrings.vipSummaryRange), findsNothing);
+    expect(
+      tester
+          .widget<FilledButton>(
+            find.widgetWithText(FilledButton, AppStrings.sendMessageAction),
+          )
+          .onPressed,
+      isNull,
+    );
+    await tester.tap(find.text(AppStrings.vipDiscountClear));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('vip-discount-amount')), findsNothing);
+    expect(find.text(AppStrings.vipDiscountUnavailable), findsNothing);
+    expect(
+      tester
+          .widget<FilledButton>(
+            find.widgetWithText(FilledButton, AppStrings.sendMessageAction),
+          )
+          .onPressed,
+      isNotNull,
+    );
+    expect(repo.createCalls, isEmpty);
+  });
+
+  testWidgets('invalid percent is explained and does not invent a value', (
+    tester,
+  ) async {
+    final repo = _FakeVipRepository(regionItems: _regions());
+    await _pump(tester, repo);
+    await tester.ensureVisible(find.byKey(const Key('vip-discount-percent')));
+    await tester.tap(find.byKey(const Key('vip-discount-percent')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('vip-discount-amount')), '150');
+    await tester.pumpAndSettle();
+    expect(find.text(AppStrings.vipDiscountPercentRange), findsOneWidget);
+    expect(find.text(AppStrings.vipSummaryPercentValue('15')), findsNothing);
   });
 }
 

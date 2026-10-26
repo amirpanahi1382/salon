@@ -31,6 +31,28 @@ String toPersianDigits(String value) {
   return buffer.toString();
 }
 
+/// Maps Persian and Arabic-Indic digits to ASCII 0-9. Other characters stay.
+String fromPersianDigits(String value) {
+  const persian = '۰۱۲۳۴۵۶۷۸۹';
+  const arabic = '٠١٢٣٤٥٦٧٨٩';
+  final buffer = StringBuffer();
+  for (final rune in value.runes) {
+    final char = String.fromCharCode(rune);
+    final persianIndex = persian.indexOf(char);
+    if (persianIndex >= 0) {
+      buffer.write(persianIndex);
+      continue;
+    }
+    final arabicIndex = arabic.indexOf(char);
+    if (arabicIndex >= 0) {
+      buffer.write(arabicIndex);
+      continue;
+    }
+    buffer.write(char);
+  }
+  return buffer.toString();
+}
+
 String _two(int value) => value.toString().padLeft(2, '0');
 
 DateTime asLocalDateTime(DateTime value) =>

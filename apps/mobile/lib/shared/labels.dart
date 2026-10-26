@@ -487,8 +487,36 @@ class AppStrings {
   static const vipChooseCount = 'تعداد پیام را انتخاب کنید';
   static const vipDesiredRegion = 'محدوده موردنظر';
   static const vipSelectRegion = 'انتخاب محدوده';
+  static const vipSelectList = 'لیست VIP را انتخاب کنید';
   static const vipNoActiveListsInRegion =
       'در حال حاضر لیست فعالی برای این محدوده وجود ندارد.';
+  static const vipListsTooSmallForCount =
+      'در این محدوده لیست فعالی با این تعداد مخاطب وجود ندارد.';
+  static const vipIntendedDiscount = 'تخفیف مدنظر';
+  static const vipNoDiscount = 'بدون تخفیف';
+  static const vipPercentDiscount = 'درصدی';
+  static const vipRialDiscount = 'ریالی';
+  static const vipDiscountAmountHint = 'مقدار تخفیف';
+  static const vipDiscountClear = 'پاک کردن تخفیف';
+  static const vipDiscountPercentRange =
+      'درصد تخفیف باید بین ۱ تا ۱۰۰ باشد.';
+  static const vipDiscountAmountRequired = 'مقدار تخفیف درصدی را وارد کنید.';
+  static const vipDiscountRialRequired = 'مبلغ تخفیف ریالی را وارد کنید.';
+  static const vipDiscountUnavailable =
+      'ثبت درخواست VIP با تخفیف هنوز ممکن نیست. درخواست بدون تخفیف را می‌توانید ثبت کنید.';
+  static const vipOrderSummary = 'خلاصه سفارش';
+  static const vipSummaryPackage = 'بسته انتخابی';
+  static const vipSummaryRegion = 'محدوده انتخابی';
+  static const vipSummaryList = 'لیست انتخابی';
+  static const vipSummaryRange = 'محدوده سالن';
+  static const vipSummaryDiscount = 'تخفیف';
+  static const vipSummaryUnset = 'انتخاب نشده';
+  static String vipSummaryRecipientCount(int count) =>
+      '${toPersianDigits(count.toString())} مخاطب';
+  static String vipSummaryPercentValue(String amount) =>
+      '${toPersianDigits(amount)}٪';
+  static String vipSummaryRialValue(String amount) =>
+      '${toPersianDigits(amount)} ریال';
   static const vipListUnavailable =
       'این لیست دیگر در دسترس نیست. فهرست محدوده به‌روز شد.';
   static const vipContactCountLabel = 'تعداد مخاطب';
@@ -513,10 +541,10 @@ class AppStrings {
   static const vipQuotaExhausted =
       'سهمیه این هفته ارسال VIP تمام شده است. درخواست جدیدی نمی‌توان ثبت کرد.';
   static String vipQuotaBelowMinimum(int remaining) =>
-      'سهمیه باقی‌مانده این هفته $remaining نفر است و از حداقل اندازه درخواست کمتر است.';
+      'سهمیه باقی‌مانده این هفته ${toPersianDigits(remaining.toString())} نفر است و از حداقل اندازه درخواست کمتر است.';
 
   static String vipRemainingQuota(int remaining) =>
-      'سهمیه باقی‌مانده این هفته: $remaining';
+      'سهمیه باقی‌مانده این هفته: ${toPersianDigits(remaining.toString())}';
 
   static String sentOfTotal(int sent, int total) => 'ارسال ثبت‌شده $sent از $total';
   static const vipSampleNeeded = 'نمونه کار لازم است';

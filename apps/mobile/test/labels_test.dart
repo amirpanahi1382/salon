@@ -59,6 +59,11 @@ void main() {
     expect(vipOutreachExecutionLabel('GLOBALLY_STOPPED'), isNot(AppStrings.adminStopActive));
     expect(AppStrings.vipSalonRange, 'محدوده سالن');
     expect(AppStrings.vipDesiredRegion, 'محدوده موردنظر');
+    expect(AppStrings.vipIntendedDiscount, 'تخفیف مدنظر');
+    expect(AppStrings.vipOrderSummary, 'خلاصه سفارش');
+    expect(AppStrings.vipNoDiscount, 'بدون تخفیف');
+    expect(AppStrings.vipPercentDiscount, 'درصدی');
+    expect(AppStrings.vipRialDiscount, 'ریالی');
     expect(
       AppStrings.vipNoActiveListsInRegion,
       'در حال حاضر لیست فعالی برای این محدوده وجود ندارد.',
