@@ -26,6 +26,16 @@ class ManualOutreachController extends Notifier<ManualOutreachState> {
     state = state.copyWith(selecting: false, clearLimitMessage: true);
   }
 
+  /// Leaves selection mode and drops only in-progress customer IDs.
+  /// Submitted outreach (`requested`) is left unchanged.
+  void cancelPendingSelection() {
+    state = state.copyWith(
+      selecting: false,
+      customers: const [],
+      clearLimitMessage: true,
+    );
+  }
+
   bool toggle(Customer customer) {
     if (state.isSelected(customer.id)) {
       state = state.copyWith(

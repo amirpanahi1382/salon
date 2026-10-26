@@ -58,6 +58,19 @@ void main() {
       AppStrings.selectionLimitReached,
     );
 
+    outreach.cancelPendingSelection();
+    expect(container.read(manualOutreachSelectionProvider).selecting, isFalse);
+    expect(container.read(manualOutreachSelectionProvider).customers, isEmpty);
+    expect(container.read(manualOutreachSelectionProvider).limitMessage, isNull);
+
+    outreach.enterSelection();
+    for (var i = 0; i < 30; i++) {
+      expect(outreach.toggle(_customer(i)), isTrue);
+    }
+    outreach.exitSelection();
+    expect(container.read(manualOutreachSelectionProvider).selecting, isFalse);
+    expect(container.read(manualOutreachSelectionProvider).selectedCount, 30);
+
     outreach.confirmAndFocusOpportunities();
     expect(container.read(manualOutreachSelectionProvider).selecting, isFalse);
     expect(container.read(manualOutreachSelectionProvider).focusOutreachTab, isTrue);
@@ -100,6 +113,44 @@ void main() {
     expect(container.read(manualOutreachSelectionProvider).customers, isEmpty);
     expect(container.read(manualOutreachSelectionProvider).requested, isEmpty);
     expect(container.read(manualOutreachSelectionProvider).selecting, isFalse);
+  });
+
+  test('cancelPendingSelection clears pending ids and keeps submitted history', () {
+    final container = ProviderContainer(
+      overrides: [
+        sessionStoreProvider.overrideWithValue(MemorySessionStore()),
+        authRepositoryProvider.overrideWithValue(
+          AuthRepository(
+            api: ApiClient(
+              baseUrl: 'http://example.test',
+              sessionStore: MemorySessionStore(),
+            ),
+            sessionStore: MemorySessionStore(),
+          ),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    final outreach = container.read(manualOutreachSelectionProvider.notifier);
+    outreach.enterSelection();
+    expect(outreach.toggle(_customer(1)), isTrue);
+    expect(outreach.toggle(_customer(2)), isTrue);
+    outreach.markSubmitted(
+      customerId: 'c1',
+      messageRequestId: 'm1',
+      status: 'QUEUED',
+      requestedAt: DateTime.utc(2026, 9, 11),
+    );
+    outreach.cancelPendingSelection();
+
+    final state = container.read(manualOutreachSelectionProvider);
+    expect(state.selecting, isFalse);
+    expect(state.customers, isEmpty);
+    expect(state.limitMessage, isNull);
+    expect(state.requested, hasLength(1));
+    expect(state.requested.single.id, 'c1');
+    expect(state.inbox.single.submitted, isTrue);
   });
 
   test('inbox reconstructs submitted customers from the server without local selection', () {

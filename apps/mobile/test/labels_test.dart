@@ -32,7 +32,23 @@ void main() {
       AppStrings.selectMultipleCustomers,
       'انتخاب چند مشتری برای ارسال پیام',
     );
+    expect(
+      AppStrings.selectSalonCustomersForMessage,
+      'انتخاب مشتریان سالن برای ارسال پیام',
+    );
+    expect(
+      AppStrings.ordinaryMessageToRegisteredCustomers,
+      'ارسال پیام عادی به مشتریان ثبت‌شده',
+    );
+    expect(AppStrings.vipSendMessageTitle, 'ارسال پیام VIP');
+    expect(
+      AppStrings.vipAttractNewInSalonRange,
+      'جذب مشتریان جدید در محدوده سالن',
+    );
     expect(AppStrings.sendMessageAction, 'ارسال پیام');
+    expect(AppStrings.continueToSendMessageFor(0), 'ادامه به ارسال پیام');
+    expect(AppStrings.continueToSendMessageFor(2), 'ادامه به ارسال پیام برای ۲ مشتری');
+    expect(AppStrings.selectedCustomersChip(2), '۲ مشتری انتخاب شده');
     expect(AppStrings.vipSendMessage, 'ارسال پیام vip');
     expect(AppStrings.vipAdminNav, 'ارسال پیام VIP');
     expect(AppStrings.adminQueueTitle, 'ارسال پیام عادی');

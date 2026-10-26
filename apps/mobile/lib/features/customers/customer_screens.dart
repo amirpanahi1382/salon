@@ -14,7 +14,6 @@ import '../../shared/jalali_date_picker.dart';
 import '../../shared/labels.dart';
 import '../../shared/models/models.dart';
 import '../outreach/manual_outreach_selection.dart';
-import '../outreach/manual_outreach_state.dart';
 import '../recovery/recovery_presentation.dart';
 import '../recovery/return_commitment_form.dart';
 import '../vip/salon_vip_section.dart';
@@ -111,89 +110,108 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
     }
   }
 
+  int? get _accurateCustomerCount {
+    if (_loading || _error != null || _hasMore) {
+      return null;
+    }
+    return _items.length;
+  }
+
+  Future<void> _openCreateCustomer() async {
+    final created = await context.push<Object?>('/customers/new');
+    if (!mounted) {
+      return;
+    }
+    if (created == true || created is Customer) {
+      await _load();
+    }
+  }
+
+  Future<void> _openVipOutreach() async {
+    if (!_vipEntitled) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text(AppStrings.vipNeedEntitlement)),
+      );
+      return;
+    }
+    final count = await showModalBottomSheet<int>(
+      context: context,
+      builder: (context) => const _VipCountSheet(),
+    );
+    if (count == null || !mounted) {
+      return;
+    }
+    ref.read(vipSelectedCountProvider.notifier).setValue(count);
+    ref.read(vipSectionOpenProvider.notifier).setOpen(true);
+    context.go('/opportunities');
+  }
+
+  void _enterOrdinarySelection() {
+    if (_items.isEmpty) {
+      return;
+    }
+    ref.read(manualOutreachSelectionProvider.notifier).enterSelection();
+  }
+
+  void _toggleCustomer(Customer customer) {
+    final ok = ref
+        .read(manualOutreachSelectionProvider.notifier)
+        .toggle(customer);
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text(AppStrings.selectionLimitReached)),
+      );
+    }
+  }
+
+  Future<void> _openCustomerDetails(Customer customer) async {
+    final deleted = await context.push<bool>('/customers/${customer.id}');
+    if (deleted == true && mounted) {
+      await _load();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final outreach = ref.watch(manualOutreachSelectionProvider);
+    final selecting = outreach.selecting;
     return Scaffold(
       appBar: AppBar(
-        title: outreach.selecting
-            ? Text(
-                '${AppStrings.customerSelectionTitle} ${outreach.selectedCount} / ${ManualOutreachState.maxSelection}',
-              )
-            : const Text(AppStrings.customers),
-        actions: [
-          if (outreach.selecting)
-            TextButton(
-              onPressed: () =>
-                  ref.read(manualOutreachSelectionProvider.notifier).exitSelection(),
-              child: const Text(AppStrings.cancelSelection),
-            )
-          else ...[
-            TextButton(
-              onPressed: _items.isEmpty
-                  ? null
-                  : () => ref
-                      .read(manualOutreachSelectionProvider.notifier)
-                      .enterSelection(),
-              child: const Text(AppStrings.selectMultipleCustomers),
-            ),
-          ],
-        ],
+        title: const Text(AppStrings.customers),
       ),
-      floatingActionButton: outreach.selecting
-          ? null
-          : Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                if (_vipEntitled)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: FloatingActionButton.extended(
-                      heroTag: 'vip-outreach',
-                      onPressed: () async {
-                        final count = await showModalBottomSheet<int>(
-                          context: context,
-                          builder: (context) => const _VipCountSheet(),
-                        );
-                        if (count == null || !context.mounted) {
-                          return;
-                        }
-                        ref.read(vipSelectedCountProvider.notifier).setValue(count);
-                        ref.read(vipSectionOpenProvider.notifier).setOpen(true);
-                        context.go('/opportunities');
-                      },
-                      label: const Text(AppStrings.vipSendMessage),
-                      icon: const Icon(Icons.star_outline),
+      bottomNavigationBar: selecting
+          ? Material(
+              color: Colors.transparent,
+              child: SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppTokens.space16,
+                    AppTokens.space8,
+                    AppTokens.space16,
+                    AppTokens.space8,
+                  ),
+                  child: FilledButton(
+                    key: const Key('customers-continue-outreach'),
+                    onPressed: outreach.selectedCount == 0
+                        ? null
+                        : () {
+                            ref
+                                .read(manualOutreachSelectionProvider.notifier)
+                                .confirmAndFocusOpportunities();
+                            context.go('/opportunities');
+                          },
+                    child: Text(
+                      AppStrings.continueToSendMessageFor(
+                        outreach.selectedCount,
+                      ),
+                      textAlign: TextAlign.center,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                FloatingActionButton.extended(
-                  heroTag: 'add-customer',
-                  onPressed: () async {
-                    final created = await context.push<Object?>('/customers/new');
-                    if (created == true || created is Customer) {
-                      _load();
-                    }
-                  },
-                  label: const Text(AppStrings.addCustomer),
-                  icon: const Icon(Icons.add),
-                ),
-              ],
-            ),
-      bottomNavigationBar: outreach.selecting
-          ? SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                child: FilledButton(
-                  onPressed: outreach.selectedCount == 0
-                      ? null
-                      : () {
-                          ref
-                              .read(manualOutreachSelectionProvider.notifier)
-                              .confirmAndFocusOpportunities();
-                          context.go('/opportunities');
-                        },
-                  child: const Text(AppStrings.sendMessageAction),
                 ),
               ),
             )
@@ -201,29 +219,147 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
       body: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.all(16),
-            child: TextField(
-              controller: _search,
-              decoration: const InputDecoration(
-                labelText: AppStrings.searchCustomers,
-                prefixIcon: Icon(Icons.search),
-              ),
-              onSubmitted: (_) => _load(),
-              onChanged: (value) {
-                if (value.isEmpty) {
-                  _load();
-                }
-              },
+            padding: const EdgeInsets.fromLTRB(
+              AppTokens.space16,
+              AppTokens.space8,
+              AppTokens.space16,
+              AppTokens.space12,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (!selecting) ...[
+                  _CustomersActionCard(
+                    key: const Key('customers-ordinary-outreach'),
+                    title: AppStrings.selectSalonCustomersForMessage,
+                    subtitle: AppStrings.ordinaryMessageToRegisteredCustomers,
+                    icon: Icons.groups_outlined,
+                    onTap: _items.isEmpty ? null : _enterOrdinarySelection,
+                  ),
+                  const SizedBox(height: AppTokens.space12),
+                  _CustomersActionCard(
+                    key: const Key('customers-vip-outreach'),
+                    title: AppStrings.vipSendMessageTitle,
+                    subtitle: AppStrings.vipAttractNewInSalonRange,
+                    icon: Icons.military_tech_outlined,
+                    emphasized: true,
+                    onTap: _openVipOutreach,
+                  ),
+                  const SizedBox(height: AppTokens.space16),
+                ] else ...[
+                  _CustomersActionCard(
+                    key: const Key('customers-ordinary-outreach'),
+                    title: AppStrings.selectSalonCustomersForMessage,
+                    subtitle: AppStrings.ordinaryMessageToRegisteredCustomers,
+                    icon: Icons.groups_outlined,
+                    compact: true,
+                    onTap: null,
+                  ),
+                  const SizedBox(height: AppTokens.space12),
+                  Wrap(
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: AppTokens.space12,
+                    runSpacing: AppTokens.space8,
+                    children: [
+                      _CountChip(
+                        icon: Icons.people_outline,
+                        label: AppStrings.selectedCustomersChip(
+                          outreach.selectedCount,
+                        ),
+                      ),
+                      Container(
+                        width: 1,
+                        height: 18,
+                        color: AppTokens.line,
+                      ),
+                      TextButton(
+                        key: const Key('customers-cancel-selection'),
+                        onPressed: () => ref
+                            .read(manualOutreachSelectionProvider.notifier)
+                            .cancelPendingSelection(),
+                        child: const Text(AppStrings.cancelSelection),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: AppTokens.space12),
+                ],
+                TextField(
+                  controller: _search,
+                  textInputAction: TextInputAction.search,
+                  decoration: InputDecoration(
+                    hintText: AppStrings.searchCustomers,
+                    prefixIcon: const Icon(Icons.search),
+                    filled: true,
+                    fillColor: AppTokens.surfaceGlass,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: AppTokens.space16,
+                      vertical: 14,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(AppTokens.radiusLg),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(AppTokens.radiusLg),
+                      borderSide: const BorderSide(color: AppTokens.line),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(AppTokens.radiusLg),
+                      borderSide: const BorderSide(color: AppTokens.accent),
+                    ),
+                  ),
+                  onSubmitted: (_) => _load(),
+                  onChanged: (value) {
+                    if (value.isEmpty) {
+                      _load();
+                    }
+                  },
+                ),
+              ],
             ),
           ),
           if (outreach.limitMessage != null)
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              padding: const EdgeInsets.fromLTRB(
+                AppTokens.space16,
+                0,
+                AppTokens.space16,
+                AppTokens.space8,
+              ),
               child: Text(
                 outreach.limitMessage!,
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ),
+          if (!selecting &&
+              !_loading &&
+              _error == null &&
+              _items.isNotEmpty) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppTokens.space16,
+                0,
+                AppTokens.space16,
+                AppTokens.space8,
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      AppStrings.salonCustomersHeading,
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                  ),
+                  if (_accurateCustomerCount != null)
+                    _CountChip(
+                      icon: Icons.people_outline,
+                      label: AppStrings.salonCustomerCountChip(
+                        _accurateCustomerCount!,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
           Expanded(
             child: _loading
                 ? const LoadingView()
@@ -236,108 +372,414 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
                       loading: _loading || _loadingMore,
                       onLoadMore: _loadMore,
                       child: _items.isEmpty
-                        ? ListView(
-                            primary: true,
-                            children: [
-                              const SizedBox(height: 48),
-                              EmptyStateView(
-                                title: _search.text.trim().isEmpty
-                                    ? AppStrings.noCustomers
-                                    : AppStrings.noMatchingCustomers,
-                                body: _search.text.trim().isEmpty
-                                    ? AppStrings.addFirstCustomer
-                                    : AppStrings.changeCustomerSearch,
-                                action: _search.text.trim().isNotEmpty ? null : Wrap(
-                                  alignment: WrapAlignment.center,
-                                  spacing: 8,
-                                  runSpacing: 8,
-                                  children: [
-                                    FilledButton(
-                                      onPressed: () async {
-                                        final created = await context
-                                            .push<Object?>('/customers/new');
-                                        if (created == true || created is Customer) {
-                                          _load();
-                                        }
-                                      },
-                                      child: const Text(AppStrings.addCustomer),
-                                    ),
-                                    OutlinedButton(
-                                      onPressed: () async {
-                                        final imported = await context
-                                            .push<bool>('/customers/import');
-                                        if (imported == true) {
-                                          _load();
-                                        }
-                                      },
-                                      child: const Text(
-                                        AppStrings.importFromExcel,
-                                      ),
-                                    ),
-                                  ],
-                                ),
+                          ? ListView(
+                              primary: true,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: AppTokens.space16,
                               ),
-                            ],
-                          )
-                        : ListView.separated(
-                            primary: true,
-                            itemCount: _items.length + (_hasMore ? 1 : 0),
-                            separatorBuilder: (_, _) =>
-                                const Divider(height: 1),
-                            itemBuilder: (context, index) {
-                              if (index >= _items.length) {
-                                return PagedFooter(loading: _loadingMore);
-                              }
-                              final customer = _items[index];
-                              if (outreach.selecting) {
-                                final selected = outreach.isSelected(customer.id);
-                                return Semantics(
-                                  label:
-                                      '${AppStrings.outreachSelectCustomer} ${customer.fullName}',
-                                  selected: selected,
-                                  child: CheckboxListTile(
-                                    value: selected,
-                                    title: Text(customer.fullName),
-                                    subtitle: LtrText(customer.phoneNumber),
-                                    onChanged: (_) {
-                                      final ok = ref
-                                          .read(
-                                            manualOutreachSelectionProvider
-                                                .notifier,
-                                          )
-                                          .toggle(customer);
-                                      if (!ok && context.mounted) {
-                                        ScaffoldMessenger.of(context)
-                                            .showSnackBar(
-                                          const SnackBar(
-                                            content: Text(
-                                              AppStrings.selectionLimitReached,
+                              children: [
+                                const SizedBox(height: 48),
+                                EmptyStateView(
+                                  title: _search.text.trim().isEmpty
+                                      ? AppStrings.noCustomers
+                                      : AppStrings.noMatchingCustomers,
+                                  body: _search.text.trim().isEmpty
+                                      ? AppStrings.addFirstCustomer
+                                      : AppStrings.changeCustomerSearch,
+                                  action: _search.text.trim().isNotEmpty
+                                      ? null
+                                      : Wrap(
+                                          alignment: WrapAlignment.center,
+                                          spacing: 8,
+                                          runSpacing: 8,
+                                          children: [
+                                            FilledButton(
+                                              onPressed: _openCreateCustomer,
+                                              child: const Text(
+                                                AppStrings.addCustomer,
+                                              ),
                                             ),
-                                          ),
-                                        );
-                                      }
-                                    },
-                                  ),
-                                );
-                              }
-                              return CustomerListTile(
-                                name: customer.fullName,
-                                phone: customer.phoneNumber,
-                                onTap: () async {
-                                  final deleted = await context.push<bool>(
-                                    '/customers/${customer.id}',
+                                            OutlinedButton(
+                                              onPressed: () async {
+                                                final imported = await context
+                                                    .push<bool>(
+                                                      '/customers/import',
+                                                    );
+                                                if (imported == true &&
+                                                    mounted) {
+                                                  _load();
+                                                }
+                                              },
+                                              child: const Text(
+                                                AppStrings.importFromExcel,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                ),
+                              ],
+                            )
+                          : ListView.separated(
+                              primary: true,
+                              padding: const EdgeInsets.fromLTRB(
+                                AppTokens.space16,
+                                0,
+                                AppTokens.space16,
+                                AppTokens.space16,
+                              ),
+                              itemCount:
+                                  _items.length + 1 + (_hasMore ? 1 : 0),
+                              separatorBuilder: (_, _) =>
+                                  const SizedBox(height: AppTokens.space12),
+                              itemBuilder: (context, index) {
+                                if (index < _items.length) {
+                                  final customer = _items[index];
+                                  final selected = outreach.isSelected(
+                                    customer.id,
                                   );
-                                  if (deleted == true) {
-                                    _load();
-                                  }
-                                },
-                              );
-                            },
-                          ),
+                                  return _SalonCustomerCard(
+                                    key: Key('customer-card-${customer.id}'),
+                                    customer: customer,
+                                    selecting: selecting,
+                                    selected: selected,
+                                    onTap: selecting
+                                        ? () => _toggleCustomer(customer)
+                                        : () => _openCustomerDetails(customer),
+                                  );
+                                }
+                                if (index == _items.length) {
+                                  return _AddCustomerCard(
+                                    onTap: _openCreateCustomer,
+                                  );
+                                }
+                                return PagedFooter(loading: _loadingMore);
+                              },
+                            ),
                     ),
                   ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _CustomersActionCard extends StatelessWidget {
+  const _CustomersActionCard({
+    super.key,
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.onTap,
+    this.emphasized = false,
+    this.compact = false,
+  });
+
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final VoidCallback? onTap;
+  final bool emphasized;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final enabled = onTap != null || compact;
+    final chevron = Directionality.of(context) == TextDirection.rtl
+        ? Icons.chevron_left
+        : Icons.chevron_right;
+    final content = Row(
+      children: [
+        _CircleGlyph(
+          icon: icon,
+          emphasized: emphasized,
+          compact: compact,
+        ),
+        const SizedBox(width: AppTokens.space12),
+        Expanded(
+          child: compact
+              ? Text(
+                  title,
+                  style: theme.textTheme.titleSmall,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  softWrap: true,
+                )
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: theme.textTheme.titleSmall,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: AppTokens.space4),
+                    Text(
+                      subtitle,
+                      style: theme.textTheme.bodySmall,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+        ),
+        if (!compact) ...[
+          const SizedBox(width: AppTokens.space8),
+          Icon(chevron, color: AppTokens.textSecondary),
+        ],
+      ],
+    );
+    return Semantics(
+      button: onTap != null,
+      enabled: onTap != null,
+      label: '$title. $subtitle',
+      child: Opacity(
+        opacity: enabled ? 1 : 0.55,
+        child: AppSurface(
+          tone: emphasized ? AppSurfaceTone.hero : AppSurfaceTone.base,
+          radius: AppTokens.radiusLg,
+          padding: EdgeInsets.symmetric(
+            horizontal: compact ? AppTokens.space12 : AppTokens.space16,
+            vertical: compact ? AppTokens.space8 : AppTokens.space16,
+          ),
+          onTap: onTap,
+          child: content,
+        ),
+      ),
+    );
+  }
+}
+
+class _CircleGlyph extends StatelessWidget {
+  const _CircleGlyph({
+    required this.icon,
+    required this.emphasized,
+    this.compact = false,
+  });
+
+  final IconData icon;
+  final bool emphasized;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final size = compact ? 36.0 : 44.0;
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: emphasized ? AppTokens.accentMuted : AppTokens.surfaceElevated,
+        border: Border.all(
+          color: emphasized ? AppTokens.accent.withValues(alpha: 0.45) : AppTokens.line,
+        ),
+      ),
+      child: Icon(
+        icon,
+        size: compact ? 18 : 22,
+        color: emphasized ? AppTokens.accent : AppTokens.textSecondary,
+      ),
+    );
+  }
+}
+
+class _CountChip extends StatelessWidget {
+  const _CountChip({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTokens.space12,
+        vertical: AppTokens.space8,
+      ),
+      decoration: BoxDecoration(
+        color: AppTokens.accentMuted,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: AppTokens.accent),
+          const SizedBox(width: AppTokens.space8),
+          Text(
+            label,
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+              color: AppTokens.accent,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SalonCustomerCard extends StatelessWidget {
+  const _SalonCustomerCard({
+    super.key,
+    required this.customer,
+    required this.selecting,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final Customer customer;
+  final bool selecting;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final chevron = Directionality.of(context) == TextDirection.rtl
+        ? Icons.chevron_left
+        : Icons.chevron_right;
+    final radius = AppTokens.radiusLg;
+    final label = selecting
+        ? '${AppStrings.outreachSelectCustomer} ${customer.fullName}'
+        : customer.fullName;
+    return Semantics(
+      button: true,
+      selected: selecting ? selected : null,
+      label: label,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(radius),
+          child: Ink(
+            decoration: BoxDecoration(
+              color: selected
+                  ? Color.alphaBlend(AppTokens.accentMuted, AppTokens.surface)
+                  : AppTokens.surface,
+              borderRadius: BorderRadius.circular(radius),
+              border: Border.all(
+                color: selected ? AppTokens.accent : AppTokens.line,
+                width: selected ? 1.25 : 1,
+              ),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTokens.space16,
+                vertical: AppTokens.space12,
+              ),
+              child: Row(
+                children: [
+                  _CustomerPersonBadge(selected: selected),
+                  const SizedBox(width: AppTokens.space12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          customer.fullName,
+                          style: theme.textTheme.titleSmall,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: AppTokens.space4),
+                        LtrText(
+                          customer.phoneNumber,
+                          style: theme.textTheme.bodySmall,
+                          maxLines: 1,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: AppTokens.space8),
+                  if (selecting)
+                    ExcludeSemantics(
+                      child: IgnorePointer(
+                        child: Checkbox(
+                          value: selected,
+                          onChanged: (_) {},
+                        ),
+                      ),
+                    )
+                  else
+                    Icon(chevron, color: AppTokens.textSecondary),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CustomerPersonBadge extends StatelessWidget {
+  const _CustomerPersonBadge({required this.selected});
+
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 44,
+      height: 44,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: selected ? AppTokens.accentMuted : AppTokens.surfaceElevated,
+        border: Border.all(
+          color: selected ? AppTokens.accent.withValues(alpha: 0.45) : AppTokens.line,
+        ),
+      ),
+      child: Icon(
+        Icons.person_outline,
+        color: selected ? AppTokens.accent : AppTokens.textSecondary,
+      ),
+    );
+  }
+}
+
+class _AddCustomerCard extends StatelessWidget {
+  const _AddCustomerCard({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: AppStrings.addCustomer,
+      child: AppSurface(
+        radius: AppTokens.radiusLg,
+        onTap: onTap,
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                AppStrings.addCustomer,
+                key: const Key('customers-add'),
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  color: AppTokens.accentSecondary,
+                ),
+              ),
+            ),
+            const SizedBox(width: AppTokens.space12),
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: AppTokens.accentSecondary.withValues(alpha: 0.7),
+                ),
+              ),
+              child: const Icon(
+                Icons.add,
+                color: AppTokens.accentSecondary,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

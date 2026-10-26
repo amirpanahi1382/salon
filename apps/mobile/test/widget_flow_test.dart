@@ -1390,7 +1390,11 @@ void main() {
     expect(find.text('Sara Ahmadi'), findsOneWidget);
     expect(find.byIcon(Icons.upload_file_outlined), findsNothing);
     expect(find.text('افزودن مشتری'), findsOneWidget);
-    expect(find.text('انتخاب چند مشتری برای ارسال پیام'), findsOneWidget);
+    expect(find.text(AppStrings.selectSalonCustomersForMessage), findsOneWidget);
+    expect(find.text(AppStrings.vipSendMessageTitle), findsOneWidget);
+    expect(find.byType(Checkbox), findsNothing);
+    expect(find.text(AppStrings.cancelSelection), findsNothing);
+    expect(find.byKey(const Key('customers-continue-outreach')), findsNothing);
   });
 
   testWidgets(
@@ -2876,16 +2880,20 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('انتخاب چند مشتری برای ارسال پیام'));
+    await tester.tap(find.text(AppStrings.selectSalonCustomersForMessage));
     await tester.pumpAndSettle();
-    expect(find.text('انتخاب مشتری 0 / 30'), findsOneWidget);
-    await tester.tap(find.byType(CheckboxListTile).at(0));
+    expect(find.text(AppStrings.selectSalonCustomersForMessage), findsOneWidget);
+    expect(find.text(AppStrings.selectMultipleCustomers), findsNothing);
+    expect(find.text(AppStrings.selectedCustomersChip(0)), findsOneWidget);
+    expect(find.text(AppStrings.cancelSelection), findsOneWidget);
+    expect(find.text(AppStrings.vipSendMessageTitle), findsNothing);
+    await tester.tap(find.text('Sara Ahmadi'));
     await tester.pumpAndSettle();
-    expect(find.text('انتخاب مشتری 1 / 30'), findsOneWidget);
-    await tester.tap(find.byType(CheckboxListTile).at(1));
+    expect(find.text(AppStrings.selectedCustomersChip(1)), findsOneWidget);
+    await tester.tap(find.text('Maryam Karimi'));
     await tester.pumpAndSettle();
-    expect(find.text('انتخاب مشتری 2 / 30'), findsOneWidget);
-    await tester.tap(find.text('ارسال پیام'));
+    expect(find.text(AppStrings.selectedCustomersChip(2)), findsOneWidget);
+    await tester.tap(find.text(AppStrings.continueToSendMessageFor(2)));
     await tester.pumpAndSettle();
     expect(find.text('ایجاد پیام مناسب'), findsNWidgets(2));
     expect(find.text('Sara Ahmadi'), findsOneWidget);
@@ -3025,12 +3033,12 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.text('انتخاب چند مشتری برای ارسال پیام'));
+      await tester.tap(find.text(AppStrings.selectSalonCustomersForMessage));
       await tester.pumpAndSettle();
-      await tester.tap(find.byType(CheckboxListTile).at(0));
-      await tester.tap(find.byType(CheckboxListTile).at(1));
+      await tester.tap(find.text('Sara Ahmadi'));
+      await tester.tap(find.text('Maryam Karimi'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('ارسال پیام'));
+      await tester.tap(find.text(AppStrings.continueToSendMessageFor(2)));
       await tester.pumpAndSettle();
       expect(find.text('ایجاد پیام مناسب'), findsNWidgets(2));
 
@@ -3192,7 +3200,9 @@ void main() {
     expect(find.textContaining('در صف ارسال'), findsOneWidget);
   });
 
-  testWidgets('non-VIP salon hides customer VIP send action', (tester) async {
+  testWidgets('non-VIP salon keeps VIP card gated on the customers page', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(800, 1400);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -3208,10 +3218,17 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    expect(find.text(AppStrings.vipSendMessageTitle), findsOneWidget);
     expect(find.text('ارسال پیام vip'), findsNothing);
+    await tester.tap(find.text(AppStrings.vipSendMessageTitle));
+    await tester.pumpAndSettle();
+    expect(find.text(AppStrings.vipNeedEntitlement), findsOneWidget);
+    expect(find.text(AppStrings.vipChooseCount), findsNothing);
   });
 
-  testWidgets('entitled salon shows customer VIP send action', (tester) async {
+  testWidgets('entitled salon opens VIP count selection from customers', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(800, 1400);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -3229,7 +3246,13 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('ارسال پیام vip'), findsOneWidget);
+    expect(find.text(AppStrings.vipSendMessageTitle), findsOneWidget);
+    await tester.tap(find.text(AppStrings.vipSendMessageTitle));
+    await tester.pumpAndSettle();
+    expect(find.text(AppStrings.vipChooseCount), findsOneWidget);
+    expect(find.text('30'), findsOneWidget);
+    expect(find.text('50'), findsOneWidget);
+    expect(find.text('100'), findsOneWidget);
   });
 
   testWidgets('revoked VIP entitlement still shows request history', (

@@ -131,11 +131,33 @@ class AppStrings {
       'ارسال پیام فقط با تصمیم شما انجام می‌شود و به‌معنای اقدام انجام‌شده نیست.';
   static const sendBaleMessage = 'ارسال پیام در بله';
   static const selectMultipleCustomers = 'انتخاب چند مشتری برای ارسال پیام';
+  static const selectSalonCustomersForMessage =
+      'انتخاب مشتریان سالن برای ارسال پیام';
+  static const ordinaryMessageToRegisteredCustomers =
+      'ارسال پیام عادی به مشتریان ثبت‌شده';
+  static const vipSendMessageTitle = 'ارسال پیام VIP';
+  static const vipAttractNewInSalonRange =
+      'جذب مشتریان جدید در محدوده سالن';
+  static const salonCustomersHeading = 'مشتریان سالن';
   static const cancelSelection = 'لغو انتخاب';
   static const sendMessageAction = 'ارسال پیام';
   static const createSuitableMessage = 'ایجاد پیام مناسب';
   static const customerSelectionTitle = 'انتخاب مشتری';
   static const selectionLimitReached = 'حداکثر ۳۰ مشتری را می‌توانید انتخاب کنید.';
+  static const continueToSendMessage = 'ادامه به ارسال پیام';
+
+  static String salonCustomerCountChip(int count) =>
+      '${toPersianDigits(count.toString())} مشتری';
+
+  static String selectedCustomersChip(int count) =>
+      '${toPersianDigits(count.toString())} مشتری انتخاب شده';
+
+  static String continueToSendMessageFor(int count) {
+    if (count <= 0) {
+      return continueToSendMessage;
+    }
+    return '$continueToSendMessage برای ${toPersianDigits(count.toString())} مشتری';
+  }
   static const outreachEmptyTitle = 'مشتری‌ای برای ارسال پیام انتخاب نشده.';
   static const outreachEmptyBody =
       'از بخش مشتریان چند مشتری را انتخاب کنید و ارسال پیام را بزنید.';
