@@ -229,10 +229,7 @@ describeIfDb('VIP outreach (e2e)', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(200);
     expect(detail.body.contactCount).toBe(30);
-    expect(detail.body.contacts).toHaveLength(30);
-    expect(detail.body.contacts.every((row: { displayName: string | null }) => row.displayName === null)).toBe(
-      true,
-    );
+    expect(detail.body).not.toHaveProperty('contacts');
 
     await request(app.getHttpServer())
       .patch(`/admin/vip/lists/${listId}`)

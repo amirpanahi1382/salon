@@ -342,7 +342,6 @@ export class GetVipListUseCase {
     if (!list) {
       throw new NotFoundError('VIP list not found');
     }
-    const contacts = await this.vip.listContacts(id);
     const [latestRequest, requestCounts] = await Promise.all([
       this.vip.client.vipRequest.findFirst({
         where: { listId: id, status: { not: 'CANCELLED' } },
@@ -357,11 +356,6 @@ export class GetVipListUseCase {
     ]);
     return {
       ...toListSummary(list, requestCounts.get(id)),
-      contacts: contacts.map((row) => ({
-        displayName: row.displayName,
-        phoneNumber: row.phoneNumber,
-        sortOrder: row.sortOrder,
-      })),
       request: latestRequest
         ? await presentSalonVipRequest(this.vip, latestRequest.salonId, latestRequest, new Date())
         : null,

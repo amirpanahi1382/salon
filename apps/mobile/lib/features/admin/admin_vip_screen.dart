@@ -27,7 +27,9 @@ class AdminVipScreen extends ConsumerStatefulWidget {
 class _AdminVipScreenState extends ConsumerState<AdminVipScreen> {
   late final CursorPageState<VipTargetList> _lists = CursorPageState(
     keyOf: (list) => list.id,
-    changed: () { if (mounted) setState(() {}); },
+    changed: () {
+      if (mounted) setState(() {});
+    },
   );
   int _listGeneration = 0;
   int? _listCount;
@@ -75,16 +77,12 @@ class _AdminVipScreenState extends ConsumerState<AdminVipScreen> {
     final bytes = await file.readAsBytes();
     VipTargetList imported;
     try {
-      imported = await ref.read(vipRepositoryProvider).importList(
-            bytes,
-            file.name,
-            createRequestId(),
-          );
+      imported = await ref
+          .read(vipRepositoryProvider)
+          .importList(bytes, file.name, createRequestId());
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(friendlyError(error))),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(friendlyError(error))));
       return;
     }
     if (!mounted) return;
@@ -126,91 +124,77 @@ class _AdminVipScreenState extends ConsumerState<AdminVipScreen> {
         body: RefreshIndicator(
           onRefresh: _refresh,
           child: ListView(
-                    padding: const EdgeInsets.all(AppTokens.space16),
-                    children: [
-                      if (_listCount != null && _contactRowCount != null)
-                        Padding(
-                          key: const ValueKey('vip-inventory-counts'),
-                          padding: const EdgeInsets.only(bottom: AppTokens.space16),
-                          child: InsightHero(
-                            child: Row(
-                              children: [
-                                Container(
-                                  width: 48,
-                                  height: 48,
-                                  decoration: BoxDecoration(
-                                    color: AppTokens.accentMuted,
-                                    borderRadius: BorderRadius.circular(AppTokens.radiusMd),
-                                    border: Border.all(
-                                      color: AppTokens.accent.withValues(alpha: 0.34),
-                                    ),
-                                  ),
-                                  child: const Icon(
-                                    Icons.inventory_2_outlined,
-                                    color: AppTokens.accent,
-                                  ),
+            padding: const EdgeInsets.all(AppTokens.space16),
+            children: [
+              if (_listCount != null && _contactRowCount != null)
+                Padding(
+                  key: const ValueKey('vip-inventory-counts'),
+                  padding: const EdgeInsets.only(bottom: AppTokens.space16),
+                  child: InsightHero(
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 48,
+                          height: 48,
+                          decoration: BoxDecoration(
+                            color: AppTokens.accentMuted,
+                            borderRadius: BorderRadius.circular(AppTokens.radiusMd),
+                            border: Border.all(color: AppTokens.accent.withValues(alpha: 0.34)),
+                          ),
+                          child: const Icon(Icons.inventory_2_outlined, color: AppTokens.accent),
+                        ),
+                        const SizedBox(width: AppTokens.space12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'موجودی لیست‌های VIP',
+                                style: Theme.of(context).textTheme.titleMedium,
+                              ),
+                              const SizedBox(height: AppTokens.space4),
+                              Text(
+                                '${toPersianDigits(_listCount.toString())} لیست  ·  '
+                                '${toPersianDigits(_contactRowCount.toString())} مخاطب',
+                                style: Theme.of(context).textTheme.bodyMedium
+                                    ?.copyWith(color: AppTokens.textSecondary),
+                              ),
+                              if (_recordedContactCount != null &&
+                                  _recordedContactCount != _contactRowCount)
+                                Text(
+                                  'شمارش ثبت‌شده: '
+                                  '${toPersianDigits(_recordedContactCount.toString())}',
+                                  style: Theme.of(context).textTheme.bodySmall
+                                      ?.copyWith(color: AppTokens.warning),
                                 ),
-                                const SizedBox(width: AppTokens.space12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        'موجودی لیست‌های VIP',
-                                        style: Theme.of(context).textTheme.titleMedium,
-                                      ),
-                                      const SizedBox(height: AppTokens.space4),
-                                      Text(
-                                        '${toPersianDigits(_listCount.toString())} لیست  ·  '
-                                        '${toPersianDigits(_contactRowCount.toString())} مخاطب',
-                                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                              color: AppTokens.textSecondary,
-                                            ),
-                                      ),
-                                      if (_recordedContactCount != null &&
-                                          _recordedContactCount != _contactRowCount)
-                                        Text(
-                                          'شمارش ثبت‌شده: '
-                                          '${toPersianDigits(_recordedContactCount.toString())}',
-                                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                                color: AppTokens.warning,
-                                              ),
-                                        ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
+                            ],
                           ),
                         ),
-                      if (_lists.loading && _lists.items.isEmpty)
-                        const LoadingSkeleton(lines: 4),
-                      if (_lists.error != null && _lists.items.isEmpty)
-                        ErrorView(
-                          message: friendlyError(_lists.error!),
-                          onRetry: () => _loadLists(reset: true),
-                        ),
-                      if (_lists.empty)
-                        const EmptyStateView(
-                          title: AppStrings.vipNoLists,
-                          body: AppStrings.vipImportHelp,
-                        ),
-                      ..._lists.items.map((list) => _adminListCard(list)),
-                      if (_lists.error != null && _lists.items.isNotEmpty)
-                        ErrorView(
-                          message: friendlyError(_lists.error!),
-                          onRetry: _loadMoreLists,
-                        ),
-                      if (_lists.loading && _lists.items.isNotEmpty)
-                        const Center(child: CircularProgressIndicator()),
-                      if (_lists.hasMore && !_lists.loading && _lists.error == null)
-                        TextButton(
-                          key: const ValueKey('vip-lists-load-more'),
-                          onPressed: _loadMoreLists,
-                          child: const Text(AppStrings.loadMore),
-                        ),
-                    ],
+                      ],
+                    ),
                   ),
+                ),
+              if (_lists.loading && _lists.items.isEmpty) const LoadingSkeleton(lines: 4),
+              if (_lists.error != null && _lists.items.isEmpty)
+                ErrorView(
+                  message: friendlyError(_lists.error!),
+                  onRetry: () => _loadLists(reset: true),
+                ),
+              if (_lists.empty)
+                const EmptyStateView(title: AppStrings.vipNoLists, body: AppStrings.vipImportHelp),
+              ..._lists.items.map((list) => _adminListCard(list)),
+              if (_lists.error != null && _lists.items.isNotEmpty)
+                ErrorView(message: friendlyError(_lists.error!), onRetry: _loadMoreLists),
+              if (_lists.loading && _lists.items.isNotEmpty)
+                const Center(child: CircularProgressIndicator()),
+              if (_lists.hasMore && !_lists.loading && _lists.error == null)
+                TextButton(
+                  key: const ValueKey('vip-lists-load-more'),
+                  onPressed: _loadMoreLists,
+                  child: const Text(AppStrings.loadMore),
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -236,9 +220,7 @@ class _AdminVipScreenState extends ConsumerState<AdminVipScreen> {
                   decoration: BoxDecoration(
                     color: AppTokens.accent.withValues(alpha: 0.10),
                     borderRadius: BorderRadius.circular(AppTokens.radiusMd),
-                    border: Border.all(
-                      color: AppTokens.accent.withValues(alpha: 0.24),
-                    ),
+                    border: Border.all(color: AppTokens.accent.withValues(alpha: 0.24)),
                   ),
                   child: const Icon(
                     Icons.featured_play_list_outlined,
@@ -255,9 +237,8 @@ class _AdminVipScreenState extends ConsumerState<AdminVipScreen> {
                         list.name,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.w700,
-                            ),
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w700),
                       ),
                       const SizedBox(height: AppTokens.space4),
                       Text(
@@ -267,19 +248,16 @@ class _AdminVipScreenState extends ConsumerState<AdminVipScreen> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: list.regionName == null
-                                  ? AppTokens.warning
-                                  : AppTokens.textSecondary,
-                            ),
+                          color: list.regionName == null
+                              ? AppTokens.warning
+                              : AppTokens.textSecondary,
+                        ),
                       ),
                     ],
                   ),
                 ),
                 const SizedBox(width: AppTokens.space8),
-                const Icon(
-                  Icons.chevron_left_rounded,
-                  color: AppTokens.textSecondary,
-                ),
+                const Icon(Icons.chevron_left_rounded, color: AppTokens.textSecondary),
               ],
             ),
             const SizedBox(height: AppTokens.space16),
@@ -302,9 +280,7 @@ class _AdminVipScreenState extends ConsumerState<AdminVipScreen> {
                   key: ValueKey('vip-total-requests-${list.id}'),
                   label: '${toPersianDigits(list.totalRequestCount.toString())} درخواست',
                   icon: Icons.inbox_outlined,
-                  color: list.totalRequestCount > 0
-                      ? AppTokens.accent
-                      : AppTokens.textSecondary,
+                  color: list.totalRequestCount > 0 ? AppTokens.accent : AppTokens.textSecondary,
                 ),
                 if (list.openRequestCount > 0)
                   _VipInventoryTag(
@@ -326,12 +302,9 @@ class _AdminVipScreenState extends ConsumerState<AdminVipScreen> {
       ),
     );
   }
-
 }
 
-({String label, IconData icon, Color color}) _vipInventoryAvailability(
-  VipTargetList list,
-) {
+({String label, IconData icon, Color color}) _vipInventoryAvailability(VipTargetList list) {
   if (list.requestableBySalons) {
     return (
       label: AppStrings.vipActive,
@@ -373,9 +346,7 @@ class _VipInventoryTag extends StatelessWidget {
       decoration: BoxDecoration(
         color: color.withValues(alpha: emphasized ? 0.16 : 0.09),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(
-          color: color.withValues(alpha: emphasized ? 0.54 : 0.26),
-        ),
+        border: Border.all(color: color.withValues(alpha: emphasized ? 0.54 : 0.26)),
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(
@@ -390,9 +361,9 @@ class _VipInventoryTag extends StatelessWidget {
             Text(
               label,
               style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                    color: color,
-                    fontWeight: emphasized ? FontWeight.w700 : FontWeight.w500,
-                  ),
+                color: color,
+                fontWeight: emphasized ? FontWeight.w700 : FontWeight.w500,
+              ),
             ),
           ],
         ),
@@ -455,19 +426,33 @@ class AdminVipListDetailScreen extends ConsumerStatefulWidget {
   final String listId;
 
   @override
-  ConsumerState<AdminVipListDetailScreen> createState() =>
-      _AdminVipListDetailScreenState();
+  ConsumerState<AdminVipListDetailScreen> createState() => _AdminVipListDetailScreenState();
 }
 
 class _AdminVipListDetailScreenState extends ConsumerState<AdminVipListDetailScreen> {
   VipTargetList? _list;
   Object? _error;
   bool _busy = false;
+  late final CursorPageState<AdminVipOutreachFolder> _salonResults = CursorPageState(
+    keyOf: (item) => item.salonId,
+    changed: () {
+      if (mounted) setState(() {});
+    },
+  );
 
   @override
   void initState() {
     super.initState();
     _load();
+    _loadSalonResults();
+  }
+
+  Future<void> _loadSalonResults({bool reset = false}) async {
+    if (reset) _salonResults.reset();
+    await _salonResults.load(
+      (cursor) =>
+          ref.read(vipRepositoryProvider).adminListSalonResults(widget.listId, cursor: cursor),
+    );
   }
 
   Future<void> _load() async {
@@ -512,10 +497,7 @@ class _AdminVipListDetailScreenState extends ConsumerState<AdminVipListDetailScr
         return;
       }
       await _run(() async {
-        await ref.read(vipRepositoryProvider).patchList(
-              list.id,
-              availability: availability,
-            );
+        await ref.read(vipRepositoryProvider).patchList(list.id, availability: availability);
       });
       return;
     }
@@ -528,11 +510,9 @@ class _AdminVipListDetailScreenState extends ConsumerState<AdminVipListDetailScr
       return;
     }
     await _run(() async {
-      await ref.read(vipRepositoryProvider).patchList(
-            list.id,
-            availability: 'ACTIVE',
-            regionCode: selected,
-          );
+      await ref
+          .read(vipRepositoryProvider)
+          .patchList(list.id, availability: 'ACTIVE', regionCode: selected);
     });
   }
 
@@ -549,9 +529,8 @@ class _AdminVipListDetailScreenState extends ConsumerState<AdminVipListDetailScr
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text(AppStrings.vipRenameRequired)),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text(AppStrings.vipRenameRequired)));
       return;
     }
     await _run(() async {
@@ -559,9 +538,8 @@ class _AdminVipListDetailScreenState extends ConsumerState<AdminVipListDetailScr
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text(AppStrings.vipRenameSuccess)),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text(AppStrings.vipRenameSuccess)));
     });
   }
 
@@ -574,9 +552,7 @@ class _AdminVipListDetailScreenState extends ConsumerState<AdminVipListDetailScr
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(friendlyError(error))),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(friendlyError(error))));
     } finally {
       if (mounted) {
         setState(() => _busy = false);
@@ -592,131 +568,463 @@ class _AdminVipListDetailScreenState extends ConsumerState<AdminVipListDetailScr
       body: _error != null
           ? ErrorView(message: friendlyError(_error!), onRetry: _load)
           : list == null
-              ? const LoadingSkeleton(lines: 6)
-              : ListView(
-                  padding: const EdgeInsets.all(AppTokens.space16),
-                  children: [
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
+          ? const LoadingSkeleton(lines: 6)
+          : ListView(
+              padding: const EdgeInsets.all(AppTokens.space16),
+              children: [
+                _VipListDetailHero(list: list),
+                const SizedBox(height: AppTokens.space16),
+                AppSurface(
+                  tone: AppSurfaceTone.elevated,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('مدیریت لیست', style: Theme.of(context).textTheme.titleSmall),
+                      const SizedBox(height: AppTokens.space12),
+                      Wrap(
+                        spacing: AppTokens.space8,
+                        runSpacing: AppTokens.space8,
+                        children: [
+                          FilledButton.tonalIcon(
+                            key: const ValueKey('vip-activate-list'),
+                            style: const ButtonStyle(
+                              visualDensity: VisualDensity.compact,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              minimumSize: WidgetStatePropertyAll(Size(0, 40)),
+                              padding: WidgetStatePropertyAll(
+                                EdgeInsets.symmetric(
+                                  horizontal: AppTokens.space12,
+                                  vertical: AppTokens.space8,
+                                ),
+                              ),
+                            ),
+                            onPressed: _busy || list.status == 'IN_USE' || list.requestableBySalons
+                                ? null
+                                : () => _confirmAvailability(list, 'ACTIVE'),
+                            icon: const Icon(Icons.check_circle_outline_rounded, size: 18),
+                            label: const Text('فعال‌سازی'),
+                          ),
+                          FilledButton.tonalIcon(
+                            key: const ValueKey('vip-deactivate-list'),
+                            style: const ButtonStyle(
+                              visualDensity: VisualDensity.compact,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              minimumSize: WidgetStatePropertyAll(Size(0, 40)),
+                              padding: WidgetStatePropertyAll(
+                                EdgeInsets.symmetric(
+                                  horizontal: AppTokens.space12,
+                                  vertical: AppTokens.space8,
+                                ),
+                              ),
+                            ),
+                            onPressed: _busy || list.status == 'IN_USE'
+                                ? null
+                                : () => _confirmAvailability(list, 'INACTIVE'),
+                            icon: const Icon(Icons.pause_circle_outline_rounded, size: 18),
+                            label: const Text('غیرفعال‌سازی'),
+                          ),
+                          TextButton.icon(
+                            style: const ButtonStyle(visualDensity: VisualDensity.compact),
+                            onPressed: _busy ? null : () => _rename(list),
+                            icon: const Icon(Icons.edit_outlined, size: 18),
+                            label: const Text(AppStrings.vipRename),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                if (adminVipUnavailabilityReason(list) != null)
+                  Padding(
+                    key: const ValueKey('vip-unavailability-reason'),
+                    padding: const EdgeInsets.only(top: AppTokens.space12),
+                    child: AppSurface(
+                      padding: const EdgeInsets.all(AppTokens.space12),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Icon(
+                            Icons.info_outline_rounded,
+                            size: 20,
+                            color: AppTokens.warning,
+                          ),
+                          const SizedBox(width: AppTokens.space8),
+                          Expanded(
+                            child: Text(
+                              list.status == 'IN_USE'
+                                  ? AppStrings.adminVipInUseCannotChange
+                                  : adminVipUnavailabilityReason(list)!,
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(color: AppTokens.textSecondary),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                if (list.needsAttention) ...[
+                  const SizedBox(height: AppTokens.space12),
+                  const _VipInventoryTag(
+                    label: AppStrings.vipNeedsReview,
+                    icon: Icons.warning_amber_rounded,
+                    color: AppTokens.danger,
+                    emphasized: true,
+                  ),
+                ],
+                if (list.request != null) ...[
+                  const SizedBox(height: AppTokens.space16),
+                  AppSurface(
+                    tone: AppSurfaceTone.elevated,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        FilledButton.tonal(
-                          key: const ValueKey('vip-activate-list'),
-                          onPressed: _busy || list.status == 'IN_USE' || list.requestableBySalons
-                              ? null
-                              : () => _confirmAvailability(list, 'ACTIVE'),
-                          child: const Text(AppStrings.adminVipActivateList),
+                        Text('درخواست جاری', style: Theme.of(context).textTheme.titleSmall),
+                        const SizedBox(height: AppTokens.space8),
+                        Text(
+                          '${list.request!.salonName} · '
+                          '${toPersianDigits(list.request!.requestedCount.toString())} مخاطب',
                         ),
-                        FilledButton.tonal(
-                          key: const ValueKey('vip-deactivate-list'),
-                          onPressed: _busy || list.status == 'IN_USE'
-                              ? null
-                              : () => _confirmAvailability(list, 'INACTIVE'),
-                          child: const Text(AppStrings.adminVipDeactivateList),
+                        Text(
+                          list.request!.geographicRange,
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: AppTokens.textSecondary),
                         ),
-                        TextButton(
-                          onPressed: _busy ? null : () => _rename(list),
-                          child: const Text(AppStrings.vipRename),
+                        if (list.request!.sampleWorks.isNotEmpty) ...[
+                          const SizedBox(height: AppTokens.space12),
+                          const Text(AppStrings.vipSampleWorks),
+                          ...list.request!.sampleWorks.map(
+                            (image) => ListTile(
+                              dense: true,
+                              contentPadding: EdgeInsets.zero,
+                              leading: const Icon(Icons.image_outlined),
+                              title: Text(
+                                '${AppStrings.vipSampleWorks} '
+                                '${toPersianDigits(image.position.toString())}',
+                              ),
+                              onTap: () async {
+                                final bytes = await ref
+                                    .read(vipRepositoryProvider)
+                                    .downloadAdminImage(image.id);
+                                await saveExcelFile(
+                                  bytes: Uint8List.fromList(bytes),
+                                  fileName: 'sample-${image.position}.jpg',
+                                );
+                              },
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: AppTokens.space12),
+                        Wrap(
+                          spacing: AppTokens.space8,
+                          runSpacing: AppTokens.space8,
+                          children: [
+                            FilledButton.tonalIcon(
+                              onPressed: _busy
+                                  ? null
+                                  : () => _run(() async {
+                                      final bytes = await ref
+                                          .read(vipRepositoryProvider)
+                                          .exportRequest(list.request!.id);
+                                      await saveExcelFile(
+                                        bytes: Uint8List.fromList(bytes),
+                                        fileName: 'vip-outreach.xlsx',
+                                      );
+                                    }),
+                              icon: const Icon(Icons.download_outlined, size: 18),
+                              label: const Text(AppStrings.vipExcelExport),
+                            ),
+                            FilledButton.tonalIcon(
+                              onPressed:
+                                  _busy ||
+                                      (list.request!.status != 'SUBMITTED' &&
+                                          list.request!.status != 'BALE_NOT_IMPLEMENTED')
+                                  ? null
+                                  : () => _run(
+                                      () => ref
+                                          .read(vipRepositoryProvider)
+                                          .dispatchManual(list.request!.id, createRequestId()),
+                                    ),
+                              icon: const Icon(Icons.send_outlined, size: 18),
+                              label: const Text(AppStrings.vipSendManual),
+                            ),
+                          ],
                         ),
+                        if (list.request!.status == 'BALE_NOT_IMPLEMENTED')
+                          const Padding(
+                            padding: EdgeInsets.only(top: AppTokens.space8),
+                            child: Text(AppStrings.vipBaleNotImplemented),
+                          ),
                       ],
                     ),
-                    if (list.status == 'IN_USE') ...[
-                      const SizedBox(height: 8),
-                      const Text(AppStrings.adminVipInUseCannotChange),
-                    ],
-                    const SizedBox(height: 12),
-                    Text('${AppStrings.vipListNameLabel}: ${list.name}'),
-                    Text('${AppStrings.vipContactCountLabel}: ${list.contactCount}'),
+                  ),
+                ],
+                const SizedBox(height: AppTokens.space16),
+                _VipListSalonResultsSection(
+                  state: _salonResults,
+                  onRetry: () => _loadSalonResults(reset: _salonResults.items.isEmpty),
+                  onLoadMore: _loadSalonResults,
+                ),
+              ],
+            ),
+    );
+  }
+}
+
+class _VipListSalonResultsSection extends StatelessWidget {
+  const _VipListSalonResultsSection({
+    required this.state,
+    required this.onRetry,
+    required this.onLoadMore,
+  });
+
+  final CursorPageState<AdminVipOutreachFolder> state;
+  final VoidCallback onRetry;
+  final VoidCallback onLoadMore;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      key: const ValueKey('vip-list-salon-results'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                color: AppTokens.accentMuted,
+                borderRadius: BorderRadius.circular(AppTokens.radiusSm),
+              ),
+              child: const Icon(Icons.storefront_outlined, size: 20, color: AppTokens.accent),
+            ),
+            const SizedBox(width: AppTokens.space8),
+            Text(
+              AppStrings.adminVipListSalonResults,
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+          ],
+        ),
+        const SizedBox(height: AppTokens.space12),
+        if (state.items.isEmpty && state.loading)
+          const LoadingSkeleton(lines: 4)
+        else if (state.items.isEmpty && state.error != null)
+          ErrorView(message: friendlyError(state.error!), onRetry: onRetry)
+        else if (state.empty)
+          const AppSurface(
+            child: Row(
+              children: [
+                Icon(Icons.inbox_outlined, color: AppTokens.textSecondary),
+                SizedBox(width: AppTokens.space8),
+                Expanded(child: Text(AppStrings.adminVipListSalonResultsEmpty)),
+              ],
+            ),
+          )
+        else ...[
+          ...state.items.map(_VipListSalonResultCard.new),
+          if (state.error != null)
+            Padding(
+              padding: const EdgeInsets.only(top: AppTokens.space8),
+              child: ErrorView(message: friendlyError(state.error!), onRetry: onRetry),
+            ),
+          if (state.hasMore)
+            Padding(
+              padding: const EdgeInsets.only(top: AppTokens.space8),
+              child: Center(
+                child: TextButton.icon(
+                  onPressed: state.loading ? null : onLoadMore,
+                  icon: state.loading
+                      ? const SizedBox.square(
+                          dimension: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.expand_more_rounded),
+                  label: const Text(AppStrings.loadMore),
+                ),
+              ),
+            ),
+        ],
+      ],
+    );
+  }
+}
+
+class _VipListSalonResultCard extends StatelessWidget {
+  const _VipListSalonResultCard(this.result);
+
+  final AdminVipOutreachFolder result;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppTokens.space12),
+      child: AppSurface(
+        tone: AppSurfaceTone.elevated,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    result.salonName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                ),
+                _VipInventoryTag(
+                  label: '${toPersianDigits(result.requestCount.toString())} درخواست',
+                  icon: Icons.receipt_long_outlined,
+                  color: AppTokens.accent,
+                  emphasized: true,
+                ),
+              ],
+            ),
+            if (result.latestActivityAt != null) ...[
+              const SizedBox(height: AppTokens.space4),
+              Text(
+                'آخرین فعالیت: ${formatJalaliDateTime(result.latestActivityAt!)}',
+                style: Theme.of(context).textTheme.bodySmall
+                    ?.copyWith(color: AppTokens.textSecondary),
+              ),
+            ],
+            const SizedBox(height: AppTokens.space12),
+            Wrap(
+              spacing: AppTokens.space8,
+              runSpacing: AppTokens.space8,
+              children: [
+                _VipInventoryTag(
+                  label:
+                      '${toPersianDigits(result.recipientCount.toString())} ${AppStrings.adminVipListRecipientCount}',
+                  icon: Icons.people_outline_rounded,
+                ),
+                _VipInventoryTag(
+                  label:
+                      '${toPersianDigits(result.sentMessageCount.toString())} ${AppStrings.adminVipListRecordedSend}',
+                  icon: Icons.check_circle_outline_rounded,
+                  color: AppTokens.success,
+                ),
+                _VipInventoryTag(
+                  label:
+                      '${toPersianDigits(result.pendingMessageCount.toString())} ${AppStrings.adminVipListPendingSend}',
+                  icon: Icons.schedule_outlined,
+                  color: AppTokens.warning,
+                ),
+                if (result.failedMessageCount > 0)
+                  _VipInventoryTag(
+                    label:
+                        '${toPersianDigits(result.failedMessageCount.toString())} ${AppStrings.adminVipListFailedSend}',
+                    icon: Icons.error_outline_rounded,
+                    color: AppTokens.danger,
+                  ),
+                if (result.cancelledMessageCount > 0)
+                  _VipInventoryTag(
+                    label:
+                        '${toPersianDigits(result.cancelledMessageCount.toString())} ${AppStrings.adminVipListCancelledSend}',
+                    icon: Icons.cancel_outlined,
+                    color: AppTokens.textSecondary,
+                  ),
+                if (result.globallyStoppedMessageCount > 0)
+                  _VipInventoryTag(
+                    label:
+                        '${toPersianDigits(result.globallyStoppedMessageCount.toString())} ${AppStrings.adminVipListStoppedSend}',
+                    icon: Icons.block_outlined,
+                    color: AppTokens.danger,
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _VipListDetailHero extends StatelessWidget {
+  const _VipListDetailHero({required this.list});
+
+  final VipTargetList list;
+
+  @override
+  Widget build(BuildContext context) {
+    final availability = _vipInventoryAvailability(list);
+    return InsightHero(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  color: AppTokens.accentMuted,
+                  borderRadius: BorderRadius.circular(AppTokens.radiusMd),
+                  border: Border.all(color: AppTokens.accent.withValues(alpha: 0.32)),
+                ),
+                child: const Icon(Icons.featured_play_list_outlined, color: AppTokens.accent),
+              ),
+              const SizedBox(width: AppTokens.space12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
                     Text(
-                      adminVipAvailabilityLabel(list),
-                      key: const ValueKey('vip-availability-label'),
+                      list.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleLarge,
                     ),
+                    const SizedBox(height: AppTokens.space4),
                     Text(
                       list.regionName != null
                           ? '${list.regionCode} — ${list.regionName}'
-                          : AppStrings.adminVipRegionMissing,
-                    ),
-                    Text(
-                      list.requestableBySalons
-                          ? AppStrings.adminVipRequestable
-                          : AppStrings.adminVipNotRequestable,
-                    ),
-                    if (adminVipUnavailabilityReason(list) != null)
-                      Text(
-                        adminVipUnavailabilityReason(list)!,
-                        key: const ValueKey('vip-unavailability-reason'),
-                      ),
-                    Text('${AppStrings.adminVipListRequestTotal}: ${list.totalRequestCount}'),
-                    Text('${AppStrings.adminVipListRequestOpen}: ${list.openRequestCount}'),
-                    if (list.needsAttention) ...[
-                      const SizedBox(height: 8),
-                      Text(
-                        AppStrings.vipNeedsReview,
-                        style: const TextStyle(color: AppTokens.danger),
-                      ),
-                    ],
-                    if (list.request != null) ...[
-                      Text('${list.request!.salonName} · ${list.request!.requestedCount}'),
-                      Text(list.request!.geographicRange),
-                      const SizedBox(height: 12),
-                      const Text(AppStrings.vipSampleWorks),
-                      ...list.request!.sampleWorks.map(
-                        (image) => ListTile(
-                          title: Text('${AppStrings.vipSampleWorks} ${image.position}'),
-                          onTap: () async {
-                            final bytes = await ref
-                                .read(vipRepositoryProvider)
-                                .downloadAdminImage(image.id);
-                            await saveExcelFile(
-                              bytes: Uint8List.fromList(bytes),
-                              fileName: 'sample-${image.position}.jpg',
-                            );
-                          },
-                        ),
-                      ),
-                      FilledButton(
-                        onPressed: _busy
-                            ? null
-                            : () => _run(() async {
-                                  final bytes = await ref
-                                      .read(vipRepositoryProvider)
-                                      .exportRequest(list.request!.id);
-                                  await saveExcelFile(
-                                    bytes: Uint8List.fromList(bytes),
-                                    fileName: 'vip-outreach.xlsx',
-                                  );
-                                }),
-                        child: const Text(AppStrings.vipExcelExport),
-                      ),
-                      FilledButton(
-                        onPressed: _busy ||
-                                (list.request!.status != 'SUBMITTED' &&
-                                    list.request!.status != 'BALE_NOT_IMPLEMENTED')
-                            ? null
-                            : () => _run(
-                                  () => ref.read(vipRepositoryProvider).dispatchManual(
-                                        list.request!.id,
-                                        createRequestId(),
-                                      ),
-                                ),
-                        child: const Text(AppStrings.vipSendManual),
-                      ),
-                      if (list.request!.status == 'BALE_NOT_IMPLEMENTED')
-                        const Text(AppStrings.vipBaleNotImplemented),
-                    ],
-                    const SizedBox(height: 16),
-                    ...list.contacts.map(
-                      (row) => ListTile(
-                        title: Text(
-                          (row.displayName != null && row.displayName!.trim().isNotEmpty)
-                              ? row.displayName!
-                              : AppStrings.vipUnnamedContact,
-                        ),
-                        subtitle: LtrText(row.phoneNumber),
+                          : 'بدون محدوده',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: list.regionName == null
+                            ? AppTokens.warning
+                            : AppTokens.textSecondary,
                       ),
                     ),
                   ],
                 ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppTokens.space16),
+          Wrap(
+            spacing: AppTokens.space8,
+            runSpacing: AppTokens.space8,
+            children: [
+              _VipInventoryTag(
+                key: const ValueKey('vip-availability-label'),
+                label: availability.label,
+                icon: availability.icon,
+                color: availability.color,
+                emphasized: true,
+              ),
+              _VipInventoryTag(
+                label: '${toPersianDigits(list.contactCount.toString())} مخاطب',
+                icon: Icons.people_outline_rounded,
+              ),
+              _VipInventoryTag(
+                label: '${toPersianDigits(list.totalRequestCount.toString())} درخواست',
+                icon: Icons.inbox_outlined,
+                color: list.totalRequestCount > 0 ? AppTokens.accent : AppTokens.textSecondary,
+              ),
+              if (list.openRequestCount > 0)
+                _VipInventoryTag(
+                  label: '${toPersianDigits(list.openRequestCount.toString())} در جریان',
+                  icon: Icons.autorenew_rounded,
+                  color: AppTokens.accentSecondary,
+                ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }
@@ -758,8 +1066,8 @@ class _ActivateVipListDialogState extends State<_ActivateVipListDialog> {
               selected == null
                   ? AppStrings.adminVipSelectRegion
                   : keepsStoredRegion
-                      ? '${AppStrings.adminVipStoredRegion}: ${selected.code} — ${selected.name}'
-                      : '${AppStrings.adminVipSelectedRegion}: ${selected.code} — ${selected.name}',
+                  ? '${AppStrings.adminVipStoredRegion}: ${selected.code} — ${selected.name}'
+                  : '${AppStrings.adminVipSelectedRegion}: ${selected.code} — ${selected.name}',
               key: const ValueKey('vip-activate-selected-region'),
             ),
             if (!keepsStoredRegion) ...[
@@ -783,15 +1091,10 @@ class _ActivateVipListDialogState extends State<_ActivateVipListDialog> {
         ),
       ),
       actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text(AppStrings.cancel),
-        ),
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text(AppStrings.cancel)),
         FilledButton(
           key: const ValueKey('vip-activate-confirm'),
-          onPressed: _regionCode == null
-              ? null
-              : () => Navigator.pop(context, _regionCode),
+          onPressed: _regionCode == null ? null : () => Navigator.pop(context, _regionCode),
           child: const Text(AppStrings.confirm),
         ),
       ],
@@ -809,8 +1112,7 @@ class _VipRenameDialog extends StatefulWidget {
 }
 
 class _VipRenameDialogState extends State<_VipRenameDialog> {
-  late final TextEditingController _controller =
-      TextEditingController(text: widget.initialName);
+  late final TextEditingController _controller = TextEditingController(text: widget.initialName);
 
   @override
   void dispose() {

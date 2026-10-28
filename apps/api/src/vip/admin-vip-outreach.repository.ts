@@ -18,6 +18,13 @@ export const ADMIN_VIP_OUTREACH_LIST_LIMIT = 50;
 
 const EXECUTION_SQL = VIP_RECIPIENT_EXECUTION_SQL;
 const STOP_OUTCOME_JOIN = VIP_RECIPIENT_STOP_JOIN;
+const LIST_EXECUTION_SQL = Prisma.sql`
+  CASE
+    WHEN ${EXECUTION_SQL} IN ('SENT', 'FAILED', 'GLOBALLY_STOPPED') THEN ${EXECUTION_SQL}
+    WHEN r.status = 'CANCELLED' THEN 'CANCELLED'
+    ELSE ${EXECUTION_SQL}
+  END
+`;
 
 type FolderRow = {
   salonId: string;
@@ -28,6 +35,7 @@ type FolderRow = {
   sentMessageCount: number;
   failedMessageCount: number;
   cancelledMessageCount: number;
+  globallyStoppedMessageCount: number;
   latestActivityAt: Date;
 };
 
@@ -132,6 +140,7 @@ export class AdminVipOutreachRepository {
           COUNT(*) FILTER (WHERE ${EXECUTION_SQL} = 'SENT')::int AS sent_count,
           COUNT(*) FILTER (WHERE ${EXECUTION_SQL} = 'FAILED')::int AS failed_count,
           COUNT(*) FILTER (WHERE ${EXECUTION_SQL} = 'CANCELLED')::int AS cancelled_count,
+          COUNT(*) FILTER (WHERE ${EXECUTION_SQL} = 'GLOBALLY_STOPPED')::int AS globally_stopped_count,
           MAX(COALESCE(d.updated_at, mr.updated_at)) AS message_updated_at
         FROM vip_request_recipients rec
         LEFT JOIN message_requests mr ON mr.id = rec.message_request_id
@@ -157,6 +166,7 @@ export class AdminVipOutreachRepository {
           COALESCE(rec.sent_count, 0) AS sent_count,
           COALESCE(rec.failed_count, 0) AS failed_count,
           COALESCE(rec.cancelled_count, 0) AS cancelled_count,
+          COALESCE(rec.globally_stopped_count, 0) AS globally_stopped_count,
           GREATEST(
             req.request_updated_at,
             COALESCE(rec.message_updated_at, req.request_updated_at)
@@ -174,11 +184,95 @@ export class AdminVipOutreachRepository {
         folders.sent_count AS "sentMessageCount",
         folders.failed_count AS "failedMessageCount",
         folders.cancelled_count AS "cancelledMessageCount",
+        folders.globally_stopped_count AS "globallyStoppedMessageCount",
         folders.latest_activity_at AS "latestActivityAt"
       FROM folders
       JOIN salons s ON s.id = folders.salon_id
       WHERE TRUE
         ${searchClause}
+        ${cursorClause}
+      ORDER BY folders.latest_activity_at DESC, folders.salon_id DESC
+      LIMIT ${ADMIN_VIP_OUTREACH_LIST_LIMIT + 1}
+    `;
+
+    return toListPage(rows, ADMIN_VIP_OUTREACH_LIST_LIMIT, (row) =>
+      encodeCursor([row.latestActivityAt.toISOString(), row.salonId]),
+    );
+  }
+
+  async listListSalonResults(listId: string, cursorValue?: string) {
+    const cursor = parseActivityCursor(cursorValue);
+    const cursorClause = cursor
+      ? Prisma.sql`AND (
+          folders.latest_activity_at < ${cursor.at}
+          OR (folders.latest_activity_at = ${cursor.at} AND folders.salon_id < ${cursor.salonId}::uuid)
+        )`
+      : Prisma.empty;
+
+    const rows = await this.prisma.client.$queryRaw<FolderRow[]>`
+      WITH list_requests AS MATERIALIZED (
+        SELECT r.id, r.salon_id, r.status, r.updated_at
+        FROM vip_requests r
+        WHERE r.list_id = ${listId}::uuid
+      ),
+      req_stats AS (
+        SELECT
+          r.salon_id,
+          COUNT(*)::int AS request_count,
+          MAX(r.updated_at) AS request_updated_at
+        FROM list_requests r
+        GROUP BY r.salon_id
+      ),
+      rec_stats AS (
+        SELECT
+          rec.salon_id,
+          COUNT(*)::int AS recipient_count,
+          COUNT(*) FILTER (WHERE ${LIST_EXECUTION_SQL} IN ('NOT_YET_QUEUED', 'QUEUED', 'IN_PIPELINE'))::int
+            AS pending_count,
+          COUNT(*) FILTER (WHERE ${LIST_EXECUTION_SQL} = 'SENT')::int AS sent_count,
+          COUNT(*) FILTER (WHERE ${LIST_EXECUTION_SQL} = 'FAILED')::int AS failed_count,
+          COUNT(*) FILTER (WHERE ${LIST_EXECUTION_SQL} = 'CANCELLED')::int AS cancelled_count,
+          COUNT(*) FILTER (WHERE ${LIST_EXECUTION_SQL} = 'GLOBALLY_STOPPED')::int AS globally_stopped_count,
+          MAX(COALESCE(d.updated_at, mr.updated_at)) AS message_updated_at
+        FROM list_requests r
+        JOIN vip_request_recipients rec ON rec.vip_request_id = r.id
+        LEFT JOIN message_requests mr ON mr.id = rec.message_request_id
+        LEFT JOIN message_deliveries d ON d.message_request_id = mr.id
+        ${STOP_OUTCOME_JOIN}
+        GROUP BY rec.salon_id
+      ),
+      folders AS (
+        SELECT
+          s.id AS salon_id,
+          s.name AS salon_name,
+          req.request_count,
+          COALESCE(rec.recipient_count, 0) AS recipient_count,
+          COALESCE(rec.pending_count, 0) AS pending_count,
+          COALESCE(rec.sent_count, 0) AS sent_count,
+          COALESCE(rec.failed_count, 0) AS failed_count,
+          COALESCE(rec.cancelled_count, 0) AS cancelled_count,
+          COALESCE(rec.globally_stopped_count, 0) AS globally_stopped_count,
+          GREATEST(
+            req.request_updated_at,
+            COALESCE(rec.message_updated_at, req.request_updated_at)
+          ) AS latest_activity_at
+        FROM req_stats req
+        JOIN salons s ON s.id = req.salon_id
+        LEFT JOIN rec_stats rec ON rec.salon_id = req.salon_id
+      )
+      SELECT
+        folders.salon_id AS "salonId",
+        folders.salon_name AS "salonName",
+        folders.request_count AS "requestCount",
+        folders.recipient_count AS "recipientCount",
+        folders.pending_count AS "pendingMessageCount",
+        folders.sent_count AS "sentMessageCount",
+        folders.failed_count AS "failedMessageCount",
+        folders.cancelled_count AS "cancelledMessageCount",
+        folders.globally_stopped_count AS "globallyStoppedMessageCount",
+        folders.latest_activity_at AS "latestActivityAt"
+      FROM folders
+      WHERE TRUE
         ${cursorClause}
       ORDER BY folders.latest_activity_at DESC, folders.salon_id DESC
       LIMIT ${ADMIN_VIP_OUTREACH_LIST_LIMIT + 1}

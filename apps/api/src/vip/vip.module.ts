@@ -11,6 +11,7 @@ import { AdminVipOutreachRepository } from './admin-vip-outreach.repository';
 import {
   GetAdminVipOutreachRequestUseCase,
   GetAdminVipOutreachSalonUseCase,
+  ListAdminVipListSalonResultsUseCase,
   ListAdminVipOutreachSalonsUseCase,
 } from './admin-vip-outreach.use-cases';
 import { GetAdminSalonProfileUseCase } from './admin-salon-profile.use-case';
@@ -72,6 +73,7 @@ import {
     ExportVipRequestExcelUseCase,
     DispatchVipRequestUseCase,
     ListAdminVipOutreachSalonsUseCase,
+    ListAdminVipListSalonResultsUseCase,
     GetAdminVipOutreachSalonUseCase,
     GetAdminVipOutreachRequestUseCase,
   ],

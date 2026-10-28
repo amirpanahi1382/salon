@@ -269,6 +269,15 @@ class AppStrings {
       'غیرفعال‌سازی لیست را از رزرو سالن‌ها خارج می‌کند. تاریخچهٔ درخواست پاک نمی‌شود.';
   static const adminVipListRequestTotal = 'کل درخواست سالن‌ها (شامل لغو)';
   static const adminVipListRequestOpen = 'درخواست باز / در جریان';
+  static const adminVipListSalonResults = 'نتایج سالن‌ها';
+  static const adminVipListSalonResultsEmpty =
+      'هنوز سالنی برای این لیست درخواست ثبت نکرده است.';
+  static const adminVipListRecipientCount = 'مخاطب';
+  static const adminVipListRecordedSend = 'ارسال ثبت‌شده';
+  static const adminVipListPendingSend = 'در صف';
+  static const adminVipListFailedSend = 'ناموفق';
+  static const adminVipListCancelledSend = 'لغوشده';
+  static const adminVipListStoppedSend = 'متوقف‌شده';
   static const vipOriginalTehranLists = 'لیست‌های اصلی تهران';
   static const vipAllLists = 'همهٔ لیست‌ها';
   static const vipOriginalCollectionEmpty = 'لیست‌های اصلی تهران هنوز مشخص نشده‌اند';
@@ -662,7 +671,6 @@ class AppStrings {
   static const previousMonth = 'ماه قبل';
   static const nextMonth = 'ماه بعد';
 }
-
 String vipRequestStatusLabel(String status) {
   switch (status) {
     case 'AWAITING_SAMPLE_WORK':
@@ -679,7 +687,6 @@ String vipRequestStatusLabel(String status) {
       return AppStrings.unknownStatus;
   }
 }
-
 String statusLabel(String value) {
   switch (value) {
     case 'NEW':

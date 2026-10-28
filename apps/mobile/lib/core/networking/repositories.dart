@@ -16,7 +16,6 @@ String sanitizeAuthEmail(String email) {
       )
       .trim();
 }
-
 class PhoneSignupChallenge {
   const PhoneSignupChallenge({
     required this.expiresInSeconds,
@@ -37,7 +36,6 @@ class PhoneSignupChallenge {
     );
   }
 }
-
 int _requiredSeconds(Object? value, String field) {
   if (value is int && value >= 0) {
     return value;
@@ -1101,6 +1099,17 @@ class VipRepository {
     return VipTargetList.fromJson(
       asJsonMap(await _api.get('/admin/vip/lists/$id')),
     );
+  }
+
+  Future<ItemPage<AdminVipOutreachFolder>> adminListSalonResults(
+    String listId, {
+    String? cursor,
+  }) async {
+    final data = await _api.get(
+      '/admin/vip/lists/$listId/salon-results',
+      query: {'cursor': ?cursor},
+    );
+    return parseItemPage(data, AdminVipOutreachFolder.fromJson);
   }
 
   Future<VipTargetList> importList(List<int> bytes, String filename, String key) async {

@@ -34,6 +34,7 @@ import { buildVipImportTemplate } from './parse-vip-excel';
 import {
   GetAdminVipOutreachRequestUseCase,
   GetAdminVipOutreachSalonUseCase,
+  ListAdminVipListSalonResultsUseCase,
   ListAdminVipOutreachSalonsUseCase,
 } from './admin-vip-outreach.use-cases';
 import { GetAdminSalonProfileUseCase } from './admin-salon-profile.use-case';
@@ -70,6 +71,7 @@ export class AdminVipController {
     private readonly downloadImage: DownloadVipSampleWorkUseCase,
     private readonly dispatchRequest: DispatchVipRequestUseCase,
     private readonly outreachSalons: ListAdminVipOutreachSalonsUseCase,
+    private readonly listSalonResults: ListAdminVipListSalonResultsUseCase,
     private readonly outreachSalon: GetAdminVipOutreachSalonUseCase,
     private readonly outreachRequest: GetAdminVipOutreachRequestUseCase,
   ) {}
@@ -146,9 +148,24 @@ export class AdminVipController {
   }
 
   @Get('lists/:id')
-  @ApiOperation({ summary: 'Get one VIP target list and its current request if submitted' })
+  @ApiOperation({
+    summary:
+      'Get one VIP target list summary and its current request if submitted. Contact rows are not exposed.',
+  })
   get(@Param('id', UuidParam) id: string) {
     return this.getList.execute(id);
+  }
+
+  @Get('lists/:id/salon-results')
+  @ApiOperation({
+    summary:
+      'Cursor-paginated per-salon request and recipient execution counts for one VIP list. Recorded sends are not delivery/read receipts.',
+  })
+  listResults(
+    @Param('id', UuidParam) id: string,
+    @Query() query: ListCursorQueryDto,
+  ) {
+    return this.listSalonResults.execute(id, query.cursor);
   }
 
   @Patch('lists/:id')

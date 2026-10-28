@@ -4,6 +4,7 @@ import {
   AdminVipOutreachRepository,
   toOutreachRequestDto,
 } from './admin-vip-outreach.repository';
+import { VipRepository } from './vip.repository';
 
 @Injectable()
 export class ListAdminVipOutreachSalonsUseCase {
@@ -11,6 +12,21 @@ export class ListAdminVipOutreachSalonsUseCase {
 
   execute(query: { cursor?: string; q?: string }) {
     return this.outreach.listSalonFolders(query);
+  }
+}
+
+@Injectable()
+export class ListAdminVipListSalonResultsUseCase {
+  constructor(
+    private readonly outreach: AdminVipOutreachRepository,
+    private readonly vip: VipRepository,
+  ) {}
+
+  async execute(listId: string, cursor?: string) {
+    if (!(await this.vip.findListById(listId))) {
+      throw new NotFoundError('VIP list not found');
+    }
+    return this.outreach.listListSalonResults(listId, cursor);
   }
 }
 

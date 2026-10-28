@@ -1628,6 +1628,7 @@ class AdminVipOutreachFolder {
     required this.sentMessageCount,
     required this.failedMessageCount,
     this.cancelledMessageCount = 0,
+    this.globallyStoppedMessageCount = 0,
     this.latestActivityAt,
   });
 
@@ -1639,6 +1640,7 @@ class AdminVipOutreachFolder {
   final int sentMessageCount;
   final int failedMessageCount;
   final int cancelledMessageCount;
+  final int globallyStoppedMessageCount;
   final DateTime? latestActivityAt;
 
   factory AdminVipOutreachFolder.fromJson(Map<String, dynamic> json) {
@@ -1651,6 +1653,8 @@ class AdminVipOutreachFolder {
       sentMessageCount: json['sentMessageCount'] as int? ?? 0,
       failedMessageCount: json['failedMessageCount'] as int? ?? 0,
       cancelledMessageCount: json['cancelledMessageCount'] as int? ?? 0,
+      globallyStoppedMessageCount:
+          json['globallyStoppedMessageCount'] as int? ?? 0,
       latestActivityAt: _parseDate(json['latestActivityAt']),
     );
   }
