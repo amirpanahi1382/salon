@@ -7,6 +7,9 @@ import {
   type CustomerRevenueMetrics,
 } from '@salon/shared';
 
+/** Root client or the interactive transaction already held by the caller. */
+export type RevenueQueryClient = PrismaClient | Prisma.TransactionClient;
+
 type RevenueSqlRow = {
   customerId: string;
   total: string;
@@ -48,7 +51,7 @@ function decimalString(value: unknown): string {
 }
 
 export async function loadCustomerRevenue(
-  prisma: PrismaClient,
+  prisma: RevenueQueryClient,
   tenantId: string,
   customerId: string,
   asOf: Date,
@@ -58,7 +61,7 @@ export async function loadCustomerRevenue(
 }
 
 export async function loadCustomerRevenueMap(
-  prisma: PrismaClient,
+  prisma: RevenueQueryClient,
   tenantId: string,
   asOf: Date,
   customerIds?: readonly string[],

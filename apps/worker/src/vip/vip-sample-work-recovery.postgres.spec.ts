@@ -31,6 +31,10 @@ class MapStorage implements ObjectStorage {
   }
 }
 
+function fixturePhone(id: string): string {
+  return `09${(parseInt(id.replace(/-/g, '').slice(0, 8), 16) % 1_000_000_000).toString().padStart(9, '0')}`;
+}
+
 describeIfIsolated('VIP sample-work recovery ownership (PostgreSQL)', () => {
   const client = createPrismaClient(isolatedUrl!);
   const config = {
@@ -80,11 +84,11 @@ describeIfIsolated('VIP sample-work recovery ownership (PostgreSQL)', () => {
     uploadId = randomUUID();
     generationOneKey = `vip/${salonId}/${requestId}/${uploadId}/g1`;
     await client.platformAdmin.create({
-      data: { id: adminId, email: `${adminId}@example.test`, name: 'Phase 10', passwordHash: 'test', updatedAt: now },
+      data: { id: adminId, email: `${adminId}@example.test`, name: 'Phase 10', phone: fixturePhone(adminId), passwordHash: 'test', updatedAt: now },
     });
     await client.salon.create({ data: { id: salonId, name: 'Phase 10', updatedAt: now } });
     await client.user.create({
-      data: { id: userId, salonId, name: 'Owner', email: `${userId}@example.test`, passwordHash: 'test', role: 'OWNER', updatedAt: now },
+      data: { id: userId, salonId, name: 'Owner', email: `${userId}@example.test`, phone: fixturePhone(userId), passwordHash: 'test', role: 'OWNER', updatedAt: now },
     });
     await client.vipTargetList.create({
       data: { id: listId, name: 'Disposable', status: 'IN_USE', contactCount: 1,

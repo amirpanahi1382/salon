@@ -187,6 +187,7 @@ export class SendOpportunityMessageUseCase {
       principal.tenantId,
       customerId,
       opportunityType,
+      tx,
     );
     if (presence === 'missing-customer') {
       throw new NotFoundError('Customer not found');

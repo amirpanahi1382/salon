@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { request as httpRequest } from 'node:http';
 import { createHash, randomUUID } from 'node:crypto';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -478,7 +479,7 @@ describeIfDisposable('manual transfer receipt review on a disposable database', 
         if (directory >= '20261015190000_activation_receipts') continue;
         await psql(container, upgradeName, await readFile(path.join(migrationsDir, directory, 'migration.sql'), 'utf8'));
       }
-      const before = createPrismaClient(upgradeUrl.toString());
+      const before = createPrismaClient(privilegedDatabaseUrl(upgradeName, 'operator'));
       const salonId = createId();
       await before.salon.create({
         data: { id: salonId, name: 'Historical email', status: 'ACTIVE', updatedAt: new Date() },
@@ -490,7 +491,7 @@ describeIfDisposable('manual transfer receipt review on a disposable database', 
       );
       expect(sql).not.toMatch(/UPDATE\s+"salons"/i);
       await psql(container, upgradeName, sql);
-      const after = createPrismaClient(upgradeUrl.toString());
+      const after = createPrismaClient(privilegedDatabaseUrl(upgradeName, 'operator'));
       const salon = await after.salon.findUniqueOrThrow({ where: { id: salonId } });
       expect(salon.accessState).toBe('PRODUCT');
       expect(await after.activationReceipt.count()).toBe(0);
@@ -512,10 +513,10 @@ describeIfDisposable('manual transfer receipt review on a disposable database', 
     const freshName = `salon_activation_fresh_${randomUUID().replace(/-/g, '')}`;
     const freshUrl = new URL(databaseUrl);
     freshUrl.pathname = `/${freshName}`;
-    await psql(container, 'postgres', `CREATE DATABASE ${freshName}`);
+    await psql(container, 'postgres', `CREATE DATABASE ${freshName} OWNER salon_migrator`);
     try {
-      await migrateDeploy(freshUrl.toString());
-      const fresh = createPrismaClient(freshUrl.toString());
+      await migrateDeploy(freshName);
+      const fresh = createPrismaClient(privilegedDatabaseUrl(freshName, 'operator'));
       const columns = await fresh.$queryRaw<Array<{ column_name: string }>>`
         SELECT column_name FROM information_schema.columns
         WHERE table_name = 'activation_receipts' AND column_name = 'bank_attestation_wording'
@@ -619,7 +620,16 @@ describeIfDisposable('manual transfer receipt review on a disposable database', 
         mode = 'ok';
         return { execute: async () => { throw new Error('storage timeout'); } };
       }
-      return originalPrepare(input);
+      const prepared = originalPrepare(input);
+      if (mode === 'fail') {
+        mode = 'ok';
+        return {
+          execute: async () => {
+            throw new InfrastructureError('File storage is temporarily unavailable');
+          },
+        };
+      }
+      return prepared;
     };
     storage.putObject = async (input) => {
       if (mode === 'fail') {
@@ -787,8 +797,21 @@ describeIfDisposable('manual transfer receipt review on a disposable database', 
     const originalPut = storage.putObject.bind(storage);
     const originalGet = storage.getObject.bind(storage);
     const originalDelete = storage.deleteObject.bind(storage);
+    const originalPrepare = storage.preparePutObject.bind(storage);
     const deletedKeys: string[] = [];
     let mode: 'ok' | 'fail-put' | 'tamper' = 'ok';
+    storage.preparePutObject = (input) => {
+      const prepared = originalPrepare(input);
+      if (mode === 'fail-put') {
+        mode = 'ok';
+        return {
+          execute: async () => {
+            throw new InfrastructureError('File storage is temporarily unavailable');
+          },
+        };
+      }
+      return prepared;
+    };
     storage.putObject = async (input) => {
       if (mode === 'fail-put') {
         mode = 'ok';
@@ -958,6 +981,11 @@ describeIfDisposable('manual transfer receipt review on a disposable database', 
       storage.getObject = originalGet;
       storage.deleteObject = originalDelete;
       await psql(container, databaseName, `
+        DO $$ BEGIN
+          IF current_user = 'salon_app' THEN
+            RAISE EXCEPTION 'audit cleanup must use the privileged disposable connection';
+          END IF;
+        END $$;
         DROP TRIGGER IF EXISTS refuse_activation_receipt_stored_audit ON audit_logs;
         DROP FUNCTION IF EXISTS refuse_activation_receipt_stored_audit();
       `);
@@ -1022,14 +1050,86 @@ describeIfDisposable('manual transfer receipt review on a disposable database', 
       const storedObject = await s3.getObject(row.objectKey);
       expect(storedObject.body.equals(body)).toBe(true);
       expect(createHash('sha256').update(storedObject.body).digest('hex')).toBe(digest);
+      const anonymous = await new Promise<number>((resolve, reject) => {
+        const req = httpRequest(
+          { host: endpoint, port, method: 'GET', path: `/${bucket}/${row.objectKey}` },
+          (res) => {
+            res.resume();
+            resolve(res.statusCode ?? 0);
+          },
+        );
+        req.on('error', reject);
+        req.end();
+      });
+      expect(anonymous).toBeGreaterThanOrEqual(400);
+      const other = await acceptOwner(admin.token);
+      await request(s3App.getHttpServer())
+        .get(`/activation/receipts/${row.id}/image`)
+        .set('Authorization', `Bearer ${other.token}`)
+        .expect(404);
+      const ownerImage = await request(s3App.getHttpServer())
+        .get(`/activation/receipts/${row.id}/image`)
+        .set('Authorization', `Bearer ${owner.token}`)
+        .buffer(true)
+        .parse((res, callback) => {
+          const chunks: Buffer[] = [];
+          res.on('data', (chunk: Buffer) => chunks.push(Buffer.from(chunk)));
+          res.on('end', () => callback(null, Buffer.concat(chunks)));
+        })
+        .expect(200);
+      expect((ownerImage.body as Buffer).equals(body)).toBe(true);
+
+      const auditsBeforeFailure = await prisma.client.auditLog.count({
+        where: { tenantId: owner.salonId, action: 'ACTIVATION_RECEIPT_STORED', result: 'SUCCESS' },
+      });
+      const originalPrepare = s3.preparePutObject.bind(s3);
+      s3.preparePutObject = (input) => {
+        originalPrepare(input);
+        return {
+          execute: async () => {
+            throw new InfrastructureError('File storage is temporarily unavailable');
+          },
+        };
+      };
+      const failedUpload = await request(s3App.getHttpServer())
+        .post('/activation/receipts')
+        .set('Authorization', `Bearer ${owner.token}`)
+        .attach('file', await receiptJpeg(45), 'failed.jpg');
+      expect(failedUpload.status).toBe(503);
+      s3.preparePutObject = originalPrepare;
+      expect((await prisma.client.activationReceipt.findUniqueOrThrow({ where: { id: row.id } })).phase)
+        .toBe('STORED');
+      expect(await prisma.client.auditLog.count({
+        where: { tenantId: owner.salonId, action: 'ACTIVATION_RECEIPT_STORED', result: 'SUCCESS' },
+      })).toBe(auditsBeforeFailure);
+      expect(await prisma.client.activationReceipt.count({
+        where: { salonId: owner.salonId, phase: 'UNDER_REVIEW' },
+      })).toBe(0);
+
+      const replacementBody = await receiptJpeg(46);
+      const replacement = await request(s3App.getHttpServer())
+        .post('/activation/receipts')
+        .set('Authorization', `Bearer ${owner.token}`)
+        .attach('file', replacementBody, 'replacement.jpg')
+        .expect(201);
+      expect((await prisma.client.activationReceipt.findUniqueOrThrow({ where: { id: row.id } })).phase)
+        .toBe('SUPERSEDED');
+      const replacementRow = await prisma.client.activationReceipt.findUniqueOrThrow({
+        where: { id: replacement.body.receiptId as string },
+      });
+      expect(replacementRow.phase).toBe('STORED');
+      expect((await s3.getObject(row.objectKey)).body.equals(body)).toBe(true);
+      const replacementObject = await s3.getObject(replacementRow.objectKey);
+      expect(createHash('sha256').update(replacementObject.body).digest('hex')).toBe(replacementRow.sha256);
+      expect(replacementObject.body.equals(replacementBody)).toBe(true);
 
       await request(s3App.getHttpServer())
-        .post(`/activation/receipts/${row.id}/submit`)
+        .post(`/activation/receipts/${replacementRow.id}/submit`)
         .set('Authorization', `Bearer ${owner.token}`)
         .set('Idempotency-Key', `s3-submit-${randomUUID()}`)
         .expect(201);
       const image = await request(s3App.getHttpServer())
-        .get(`/admin/activation-receipts/${row.id}/image`)
+        .get(`/admin/activation-receipts/${replacementRow.id}/image`)
         .set('Authorization', `Bearer ${admin.token}`)
         .buffer(true)
         .parse((res, callback) => {
@@ -1039,9 +1139,9 @@ describeIfDisposable('manual transfer receipt review on a disposable database', 
         })
         .expect(200);
       expect(Buffer.isBuffer(image.body)).toBe(true);
-      expect((image.body as Buffer).equals(body)).toBe(true);
+      expect((image.body as Buffer).equals(replacementBody)).toBe(true);
       const approved = await request(s3App.getHttpServer())
-        .post(`/admin/activation-receipts/${row.id}/approve`)
+        .post(`/admin/activation-receipts/${replacementRow.id}/approve`)
         .set('Authorization', `Bearer ${admin.token}`)
         .set('Idempotency-Key', `s3-approve-${randomUUID()}`)
         .send({ bankAttestation: BANK_TRANSFER_ATTESTATION })
@@ -1527,12 +1627,32 @@ function resetThrottle(nest: INestApplication | undefined): void {
   }
 }
 
-function migrateDeploy(url: string): Promise<void> {
-  const target = new URL(url);
-  const database = target.pathname.replace(/^\//, '');
+function privilegedDatabaseUrl(database: string, role: 'salon_migrator' | 'operator'): string {
+  const raw = role === 'salon_migrator'
+    ? process.env.DISPOSABLE_MIGRATOR_DATABASE_URL
+    : process.env.DISPOSABLE_OPERATOR_DATABASE_URL;
+  if (!raw) {
+    throw new Error(`${role} database URL is required for disposable schema work`);
+  }
+  const url = new URL(raw);
+  if (url.username === 'salon_app') {
+    throw new Error('Refusing schema work as salon_app');
+  }
+  if (role === 'salon_migrator' && url.username !== 'salon_migrator') {
+    throw new Error('Migration connection must be salon_migrator');
+  }
+  if (!/^salon_activation_[a-z0-9_]+$/.test(database) && database !== 'postgres') {
+    throw new Error('Refusing a privileged connection to an unexpected database');
+  }
+  url.pathname = `/${database}`;
+  return url.toString();
+}
+
+function migrateDeploy(database: string): Promise<void> {
   if (!/^salon_activation_[a-z0-9_]+$/.test(database)) {
     throw new Error('Refusing to migrate an unexpected database');
   }
+  const url = privilegedDatabaseUrl(database, 'salon_migrator');
   return new Promise((resolve, reject) => {
     execFile(
       'pnpm',

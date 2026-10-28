@@ -4,6 +4,7 @@ import {
   VIP_ACTIVE_DRAFT_STATUS,
   VIP_IN_PROGRESS_STATUSES,
   VIP_QUOTA_WINDOW_DAYS,
+  VIP_REGION_CODES,
   VIP_REGIONS,
   VIP_RESERVATION_TTL_MS,
 } from '@salon/shared';
@@ -293,23 +294,35 @@ export class VipRepository {
 
   /**
    * Activate only if the list is still unreserved. Does not clear reservation fields.
-   * Returns false when the list is IN_USE, reserved, missing, or not in an activatable status.
+   * A canonical region already stored on the row is kept. A different canonical region
+   * matches no row, so a write that started from a stale pre-read cannot replace it.
+   * Returns false when the list is IN_USE, reserved, missing, region-locked, or not activatable.
    */
   async tryActivateUnreservedList(
     tx: Prisma.TransactionClient,
     input: { id: string; regionCode: string; name?: string; now: Date },
   ): Promise<boolean> {
+    const canonicalRegions = () =>
+      Prisma.join([...VIP_REGION_CODES].map((code) => Prisma.sql`${code}`));
     const updated = await tx.$queryRaw<Array<{ id: string }>>`
       UPDATE vip_target_lists
       SET
         status = 'ACTIVE',
-        region_code = ${input.regionCode},
+        region_code = CASE
+          WHEN region_code IN (${canonicalRegions()}) THEN region_code
+          ELSE ${input.regionCode}
+        END,
         catalog_membership = 'ORIGINAL_TEHRAN'::"VipCatalogMembership",
         ${input.name ? Prisma.sql`name = ${input.name},` : Prisma.sql``}
         updated_at = ${input.now}
       WHERE id = ${input.id}::uuid
         AND status IN ('PENDING', 'INACTIVE', 'ACTIVE')
         AND reserved_by_salon_id IS NULL
+        AND (
+          region_code IS NULL
+          OR region_code NOT IN (${canonicalRegions()})
+          OR region_code = ${input.regionCode}
+        )
       RETURNING id
     `;
     return updated.length === 1;

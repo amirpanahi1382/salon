@@ -44,6 +44,23 @@ const envSchema = z.object({
     }
     return value;
   }, z.literal('127.0.0.1').optional()),
+  /**
+   * Canonical phone-first startup only. Generic `pnpm start:api` leaves this unset
+   * and does not prove which database it opened.
+   */
+  CANONICAL_DATABASE_REQUIRED: booleanFromString.default(false),
+  CANONICAL_DATABASE_NAME: z.preprocess(
+    (value) => (value === '' ? undefined : value),
+    z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/).max(63).optional(),
+  ),
+  CANONICAL_SYSTEM_IDENTIFIER: z.preprocess(
+    (value) => (value === '' ? undefined : value),
+    z.string().regex(/^\d{1,30}$/).optional(),
+  ),
+  CANONICAL_DATABASE_COMMENT: z.preprocess(
+    (value) => (value === '' ? undefined : value),
+    z.string().regex(/^[A-Za-z0-9_.:-]{1,200}$/).optional(),
+  ),
   LOG_LEVEL: z
     .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
     .default('info'),
@@ -214,6 +231,17 @@ export function loadConfig(
     throw new Error(
       'Invalid configuration: PHONE_SIGNUP_HASH_SECRET is required when PHONE_SIGNUP_ENABLED is true',
     );
+  }
+  if (parsed.data.CANONICAL_DATABASE_REQUIRED) {
+    const denied = new Set(['salon', 'salon_preview', 'salon_opp_integrity_20261024']);
+    if (
+      !parsed.data.CANONICAL_DATABASE_NAME ||
+      !parsed.data.CANONICAL_SYSTEM_IDENTIFIER ||
+      !parsed.data.CANONICAL_DATABASE_COMMENT ||
+      denied.has(parsed.data.CANONICAL_DATABASE_NAME)
+    ) {
+      throw new Error('Invalid configuration: canonical database identity is incomplete');
+    }
   }
   const trustedProxyIps = parsed.data.TRUSTED_PROXY_IPS.map((value) => {
     const normalized = normalizeIpAddress(value);

@@ -194,8 +194,11 @@ export async function loadRankedSalonBehaviorChunk(
   }));
 }
 
+/** Root client or the interactive transaction already held by the caller. */
+export type BehaviorQueryClient = PrismaClient | Prisma.TransactionClient;
+
 export async function loadCustomerBehaviorRow(
-  prisma: PrismaClient,
+  prisma: BehaviorQueryClient,
   tenantId: string,
   customerId: string,
   asOf: Date,

@@ -266,4 +266,80 @@ describeIfDisposable('Admin VIP activation concurrent reservation (e2e)', () => 
       }),
     ).toBe(auditsBefore);
   });
+
+  it('lets one concurrent region assignment win and keeps a stale pre-read from replacing it', async () => {
+    const listId = await importList();
+    const results = await Promise.all(
+      ['03', '04'].map((regionCode) =>
+        request(app.getHttpServer())
+          .patch(`/admin/vip/lists/${listId}`)
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({ availability: 'ACTIVE', regionCode }),
+      ),
+    );
+    const won = results.filter((result) => result.status === 200);
+    const lost = results.filter((result) => result.status === 409);
+    expect(won).toHaveLength(1);
+    expect(lost).toHaveLength(1);
+    expect(lost[0]?.body.error).toBe('CONFLICT');
+    const winnerRegion = won[0]?.body.regionCode as string;
+    expect(['03', '04']).toContain(winnerRegion);
+    const stored = await prisma.client.vipTargetList.findUniqueOrThrow({ where: { id: listId } });
+    expect(stored.status).toBe('ACTIVE');
+    expect(stored.regionCode).toBe(winnerRegion);
+    expect(stored.catalogMembership).toBe('ORIGINAL_TEHRAN');
+    expect(stored.reservedBySalonId).toBeNull();
+    expect(
+      await prisma.client.auditLog.count({
+        where: { resourceId: listId, action: 'VIP_LIST_ACTIVATED', result: 'SUCCESS' },
+      }),
+    ).toBe(1);
+
+    const staleWrite = await prisma.client.$transaction((tx) =>
+      vip.tryActivateUnreservedList(tx, {
+        id: listId,
+        regionCode: winnerRegion === '03' ? '04' : '03',
+        now: new Date(),
+      }),
+    );
+    expect(staleWrite).toBe(false);
+    const afterStale = await prisma.client.vipTargetList.findUniqueOrThrow({ where: { id: listId } });
+    expect(afterStale.regionCode).toBe(winnerRegion);
+    expect(afterStale.status).toBe('ACTIVE');
+    expect(afterStale.updatedAt).toEqual(stored.updatedAt);
+
+    const fresh = await createProductOwnerSession(prisma.client, app.getHttpServer(), {
+      salonName: 'Activate-Race-Fresh',
+      ownerName: 'Owner Fresh',
+    });
+    await request(app.getHttpServer())
+      .post('/admin/vip/entitlements')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .set('Idempotency-Key', `grant-fresh-${randomUUID()}`)
+      .send({ salonId: fresh.salonId })
+      .expect(201);
+    const reserved = request(app.getHttpServer())
+      .post('/vip/requests')
+      .set('Authorization', `Bearer ${fresh.accessToken}`)
+      .set('Idempotency-Key', `race-reserve-${randomUUID()}`)
+      .send({ listId, requestedCount: 30, geographicRange: 'ونک' });
+    const reactivated = request(app.getHttpServer())
+      .patch(`/admin/vip/lists/${listId}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ availability: 'ACTIVE', regionCode: winnerRegion });
+    const [reserveResult, activateResult] = await Promise.all([reserved, reactivated]);
+    expect(reserveResult.status).toBe(201);
+    expect([200, 409]).toContain(activateResult.status);
+    if (activateResult.status === 409) {
+      expect(activateResult.body.message).toBe(
+        'An in-use VIP list cannot be activated again until it is released',
+      );
+    }
+    const finalList = await prisma.client.vipTargetList.findUniqueOrThrow({ where: { id: listId } });
+    expect(finalList.status).toBe('IN_USE');
+    expect(finalList.reservedBySalonId).toBe(fresh.salonId);
+    expect(finalList.regionCode).toBe(winnerRegion);
+    expect(finalList.catalogMembership).toBe('ORIGINAL_TEHRAN');
+    expect(await prisma.client.vipRequest.count({ where: { listId } })).toBe(1);
+  });
 });

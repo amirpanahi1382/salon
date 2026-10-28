@@ -1527,11 +1527,29 @@ describeIfDb('VIP outreach (e2e)', () => {
       where: { id: listId },
       data: { name: 'historical-unclassified', regionCode: '03' },
     });
-    await request(app.getHttpServer())
+    const beforeRetarget = await prisma.client.vipTargetList.findUniqueOrThrow({ where: { id: listId } });
+    const activationAuditsBefore = await prisma.client.auditLog.count({
+      where: { resourceId: listId, action: 'VIP_LIST_ACTIVATED', result: 'SUCCESS' },
+    });
+    const rejectedRegion = await request(app.getHttpServer())
       .patch(`/admin/vip/lists/${listId}`)
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ availability: 'ACTIVE', regionCode: '01' })
-      .expect(200);
+      .expect(409);
+    expect(rejectedRegion.body).toMatchObject({
+      error: 'CONFLICT',
+      message: 'Activation cannot change an existing canonical VIP list region',
+    });
+    const afterRetarget = await prisma.client.vipTargetList.findUniqueOrThrow({ where: { id: listId } });
+    expect(afterRetarget.regionCode).toBe('03');
+    expect(afterRetarget.status).toBe(beforeRetarget.status);
+    expect(afterRetarget.catalogMembership).toBe(beforeRetarget.catalogMembership);
+    expect(afterRetarget.updatedAt).toEqual(beforeRetarget.updatedAt);
+    expect(
+      await prisma.client.auditLog.count({
+        where: { resourceId: listId, action: 'VIP_LIST_ACTIVATED', result: 'SUCCESS' },
+      }),
+    ).toBe(activationAuditsBefore);
     await request(app.getHttpServer())
       .post('/vip/requests')
       .set('Authorization', `Bearer ${salon.token}`)

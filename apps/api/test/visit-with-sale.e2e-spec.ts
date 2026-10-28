@@ -1,3 +1,4 @@
+import { execFile } from 'node:child_process';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { randomUUID } from 'node:crypto';
@@ -9,6 +10,27 @@ import { createProductOwnerSession, loginWithPhone, staffRequest } from './suppo
 
 const describeIfDb = process.env.DATABASE_URL ? describe : describe.skip;
 const password = 'correct-horse-battery';
+
+function operatorSql(containerName: string, database: string, sql: string): Promise<void> {
+  if (!/^salon_stage7_finance_[a-z0-9_]+$/.test(database)) {
+    throw new Error('Refusing operator SQL against an unexpected database');
+  }
+  return new Promise((resolve, reject) => {
+    const child = execFile(
+      'docker',
+      ['exec', '-i', containerName, 'psql', '-U', 'salon', '-d', database, '-v', 'ON_ERROR_STOP=1'],
+      { maxBuffer: 10_000_000 },
+      (error, _stdout, stderr) => {
+        if (error) {
+          reject(new Error(stderr || error.message));
+          return;
+        }
+        resolve();
+      },
+    );
+    child.stdin?.end(sql);
+  });
+}
 
 describeIfDb('Complete visit with sale (e2e)', () => {
   let app: INestApplication;
@@ -326,5 +348,93 @@ describeIfDb('Complete visit with sale (e2e)', () => {
     });
     expect(events.some((event) => event.eventType === 'VisitCompleted')).toBe(true);
     expect(events.some((event) => event.eventType === 'TransactionCreated')).toBe(true);
+  });
+
+  it('rolls back the completed-visit sale when the database rejects the money total, then accepts a valid retry', async () => {
+    const container = process.env.DISPOSABLE_POSTGRES_CONTAINER ?? '';
+    const databaseName = new URL(process.env.DATABASE_URL ?? 'postgres://127.0.0.1/postgres').pathname.replace(/^\//, '');
+    if (!container || !databaseName.startsWith('salon_stage7_finance_')) {
+      throw new Error('A named disposable finance database is required');
+    }
+    if (['salon', 'salon_preview', 'phone_first_product'].includes(databaseName)) {
+      throw new Error('Refusing a protected finance database');
+    }
+    const salon = await registerOwner('vsale-rollback');
+    const customerId = await createCustomer(salon.token, 'Rollback');
+    const serviceId = await createService(salon.token, `Rollback ${Date.now()}`);
+    const payload = {
+      customerId,
+      visitedAt: '2026-08-07T10:00:00.000Z',
+      serviceId,
+      amount: '1250000.50',
+      currency: 'IRR',
+    };
+    const before = {
+      visits: await prisma.client.visit.count({ where: { salonId: salon.tenantId } }),
+      transactions: await prisma.client.ledgerTransaction.count({ where: { salonId: salon.tenantId } }),
+      items: await prisma.client.transactionItem.count({ where: { salonId: salon.tenantId } }),
+      audits: await prisma.client.auditLog.count({ where: { tenantId: salon.tenantId } }),
+      outbox: await prisma.client.outboxEvent.count({ where: { tenantId: salon.tenantId } }),
+      idempotency: await prisma.client.idempotencyRecord.count({ where: { tenantId: salon.tenantId } }),
+    };
+    await operatorSql(container, databaseName, `
+      DO $$ BEGIN
+        IF current_user IN ('salon_app', 'salon_migrator') THEN
+          RAISE EXCEPTION 'financial trigger setup must use the operator connection';
+        END IF;
+      END $$;
+      CREATE OR REPLACE FUNCTION stage7_force_item_mismatch() RETURNS trigger
+      LANGUAGE plpgsql AS $fn$
+      BEGIN
+        IF NEW.service_id = '${serviceId}'::uuid THEN
+          NEW.total_amount := 0.01;
+        END IF;
+        RETURN NEW;
+      END;
+      $fn$;
+      DROP TRIGGER IF EXISTS stage7_force_item_mismatch ON transaction_items;
+      CREATE TRIGGER stage7_force_item_mismatch
+      BEFORE INSERT ON transaction_items
+      FOR EACH ROW EXECUTE FUNCTION stage7_force_item_mismatch();
+    `);
+    try {
+      const failed = await request(app.getHttpServer())
+        .post('/visits/complete-with-sale')
+        .set('Authorization', `Bearer ${salon.token}`)
+        .set('Idempotency-Key', 'visit-sale-money-fail')
+        .send(payload);
+      expect(failed.status).not.toBe(201);
+      expect(await prisma.client.visit.count({ where: { salonId: salon.tenantId } })).toBe(before.visits);
+      expect(await prisma.client.ledgerTransaction.count({ where: { salonId: salon.tenantId } })).toBe(before.transactions);
+      expect(await prisma.client.transactionItem.count({ where: { salonId: salon.tenantId } })).toBe(before.items);
+      expect(await prisma.client.auditLog.count({ where: { tenantId: salon.tenantId } })).toBe(before.audits);
+      expect(await prisma.client.outboxEvent.count({ where: { tenantId: salon.tenantId } })).toBe(before.outbox);
+      expect(await prisma.client.idempotencyRecord.count({ where: { tenantId: salon.tenantId } })).toBe(before.idempotency);
+    } finally {
+      await operatorSql(container, databaseName, `
+        DROP TRIGGER IF EXISTS stage7_force_item_mismatch ON transaction_items;
+        DROP FUNCTION IF EXISTS stage7_force_item_mismatch();
+      `);
+    }
+    const created = await request(app.getHttpServer())
+      .post('/visits/complete-with-sale')
+      .set('Authorization', `Bearer ${salon.token}`)
+      .set('Idempotency-Key', 'visit-sale-money-retry')
+      .send(payload)
+      .expect(201);
+    expect(created.body.transaction.amount).toBe('1250000.50');
+    expect(created.body.transaction.items).toHaveLength(1);
+    expect(created.body.transaction.items[0].totalAmount).toBe('1250000.50');
+    expect(created.body.transaction.customerId).toBe(customerId);
+    expect(await prisma.client.visit.count({ where: { salonId: salon.tenantId } })).toBe(before.visits + 1);
+    expect(await prisma.client.ledgerTransaction.count({ where: { salonId: salon.tenantId } })).toBe(before.transactions + 1);
+    expect(await prisma.client.transactionItem.count({ where: { salonId: salon.tenantId } })).toBe(before.items + 1);
+    expect(await prisma.client.auditLog.count({
+      where: { tenantId: salon.tenantId, action: { in: ['VISIT_CREATED', 'TRANSACTION_CREATED'] } },
+    })).toBe(2);
+    expect(await prisma.client.outboxEvent.count({ where: { tenantId: salon.tenantId } })).toBe(before.outbox + 2);
+    expect(await prisma.client.idempotencyRecord.count({ where: { tenantId: salon.tenantId } })).toBe(before.idempotency + 1);
+    const other = await registerOwner('vsale-other');
+    expect(await prisma.client.ledgerTransaction.count({ where: { salonId: other.tenantId } })).toBe(0);
   });
 });

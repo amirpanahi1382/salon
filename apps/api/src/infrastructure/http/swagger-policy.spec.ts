@@ -5,6 +5,7 @@ function config(overrides: Partial<AppConfig>): AppConfig {
   return {
     NODE_ENV: 'development',
     API_PORT: 3000,
+    CANONICAL_DATABASE_REQUIRED: false,
     LOG_LEVEL: 'info',
     DATABASE_URL: 'postgresql://salon:salon@localhost:5432/salon',
     DATABASE_POOL_TIMEOUT_SECONDS: 10,

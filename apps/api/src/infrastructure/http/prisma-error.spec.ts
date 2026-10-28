@@ -47,4 +47,22 @@ describe('mapPrismaError', () => {
     expect(mapPrismaError(error('ERROR: prefix transaction item total must equal quantity times unit price suffix'))).toBeUndefined();
     expect(mapPrismaError(error('Error in connector: ERROR: financial writes require read committed isolation'))).toBeUndefined();
   });
+
+  it('maps database statement, lock, and idle timeouts to 503', () => {
+    const statement = new Prisma.PrismaClientKnownRequestError(
+      'canceling statement due to statement timeout',
+      { code: 'P2010', clientVersion: '6.4.1' },
+    );
+    const lock = new Prisma.PrismaClientUnknownRequestError(
+      'ERROR: canceling statement due to lock timeout (SQLSTATE 55P03)',
+      { clientVersion: '6.4.1' },
+    );
+    const idle = new Prisma.PrismaClientUnknownRequestError(
+      'ERROR: terminating connection due to idle-in-transaction timeout (SQLSTATE 25P03)',
+      { clientVersion: '6.4.1' },
+    );
+    expect(mapPrismaError(statement)?.code).toBe('INFRASTRUCTURE_ERROR');
+    expect(mapPrismaError(lock)?.statusCode).toBe(503);
+    expect(mapPrismaError(idle)?.message).toBe('The database transaction idle timeout elapsed');
+  });
 });

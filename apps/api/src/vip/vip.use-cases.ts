@@ -369,6 +369,36 @@ export class GetVipListUseCase {
   }
 }
 
+const VIP_REGION_RETAINED_CONFLICT =
+  'Activation cannot change an existing canonical VIP list region';
+
+async function activationWriteConflict(
+  tx: Prisma.TransactionClient,
+  id: string,
+  attemptedRegion: string,
+): Promise<ConflictError | NotFoundError> {
+  const current = await tx.vipTargetList.findUnique({
+    where: { id },
+    select: { status: true, reservedBySalonId: true, regionCode: true },
+  });
+  if (!current) {
+    return new NotFoundError('VIP list not found');
+  }
+  if (current.status === 'IN_USE' || current.reservedBySalonId) {
+    return new ConflictError(
+      'An in-use VIP list cannot be activated again until it is released',
+    );
+  }
+  if (
+    current.regionCode &&
+    isVipRegionCode(current.regionCode) &&
+    current.regionCode !== attemptedRegion
+  ) {
+    return new ConflictError(VIP_REGION_RETAINED_CONFLICT);
+  }
+  return new ConflictError('This VIP list cannot be activated');
+}
+
 async function availabilityConflict(
   tx: Prisma.TransactionClient,
   id: string,
@@ -418,7 +448,10 @@ export class PatchVipListUseCase {
       if (requested && !isVipRegionCode(requested)) {
         throw new ValidationError('Choose a canonical Tehran VIP region (01–14)');
       }
-      resolvedRegion = requested && isVipRegionCode(requested) ? requested : existingRegion ?? undefined;
+      if (existingRegion && requested && requested !== existingRegion) {
+        throw new ConflictError(VIP_REGION_RETAINED_CONFLICT);
+      }
+      resolvedRegion = existingRegion ?? (requested && isVipRegionCode(requested) ? requested : undefined);
       if (!resolvedRegion) {
         throw new ValidationError('Choose a canonical Tehran VIP region (01–14) before activating this list');
       }
@@ -434,7 +467,7 @@ export class PatchVipListUseCase {
           now,
         });
         if (!wrote) {
-          throw await availabilityConflict(tx, id, 'ACTIVE');
+          throw await activationWriteConflict(tx, id, resolvedRegion!);
         }
       } else if (body.availability === 'INACTIVE') {
         const wrote = await this.vip.tryDeactivateUnreservedList(tx, {

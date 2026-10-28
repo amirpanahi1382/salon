@@ -126,16 +126,30 @@ async function assertConnectedDatabaseTarget(
 ): Promise<void> {
   let row: { name: string | null; system_identifier: string | null; comment: string | null } | undefined;
   try {
-    const rows = await prisma.$queryRaw<
-      Array<{ name: string | null; system_identifier: string | null; comment: string | null }>
-    >`
-      SELECT current_database() AS name,
-             (SELECT system_identifier::text FROM pg_control_system()) AS system_identifier,
-             shobj_description(
-               (SELECT oid FROM pg_database WHERE datname = current_database()),
-               'pg_database'
-             ) AS comment
-    `;
+    let rows: Array<{ name: string | null; system_identifier: string | null; comment: string | null }>;
+    try {
+      rows = await prisma.$queryRaw<
+        Array<{ name: string | null; system_identifier: string | null; comment: string | null }>
+      >`
+        SELECT database_name AS name,
+               system_identifier,
+               database_comment AS comment
+        FROM canonical_database_identity()
+      `;
+    } catch {
+      // Operator recovery on a database without the scoped function still uses
+      // the superuser catalog call. The API role cannot take this path.
+      rows = await prisma.$queryRaw<
+        Array<{ name: string | null; system_identifier: string | null; comment: string | null }>
+      >`
+        SELECT current_database() AS name,
+               (SELECT system_identifier::text FROM pg_control_system()) AS system_identifier,
+               shobj_description(
+                 (SELECT oid FROM pg_database WHERE datname = current_database()),
+                 'pg_database'
+               ) AS comment
+      `;
+    }
     row = rows[0];
   } catch {
     throw new Error('The connected database identity could not be read');

@@ -20,6 +20,8 @@
     "dev:api": "pnpm build:packages && dotenv -e .env -- pnpm --filter @salon/api start:dev",
     "dev:worker": "pnpm build:packages && dotenv -e .env -- pnpm --filter @salon/worker start:dev",
     "start:api": "dotenv -e .env -- pnpm --filter @salon/api start",
+    "start:canonical": "bash scripts/start-canonical-api.sh",
+    "db:migrate:canonical": "dotenv -e .env.phone-first-migrate -- bash scripts/canonical-migrate.sh",
     "start:worker": "dotenv -e .env -- pnpm --filter @salon/worker start",
     "test": "dotenv -e .env -- pnpm -r --if-present test",
     "test:e2e": "dotenv -e .env -- pnpm --filter @salon/api test:e2e",

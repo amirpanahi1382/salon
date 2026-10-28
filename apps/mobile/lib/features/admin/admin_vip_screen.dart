@@ -555,13 +555,15 @@ class _ActivateVipListDialog extends StatefulWidget {
 }
 
 class _ActivateVipListDialogState extends State<_ActivateVipListDialog> {
-  late String? _regionCode = isVipCanonicalRegionCode(widget.list.regionCode)
+  late final String? _storedRegion = isVipCanonicalRegionCode(widget.list.regionCode)
       ? widget.list.regionCode
       : null;
+  late String? _regionCode = _storedRegion;
 
   @override
   Widget build(BuildContext context) {
     final selected = vipCanonicalRegionByCode(_regionCode);
+    final keepsStoredRegion = _storedRegion != null;
     return AlertDialog(
       title: const Text(AppStrings.adminVipActivateList),
       content: SizedBox(
@@ -570,29 +572,37 @@ class _ActivateVipListDialogState extends State<_ActivateVipListDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text(AppStrings.adminVipActivateListConfirm),
+            Text(
+              keepsStoredRegion
+                  ? AppStrings.adminVipActivateKeepsRegion
+                  : AppStrings.adminVipActivateListConfirm,
+            ),
             const SizedBox(height: 12),
             Text(
               selected == null
                   ? AppStrings.adminVipSelectRegion
-                  : '${AppStrings.adminVipSelectedRegion}: ${selected.code} — ${selected.name}',
+                  : keepsStoredRegion
+                      ? '${AppStrings.adminVipStoredRegion}: ${selected.code} — ${selected.name}'
+                      : '${AppStrings.adminVipSelectedRegion}: ${selected.code} — ${selected.name}',
               key: const ValueKey('vip-activate-selected-region'),
             ),
-            const SizedBox(height: 8),
-            SizedBox(
-              height: 240,
-              child: ListView(
-                children: [
-                  for (final region in kVipCanonicalRegions)
-                    ListTile(
-                      key: ValueKey('vip-activate-region-${region.code}'),
-                      title: Text('${region.code} — ${region.name}'),
-                      selected: _regionCode == region.code,
-                      onTap: () => setState(() => _regionCode = region.code),
-                    ),
-                ],
+            if (!keepsStoredRegion) ...[
+              const SizedBox(height: 8),
+              SizedBox(
+                height: 240,
+                child: ListView(
+                  children: [
+                    for (final region in kVipCanonicalRegions)
+                      ListTile(
+                        key: ValueKey('vip-activate-region-${region.code}'),
+                        title: Text('${region.code} — ${region.name}'),
+                        selected: _regionCode == region.code,
+                        onTap: () => setState(() => _regionCode = region.code),
+                      ),
+                  ],
+                ),
               ),
-            ),
+            ],
           ],
         ),
       ),

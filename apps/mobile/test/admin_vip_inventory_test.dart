@@ -385,4 +385,61 @@ void main() {
     ]);
     expect(find.textContaining(AppStrings.adminVipRequestable), findsWidgets);
   });
+
+  testWidgets('activation of an existing region shows that region and does not offer a replacement', (tester) async {
+    final repository = _Inventory()
+      ..page = _page(
+        items: [
+          _list(
+            'stored-1',
+            'لیست با منطقه',
+            status: 'INACTIVE',
+            regionCode: '03',
+            regionName: 'شمال‌غرب؛ سعادت‌آباد، پونک و جنت‌آباد',
+          ),
+        ],
+      );
+    final router = GoRouter(
+      initialLocation: '/admin/vip',
+      routes: [
+        GoRoute(path: '/admin/vip', builder: (context, state) => const AdminVipScreen()),
+        GoRoute(
+          path: '/admin/vip/:id',
+          builder: (_, state) => AdminVipListDetailScreen(listId: state.pathParameters['id']!),
+        ),
+      ],
+    );
+    await _pump(tester, repository, router: router);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('لیست با منطقه'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('vip-activate-list')));
+    await tester.pumpAndSettle();
+    expect(
+      Directionality.of(tester.element(find.byType(AlertDialog))),
+      TextDirection.rtl,
+    );
+    expect(find.text(AppStrings.adminVipActivateKeepsRegion), findsOneWidget);
+    expect(find.textContaining(AppStrings.adminVipActivateListConfirm), findsNothing);
+    expect(find.byKey(const ValueKey('vip-activate-region-03')), findsNothing);
+    expect(find.byKey(const ValueKey('vip-activate-region-04')), findsNothing);
+    expect(
+      find.textContaining('${AppStrings.adminVipStoredRegion}: 03 — '),
+      findsOneWidget,
+    );
+    expect(
+      tester.widget<FilledButton>(find.byKey(const ValueKey('vip-activate-confirm'))).onPressed,
+      isNotNull,
+    );
+    await tester.tap(find.byKey(const ValueKey('vip-activate-confirm')));
+    await tester.pumpAndSettle();
+    expect(repository.patches, [
+      {
+        'id': 'stored-1',
+        'name': null,
+        'availability': 'ACTIVE',
+        'regionCode': '03',
+      },
+    ]);
+  });
 }

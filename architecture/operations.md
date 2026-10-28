@@ -116,7 +116,105 @@ Do not migrate historical accounts or business rows into the new database. Do no
 
 ## API bind
 
-`API_PORT` chooses the port only. `API_BIND_HOST` is optional and defaults to unset. Unset keeps `listen(port)`, which is the existing deployment behavior. The only accepted value is `127.0.0.1`; any other value stops startup before the process accepts connections. Docker Compose does not set this value.
+`API_PORT` chooses the port only. `API_BIND_HOST` is optional and defaults to unset. Unset keeps `listen(port)`, which is the generic development behavior. The only accepted value is `127.0.0.1`; any other value stops startup before the process accepts connections. Docker Compose does not set this value.
+
+## Canonical phone-first startup
+
+Generic `pnpm start:api` and `pnpm dev:api` still load the root `.env`. They do not prove which database accepted the connection.
+
+The canonical entry point is `pnpm start:canonical` (`scripts/start-canonical-api.sh`). It loads only `.env.phone-first-product`, exports `API_BIND_HOST=127.0.0.1` and `CANONICAL_DATABASE_REQUIRED=true`, and does not fall back to the root `.env`. Before `listen`, the API calls `canonical_database_identity()` and requires `CANONICAL_DATABASE_NAME`, `CANONICAL_SYSTEM_IDENTIFIER`, and `CANONICAL_DATABASE_COMMENT` to match. The names `salon`, `salon_preview`, and `salon_opp_integrity_20261024` are refused. A missing function or a mismatch exits before the port opens. The log line contains the database name only.
+
+That function is `SECURITY DEFINER`, owned by the operator superuser, with `search_path` fixed to `pg_catalog`. It returns the database name, system identifier, and comment. `EXECUTE` is granted to `salon_app` and `salon_migrator` and revoked from `PUBLIC`. `EXECUTE` on `pg_control_system()` is revoked from `PUBLIC` and from both restricted roles. The operator superuser can still call it. The API role is not a member of `pg_monitor`.
+
+PostgreSQL and MinIO for this environment stay published on `127.0.0.1` only. The Android emulator reaches `127.0.0.1:3000` through `10.0.2.2`. Do not publish the database or object storage on a LAN address for the emulator.
+
+Canonical migrations, when explicitly requested, use `pnpm db:migrate:canonical` (`scripts/canonical-migrate.sh`). It loads `.env.phone-first-migrate` and, before Prisma, requires `current_user` to be `salon_migrator` and `canonical_database_identity()` to match `CANONICAL_DATABASE_NAME`, `CANONICAL_SYSTEM_IDENTIFIER`, and `CANONICAL_DATABASE_COMMENT` from that file. A mismatch exits before Prisma opens a migration and before ledger cleanup. After Prisma deploy, whether that deploy succeeds or fails, the same identity check runs again. Only then does cleanup revoke runtime privileges on `public._prisma_migrations` from `salon_app` and `PUBLIC` when the ledger table is present (`CANONICAL_MIGRATE_LEDGER_LOCKED`). An absent ledger is reported as `CANONICAL_MIGRATE_LEDGER_ABSENT` and is left untouched. A failed deploy keeps Prisma's exit status. A failed cleanup prints `CANONICAL_MIGRATE_LEDGER_CLEANUP_FAILED` and becomes the process status only when Prisma itself succeeded. An identity failure during cleanup is not reported as a cleanup failure. Do not point that command at the historical `salon` database. API startup does not migrate.
+
+A plain `pg_dump` of `phone_first_product` does not restore cluster roles. After restoring the dump into a new cluster, run `scripts/apply-canonical-database-access.py` with the new cluster's system identifier, database name, and comment supplied explicitly, then point `.env.phone-first-product` at `salon_app` and start with `pnpm start:canonical`. The Stage 1 owner image, `salon-stage1-recovery-owner.dmg`, is the encrypted backup taken before both these roles and the VIP inventory transfer. Restoring it recovers the pre-transfer canonical dump, the historical VIP dump, and the receipt bytes. It does not contain the 29 pending lists and 2,194 contacts now in `phone_first_product`. No post-transfer canonical backup was taken. Role recovery is still restore, then `scripts/apply-canonical-database-access.py` for that cluster's own identity, then `pnpm start:canonical`. Rebuilding the transferred inventory after that restore is a separate run of `scripts/transfer-vip-inventory.py` from a provenance-checked historical clone, checked afterward with the pre-transfer baseline, the `VIP_INVENTORY_TRANSFER` success audit, and the list-id and sorted-phone MD5 values. Those provenance records are not a second database backup. Do not treat restoring the pre-rotation operator env file as a working rollback: that password was rotated. The working service configuration is the current `.env.phone-first-product`, which logs in as `salon_app`.
+
+`scripts/apply-canonical-database-access.py` reads passwords from a mode `0600` file owned by the invoking user. It compares the supplied identity with the live database inside one transaction and makes no change when they differ. It does not print passwords or the SQL that contains them.
+
+## Database roles
+
+On `phone_first_product` only:
+
+| Role | Use | Limits |
+| --- | --- | --- |
+| `salon` | Operator recovery. `docker exec` local trust, or the rotated host password stored outside Git | Superuser. Not used by the API |
+| `salon_migrator` | Prisma migrate for this database. Owns `public` and the application tables | `NOSUPERUSER`, no createdb, no createrole, no replication, connection limit 5. No statement timeout |
+| `salon_app` | API, the VIP inventory transfer, and, later, the worker | `NOSUPERUSER`, no createdb, no createrole, no replication, no bypassrls, noinherit, connection limit 20. Not a member of `salon` or `salon_migrator` |
+
+`salon_app` has `CONNECT` on `phone_first_product`, `USAGE` on `public`, and `SELECT`, `INSERT`, `UPDATE`, `DELETE` on application tables. Two intentional exceptions follow that blanket grant in the same provisioning transaction. `public._prisma_migrations` has no runtime privileges: Prisma Client does not read that ledger, and `salon_migrator` owns it. `public.audit_logs` keeps `SELECT` and `INSERT` for `salon_app` and loses `UPDATE`, `DELETE`, and `TRUNCATE`, including column-level `UPDATE`. `PUBLIC` loses those rewrite privileges too. The restriction is skipped when the table is absent, so bootstrap before the first migration still applies. Rerunning provisioning repeats both restrictions, so the blanket grant does not stick. Default privileges still grant `SELECT`, `INSERT`, `UPDATE`, and `DELETE` to `salon_app` on tables `salon_migrator` creates later. `db:migrate:canonical` repeats the ledger revoke and the audit restriction after Prisma, including after a failed deploy. That cleanup removes runtime access to `_prisma_migrations` and rewrite access to `audit_logs`. It does not remove DML from other new application tables. A table created under a different name keeps the default DML grants until an explicit revoke names it. An absent ledger still prints `CANONICAL_MIGRATE_LEDGER_ABSENT` and runs the audit statement, which returns without changes when `audit_logs` is absent. `salon_migrator` and the operator superuser retain maintenance of both tables. The runtime role has sequence usage and function `EXECUTE`, including trigger functions. It does not have `CREATE` or `TRUNCATE`. `CONNECT` on `salon_opp_integrity_20261024` is revoked from `PUBLIC`, `salon_app`, and `salon_migrator`. The operator superuser can still open that database. To restore the previous runtime audit grants, the operator runs `GRANT UPDATE, DELETE ON TABLE public.audit_logs TO salon_app`. The next provisioning run or canonical migrate cleanup removes those grants again.
+
+Role timeouts for `salon_app` only: `statement_timeout=30s`, `lock_timeout=5s`, `idle_in_transaction_session_timeout=30s`. These are PostgreSQL limits on one statement, one lock wait, and one idle open transaction. They are not a promise that a multi-statement import finishes. Prisma's own interactive transaction budget for customer and VIP imports is 20 seconds. A single statement that runs longer than 30 seconds, a lock wait longer than 5 seconds, or a transaction left idle for 30 seconds becomes `INFRASTRUCTURE_ERROR` (503). `salon_migrator` does not inherit those timeouts.
+
+`DATABASE_CONNECTION_LIMIT=10` for the canonical API. One worker, when started later with the same file, opens its own pool of 10. `max_connections` stays 100. The app role's connection limit is 20, leaving the rest of the cluster for the operator and the migration role.
+
+`scripts/apply-canonical-database-access.py` reads passwords from a mode `0600` file and applies the roles to one named database. It does not print those passwords.
+
+## VIP inventory transfer
+
+`scripts/transfer-vip-inventory.py` copies one historical VIP inventory into a phone-first destination. It transfers `vip_target_lists` and `vip_target_contacts`, plus one provenance audit row. It does not copy salons, users, VIP requests, recipient snapshots, entitlements, financial rows, message requests, deliveries, or outbox events. It does not activate lists. Publishing this procedure does not authorize a write to the canonical database. Run the live command only after the write-freeze below has been completed in the same window.
+
+The historical source is database `salon` from volume `salon-platform_salon_platform_pg_data`, original system identifier `7683163620851879970`: 29 `ORIGINAL_TEHRAN` lists, 2,194 contacts, list-id MD5 `0c64dcf9be0b92049406c13af43d0ece`, sorted-phone MD5 `b2724bfc710ad59aae6466bd0384079e`. Keep container `salon-platform-postgres-1` stopped. Read a provenance-verified clone. The Stage 1 restore checked on 2026-10-27 is container `salon-stage1-restore-historical-pg-20261027T1051Z`, clone system identifier `7701299687051079714`, database comment null. Re-read that identity immediately before a live run. If it differs, stop and pass the new clone's identity explicitly. The script refuses the original container and refuses a source whose system identifier is the original volume.
+
+The intended destination is database `phone_first_product`, system identifier `7700113693112733735`, comment `phone-first-empty:20261024T061347Z`, container `salon-phone-first-empty-pg-20261024T061347Z`. The destination platform admin is `01a16c99-db0b-7338-96b8-b4cc3b0a135e`. Expected identities are arguments. The script does not copy an expected identity from the connection it is judging.
+
+Transformation:
+
+- Preserve list and contact ids, names, `region_code`, `ORIGINAL_TEHRAN` membership, `contact_count`, `sort_order`, `display_name`, phone numbers, `created_at`, and `updated_at`.
+- Set every destination list to `PENDING`. Clear `reserved_by_salon_id` and `reserved_at`. `vip_target_lists` has no reservation-expiry column.
+- Remap `created_by_admin_id` to the destination admin. The success audit keeps the original creator, status, and reservation metadata, the owned ids, and the safety counts. The manifest has no phone numbers and no message text.
+- Leave `VIP-11-01` at 28 contacts and `VIP-14-01` at 27 contacts.
+- A list is requestable only when it is `ACTIVE`, unreserved, `ORIGINAL_TEHRAN`, and region `01`–`14`. Pending lists are not requestable.
+
+Stop if `platform_message_stops`, `platform_message_stop_events`, `message_global_stop_outcomes`, or `message_deliveries` is non-zero on the source. Zero delivery rows do not prove that no message was ever sent. Historical recipient snapshots stay in the source and are counted in the manifest as not copied.
+
+The write identity is `salon_app`: `INSERT` on the two VIP tables and `audit_logs`, `SELECT` for the checks, and `DELETE` only when `--mode rollback` is explicit. `salon_app` is not a superuser and cannot disable triggers. `salon_migrator` is not the transfer identity because it owns the tables. Source reads, and the destination migration-head check, use a separate read-only `salon` session: the historical clone has no `salon_app`, and `salon_app` cannot read `_prisma_migrations`. Do not create roles on the preservation clone. Do not grant `salon_app` ledger privileges for this transfer. The script does not disable constraints or triggers, does not take a table lock, and does not use `ON CONFLICT DO NOTHING`. It takes transaction advisory lock `pg_advisory_xact_lock(8742, 3)` only.
+
+One destination transaction inserts all 29 lists, then the 2,194 contacts in batches of 400, verifies the result, and inserts one `VIP_INVENTORY_TRANSFER` / `SUCCESS` audit. Parent rows are not committed before the contacts. Before that transaction the script checks both identities, migration compatibility (source head `20261015190000_activation_receipts`, 41 finished; destination head `20261017150000_phone_first_identity`, 42 finished; no unfinished rows), the active destination admin, the safety counts, and the list-id, phone, and contact-tuple fingerprints.
+
+An exact second execute detects the same ids, contact tuples, pending unreserved rows, and list shape, then opens a transaction, takes the same advisory lock, and runs only the verification statements. The transaction is not `BEGIN READ ONLY`, because that lock cannot be taken in a read-only transaction. The statement text rejects `INSERT`, `UPDATE`, `DELETE`, and `TRUNCATE`. It does not change rows and does not insert another success audit. An id collision, a changed contact set, a different region, or any other difference fails before commit. The first execute also fails closed when the destination already has VIP rows and no transfer manifest.
+
+Rollback is `VIP_INVENTORY_TRANSFER_ROLLBACK`. It is valid only before a `vip_requests` row references a transferred list or a `vip_request_recipients` row references a transferred contact, and only while every manifest id is still present. It deletes those manifest ids and leaves every other VIP row in place. It refuses, with exit code 4, when a business reference exists or an owned id is already missing. It does not delete the success audit. After a salon request, message, or any other business reference uses those ids, do not delete them. A later import after a clean rollback is a new execution.
+
+Preflight and dry-run use the command below with `--mode dry-run`. Dry-run reads and prints counts only. Execution uses `--mode execute`. Before execution, `--mode baseline --baseline-file <protected-file>` reads one snapshot and writes a mode `0600` file containing the destination identity and the account, agreement, receipt, and pre-transfer audit fingerprints. It does not write to the database, and it refuses to overwrite an existing file. Reconciliation uses `--mode reconcile` with that same file. It reads one read-only snapshot and exits nonzero on any mismatch: list and contact ids, contact equivalence, the 29 and 2,194 counts, pending unreserved rows, names, canonical regions, catalog membership, creator mapping, per-list contact counts, the 28-contact and 27-contact lists, zero requestable lists, exactly one success manifest, no later rollback, and the preserved baseline. Reconcile does not insert, update, delete, or repair rows. Rollback uses `--mode rollback`.
+
+```bash
+python3 scripts/transfer-vip-inventory.py \
+  --source-container salon-stage1-restore-historical-pg-20261027T1051Z \
+  --source-database salon \
+  --source-system-identifier 7701299687051079714 \
+  --source-origin-system-identifier 7683163620851879970 \
+  --source-comment-null \
+  --destination-container salon-phone-first-empty-pg-20261024T061347Z \
+  --destination-database phone_first_product \
+  --destination-system-identifier 7700113693112733735 \
+  --destination-comment phone-first-empty:20261024T061347Z \
+  --destination-admin-id 01a16c99-db0b-7338-96b8-b4cc3b0a135e \
+  --expected-list-count 29 \
+  --expected-contact-count 2194 \
+  --expected-list-id-md5 0c64dcf9be0b92049406c13af43d0ece \
+  --expected-phone-md5 b2724bfc710ad59aae6466bd0384079e \
+  --allow-canonical-destination \
+  --baseline-file /Users/amir-panahi/salon-archives/salon-stage1-preserve-20261027T1051Z/stage4-vip-pretransfer-baseline.json \
+  --mode execute
+```
+
+There is no database URL or password in that command. The canonical flag is the explicit destination authorization. `--mode execute` is the only mode that imports. `--baseline-file` is required for `baseline` and `reconcile`. Replace `--mode execute` with `dry-run`, `baseline`, `reconcile`, or `rollback`. Re-read both system identifiers before substituting a different clone. Write the baseline after the write-freeze and before execute. Run reconcile before starting the API again.
+
+Write-freeze, immediately before a live dry-run and again before execute:
+
+1. Confirm `salon-platform-postgres-1` is stopped and the original volume system identifier is still `7683163620851879970`. Do not start that container.
+2. Confirm the source clone identity, 29 lists, 2,194 contacts, both MD5 values, and zero rows in the four safety tables above. A non-zero safety count stops the transfer.
+3. Send `SIGTERM` to the canonical API and wait until its port is closed. Do not start the worker. Do not send OTP or messages.
+4. Confirm `phone_first_product` has no other sessions.
+5. Re-read the canonical identity, comment, migration head, 42 finished and 0 unfinished migrations, and the active destination admin. The first import also required zero VIP lists and zero VIP contacts. That empty check described the destination before the 2026-10-27 transfer. It is not the current inventory.
+6. Run `--mode dry-run`, then `--mode baseline`, then `--mode execute`, then `--mode reconcile`, before starting the API again. Reconcile must exit 0. Do not activate lists in that command.
+
+A disposable rehearsal on 2026-10-27 used destination cluster system identifier `7701369962014908451`, comment `stage3-vip-rehearsal:20261027`. It did not write the canonical database.
+
+On 2026-10-27 the canonical database received this inventory. The API was already stopped. The write-freeze confirmed no other `phone_first_product` session, then ran dry-run, baseline, execute, and reconcile. Reconcile exited 0. The destination has 29 `PENDING` unreserved lists, 2,194 contacts, and one `VIP_INVENTORY_TRANSFER` success audit. The API was resumed with `pnpm start:canonical` on `127.0.0.1:3000`. The worker stayed stopped. No list was activated. A later execute must take the unchanged rerun path. Do not expect zero VIP rows on this database. That inventory is not inside `salon-stage1-recovery-owner.dmg` or the Stage 1 canonical dumps. No post-transfer canonical backup was taken. Rebuilding it means restoring the pre-transfer canonical dump, provisioning roles, and running this transfer again from a provenance-checked historical restore. The baseline file, the one success audit, and the two MD5 values are what reconcile checks. They are not a backup of the post-transfer cluster.
 
 ## Timeouts
 

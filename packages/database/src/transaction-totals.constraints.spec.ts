@@ -92,7 +92,9 @@ describeIfDb('Phase 9 transaction totals (disposable PostgreSQL)', () => {
     const key = randomUUID();
     await db.user.create({ data: {
       id: actorId, salonId: f.salonId, name: 'Synthetic owner',
-      email: `${actorId}@example.test`, passwordHash: 'unused', role: 'OWNER', updatedAt: new Date(),
+      email: `${actorId}@example.test`,
+      phone: `09${(parseInt(actorId.replace(/-/g, '').slice(0, 8), 16) % 1_000_000_000).toString().padStart(9, '0')}`,
+      passwordHash: 'unused', role: 'OWNER', updatedAt: new Date(),
     } });
     const write = (amount: string) => db.$transaction(async (tx) => {
       await tx.idempotencyRecord.create({ data: {

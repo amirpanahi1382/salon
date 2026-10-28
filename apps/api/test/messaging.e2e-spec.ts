@@ -606,8 +606,14 @@ describeIfDb('Opportunity messages (e2e)', () => {
   });
 
   it('returns 409 MESSAGE_DAILY_LIMIT_REACHED for concurrent same-day sends and never 500', async () => {
+    expect(app.get(AppConfigService).values.DATABASE_CONNECTION_LIMIT).toBe(10);
     const salon = await createOwnerBypassingRegisterThrottle('msg-race');
     const customerId = await seedRevenueDecline(salon.token, 'Race');
+    expect(
+      await prisma.client.opportunityAction.count({
+        where: { salonId: salon.tenantId, customerId },
+      }),
+    ).toBe(0);
     const results = await Promise.all(
       Array.from({ length: 10 }, (_, index) =>
         request(app.getHttpServer())
@@ -645,6 +651,154 @@ describeIfDb('Opportunity messages (e2e)', () => {
       },
     });
     expect(openActions).toBe(1);
+    expect(
+      await prisma.client.messageRequest.count({
+        where: { salonId: salon.tenantId, customerId },
+      }),
+    ).toBe(1);
+    expect(
+      await prisma.client.messageDelivery.count({
+        where: { salonId: salon.tenantId, customerId },
+      }),
+    ).toBe(0);
+    const winnerId = created[0]!.body.id as string;
+    const actionId = created[0]!.body.actionId as string;
+    expect(
+      await prisma.client.auditLog.count({
+        where: {
+          tenantId: salon.tenantId,
+          action: 'MESSAGE_REQUESTED',
+          resourceId: winnerId,
+        },
+      }),
+    ).toBe(1);
+    expect(
+      await prisma.client.auditLog.count({
+        where: {
+          tenantId: salon.tenantId,
+          action: 'ACTION_CREATED',
+          resourceId: actionId,
+        },
+      }),
+    ).toBe(1);
+    expect(
+      await prisma.client.outboxEvent.count({
+        where: {
+          tenantId: salon.tenantId,
+          eventType: 'MessageRequested',
+          payload: { path: ['messageRequestId'], equals: winnerId },
+        },
+      }),
+    ).toBe(1);
+    expect(
+      await prisma.client.outboxEvent.count({
+        where: {
+          tenantId: salon.tenantId,
+          eventType: 'ActionCreated',
+          payload: { path: ['actionId'], equals: actionId },
+        },
+      }),
+    ).toBe(1);
+    expect(
+      await prisma.client.idempotencyRecord.count({
+        where: { tenantId: salon.tenantId, operation: 'OPPORTUNITY_MESSAGE_SEND' },
+      }),
+    ).toBe(1);
+  });
+
+  it('rejects a missing customer, a missing or suppressed opportunity, and a cross-tenant send', async () => {
+    const salon = await createOwnerBypassingRegisterThrottle('msg-presence');
+    const other = await createOwnerBypassingRegisterThrottle('msg-presence-other');
+    const plain = await createCustomer(salon.token, 'Plain');
+    const decline = await seedRevenueDecline(salon.token, 'Decline');
+    const foreign = await seedRevenueDecline(other.token, 'Foreign');
+
+    const missingCustomer = await request(app.getHttpServer())
+      .post(sendPath('REVENUE_DECLINE', randomUUID()))
+      .set('Authorization', `Bearer ${salon.token}`)
+      .set('Idempotency-Key', 'presence-missing-customer')
+      .send({ text: 'مشتری نیست' })
+      .expect(404);
+    expect(missingCustomer.body.error).toBe('NOT_FOUND');
+
+    const missingOpportunity = await request(app.getHttpServer())
+      .post(sendPath('REVENUE_DECLINE', plain))
+      .set('Authorization', `Bearer ${salon.token}`)
+      .set('Idempotency-Key', 'presence-missing-opportunity')
+      .send({ text: 'فرصت نیست' })
+      .expect(404);
+    expect(missingOpportunity.body.error).toBe('NOT_FOUND');
+
+    const crossTenant = await request(app.getHttpServer())
+      .post(sendPath('REVENUE_DECLINE', foreign))
+      .set('Authorization', `Bearer ${salon.token}`)
+      .set('Idempotency-Key', 'presence-cross-tenant')
+      .send({ text: 'سالن دیگر' })
+      .expect(404);
+    expect(crossTenant.body.error).toBe('NOT_FOUND');
+
+    const queued = await request(app.getHttpServer())
+      .post(sendPath('REVENUE_DECLINE', decline))
+      .set('Authorization', `Bearer ${salon.token}`)
+      .set('Idempotency-Key', 'presence-send-01')
+      .send({ text: 'پیام اول' })
+      .expect(201);
+    const replay = await request(app.getHttpServer())
+      .post(sendPath('REVENUE_DECLINE', decline))
+      .set('Authorization', `Bearer ${salon.token}`)
+      .set('Idempotency-Key', 'presence-send-01')
+      .send({ text: 'پیام اول' })
+      .expect(201);
+    expect(replay.body.id).toBe(queued.body.id);
+    await request(app.getHttpServer())
+      .post(sendPath('REVENUE_DECLINE', decline))
+      .set('Authorization', `Bearer ${salon.token}`)
+      .set('Idempotency-Key', 'presence-send-01')
+      .send({ text: 'متن دیگر' })
+      .expect(409);
+
+    await request(app.getHttpServer())
+      .post(`/actions/${queued.body.actionId}/complete`)
+      .set('Authorization', `Bearer ${salon.token}`)
+      .expect(201);
+    const suppressed = await request(app.getHttpServer())
+      .post(sendPath('REVENUE_DECLINE', decline))
+      .set('Authorization', `Bearer ${salon.token}`)
+      .set('Idempotency-Key', 'presence-suppressed')
+      .send({ text: 'بعد از اتمام' })
+      .expect(404);
+    expect(suppressed.body.error).toBe('NOT_FOUND');
+
+    expect(
+      await prisma.client.messageRequest.count({
+        where: { salonId: salon.tenantId, customerId: decline },
+      }),
+    ).toBe(1);
+    expect(
+      await prisma.client.opportunityAction.count({
+        where: { salonId: salon.tenantId, customerId: decline, status: 'COMPLETED' },
+      }),
+    ).toBe(1);
+    expect(
+      await prisma.client.opportunityAction.count({
+        where: { salonId: salon.tenantId, customerId: decline, status: 'OPEN' },
+      }),
+    ).toBe(0);
+    expect(
+      await prisma.client.messageRequest.count({
+        where: { salonId: salon.tenantId, customerId: plain },
+      }),
+    ).toBe(0);
+    expect(
+      await prisma.client.messageRequest.count({
+        where: { salonId: other.tenantId, customerId: foreign },
+      }),
+    ).toBe(0);
+    expect(
+      await prisma.client.opportunityAction.count({
+        where: { salonId: salon.tenantId, customerId: plain },
+      }),
+    ).toBe(0);
   });
 
   it('queues manual outreach without an OpportunityAction and shares the daily limit', async () => {

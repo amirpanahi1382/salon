@@ -9,8 +9,9 @@ Principles that are actually enforced:
 3. Tenant from authenticated salon user; platform admin has **no** salon tenant.
 4. Never trust client `salonId`.
 5. Fail closed on missing/disabled user, suspended salon, or a product token whose salon access is no longer `PRODUCT`.
-6. Audit sensitive mutations (without message bodies / secrets).
+6. Audit sensitive mutations (without message bodies / secrets). `salon_app` can insert and read `audit_logs` inside the domain transaction. It cannot update, delete, or truncate that history. The table owner and `salon_migrator` still can. This is an application-role restriction, not separate timestamping or protection from the database operator.
 7. Secrets only in env; Pino redact paths from `@salon/shared`.
+8. The canonical API connects as `salon_app`, not as the database superuser. Table ownership and migrations belong to `salon_migrator`. Identity is read through `canonical_database_identity()` only. Ledger cleanup runs after a failed canonical deploy as well as a successful one, and only after that identity matches. The VIP inventory transfer writes as `salon_app`. See `architecture/operations.md`.
 
 ---
 

@@ -83,6 +83,30 @@ describe('loadConfig', () => {
     ).toBe(false);
   });
 
+  it('requires a complete canonical identity only when canonical startup is on', () => {
+    expect(loadConfig(valid).CANONICAL_DATABASE_REQUIRED).toBe(false);
+    expect(() =>
+      loadConfig({ ...valid, CANONICAL_DATABASE_REQUIRED: 'true' }),
+    ).toThrow(/canonical database identity is incomplete/);
+    expect(() =>
+      loadConfig({
+        ...valid,
+        CANONICAL_DATABASE_REQUIRED: 'true',
+        CANONICAL_DATABASE_NAME: 'salon',
+        CANONICAL_SYSTEM_IDENTIFIER: '1',
+        CANONICAL_DATABASE_COMMENT: 'x',
+      }),
+    ).toThrow(/canonical database identity is incomplete/);
+    const config = loadConfig({
+      ...valid,
+      CANONICAL_DATABASE_REQUIRED: 'true',
+      CANONICAL_DATABASE_NAME: 'phone_first_product',
+      CANONICAL_SYSTEM_IDENTIFIER: '7700113693112733735',
+      CANONICAL_DATABASE_COMMENT: 'phone-first-empty:20261024T061347Z',
+    });
+    expect(config.CANONICAL_DATABASE_NAME).toBe('phone_first_product');
+  });
+
   it('accepts an explicit database pool size', () => {
     const config = loadConfig({ ...valid, DATABASE_CONNECTION_LIMIT: '8' });
     expect(config.DATABASE_CONNECTION_LIMIT).toBe(8);

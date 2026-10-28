@@ -8,6 +8,8 @@ import { AppModule } from './app.module';
 import { bindShutdownSignals } from './infrastructure/observability/shutdown';
 import { ShutdownState } from './infrastructure/observability/shutdown-state';
 import { listenApi } from './auth/listen-api';
+import { assertCanonicalDatabase } from './infrastructure/database/assert-canonical-database';
+import { PrismaService } from './infrastructure/database/prisma.service';
 
 async function bootstrap(): Promise<void> {
   const config = loadConfig();
@@ -35,6 +37,27 @@ async function bootstrap(): Promise<void> {
       .addBearerAuth()
       .build();
     SwaggerModule.setup('docs', app, SwaggerModule.createDocument(app, swagger));
+  }
+
+  if (config.CANONICAL_DATABASE_REQUIRED) {
+    try {
+      await assertCanonicalDatabase(app.get(PrismaService).client, {
+        databaseName: config.CANONICAL_DATABASE_NAME ?? '',
+        systemIdentifier: config.CANONICAL_SYSTEM_IDENTIFIER ?? '',
+        databaseComment: config.CANONICAL_DATABASE_COMMENT ?? '',
+      });
+    } catch (error) {
+      Logger.error(
+        error instanceof Error ? error.message : 'Canonical database identity check failed',
+        'Bootstrap',
+      );
+      await app.close();
+      process.exit(1);
+    }
+    Logger.log(
+      `Canonical database ${config.CANONICAL_DATABASE_NAME} identity verified`,
+      'Bootstrap',
+    );
   }
 
   // Process environment wins over env files, so an inherited API_PORT is the bind port.

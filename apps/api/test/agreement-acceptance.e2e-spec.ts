@@ -598,7 +598,7 @@ describeIfDisposable('agreement acceptance on a disposable database', () => {
         const sql = await readFile(path.join(migrationsDir, directory, 'migration.sql'), 'utf8');
         await psql(container, upgradeName, sql);
       }
-      const upgrade = createPrismaClient(upgradeUrl.toString());
+      const upgrade = createPrismaClient(operatorDatabaseUrl(upgradeName));
       const salonId = createId();
       const ownerId = createId();
       const email = `upgrade-${randomUUID()}@example.com`;
@@ -629,7 +629,7 @@ describeIfDisposable('agreement acceptance on a disposable database', () => {
         const sql = await readFile(path.join(migrationsDir, directory, 'migration.sql'), 'utf8');
         await psql(container, upgradeName, sql);
       }
-      const upgraded = createPrismaClient(upgradeUrl.toString());
+      const upgraded = createPrismaClient(operatorDatabaseUrl(upgradeName));
       const salon = await upgraded.salon.findUniqueOrThrow({ where: { id: salonId } });
       const owner = await upgraded.$queryRaw<Array<{ email: string; phone: string | null }>>`
         SELECT email, phone FROM users WHERE id = ${ownerId}::uuid
@@ -647,7 +647,7 @@ describeIfDisposable('agreement acceptance on a disposable database', () => {
       await expect(psql(container, upgradeName, phoneFirstSql)).rejects.toThrow(
         /phone_first_refuses_nonempty_database/,
       );
-      const refused = createPrismaClient(upgradeUrl.toString());
+      const refused = createPrismaClient(operatorDatabaseUrl(upgradeName));
       const ownerAfter = await refused.$queryRaw<Array<{ phone: string | null }>>`
         SELECT phone FROM users WHERE id = ${ownerId}::uuid
       `;
@@ -774,6 +774,22 @@ function resetThrottle(nest: INestApplication | undefined): void {
       record.totalHits.set(name, 0);
     }
   }
+}
+
+function operatorDatabaseUrl(database: string): string {
+  const raw = process.env.DISPOSABLE_OPERATOR_DATABASE_URL;
+  if (!raw) {
+    throw new Error('DISPOSABLE_OPERATOR_DATABASE_URL is required for disposable schema work');
+  }
+  const url = new URL(raw);
+  if (url.username === 'salon_app') {
+    throw new Error('Refusing schema work as salon_app');
+  }
+  if (!/^salon_agreement_[a-z0-9_]+$/.test(database) && database !== 'postgres') {
+    throw new Error('Refusing a privileged connection to an unexpected database');
+  }
+  url.pathname = `/${database}`;
+  return url.toString();
 }
 
 function psql(containerName: string, database: string, sql: string): Promise<void> {

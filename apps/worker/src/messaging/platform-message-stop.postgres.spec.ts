@@ -16,6 +16,10 @@ const expectedComment = process.env.MESSAGE_STOP_E2E_DATABASE_COMMENT ?? '';
 const proofRequested = Boolean(expectedName && expectedPort && expectedSystemIdentifier && expectedComment);
 const FORBIDDEN_PORTS = new Set(['5432', '15442']);
 
+function fixturePhone(id: string): string {
+  return `09${(parseInt(id.replace(/-/g, '').slice(0, 8), 16) % 1_000_000_000).toString().padStart(9, '0')}`;
+}
+
 function databaseTarget(): { url: string; name: string; port: string } {
   const raw = process.env.MESSAGE_STOP_DISPOSABLE_DATABASE_URL ?? '';
   let url: URL;
@@ -98,6 +102,7 @@ describeStop('platform message stop before provider call', () => {
         id: adminId,
         email: `${adminId}@example.test`,
         name: 'stop',
+        phone: fixturePhone(adminId),
         passwordHash: 'not-used',
         updatedAt: new Date(),
       },
@@ -109,6 +114,7 @@ describeStop('platform message stop before provider call', () => {
         salonId,
         name: 'owner',
         email: `${userId}@example.test`,
+        phone: fixturePhone(userId),
         passwordHash: 'not-used',
         role: 'OWNER',
         updatedAt: new Date(),
@@ -289,7 +295,7 @@ describeStop('platform message stop before provider call', () => {
     const phone = `0919${Math.floor(Math.random() * 1_000_0000).toString().padStart(7, '0')}`;
     const adminId = randomUUID();
     await db.platformAdmin.create({
-      data: { id: adminId, email: `${adminId}@example.test`, name: 'stop', passwordHash: 'not-used', updatedAt: new Date() },
+      data: { id: adminId, email: `${adminId}@example.test`, name: 'stop', phone: fixturePhone(adminId), passwordHash: 'not-used', updatedAt: new Date() },
     });
     let locked!: () => void;
     const hasLock = new Promise<void>((resolve) => { locked = resolve; });

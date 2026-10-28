@@ -1,6 +1,7 @@
 import { Prisma } from '@salon/database';
 import {
   ConflictError,
+  InfrastructureError,
   NotFoundError,
   ValidationError,
   type AppError,
@@ -11,7 +12,29 @@ import {
  * P2003 defaults to 409 (related rows prevent the write). Visit insert maps
  * P2003 to 404 because the parent customer is gone.
  */
+function mapDatabaseTimeout(error: unknown): AppError | undefined {
+  const prismaError = error instanceof Prisma.PrismaClientKnownRequestError ||
+    error instanceof Prisma.PrismaClientUnknownRequestError;
+  if (!prismaError || !(error instanceof Error)) {
+    return undefined;
+  }
+  if (error.message.includes('57014') || error.message.includes('canceling statement due to statement timeout')) {
+    return new InfrastructureError('The database statement timed out');
+  }
+  if (error.message.includes('55P03') || error.message.includes('canceling statement due to lock timeout')) {
+    return new InfrastructureError('The database lock timed out');
+  }
+  if (error.message.includes('25P03')) {
+    return new InfrastructureError('The database transaction idle timeout elapsed');
+  }
+  return undefined;
+}
+
 export function mapPrismaError(error: unknown): AppError | undefined {
+  const timeout = mapDatabaseTimeout(error);
+  if (timeout) {
+    return timeout;
+  }
   if (error instanceof Prisma.PrismaClientKnownRequestError) {
     switch (error.code) {
       case 'P2002':

@@ -430,4 +430,101 @@ describeIfDisposable('Admin VIP activation makes lists requestable (e2e)', () =>
       .send({ listId: historicalId, requestedCount: 30, geographicRange: 'نارمک' })
       .expect(409);
   });
+
+  it('keeps an existing canonical region and rejects a different one without a success audit', async () => {
+    const listId = await importList();
+    await prisma.client.vipTargetList.update({
+      where: { id: listId },
+      data: { regionCode: '06' },
+    });
+    const before = await prisma.client.vipTargetList.findUniqueOrThrow({ where: { id: listId } });
+    expect(before.regionCode).toBe('06');
+    expect(before.status).toBe('PENDING');
+    const auditsBefore = await prisma.client.auditLog.count({
+      where: { resourceId: listId, action: 'VIP_LIST_ACTIVATED', result: 'SUCCESS' },
+    });
+
+    const omitted = await request(app.getHttpServer())
+      .patch(`/admin/vip/lists/${listId}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ availability: 'ACTIVE' })
+      .expect(200);
+    expect(omitted.body).toMatchObject({
+      status: 'ACTIVE',
+      regionCode: '06',
+      catalogMembership: 'ORIGINAL_TEHRAN',
+      requestableBySalons: true,
+    });
+    const same = await request(app.getHttpServer())
+      .patch(`/admin/vip/lists/${listId}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ availability: 'ACTIVE', regionCode: '06' })
+      .expect(200);
+    expect(same.body.regionCode).toBe('06');
+
+    const auditsAfterKeep = await prisma.client.auditLog.count({
+      where: { resourceId: listId, action: 'VIP_LIST_ACTIVATED', result: 'SUCCESS' },
+    });
+    expect(auditsAfterKeep).toBe(auditsBefore + 2);
+
+    const rejected = await request(app.getHttpServer())
+      .patch(`/admin/vip/lists/${listId}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ availability: 'ACTIVE', regionCode: '09' })
+      .expect(409);
+    expect(rejected.body).toMatchObject({
+      error: 'CONFLICT',
+      message: 'Activation cannot change an existing canonical VIP list region',
+    });
+    const stored = await prisma.client.vipTargetList.findUniqueOrThrow({ where: { id: listId } });
+    expect(stored.regionCode).toBe('06');
+    expect(stored.status).toBe('ACTIVE');
+    expect(stored.catalogMembership).toBe('ORIGINAL_TEHRAN');
+    expect(stored.reservedBySalonId).toBeNull();
+    expect(
+      await prisma.client.auditLog.count({
+        where: { resourceId: listId, action: 'VIP_LIST_ACTIVATED', result: 'SUCCESS' },
+      }),
+    ).toBe(auditsAfterKeep);
+
+    const adminRead = await request(app.getHttpServer())
+      .get(`/admin/vip/lists/${listId}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    expect(adminRead.body.requestableBySalons).toBe(true);
+    const browsed = await request(app.getHttpServer())
+      .get('/vip/lists')
+      .query({ regionCode: '06' })
+      .set('Authorization', `Bearer ${entitledToken}`)
+      .expect(200);
+    expect(browsed.body.items.map((row: { id: string }) => row.id)).toContain(listId);
+    const reserved = await request(app.getHttpServer())
+      .post('/vip/requests')
+      .set('Authorization', `Bearer ${probeToken}`)
+      .set('Idempotency-Key', `keep-region-${randomUUID()}`)
+      .send({ listId, requestedCount: 30, geographicRange: 'پونک' })
+      .expect(201);
+    expect(reserved.body.listId).toBe(listId);
+    const reservedRequest = await prisma.client.vipRequest.findUniqueOrThrow({
+      where: { id: reserved.body.id as string },
+    });
+    const inUse = await prisma.client.vipTargetList.findUniqueOrThrow({ where: { id: listId } });
+    expect(inUse.status).toBe('IN_USE');
+    expect(inUse.regionCode).toBe('06');
+    expect(inUse.reservedBySalonId).toBe(reservedRequest.salonId);
+    await request(app.getHttpServer())
+      .patch(`/admin/vip/lists/${listId}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ availability: 'ACTIVE', regionCode: '06' })
+      .expect(409);
+    await request(app.getHttpServer())
+      .patch(`/admin/vip/lists/${listId}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ availability: 'INACTIVE' })
+      .expect(409);
+    const still = await prisma.client.vipTargetList.findUniqueOrThrow({ where: { id: listId } });
+    expect(still.status).toBe('IN_USE');
+    expect(still.regionCode).toBe('06');
+    expect(still.reservedBySalonId).toBe(reservedRequest.salonId);
+  });
 });

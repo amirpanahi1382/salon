@@ -11,6 +11,7 @@ import {
   loadCustomerBehaviorRow,
   loadSalonBehaviorChunk,
   loadRankedSalonBehaviorChunk,
+  type BehaviorQueryClient,
   type SalonBehaviorRow,
 } from './intelligence-aggregates';
 
@@ -24,8 +25,13 @@ export class IntelligenceQueryService {
     return this.analyzer;
   }
 
-  loadCustomer(tenantId: string, customerId: string, asOf = utcNow()) {
-    return loadCustomerBehaviorRow(this.prisma.client, tenantId, customerId, asOf);
+  loadCustomer(
+    tenantId: string,
+    customerId: string,
+    asOf = utcNow(),
+    db: BehaviorQueryClient = this.prisma.client,
+  ) {
+    return loadCustomerBehaviorRow(db, tenantId, customerId, asOf);
   }
 
   loadSalonChunk(tenantId: string, asOf: Date, after?: { createdAt: Date; id: string }) {

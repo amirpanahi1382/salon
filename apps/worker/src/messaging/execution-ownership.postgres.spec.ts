@@ -30,12 +30,16 @@ describeIsolated('PostgreSQL delivery execution ownership', () => {
     await db.$disconnect();
   });
 
+  function fixturePhone(id: string): string {
+    return `09${(parseInt(id.replace(/-/g, '').slice(0, 8), 16) % 1_000_000_000).toString().padStart(9, '0')}`;
+  }
+
   async function fixture() {
     const salonId = randomUUID(), userId = randomUUID(), customerId = randomUUID();
     const requestId = randomUUID(), deliveryId = randomUUID(), eventId = randomUUID();
     await db.salon.create({ data: { id: salonId, name: 'isolated ownership test' } });
     tenants.push(salonId);
-    await db.user.create({ data: { id: userId, salonId, name: 'test', email: `${userId}@example.test`, passwordHash: 'not-used', role: 'OWNER' } });
+    await db.user.create({ data: { id: userId, salonId, name: 'test', email: `${userId}@example.test`, phone: fixturePhone(userId), passwordHash: 'not-used', role: 'OWNER' } });
     await db.customer.create({ data: { id: customerId, salonId, firstName: 'test', lastName: 'test', phoneNumber: '09123456789' } });
     await db.messageRequest.create({ data: {
       id: requestId, salonId, customerId, createdByUserId: userId, messageText: 'isolated fixture',

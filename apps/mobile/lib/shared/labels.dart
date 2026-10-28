@@ -260,6 +260,9 @@ class AppStrings {
   static const adminVipDeactivateList = 'غیرفعال کردن لیست';
   static const adminVipSelectRegion = 'منطقه را انتخاب کنید';
   static const adminVipSelectedRegion = 'منطقهٔ انتخاب‌شده';
+  static const adminVipStoredRegion = 'منطقهٔ ثبت‌شده';
+  static const adminVipActivateKeepsRegion =
+      'فعال‌سازی منطقهٔ ثبت‌شده را عوض نمی‌کند. این لیست در همان منطقه برای سالن‌های دارای دسترسی VIP قابل مشاهده و درخواست می‌شود.';
   static const adminVipActivateListConfirm =
       'با فعال‌سازی، این لیستِ رزرونشده برای سالن‌های دارای دسترسی VIP در منطقهٔ انتخاب‌شده قابل مشاهده و درخواست می‌شود. فعال‌سازی دسترسی VIP سالن را نمی‌دهد.';
   static const adminVipDeactivateListConfirm =
