@@ -201,8 +201,10 @@ void main() {
     expect(find.text('لیست اصلی'), findsOneWidget);
     expect(find.text(AppStrings.vipGrant), findsNothing);
     expect(find.text(AppStrings.searchSalons), findsNothing);
-    expect(find.text('2 لیست · 4 مخاطب'), findsOneWidget);
-    expect(find.textContaining(AppStrings.adminVipListRequestTotal), findsWidgets);
+    expect(find.text('۲ لیست  ·  ۴ مخاطب'), findsOneWidget);
+    expect(find.text('۳ درخواست'), findsOneWidget);
+    expect(find.text('۱ در جریان'), findsOneWidget);
+    expect(find.textContaining(AppStrings.adminVipListRequestTotal), findsNothing);
   });
 
   testWidgets('paginates the full inventory', (tester) async {
@@ -302,10 +304,31 @@ void main() {
     );
     await _pump(tester, repository, router: router);
     await tester.pumpAndSettle();
-    expect(find.text('3 لیست · 7 مخاطب'), findsOneWidget);
-    expect(find.textContaining(AppStrings.adminVipMissingRegionReason), findsOneWidget);
-    expect(find.textContaining(AppStrings.adminVipRequestable), findsOneWidget);
-    expect(find.textContaining('${AppStrings.vipActive} ·'), findsOneWidget);
+    expect(find.text('۳ لیست  ·  ۷ مخاطب'), findsOneWidget);
+    expect(find.textContaining(AppStrings.adminVipMissingRegionReason), findsNothing);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('vip-availability-imported-1')),
+        matching: find.text(AppStrings.vipInactive),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('vip-availability-reviewed-1')),
+        matching: find.text(AppStrings.vipActive),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('vip-availability-inuse-1')),
+        matching: find.text(AppStrings.vipInUse),
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('۲ درخواست'), findsOneWidget);
+    expect(find.text('۱ در جریان'), findsNWidgets(2));
     await _savePng(tester, 'admin-vip-inventory-nonzero.png');
 
     await tester.tap(find.text('لیست واردشده فعال'));

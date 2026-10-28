@@ -10,6 +10,7 @@ import '../../core/state/cursor_page_state.dart';
 import '../../core/state/providers.dart';
 import '../../core/theme/app_tokens.dart';
 import '../../core/widgets/app_widgets.dart';
+import '../../shared/jalali.dart';
 import '../../shared/labels.dart';
 import '../../shared/models/models.dart';
 import '../../shared/platform/excel_file_saver.dart';
@@ -127,17 +128,59 @@ class _AdminVipScreenState extends ConsumerState<AdminVipScreen> {
           child: ListView(
                     padding: const EdgeInsets.all(AppTokens.space16),
                     children: [
-                      const Padding(
-                        padding: EdgeInsets.only(bottom: AppTokens.space8),
-                        child: Text(AppStrings.vipImportHelp),
-                      ),
                       if (_listCount != null && _contactRowCount != null)
                         Padding(
                           key: const ValueKey('vip-inventory-counts'),
-                          padding: const EdgeInsets.only(bottom: AppTokens.space8),
-                          child: Text(
-                            '$_listCount لیست · $_contactRowCount مخاطب'
-                            '${_recordedContactCount != null && _recordedContactCount != _contactRowCount ? '\nشمارش ثبت‌شده روی لیست‌ها: $_recordedContactCount' : ''}',
+                          padding: const EdgeInsets.only(bottom: AppTokens.space16),
+                          child: InsightHero(
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 48,
+                                  height: 48,
+                                  decoration: BoxDecoration(
+                                    color: AppTokens.accentMuted,
+                                    borderRadius: BorderRadius.circular(AppTokens.radiusMd),
+                                    border: Border.all(
+                                      color: AppTokens.accent.withValues(alpha: 0.34),
+                                    ),
+                                  ),
+                                  child: const Icon(
+                                    Icons.inventory_2_outlined,
+                                    color: AppTokens.accent,
+                                  ),
+                                ),
+                                const SizedBox(width: AppTokens.space12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'موجودی لیست‌های VIP',
+                                        style: Theme.of(context).textTheme.titleMedium,
+                                      ),
+                                      const SizedBox(height: AppTokens.space4),
+                                      Text(
+                                        '${toPersianDigits(_listCount.toString())} لیست  ·  '
+                                        '${toPersianDigits(_contactRowCount.toString())} مخاطب',
+                                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                              color: AppTokens.textSecondary,
+                                            ),
+                                      ),
+                                      if (_recordedContactCount != null &&
+                                          _recordedContactCount != _contactRowCount)
+                                        Text(
+                                          'شمارش ثبت‌شده: '
+                                          '${toPersianDigits(_recordedContactCount.toString())}',
+                                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                                color: AppTokens.warning,
+                                              ),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       if (_lists.loading && _lists.items.isEmpty)
@@ -175,54 +218,187 @@ class _AdminVipScreenState extends ConsumerState<AdminVipScreen> {
 
   Widget _adminListCard(VipTargetList list) {
     final attention = list.needsAttention;
+    final availability = _vipInventoryAvailability(list);
     return Padding(
-      padding: const EdgeInsets.only(bottom: AppTokens.space8),
-        child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: attention
-              ? AppTokens.danger.withValues(alpha: 0.14)
-              : AppTokens.surface,
-          borderRadius: BorderRadius.circular(AppTokens.radiusMd),
-          border: Border.all(
-            color: attention ? AppTokens.danger : AppTokens.line,
-            width: attention ? 2 : 1,
-          ),
-        ),
-        child: Material(
-          color: Colors.transparent,
-          child: ListTile(
-          key: ValueKey(list.id),
-          leading: attention
-              ? const Icon(Icons.warning_amber_rounded, color: AppTokens.danger)
-              : null,
-          title: Text(list.name),
-          subtitle: Text(
-            [
-              if (list.regionName != null) '${list.regionCode} — ${list.regionName}',
-              if (list.regionName == null) AppStrings.adminVipRegionMissing,
-              '${adminVipAvailabilityLabel(list)} · ${list.contactCount} مخاطب',
-              list.requestableBySalons
-                  ? AppStrings.adminVipRequestable
-                  : AppStrings.adminVipNotRequestable,
-              if (adminVipUnavailabilityReason(list) != null) adminVipUnavailabilityReason(list)!,
-              '${AppStrings.adminVipListRequestTotal} ${list.totalRequestCount} · ${AppStrings.adminVipListRequestOpen} ${list.openRequestCount}',
-              if (attention) AppStrings.vipNeedsReview,
-            ].join('\n'),
-            maxLines: 8,
-          ),
-          trailing: attention
-              ? Text(
-                  AppStrings.vipNeedsReview,
-                  style: const TextStyle(color: AppTokens.danger),
-                )
-              : null,
-          onTap: () => _open(list),
-        ),
+      padding: const EdgeInsets.only(bottom: AppTokens.space12),
+      child: AppSurface(
+        key: ValueKey(list.id),
+        tone: AppSurfaceTone.elevated,
+        onTap: () => _open(list),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: AppTokens.accent.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(AppTokens.radiusMd),
+                    border: Border.all(
+                      color: AppTokens.accent.withValues(alpha: 0.24),
+                    ),
+                  ),
+                  child: const Icon(
+                    Icons.featured_play_list_outlined,
+                    size: 22,
+                    color: AppTokens.accent,
+                  ),
+                ),
+                const SizedBox(width: AppTokens.space12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        list.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                      ),
+                      const SizedBox(height: AppTokens.space4),
+                      Text(
+                        list.regionName != null
+                            ? '${list.regionCode} — ${list.regionName}'
+                            : 'بدون محدوده',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: list.regionName == null
+                                  ? AppTokens.warning
+                                  : AppTokens.textSecondary,
+                            ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: AppTokens.space8),
+                const Icon(
+                  Icons.chevron_left_rounded,
+                  color: AppTokens.textSecondary,
+                ),
+              ],
+            ),
+            const SizedBox(height: AppTokens.space16),
+            Wrap(
+              spacing: AppTokens.space8,
+              runSpacing: AppTokens.space8,
+              children: [
+                _VipInventoryTag(
+                  key: ValueKey('vip-availability-${list.id}'),
+                  label: availability.label,
+                  icon: availability.icon,
+                  color: availability.color,
+                  emphasized: true,
+                ),
+                _VipInventoryTag(
+                  label: '${toPersianDigits(list.contactCount.toString())} مخاطب',
+                  icon: Icons.people_outline_rounded,
+                ),
+                _VipInventoryTag(
+                  key: ValueKey('vip-total-requests-${list.id}'),
+                  label: '${toPersianDigits(list.totalRequestCount.toString())} درخواست',
+                  icon: Icons.inbox_outlined,
+                  color: list.totalRequestCount > 0
+                      ? AppTokens.accent
+                      : AppTokens.textSecondary,
+                ),
+                if (list.openRequestCount > 0)
+                  _VipInventoryTag(
+                    key: ValueKey('vip-open-requests-${list.id}'),
+                    label: '${toPersianDigits(list.openRequestCount.toString())} در جریان',
+                    icon: Icons.autorenew_rounded,
+                    color: AppTokens.accentSecondary,
+                  ),
+                if (attention)
+                  const _VipInventoryTag(
+                    label: AppStrings.vipNeedsReview,
+                    icon: Icons.warning_amber_rounded,
+                    color: AppTokens.danger,
+                  ),
+              ],
+            ),
+          ],
         ),
       ),
     );
   }
 
+}
+
+({String label, IconData icon, Color color}) _vipInventoryAvailability(
+  VipTargetList list,
+) {
+  if (list.requestableBySalons) {
+    return (
+      label: AppStrings.vipActive,
+      icon: Icons.check_circle_outline_rounded,
+      color: AppTokens.success,
+    );
+  }
+  if (list.status == 'IN_USE') {
+    return (
+      label: AppStrings.vipInUse,
+      icon: Icons.lock_clock_outlined,
+      color: AppTokens.accentSecondary,
+    );
+  }
+  return (
+    label: AppStrings.vipInactive,
+    icon: Icons.pause_circle_outline_rounded,
+    color: list.status == 'PENDING' ? AppTokens.warning : AppTokens.textSecondary,
+  );
+}
+
+class _VipInventoryTag extends StatelessWidget {
+  const _VipInventoryTag({
+    super.key,
+    required this.label,
+    required this.icon,
+    this.color = AppTokens.textSecondary,
+    this.emphasized = false,
+  });
+
+  final String label;
+  final IconData icon;
+  final Color color;
+  final bool emphasized;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: emphasized ? 0.16 : 0.09),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: color.withValues(alpha: emphasized ? 0.54 : 0.26),
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppTokens.space12,
+          vertical: AppTokens.space8,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 16, color: color),
+            const SizedBox(width: AppTokens.space4),
+            Text(
+              label,
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: color,
+                    fontWeight: emphasized ? FontWeight.w700 : FontWeight.w500,
+                  ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 String vipListStatusLabel(String status) {
