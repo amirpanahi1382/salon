@@ -24,7 +24,7 @@ const disposableTarget = (() => {
     if (parsed.hostname !== '127.0.0.1' || parsed.port === '' || forbiddenPorts.has(parsed.port)) {
       return null;
     }
-    if (name === 'salon' || name === 'salon_preview' || name === 'postgres' || name === 'phone_first_product') {
+    if (name === 'salon' || name === 'salon_preview' || name === 'postgres' || name === 'phone_first_product' || name === 'salon-db') {
       return null;
     }
     if (!/^salon_admin_vip_activate_[a-z0-9]+$/.test(name)) return null;
@@ -88,7 +88,8 @@ describeIfDisposable('Admin VIP activation makes lists requestable (e2e)', () =>
       row.comment !== `admin-vip-activate-disposable:${disposableTarget.token}` ||
       row.name === 'salon' ||
       row.name === 'salon_preview' ||
-      row.name === 'phone_first_product'
+      row.name === 'phone_first_product' ||
+      row.name === 'salon-db'
     ) {
       throw new Error('Refusing admin VIP activation tests without this run’s disposable database');
     }

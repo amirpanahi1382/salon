@@ -105,6 +105,23 @@ describe('loadConfig', () => {
       CANONICAL_DATABASE_COMMENT: 'phone-first-empty:20261024T061347Z',
     });
     expect(config.CANONICAL_DATABASE_NAME).toBe('phone_first_product');
+    const renamed = loadConfig({
+      ...valid,
+      CANONICAL_DATABASE_REQUIRED: 'true',
+      CANONICAL_DATABASE_NAME: 'salon-db',
+      CANONICAL_SYSTEM_IDENTIFIER: '7700113693112733735',
+      CANONICAL_DATABASE_COMMENT: 'phone-first-empty:20261024T061347Z',
+    });
+    expect(renamed.CANONICAL_DATABASE_NAME).toBe('salon-db');
+    expect(() =>
+      loadConfig({
+        ...valid,
+        CANONICAL_DATABASE_REQUIRED: 'true',
+        CANONICAL_DATABASE_NAME: 'salon-db;drop',
+        CANONICAL_SYSTEM_IDENTIFIER: '1',
+        CANONICAL_DATABASE_COMMENT: 'x',
+      }),
+    ).toThrow(/CANONICAL_DATABASE_NAME/);
   });
 
   it('accepts an explicit database pool size', () => {

@@ -14,8 +14,15 @@ import subprocess
 import sys
 from pathlib import Path
 
-IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+DATABASE_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]{0,62}$")
 SYSID = re.compile(r"^\d{1,30}$")
+
+
+def quote_ident(identifier: str) -> str:
+    """Quote one database name. The pattern rejects quotes, spaces, and comment markers."""
+    if not DATABASE_NAME.fullmatch(identifier) or "--" in identifier:
+        raise SystemExit("refusing database name")
+    return '"' + identifier.replace('"', '""') + '"'
 
 
 def assert_secret_file(path: Path) -> None:
@@ -70,12 +77,13 @@ def sql(
     expected_comment: str,
     fail_after_identity: bool = False,
 ) -> str:
-    if not IDENTIFIER.fullmatch(database) or not IDENTIFIER.fullmatch(expected_database):
+    if not DATABASE_NAME.fullmatch(database) or "--" in database:
         raise SystemExit("refusing database name")
-    if not SYSID.fullmatch(expected_system_identifier):
-        raise SystemExit("refusing system identifier")
     if database != expected_database:
         raise SystemExit("database argument does not match the expected database name")
+    quoted_database = quote_ident(database)
+    if not SYSID.fullmatch(expected_system_identifier):
+        raise SystemExit("refusing system identifier")
     app_sql = sql_literal(app_password)
     migrator_sql = sql_literal(migrator_password)
     operator_sql = ""
@@ -141,9 +149,9 @@ REVOKE salon FROM salon_migrator;
 REVOKE salon_migrator FROM salon_app;
 REVOKE salon_app FROM salon_migrator;
 
-GRANT CONNECT ON DATABASE {database} TO salon_app, salon_migrator;
-REVOKE CONNECT ON DATABASE {database} FROM PUBLIC;
-GRANT CONNECT ON DATABASE {database} TO salon;
+GRANT CONNECT ON DATABASE {quoted_database} TO salon_app, salon_migrator;
+REVOKE CONNECT ON DATABASE {quoted_database} FROM PUBLIC;
+GRANT CONNECT ON DATABASE {quoted_database} TO salon;
 
 DO $$
 DECLARE

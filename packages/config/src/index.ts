@@ -51,7 +51,7 @@ const envSchema = z.object({
   CANONICAL_DATABASE_REQUIRED: booleanFromString.default(false),
   CANONICAL_DATABASE_NAME: z.preprocess(
     (value) => (value === '' ? undefined : value),
-    z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/).max(63).optional(),
+    z.string().regex(/^[A-Za-z_][A-Za-z0-9_-]{0,62}$/).optional(),
   ),
   CANONICAL_SYSTEM_IDENTIFIER: z.preprocess(
     (value) => (value === '' ? undefined : value),

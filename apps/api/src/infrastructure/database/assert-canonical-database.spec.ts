@@ -1,7 +1,7 @@
 import { assertCanonicalDatabase } from './assert-canonical-database';
 
 const expected = {
-  databaseName: 'phone_first_product',
+  databaseName: 'salon-db',
   systemIdentifier: '7700113693112733735',
   databaseComment: 'phone-first-empty:20261024T061347Z',
 };

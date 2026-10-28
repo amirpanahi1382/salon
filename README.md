@@ -92,7 +92,9 @@ Flutter: see [`apps/mobile/README.md`](apps/mobile/README.md).
 | `pnpm db:bootstrap-admin` | First platform admin on a new empty database, after a live identity proof. Not an upsert |
 | `pnpm build:packages` / `pnpm build` | Packages, then API + worker |
 | `pnpm dev:api` / `pnpm dev:worker` | Watch mode |
-| `pnpm start:api` / `pnpm start:worker` | Compiled start |
+| `pnpm start:canonical` | Canonical API only. Loads `.env.phone-first-product`, binds `127.0.0.1`, and requires database `salon-db`. Does not read the root `.env` |
+| `pnpm db:migrate:canonical` | Canonical migrations through `salon_migrator`, after an identity check. Not part of API startup |
+| `pnpm start:api` / `pnpm start:worker` | Compiled start from the root `.env`. Not the canonical database |
 | `pnpm test` | Recursive unit tests |
 | `pnpm test:e2e` | API Jest E2E |
 | `pnpm typecheck` | Recursive typecheck |

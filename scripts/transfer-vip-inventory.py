@@ -8,6 +8,11 @@ connection being judged.
 
 The script does not print phone numbers, message bodies, passwords, or
 connection URLs.
+
+The 2026-10-27 transfer imported into phone_first_product. That logical
+database was later renamed to salon-db on the same cluster. Execute and
+rollback refuse the canonical system identifier so the historical import
+cannot be replayed there. Audit rows keep the original destination name.
 """
 from __future__ import annotations
 
@@ -32,10 +37,13 @@ TIMESTAMP_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$")
 REGION_RE = re.compile(r"^(0[1-9]|1[0-4])$")
 SYSID_RE = re.compile(r"^\d{1,30}$")
 IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+DATABASE_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]{0,62}$")
 
 ORIGIN_SYSTEM_IDENTIFIER = "7683163620851879970"
 CANONICAL_SYSTEM_IDENTIFIER = "7700113693112733735"
+# Name recorded by the completed transfer. The live database is salon-db.
 CANONICAL_DATABASE = "phone_first_product"
+RENAMED_CANONICAL_DATABASE = "salon-db"
 CANONICAL_COMMENT = "phone-first-empty:20261024T061347Z"
 CANONICAL_CONTAINER = "salon-phone-first-empty-pg-20261024T061347Z"
 HISTORICAL_CONTAINER = "salon-platform-postgres-1"
@@ -172,6 +180,12 @@ def require_uuid(value: str, label: str) -> str:
 
 def require_identifier(value: str, label: str) -> str:
     if not IDENTIFIER_RE.fullmatch(value):
+        raise TransferRejected(f"refusing {label}")
+    return value
+
+
+def require_database_name(value: str, label: str) -> str:
+    if not DATABASE_RE.fullmatch(value) or "--" in value:
         raise TransferRejected(f"refusing {label}")
     return value
 
@@ -360,7 +374,7 @@ def rollback_decision(reference_counts: dict[str, int], owned_lists_present: boo
 
 def psql(container: str, role: str, database: str, sql: str, read_only: bool) -> str:
     require_identifier(role, "role")
-    require_identifier(database, "database")
+    require_database_name(database, "database")
     if not re.fullmatch(r"[A-Za-z0-9_.-]+", container):
         raise TransferRejected("refusing container name")
     if read_only:
@@ -1268,6 +1282,12 @@ COMMIT;
 """
 
 
+def refuse_canonical_replay(mode: str, system_identifier: str) -> None:
+    """The completed transfer stays in history. Do not run it again on this cluster."""
+    if mode in {"execute", "rollback"} and system_identifier == CANONICAL_SYSTEM_IDENTIFIER:
+        raise TransferRejected("refusing to import or roll back VIP inventory on the canonical cluster")
+
+
 def refuse_protected_targets(source_container: str, destination_container: str, destination: Identity, allow_canonical: bool) -> None:
     if source_container == destination_container:
         raise TransferRejected("source and destination containers must differ")
@@ -1279,13 +1299,18 @@ def refuse_protected_targets(source_container: str, destination_container: str, 
         destination.system_identifier == CANONICAL_SYSTEM_IDENTIFIER
         or destination_container == CANONICAL_CONTAINER
         or (
-            destination.database == CANONICAL_DATABASE
+            destination.database in {CANONICAL_DATABASE, RENAMED_CANONICAL_DATABASE}
             and destination.comment == CANONICAL_COMMENT
             and destination.system_identifier == CANONICAL_SYSTEM_IDENTIFIER
         )
     )
     if canonical_target and not allow_canonical:
         raise TransferRejected("refusing the canonical database without an explicit live authorization")
+    if destination.database in {"salon", "salon_preview", "salon_opp_integrity_20261024", "salon-db"} and (
+        destination.system_identifier == CANONICAL_SYSTEM_IDENTIFIER
+        or destination_container == CANONICAL_CONTAINER
+    ):
+        raise TransferRejected("refusing the renamed canonical database name on the canonical cluster")
     if destination.database in {"salon", "salon_preview", "salon_opp_integrity_20261024"}:
         raise TransferRejected("refusing a protected database name")
 
@@ -1356,14 +1381,14 @@ def print_summary(prefix: str, **values: object) -> None:
 
 def run(args: argparse.Namespace) -> None:
     source_expected = Identity(
-        require_identifier(args.source_database, "source database"),
+        require_database_name(args.source_database, "source database"),
         require_sysid(args.source_system_identifier),
         None if args.source_comment_null else args.source_comment,
     )
     if not args.source_comment_null and args.source_comment is None:
         raise TransferRejected("source comment was not supplied")
     destination_expected = Identity(
-        require_identifier(args.destination_database, "destination database"),
+        require_database_name(args.destination_database, "destination database"),
         require_sysid(args.destination_system_identifier),
         args.destination_comment,
     )
@@ -1383,6 +1408,7 @@ def run(args: argparse.Namespace) -> None:
     if args.expected_list_id_md5 != EXPECTED_LIST_ID_MD5 or args.expected_phone_md5 != EXPECTED_PHONE_MD5:
         raise TransferRejected("fingerprint argument does not match the historical inventory")
     admin_id = require_uuid(args.destination_admin_id, "destination admin")
+    refuse_canonical_replay(args.mode, destination_expected.system_identifier)
     refuse_protected_targets(
         args.source_container,
         args.destination_container,

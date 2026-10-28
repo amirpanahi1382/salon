@@ -1004,7 +1004,7 @@ describeIfDisposable('manual transfer receipt review on a disposable database', 
     const rows = await prisma.client.$queryRaw<Array<{ current_database: string }>>`SELECT current_database()`;
     expect(rows[0]?.current_database).toBe(databaseName);
     expect(databaseName.startsWith('salon_activation_')).toBe(true);
-    expect(['salon', 'salon_preview']).not.toContain(databaseName);
+    expect(['salon', 'salon_preview', 'phone_first_product', 'salon-db']).not.toContain(databaseName);
     expect(endpoint).toBe('127.0.0.1');
     expect(port).not.toBe(9000);
     expect(bucket.startsWith('salon-activation-')).toBe(true);

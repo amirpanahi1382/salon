@@ -234,7 +234,7 @@ Recipient counts are one exclusive bucket per recipient row: canonical sent, the
 
 Entitlement is not billing.
 
-Canonical `phone_first_product` holds the transferred VIP inventory: 29 `ORIGINAL_TEHRAN` lists and 2,194 contacts. Every list is `PENDING`, unreserved, and not requestable. The copy ran on 2026-10-27 as `salon_app` in one transaction, then reconciled. It preserved list and contact ids and cleared historical reservations. It did not copy VIP requests, recipient snapshots, messages, outbox rows, or financial rows. The stopped `salon` database still holds the original inventory. `VIP-11-01` remains 28 contacts and `VIP-14-01` remains 27. No list was activated. The procedure is in `architecture/operations.md`. Zero historical `message_deliveries` rows do not prove that no message was ever sent.
+Canonical `salon-db` holds the transferred VIP inventory: 29 `ORIGINAL_TEHRAN` lists and 2,194 contacts. The logical database was renamed in place from `phone_first_product`; the transfer audit still records that original name. The cluster system identifier and the database comment `phone-first-empty:20261024T061347Z` were not changed. Every list is `PENDING`, unreserved, and not requestable. The copy ran on 2026-10-27 as `salon_app` in one transaction, then reconciled. It preserved list and contact ids and cleared historical reservations. It did not copy VIP requests, recipient snapshots, messages, outbox rows, or financial rows. The stopped `salon` database still holds the original inventory. `VIP-11-01` remains 28 contacts and `VIP-14-01` remains 27. No list was activated. The procedure is in `architecture/operations.md`. Zero historical `message_deliveries` rows do not prove that no message was ever sent.
 
 ---
 

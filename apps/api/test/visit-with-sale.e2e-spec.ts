@@ -356,7 +356,7 @@ describeIfDb('Complete visit with sale (e2e)', () => {
     if (!container || !databaseName.startsWith('salon_stage7_finance_')) {
       throw new Error('A named disposable finance database is required');
     }
-    if (['salon', 'salon_preview', 'phone_first_product'].includes(databaseName)) {
+    if (['salon', 'salon_preview', 'phone_first_product', 'salon-db'].includes(databaseName)) {
       throw new Error('Refusing a protected finance database');
     }
     const salon = await registerOwner('vsale-rollback');

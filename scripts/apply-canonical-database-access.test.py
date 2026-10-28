@@ -64,6 +64,13 @@ class AccessScriptTests(unittest.TestCase):
         self.assertLess(audit_at, statement.rindex("COMMIT;"))
         self.assertIn("'app''pass'", statement)
 
+    def test_hyphenated_database_name_is_quoted(self) -> None:
+        statement = sql("salon-db", "a", "b", None, "salon-db", "1", "comment")
+        self.assertIn('GRANT CONNECT ON DATABASE "salon-db" TO salon_app, salon_migrator;', statement)
+        self.assertNotIn("GRANT CONNECT ON DATABASE salon-db ", statement)
+        with self.assertRaises(SystemExit):
+            sql("salon-db;drop", "a", "b", None, "salon-db;drop", "1", "comment")
+
     def test_database_argument_must_match_expected_name(self) -> None:
         with self.assertRaises(SystemExit):
             sql("other_db", "a", "b", None, "phone_first_product", "1", "comment")

@@ -321,6 +321,14 @@ class TransferPureTests(unittest.TestCase):
         self.assertIn("preserved-baseline", reconcile_problems(fields=fields, **drifted))
         module.assert_read_only_sql(reconcile_snapshot_sql(admin))
 
+    def test_hyphenated_database_name_is_accepted_and_replay_is_refused(self) -> None:
+        self.assertEqual(module.require_database_name("salon-db", "database"), "salon-db")
+        with self.assertRaises(TransferRejected):
+            module.require_database_name("salon-db;drop", "database")
+        with self.assertRaises(TransferRejected):
+            module.refuse_canonical_replay("execute", module.CANONICAL_SYSTEM_IDENTIFIER)
+        module.refuse_canonical_replay("dry-run", module.CANONICAL_SYSTEM_IDENTIFIER)
+
     def test_redact_removes_phones_and_urls(self) -> None:
         cleaned = redact("failed 09123456789 postgresql://salon_app:secret@127.0.0.1/db")
         self.assertNotIn("09123456789", cleaned)

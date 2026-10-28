@@ -5,7 +5,15 @@ import { join, resolve } from 'node:path';
 import { createPrismaClient } from '@salon/database';
 
 const FORBIDDEN_PORTS = new Set(['5432', '15442', '15450', '15452', '3002', '18082']);
-const FORBIDDEN_NAMES = new Set(['salon', 'salon_preview', 'postgres', 'template0', 'template1']);
+const FORBIDDEN_NAMES = new Set([
+  'salon',
+  'salon_preview',
+  'postgres',
+  'template0',
+  'template1',
+  'phone_first_product',
+  'salon-db',
+]);
 
 export const MIGRATIONS_DIR = resolve(__dirname, '../../../../packages/database/prisma/migrations');
 export const SCHEMA_PATH = resolve(__dirname, '../../../../packages/database/prisma/schema.prisma');
