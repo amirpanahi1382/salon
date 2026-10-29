@@ -19,8 +19,7 @@ class AppStrings {
   static const signupVerificationUnconfirmed =
       'نتیجه بررسی قطعی نیست. همان کد را دوباره بفرستید.';
   static const signupSendLimit = 'سقف ارسال پر شده است. کمی بعد تلاش کنید.';
-  static const signupVerificationLimit =
-      'تلاش‌ها تمام شد. کد تازه بگیرید.';
+  static const signupVerificationLimit = 'تلاش‌ها تمام شد. کد تازه بگیرید.';
   static const signupCodeExpired = 'کد منقضی شده است. کد تازه بگیرید.';
   static const signupCodeExpiredWait =
       'کد منقضی شده است. برای کد تازه کمی صبر کنید.';
@@ -99,7 +98,8 @@ class AppStrings {
   static const caughtUpTitle = 'الان مورد فوری ندارید.';
   static const caughtUpBody = 'الان مشتری‌ای نیست که لازم باشد دنبالش بروید.';
   static const noCustomers = 'هنوز مشتری‌ای ثبت نشده.';
-  static const addFirstCustomer = 'اولین مشتری را اضافه کنید تا سابقه مراجعه‌ها شکل بگیرد.';
+  static const addFirstCustomer =
+      'اولین مشتری را اضافه کنید تا سابقه مراجعه‌ها شکل بگیرد.';
   static const noMatchingCustomers = 'مشتری مطابق جستجو پیدا نشد.';
   static const changeCustomerSearch =
       'عبارت جستجو را تغییر دهید یا آن را پاک کنید.';
@@ -136,14 +136,14 @@ class AppStrings {
   static const ordinaryMessageToRegisteredCustomers =
       'ارسال پیام عادی به مشتریان ثبت‌شده';
   static const vipSendMessageTitle = 'ارسال پیام VIP';
-  static const vipAttractNewInSalonRange =
-      'جذب مشتریان جدید در محدوده سالن';
+  static const vipAttractNewInSalonRange = 'جذب مشتریان جدید در محدوده سالن';
   static const salonCustomersHeading = 'مشتریان سالن';
   static const cancelSelection = 'لغو انتخاب';
   static const sendMessageAction = 'ارسال پیام';
   static const createSuitableMessage = 'ایجاد پیام مناسب';
   static const customerSelectionTitle = 'انتخاب مشتری';
-  static const selectionLimitReached = 'حداکثر ۳۰ مشتری را می‌توانید انتخاب کنید.';
+  static const selectionLimitReached =
+      'حداکثر ۳۰ مشتری را می‌توانید انتخاب کنید.';
   static const continueToSendMessage = 'ادامه به ارسال پیام';
 
   static String salonCustomerCountChip(int count) =>
@@ -158,6 +158,7 @@ class AppStrings {
     }
     return '$continueToSendMessage برای ${toPersianDigits(count.toString())} مشتری';
   }
+
   static const outreachEmptyTitle = 'مشتری‌ای برای ارسال پیام انتخاب نشده.';
   static const outreachEmptyBody =
       'از بخش مشتریان چند مشتری را انتخاب کنید و ارسال پیام را بزنید.';
@@ -280,7 +281,8 @@ class AppStrings {
   static const adminVipListStoppedSend = 'متوقف‌شده';
   static const vipOriginalTehranLists = 'لیست‌های اصلی تهران';
   static const vipAllLists = 'همهٔ لیست‌ها';
-  static const vipOriginalCollectionEmpty = 'لیست‌های اصلی تهران هنوز مشخص نشده‌اند';
+  static const vipOriginalCollectionEmpty =
+      'لیست‌های اصلی تهران هنوز مشخص نشده‌اند';
   static const vipOriginalCollectionEmptyBody =
       'این نما فقط عضویت بررسی‌شده را نشان می‌دهد و به لیست‌های منطقه‌ای دیگر برنمی‌گردد.';
   static const adminManualSend = 'ارسال دستی';
@@ -292,8 +294,7 @@ class AppStrings {
   static const adminQueueEmpty = 'پیامی در صف نیست.';
   static const baleNotConfigured =
       'اتصال پیام‌رسان بله برای این سالن نیاز به بررسی دارد.';
-  static const baleTemporaryFailure =
-      'ارسال پیام انجام نشد. دوباره تلاش کنید.';
+  static const baleTemporaryFailure = 'ارسال پیام انجام نشد. دوباره تلاش کنید.';
   static const baleRateLimited =
       'ارسال پیام موقتاً محدود شده است. کمی بعد دوباره تلاش کنید.';
   static const baleInvalidDestination =
@@ -324,12 +325,31 @@ class AppStrings {
   static const agreedAtLabel = 'توافق شده';
   static const actualVisitLabel = 'مراجعه واقعی';
   static const overallPerformanceTitle = 'عملکرد کلی';
+  static const dashboardWelcome = 'خوش آمدید';
+  static const dashboardHeroTitle = 'امروز در سالن';
+  static const dashboardHeroSubtitle = 'توجه سالن باید به کجا برود؟';
+  static const dashboardMonthlyRevenue = 'درآمد ثبت شده سالن در این ماه';
+  static const dashboardMessageResultsTitle = 'نتایج ارسال پیام';
+  static const dashboardSalonMessages = 'پیام مشتریان سالن';
+  static const dashboardVipMessages = 'پیام VIP';
+  static const dashboardSentTag = 'ارسال‌شده';
+  static const dashboardRequestTag = 'درخواست';
+  static const dashboardTotalTag = 'کل';
+  static const dashboardThisMonthTag = 'این ماه';
+  static const dashboardAgreedTag = 'توافق شد';
+  static const dashboardFirstActionTitle = 'اولین اقدام امروز';
+  static const dashboardFirstActionBody = 'پیگیری موارد و ادامه روند سالن';
+  static const dashboardFirstActionButton = 'مشاهده پیگیری‌ها';
   static const metricSalonCustomers = 'مشتریان سالن';
-  static const metricSalonCustomerSentMessages = 'پیام مشتریان سالن با ثبت ارسال';
+  static const metricSalonCustomerSentMessages =
+      'پیام مشتریان سالن با ثبت ارسال';
   static const metricVipSentMessages = 'پیام VIP با ثبت ارسال';
-  static const metricAgreedReturns = 'وقت توافق شده';
+  static const metricAgreedReturns = 'وقت توافق‌شده';
   static const metricMessageAssociatedReturns = 'مشتری برگشتی توسط پیام';
   static const metricReturningSalonCustomers = 'مشتری برگشتی سالن';
+
+  static String dashboardRequestedTag(int count) =>
+      'از ${toPersianDigits(count.toString())} $dashboardRequestTag';
   static const recoveryCommitmentBackedTitle = 'بازگشت ثبت‌شده پس از پیگیری';
   static const recoveryCommitmentBackedBody =
       'مشتری پس از پیگیری، زمان مراجعه اعلام کرد و مراجعه انجام شد.';
@@ -372,8 +392,10 @@ class AppStrings {
   static const disclosedNameHint = 'نامی که برای این گزارش مجاز به نمایش است';
   static const vipReportedOrigin = 'منشأ گزارش‌شدهٔ VIP';
   static const vipIdentityWithheld = 'هویت این مخاطب برای سالن قابل نمایش نیست';
-  static const vipRequestIntentionsEmpty = 'برای این فهرست هنوز قصد مراجعه‌ای ثبت نشده است.';
-  static const vipRequestIntentionsEnd = 'قصد مراجعهٔ دیگری برای این فهرست نیست.';
+  static const vipRequestIntentionsEmpty =
+      'برای این فهرست هنوز قصد مراجعه‌ای ثبت نشده است.';
+  static const vipRequestIntentionsEnd =
+      'قصد مراجعهٔ دیگری برای این فهرست نیست.';
   static const vipDisclosedHint =
       'فقط اطلاعاتی را بنویسید که خود مخاطب مستقیم به سالن داده است.';
   static const vipContactRequired =
@@ -418,11 +440,11 @@ class AppStrings {
   static const callCustomer = 'تماس';
   static const staleCommitmentEdit =
       'این زمان را کس دیگری تغییر داده. فهرست به‌روز شد؛ دوباره ذخیره کنید.';
-  static const commitmentAlreadyExists = 'برای این پیام قبلاً زمان مراجعه ثبت شده.';
+  static const commitmentAlreadyExists =
+      'برای این پیام قبلاً زمان مراجعه ثبت شده.';
   static const messageNotEligibleForCommitment =
       'فقط برای پیام ارسال‌شده می‌توان زمان مراجعه ثبت کرد.';
-  static const expectedAtAfterSent =
-      'زمان مراجعه باید بعد از ارسال پیام باشد.';
+  static const expectedAtAfterSent = 'زمان مراجعه باید بعد از ارسال پیام باشد.';
   static const expectedAtMustBeFuture = 'زمان مراجعه باید در آینده باشد.';
   static const arrivalAlreadyRecorded = 'برای این پیگیری قبلاً مراجعه ثبت شده.';
   static const arrivalVisitReviewRequired =
@@ -436,8 +458,7 @@ class AppStrings {
   static const outreachStatusFailed = 'ارسال ناموفق';
   static const workspaceMessageSent = 'ارسال شده';
   static const workspaceVipManualRecorded = 'ارسال دستی ثبت شده';
-  static const workspaceMessageAgreed =
-      'ارسال شده — زمان مراجعه توافق شده';
+  static const workspaceMessageAgreed = 'ارسال شده — زمان مراجعه توافق شده';
   static const workspaceMessageReturned = 'ارسال شده — مراجعه ثبت شده';
   static const workspaceEmptyAllTitle = 'هنوز پیام ارسالی ثبت نشده.';
   static const workspaceEmptyAllBody =
@@ -469,7 +490,8 @@ class AppStrings {
   static const vipHistoryInProgress = 'در صف / در حال رسیدگی';
   static const vipHistoryIntentions = 'نیت مراجعه ثبت‌شده';
   static const vipHistoryVisited = 'مراجعهٔ لینک‌شده';
-  static const vipHistoryMetricsUnavailable = 'شمارش برای این درخواست در دسترس نیست.';
+  static const vipHistoryMetricsUnavailable =
+      'شمارش برای این درخواست در دسترس نیست.';
   static const vipHistoryOpenRequest = 'جزئیات درخواست';
   static const logout = 'خروج';
   static const retry = 'تلاش مجدد';
@@ -478,7 +500,8 @@ class AppStrings {
   static const loadMoreAgreedReturns = 'نمایش توافق‌های بیشتر';
   static const loadMoreObservedReturns = 'نمایش بازگشت‌های بیشتر';
   static const loadMoreMessages = 'نمایش پیام‌های بیشتر';
-  static const observedPendingCommitments = 'برای نمایش کامل بازگشت‌های پس از پیام، ابتدا همه توافق‌ها را بارگذاری کنید.';
+  static const observedPendingCommitments =
+      'برای نمایش کامل بازگشت‌های پس از پیام، ابتدا همه توافق‌ها را بارگذاری کنید.';
   static const searchSalons = 'جستجوی سالن‌ها';
   static const noSalons = 'سالنی پیدا نشد.';
   static const searchCustomers = 'جستجو با نام یا موبایل';
@@ -517,7 +540,8 @@ class AppStrings {
   static const vipExcelExport = 'خروجی اکسل';
   static const vipSendManual = 'ارسال دستی';
   static const vipSendBale = 'ارسال با بله';
-  static const vipBaleNotImplemented = 'ارسال با بله برای VIP هنوز فعال نشده است.';
+  static const vipBaleNotImplemented =
+      'ارسال با بله برای VIP هنوز فعال نشده است.';
   static const vipChooseCount = 'تعداد پیام را انتخاب کنید';
   static const vipDesiredRegion = 'محدوده موردنظر';
   static const vipSelectRegion = 'انتخاب محدوده';
@@ -532,8 +556,7 @@ class AppStrings {
   static const vipRialDiscount = 'ریالی';
   static const vipDiscountAmountHint = 'مقدار تخفیف';
   static const vipDiscountClear = 'پاک کردن تخفیف';
-  static const vipDiscountPercentRange =
-      'درصد تخفیف باید بین ۱ تا ۱۰۰ باشد.';
+  static const vipDiscountPercentRange = 'درصد تخفیف باید بین ۱ تا ۱۰۰ باشد.';
   static const vipDiscountAmountRequired = 'مقدار تخفیف درصدی را وارد کنید.';
   static const vipDiscountRialRequired = 'مبلغ تخفیف ریالی را وارد کنید.';
   static const vipDiscountUnavailable =
@@ -580,7 +603,8 @@ class AppStrings {
   static String vipRemainingQuota(int remaining) =>
       'سهمیه باقی‌مانده این هفته: ${toPersianDigits(remaining.toString())}';
 
-  static String sentOfTotal(int sent, int total) => 'ارسال ثبت‌شده $sent از $total';
+  static String sentOfTotal(int sent, int total) =>
+      'ارسال ثبت‌شده $sent از $total';
   static const vipSampleNeeded = 'نمونه کار لازم است';
 
   static String vipSampleProgress(int count) => 'نمونه کارها: $count از 3';
@@ -616,8 +640,7 @@ class AppStrings {
   static const firstName = 'نام';
   static const lastName = 'نام خانوادگی';
   static const phoneNumber = 'شماره موبایل';
-  static const phoneHint =
-      'دقیقاً ۱۱ رقم و با ۰۹ شروع شود؛ مثلاً ۰۹۱۲۱۱۱۱۱۱۱.';
+  static const phoneHint = 'دقیقاً ۱۱ رقم و با ۰۹ شروع شود؛ مثلاً ۰۹۱۲۱۱۱۱۱۱۱.';
   static const save = 'ذخیره';
   static const editCustomer = 'ویرایش مشتری';
   static const visitDate = 'تاریخ مراجعه';
@@ -634,7 +657,8 @@ class AppStrings {
   static const reactivation = 'برگشت مشتری قدیمی';
   static const customerReturn = 'دعوت دوباره';
   static const revenueDecline = 'افت درآمد';
-  static const customersNeedingAttention = 'مشتریانی که الان باید بهشان توجه کنید';
+  static const customersNeedingAttention =
+      'مشتریانی که الان باید بهشان توجه کنید';
   static const customerStatusHeading = 'وضعیت مشتریان';
   static const metricTotalCustomers = 'همه مشتریان';
   static const metricActive = 'فعال';
@@ -653,8 +677,10 @@ class AppStrings {
   static const enterEmailPassword = 'ایمیل و رمز عبور را وارد کنید.';
   static const registerValidation =
       'همه فیلدها را پر کنید. رمز عبور حداقل ۸ حرف باشد.';
-  static const amountInvalid = 'مبلغ باید یک عدد ریال معتبر و صفر یا بیشتر باشد.';
-  static const selectActiveService = 'برای مبلغ دریافتی یک خدمت فعال انتخاب کنید.';
+  static const amountInvalid =
+      'مبلغ باید یک عدد ریال معتبر و صفر یا بیشتر باشد.';
+  static const selectActiveService =
+      'برای مبلغ دریافتی یک خدمت فعال انتخاب کنید.';
   static const selectExcelFirst = 'اول یک فایل اکسل با پسوند xlsx انتخاب کنید.';
   static const sessionExpired = 'لطفاً دوباره وارد شوید.';
   static const permissionDenied = 'برای این کار دسترسی ندارید.';
@@ -671,6 +697,7 @@ class AppStrings {
   static const previousMonth = 'ماه قبل';
   static const nextMonth = 'ماه بعد';
 }
+
 String vipRequestStatusLabel(String status) {
   switch (status) {
     case 'AWAITING_SAMPLE_WORK':
@@ -687,6 +714,7 @@ String vipRequestStatusLabel(String status) {
       return AppStrings.unknownStatus;
   }
 }
+
 String statusLabel(String value) {
   switch (value) {
     case 'NEW':
@@ -813,7 +841,8 @@ String localizeUserFacingMessage(String message) {
     'visitedAt must be a completed visit time, not a future booking':
         'تاریخ باید برای مراجعه انجام‌شده باشد، نه نوبت آینده.',
     'visitedAt must be a valid timestamp': 'تاریخ مراجعه معتبر نیست.',
-    'A service with this name already exists': 'خدمتی با این نام از قبل وجود دارد.',
+    'A service with this name already exists':
+        'خدمتی با این نام از قبل وجود دارد.',
     'An account with this email already exists':
         'با این ایمیل قبلاً حساب ساخته شده.',
     'A customer with this phone number already exists in this salon':
@@ -828,7 +857,8 @@ String localizeUserFacingMessage(String message) {
     'At most 3 sample-work images are allowed': AppStrings.vipMaxSamples,
     'Bale is not available for VIP outreach': AppStrings.vipBaleNotImplemented,
     'This VIP list is not available': AppStrings.vipListUnavailable,
-    'This VIP list does not have enough contacts': AppStrings.vipListUnavailable,
+    'This VIP list does not have enough contacts':
+        AppStrings.vipListUnavailable,
     'This VIP request reservation has expired':
         'مهلت رزرو این درخواست VIP تمام شده است.',
     'Service not found': 'این خدمت پیدا نشد.',
@@ -856,7 +886,8 @@ String localizeUserFacingMessage(String message) {
         AppStrings.messageNotEligibleForCommitment,
     'expectedAt must be after the source message was sent':
         AppStrings.expectedAtAfterSent,
-    'expectedAt must be a future return time': AppStrings.expectedAtMustBeFuture,
+    'expectedAt must be a future return time':
+        AppStrings.expectedAtMustBeFuture,
     'expectedAt must be a valid timestamp': 'زمان مراجعه معتبر نیست.',
     'Return commitment cannot be edited after an actual visit is linked':
         'پس از ثبت مراجعه واقعی، زمان توافق‌شده قابل ویرایش نیست.',
@@ -884,11 +915,14 @@ String localizeUserFacingMessage(String message) {
 String localizeIntelligenceCopy(String text) {
   const exact = <String, String>{
     'No completed visits recorded yet.': 'هنوز نوبت انجام‌شده‌ای ثبت نشده.',
-    'Send a reactivation message.': 'یک پیام یادآوری بفرستید تا دوباره سر بزند.',
+    'Send a reactivation message.':
+        'یک پیام یادآوری بفرستید تا دوباره سر بزند.',
     'Invite the customer back for a follow-up visit.':
         'دعوتش کنید برای مراجعه بعدی بیاید.',
-    'Review this customer’s recent decline.': 'افت درآمد این مشتری را بررسی کنید.',
-    "Review this customer's recent decline.": 'افت درآمد این مشتری را بررسی کنید.',
+    'Review this customer’s recent decline.':
+        'افت درآمد این مشتری را بررسی کنید.',
+    "Review this customer's recent decline.":
+        'افت درآمد این مشتری را بررسی کنید.',
   };
   final mapped = exact[text];
   if (mapped != null) {
@@ -909,7 +943,9 @@ String localizeIntelligenceCopy(String text) {
     if (tail.contains('more than')) {
       return 'معمولاً هر $expected روز یک‌بار می‌آید. آخرین مراجعه $days روز پیش بوده و خیلی بیشتر از فاصله همیشگی‌اش گذشته.';
     }
-    if (tail.contains('past the expected') || tail.trim() == '.' || tail.trim().isEmpty) {
+    if (tail.contains('past the expected') ||
+        tail.trim() == '.' ||
+        tail.trim().isEmpty) {
       return 'معمولاً هر $expected روز یک‌بار می‌آید. آخرین مراجعه $days روز پیش بوده و از بازه طبیعی گذشته.';
     }
     return 'معمولاً هر $expected روز یک‌بار می‌آید. آخرین مراجعه $days روز پیش بوده.';
@@ -941,8 +977,10 @@ bool _looksLikeTechnicalEnglish(String text) {
   if (RegExp(r'[\u0600-\u06FF]').hasMatch(text)) {
     return false;
   }
-  if (RegExp(r'prisma|stack|exception|sql|constraint|uuid', caseSensitive: false)
-      .hasMatch(text)) {
+  if (RegExp(
+    r'prisma|stack|exception|sql|constraint|uuid',
+    caseSensitive: false,
+  ).hasMatch(text)) {
     return true;
   }
   return RegExp(r'[A-Za-z]{4,}').hasMatch(text) &&
@@ -1075,7 +1113,9 @@ String customerActivitySubtitle(CustomerActivityItem item) {
     case 'OPPORTUNITY_ACTION':
       return actionStatusLabel(item.status ?? 'OPEN');
     case 'TRANSACTION':
-      return item.status == 'VOIDED' ? AppStrings.failed : formatJalaliDateTime(item.occurredAt);
+      return item.status == 'VOIDED'
+          ? AppStrings.failed
+          : formatJalaliDateTime(item.occurredAt);
     default:
       return formatJalaliDateTime(item.occurredAt);
   }

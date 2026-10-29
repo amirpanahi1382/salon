@@ -526,9 +526,7 @@ class FakeVipRepository extends VipRepository {
     }
     return VipRequestHistoryPage(
       entitled: entitled,
-      explanation: entitled
-          ? 'همهٔ درخواست‌های VIP این سالن'
-          : 'ارسال VIP جدید برای این سالن فعال نیست؛ تاریخچهٔ قبلی نمایش داده می‌شود.',
+      explanation: entitled ? 'همهٔ درخواست‌های VIP این سالن' : 'ارسال VIP جدید برای این سالن فعال نیست؛ تاریخچهٔ قبلی نمایش داده می‌شود.',
       // History remains visible after entitlement revocation.
       items: historyItems,
       hasMore: false,
@@ -1084,7 +1082,10 @@ void main() {
     await tester.enterText(find.byType(TextField).last, 'password1');
     await tester.tap(find.byType(AppButton));
     await tester.pump();
-    expect(find.textContaining('شماره موبایل یا رمز عبور درست نیست.'), findsOneWidget);
+    expect(
+      find.textContaining('شماره موبایل یا رمز عبور درست نیست.'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('dashboard renders overall performance before message results', (
@@ -1093,6 +1094,91 @@ void main() {
     tester.view.physicalSize = const Size(800, 1400);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          sessionStoreProvider.overrideWithValue(MemorySessionStore()),
+          salonRepositoryProvider.overrideWith(
+            (ref) => FakeSalonRepository(
+              performance: const SalonOverallPerformance(
+                customerCount: 3,
+                salonCustomerSentMessageCount: 4,
+                salonCustomerMessageRequestCount: 100,
+                vipSentMessageCount: 1,
+                vipMessageRequestCount: 30,
+                monthlyRecordedRevenueIrr: '125000000.00',
+                agreedReturnCount: 2,
+                messageAssociatedReturnedCustomerCount: 1,
+                returningSalonCustomerCount: 1,
+              ),
+            ),
+          ),
+          authControllerProvider.overrideWith(_SignedInAuth.new),
+        ],
+        child: const MaterialApp(home: DashboardScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Rose Salon'), findsOneWidget);
+    expect(find.text('Leila'), findsNothing);
+    expect(find.text(AppStrings.dashboardWelcome), findsOneWidget);
+    expect(find.text(AppStrings.overallPerformanceTitle), findsNothing);
+    expect(find.text(AppStrings.dashboardHeroTitle), findsOneWidget);
+    expect(find.text(AppStrings.metricSalonCustomers), findsOneWidget);
+    expect(find.text(AppStrings.dashboardSalonMessages), findsNWidgets(2));
+    expect(find.text(AppStrings.dashboardVipMessages), findsNWidgets(2));
+    expect(find.text(AppStrings.metricAgreedReturns), findsOneWidget);
+    expect(
+      find.text(AppStrings.metricMessageAssociatedReturns),
+      findsOneWidget,
+    );
+    expect(find.text(AppStrings.dashboardMonthlyRevenue), findsOneWidget);
+    expect(find.text(toPersianDigits('3')), findsOneWidget);
+    expect(find.text(toPersianDigits('4')), findsOneWidget);
+    expect(find.text('۱۲۵,۰۰۰,۰۰۰'), findsOneWidget);
+    expect(find.text(AppStrings.rial), findsOneWidget);
+    expect(find.text('۴ ارسال‌شده'), findsOneWidget);
+    expect(find.text('از ۱۰۰ درخواست'), findsOneWidget);
+    expect(find.text('۱ ارسال‌شده'), findsOneWidget);
+    expect(find.text('از ۳۰ درخواست'), findsOneWidget);
+    expect(find.text(AppStrings.dashboardThisMonthTag), findsOneWidget);
+    expect(find.text(AppStrings.dashboardTotalTag), findsNWidgets(4));
+    expect(find.text('در صف'), findsNothing);
+    expect(find.text('امروز'), findsNothing);
+    expect(find.text(AppStrings.dashboardMessageResultsTitle), findsOneWidget);
+    expect(find.text(AppStrings.dashboardFirstActionTitle), findsOneWidget);
+    expect(find.text(AppStrings.dashboardFirstActionBody), findsOneWidget);
+    expect(find.text(AppStrings.dashboardFirstActionButton), findsOneWidget);
+    expect(find.text(AppStrings.followUpsTitle), findsNothing);
+    final heroY = tester
+        .getTopLeft(find.text(AppStrings.dashboardHeroTitle))
+        .dy;
+    final followUpsY = tester
+        .getTopLeft(find.text(AppStrings.dashboardMessageResultsTitle))
+        .dy;
+    expect(heroY, lessThan(followUpsY));
+    expect(find.byType(MetricRow), findsNothing);
+  });
+
+  testWidgets('dashboard first action opens the existing follow-ups route', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    final router = GoRouter(
+      routes: [
+        GoRoute(
+          path: '/',
+          builder: (context, state) => const DashboardScreen(),
+        ),
+        GoRoute(
+          path: '/follow-ups',
+          builder: (context, state) =>
+              const Scaffold(body: Text('follow-ups destination')),
+        ),
+      ],
+    );
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
@@ -1111,37 +1197,71 @@ void main() {
           ),
           authControllerProvider.overrideWith(_SignedInAuth.new),
         ],
-        child: const MaterialApp(home: DashboardScreen()),
+        child: MaterialApp.router(routerConfig: router),
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Rose Salon'), findsOneWidget);
-    expect(find.text(AppStrings.overallPerformanceTitle), findsOneWidget);
-    expect(find.text(AppStrings.metricSalonCustomers), findsOneWidget);
-    expect(
-      find.text(AppStrings.metricSalonCustomerSentMessages),
-      findsOneWidget,
+    await tester.scrollUntilVisible(
+      find.text(AppStrings.dashboardFirstActionButton),
+      300,
     );
-    expect(find.text(AppStrings.metricVipSentMessages), findsOneWidget);
-    expect(find.text(AppStrings.metricAgreedReturns), findsOneWidget);
-    expect(
-      find.text(AppStrings.metricMessageAssociatedReturns),
-      findsOneWidget,
+    await tester.tap(find.text(AppStrings.dashboardFirstActionButton));
+    await tester.pumpAndSettle();
+    expect(find.text('follow-ups destination'), findsOneWidget);
+  });
+
+  testWidgets('dashboard stays scrollable without overflow at 360 and 1.3x', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    tester.platformDispatcher.textScaleFactorTestValue = 1.3;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          sessionStoreProvider.overrideWithValue(MemorySessionStore()),
+          salonRepositoryProvider.overrideWith(
+            (ref) => FakeSalonRepository(
+              performance: const SalonOverallPerformance(
+                customerCount: 3,
+                salonCustomerSentMessageCount: 48,
+                salonCustomerMessageRequestCount: 100,
+                vipSentMessageCount: 12,
+                vipMessageRequestCount: 30,
+                monthlyRecordedRevenueIrr: '125000000.00',
+                agreedReturnCount: 2,
+                messageAssociatedReturnedCustomerCount: 1,
+                returningSalonCustomerCount: 1,
+              ),
+            ),
+          ),
+          authControllerProvider.overrideWith(_SignedInAuth.new),
+        ],
+        child: MaterialApp(
+          home: const Directionality(
+            textDirection: TextDirection.rtl,
+            child: DashboardScreen(),
+          ),
+        ),
+      ),
     );
-    expect(find.text(AppStrings.metricReturningSalonCustomers), findsOneWidget);
-    expect(find.text(toPersianDigits('3')), findsOneWidget);
-    expect(find.text(toPersianDigits('4')), findsOneWidget);
-    expect(find.text(AppStrings.followUpsTitle), findsOneWidget);
-    expect(find.text('نتیجه ارسال پیام‌ها'), findsNothing);
-    expect(find.text('نتیجه پیگیری‌ها'), findsNothing);
-    final overallY = tester
-        .getTopLeft(find.text(AppStrings.overallPerformanceTitle))
-        .dy;
-    final followUpsY = tester
-        .getTopLeft(find.text(AppStrings.followUpsTitle))
-        .dy;
-    expect(overallY, lessThan(followUpsY));
-    expect(find.byType(MetricRow), findsNWidgets(3));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    await tester.scrollUntilVisible(
+      find.text(AppStrings.dashboardMessageResultsTitle),
+      300,
+    );
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    await tester.scrollUntilVisible(
+      find.text(AppStrings.dashboardFirstActionButton),
+      300,
+    );
+    await tester.pumpAndSettle();
+    expect(find.text(AppStrings.dashboardFirstActionButton), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('opportunity composer sends a Bale message after confirmation', (
@@ -1201,11 +1321,11 @@ void main() {
     );
     await tester.pump();
     expect(find.byType(LoadingSkeleton), findsOneWidget);
-    expect(find.text(AppStrings.overallPerformanceTitle), findsNothing);
+    expect(find.text(AppStrings.dashboardHeroTitle), findsNothing);
     expect(find.text(AppStrings.metricSalonCustomers), findsNothing);
     salon.performanceGate!.complete(salon.performance);
     await tester.pumpAndSettle();
-    expect(find.text(AppStrings.overallPerformanceTitle), findsOneWidget);
+    expect(find.text(AppStrings.dashboardHeroTitle), findsOneWidget);
     expect(find.text(toPersianDigits('0')), findsWidgets);
   });
 
@@ -1231,7 +1351,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.byType(ErrorView), findsOneWidget);
-    expect(find.text(AppStrings.overallPerformanceTitle), findsNothing);
+    expect(find.text(AppStrings.dashboardHeroTitle), findsNothing);
     expect(find.text(AppStrings.metricSalonCustomers), findsNothing);
   });
 
@@ -1272,8 +1392,8 @@ void main() {
     expect(find.text(AppStrings.openAgreedReturnsTitle), findsNothing);
     expect(find.text('عرفان صابری'), findsNothing);
     expect(find.text(AppStrings.metricRevenueThisMonth), findsNothing);
-    expect(find.text(AppStrings.overallPerformanceTitle), findsOneWidget);
-    expect(find.text(AppStrings.followUpsTitle), findsOneWidget);
+    expect(find.text(AppStrings.dashboardHeroTitle), findsOneWidget);
+    expect(find.text(AppStrings.dashboardMessageResultsTitle), findsOneWidget);
     expect(find.text('نتیجه ارسال پیام‌ها'), findsNothing);
   });
 
@@ -1390,7 +1510,10 @@ void main() {
     expect(find.text('Sara Ahmadi'), findsOneWidget);
     expect(find.byIcon(Icons.upload_file_outlined), findsNothing);
     expect(find.text('افزودن مشتری'), findsOneWidget);
-    expect(find.text(AppStrings.selectSalonCustomersForMessage), findsOneWidget);
+    expect(
+      find.text(AppStrings.selectSalonCustomersForMessage),
+      findsOneWidget,
+    );
     expect(find.text(AppStrings.vipSendMessageTitle), findsOneWidget);
     expect(find.byType(Checkbox), findsNothing);
     expect(find.text(AppStrings.cancelSelection), findsNothing);
@@ -1583,7 +1706,10 @@ void main() {
       ),
       findsOneWidget,
     );
-    expect(find.textContaining('مبالغ فقط از تراکنش‌های تکمیل‌شده'), findsNothing);
+    expect(
+      find.textContaining('مبالغ فقط از تراکنش‌های تکمیل‌شده'),
+      findsNothing,
+    );
     expect(find.text('انتخاب چند مشتری برای ارسال پیام'), findsOneWidget);
 
     await tester.tap(find.widgetWithText(ChoiceChip, 'پیام‌های VIP'));
@@ -1634,53 +1760,58 @@ void main() {
     );
   });
 
-  testWidgets('customer detail renders revenue and visits without status card', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          customerRepositoryProvider.overrideWith(
-            (ref) => FakeCustomerRepository(items: [_customer()]),
-          ),
-          intelligenceRepositoryProvider.overrideWith(
-            (ref) => FakeIntelligenceRepository(
-              customerIntelligence: _intelligence(),
+  testWidgets(
+    'customer detail renders revenue and visits without status card',
+    (tester) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            customerRepositoryProvider.overrideWith(
+              (ref) => FakeCustomerRepository(items: [_customer()]),
             ),
-          ),
-          actionRepositoryProvider.overrideWithValue(FakeActionRepository()),
-          visitRepositoryProvider.overrideWith(
-            (ref) => FakeVisitListRepository(
-              items: [
-                Visit(
-                  id: 'v1',
-                  customerId: 'c1',
-                  visitedAt: DateTime.utc(2026, 7, 6),
-                  createdAt: DateTime.utc(2026, 7, 6),
-                  serviceName: 'Hair Service',
-                  amountReceived: '8000000.00',
-                ),
-              ],
+            intelligenceRepositoryProvider.overrideWith(
+              (ref) => FakeIntelligenceRepository(
+                customerIntelligence: _intelligence(),
+              ),
             ),
+            actionRepositoryProvider.overrideWithValue(FakeActionRepository()),
+            visitRepositoryProvider.overrideWith(
+              (ref) => FakeVisitListRepository(
+                items: [
+                  Visit(
+                    id: 'v1',
+                    customerId: 'c1',
+                    visitedAt: DateTime.utc(2026, 7, 6),
+                    createdAt: DateTime.utc(2026, 7, 6),
+                    serviceName: 'Hair Service',
+                    amountReceived: '8000000.00',
+                  ),
+                ],
+              ),
+            ),
+            messageRepositoryProvider.overrideWithValue(
+              FakeMessageRepository(),
+            ),
+            returnCommitmentRepositoryProvider.overrideWithValue(
+              FakeOpenReturnCommitmentRepository(),
+            ),
+          ],
+          child: const MaterialApp(
+            home: CustomerDetailScreen(customerId: 'c1'),
           ),
-          messageRepositoryProvider.overrideWithValue(FakeMessageRepository()),
-          returnCommitmentRepositoryProvider.overrideWithValue(
-            FakeOpenReturnCommitmentRepository(),
-          ),
-        ],
-        child: const MaterialApp(home: CustomerDetailScreen(customerId: 'c1')),
-      ),
-    );
-    await tester.pumpAndSettle();
-    expect(find.text('در آستانه از دست رفتن'), findsNothing);
-    expect(find.text('مشتری جدید'), findsNothing);
-    expect(find.text('چرا'), findsNothing);
-    expect(find.text('درآمد ثبت‌شده (ریال)'), findsOneWidget);
-    expect(find.textContaining('یک پیام یادآوری بفرستید'), findsNothing);
-    await tester.drag(find.byType(ListView), const Offset(0, -800));
-    await tester.pumpAndSettle();
-    expect(find.text('Hair Service · 8000000.00 ریال'), findsOneWidget);
-  });
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('در آستانه از دست رفتن'), findsNothing);
+      expect(find.text('مشتری جدید'), findsNothing);
+      expect(find.text('چرا'), findsNothing);
+      expect(find.text('درآمد ثبت‌شده (ریال)'), findsOneWidget);
+      expect(find.textContaining('یک پیام یادآوری بفرستید'), findsNothing);
+      await tester.drag(find.byType(ListView), const Offset(0, -800));
+      await tester.pumpAndSettle();
+      expect(find.text('Hair Service · 8000000.00 ریال'), findsOneWidget);
+    },
+  );
 
   testWidgets('customer detail 404', (tester) async {
     await tester.pumpWidget(
@@ -2279,7 +2410,9 @@ void main() {
               (ref) => FakeVisitListRepository(),
             ),
             authControllerProvider.overrideWith(_SignedInAuth.new),
-            messageRepositoryProvider.overrideWithValue(FakeMessageRepository()),
+            messageRepositoryProvider.overrideWithValue(
+              FakeMessageRepository(),
+            ),
             returnCommitmentRepositoryProvider.overrideWithValue(
               FakeOpenReturnCommitmentRepository(),
             ),
@@ -2882,7 +3015,10 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text(AppStrings.selectSalonCustomersForMessage));
     await tester.pumpAndSettle();
-    expect(find.text(AppStrings.selectSalonCustomersForMessage), findsOneWidget);
+    expect(
+      find.text(AppStrings.selectSalonCustomersForMessage),
+      findsOneWidget,
+    );
     expect(find.text(AppStrings.selectMultipleCustomers), findsNothing);
     expect(find.text(AppStrings.selectedCustomersChip(0)), findsOneWidget);
     expect(find.text(AppStrings.cancelSelection), findsOneWidget);
@@ -3154,10 +3290,7 @@ void main() {
       expect(find.textContaining('در حال پردازش'), findsOneWidget);
       expect(find.textContaining('در صف'), findsOneWidget);
       expect(find.textContaining('ارسال ثبت‌شده ·'), findsOneWidget);
-      expect(
-        find.textContaining('ارسال ثبت‌شده» به‌معنای'),
-        findsNothing,
-      );
+      expect(find.textContaining('ارسال ثبت‌شده» به‌معنای'), findsNothing);
       expect(find.text('ایجاد پیام مناسب'), findsNothing);
       expect(messages.listOrdinaryHistoryCalls, greaterThan(0));
     },
@@ -3301,11 +3434,16 @@ void main() {
     expect(find.text('Historical VIP List'), findsOneWidget);
     expect(find.text('ارسال پیام vip'), findsNothing);
     expect(
-      find.text('ثبت درخواست VIP جدید نیاز به فعال‌سازی جداگانه توسط مدیر پلتفرم دارد.'),
+      find.text(
+        'ثبت درخواست VIP جدید نیاز به فعال‌سازی جداگانه توسط مدیر پلتفرم دارد.',
+      ),
       findsOneWidget,
     );
     expect(find.textContaining('پس از فعال‌سازی توسط پلتفرم'), findsNothing);
-    expect(find.textContaining('تاریخچهٔ درخواست‌ها اینجا نمایش داده می‌شود'), findsNothing);
+    expect(
+      find.textContaining('تاریخچهٔ درخواست‌ها اینجا نمایش داده می‌شود'),
+      findsNothing,
+    );
   });
 
   testWidgets('non-VIP salon with no history shows unavailable empty', (
@@ -3329,7 +3467,9 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('هنوز درخواست VIP ثبت نشده است.'), findsOneWidget);
     expect(
-      find.text('ثبت درخواست VIP جدید نیاز به فعال‌سازی جداگانه توسط مدیر پلتفرم دارد.'),
+      find.text(
+        'ثبت درخواست VIP جدید نیاز به فعال‌سازی جداگانه توسط مدیر پلتفرم دارد.',
+      ),
       findsOneWidget,
     );
     expect(find.text('ارسال VIP برای این سالن فعال نیست.'), findsNothing);
@@ -3359,7 +3499,9 @@ void main() {
     expect(find.text('ارسال پیام vip'), findsOneWidget);
     expect(find.text('هنوز درخواست VIP ثبت نشده است.'), findsOneWidget);
     expect(
-      find.text('ثبت درخواست VIP جدید نیاز به فعال‌سازی جداگانه توسط مدیر پلتفرم دارد.'),
+      find.text(
+        'ثبت درخواست VIP جدید نیاز به فعال‌سازی جداگانه توسط مدیر پلتفرم دارد.',
+      ),
       findsNothing,
     );
   });
@@ -3368,8 +3510,7 @@ void main() {
     'opportunities ignores stale deferred responses after section switch',
     (tester) async {
       final revenueGate = Completer<RevenueDropPage>();
-      final ordinaryGate =
-          Completer<ItemPage<OrdinaryMessageHistoryItem>>();
+      final ordinaryGate = Completer<ItemPage<OrdinaryMessageHistoryItem>>();
       final intelligence = FakeIntelligenceRepository(
         revenueDropPage: RevenueDropPage(
           asOf: DateTime.utc(2026, 10, 22, 8, 30),

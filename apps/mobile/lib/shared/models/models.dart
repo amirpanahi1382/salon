@@ -306,7 +306,10 @@ class SalonOverallPerformance {
   const SalonOverallPerformance({
     required this.customerCount,
     required this.salonCustomerSentMessageCount,
+    this.salonCustomerMessageRequestCount = 0,
     required this.vipSentMessageCount,
+    this.vipMessageRequestCount = 0,
+    this.monthlyRecordedRevenueIrr = '0.00',
     required this.agreedReturnCount,
     required this.messageAssociatedReturnedCustomerCount,
     required this.returningSalonCustomerCount,
@@ -314,20 +317,34 @@ class SalonOverallPerformance {
 
   final int customerCount;
   final int salonCustomerSentMessageCount;
+  final int salonCustomerMessageRequestCount;
   final int vipSentMessageCount;
+  final int vipMessageRequestCount;
+
+  /// NUMERIC money from the API, kept as a decimal string to avoid rounding.
+  final String monthlyRecordedRevenueIrr;
   final int agreedReturnCount;
   final int messageAssociatedReturnedCustomerCount;
   final int returningSalonCustomerCount;
 
   factory SalonOverallPerformance.fromJson(Map<String, dynamic> json) {
     return SalonOverallPerformance(
-      customerCount: json['customerCount'] as int,
-      salonCustomerSentMessageCount: json['salonCustomerSentMessageCount'] as int,
-      vipSentMessageCount: json['vipSentMessageCount'] as int,
-      agreedReturnCount: json['agreedReturnCount'] as int,
+      customerCount: (json['customerCount'] as num?)?.toInt() ?? 0,
+      salonCustomerSentMessageCount:
+          (json['salonCustomerSentMessageCount'] as num?)?.toInt() ?? 0,
+      salonCustomerMessageRequestCount:
+          (json['salonCustomerMessageRequestCount'] as num?)?.toInt() ?? 0,
+      vipSentMessageCount: (json['vipSentMessageCount'] as num?)?.toInt() ?? 0,
+      vipMessageRequestCount:
+          (json['vipMessageRequestCount'] as num?)?.toInt() ?? 0,
+      monthlyRecordedRevenueIrr:
+          json['monthlyRecordedRevenueIrr']?.toString() ?? '0.00',
+      agreedReturnCount: (json['agreedReturnCount'] as num?)?.toInt() ?? 0,
       messageAssociatedReturnedCustomerCount:
-          json['messageAssociatedReturnedCustomerCount'] as int,
-      returningSalonCustomerCount: json['returningSalonCustomerCount'] as int,
+          (json['messageAssociatedReturnedCustomerCount'] as num?)?.toInt() ??
+          0,
+      returningSalonCustomerCount:
+          (json['returningSalonCustomerCount'] as num?)?.toInt() ?? 0,
     );
   }
 }
@@ -466,7 +483,8 @@ class CustomerRevenue {
       transactionCount: json['transactionCount'] as int,
       currency: json['currency'] as String? ?? 'IRR',
       averageSpendPerVisit: json['averageSpendPerVisit'] as String?,
-      averageRevenuePerTransaction: json['averageRevenuePerTransaction'] as String?,
+      averageRevenuePerTransaction:
+          json['averageRevenuePerTransaction'] as String?,
       lastRevenueAt: _parseDate(json['lastRevenueAt']),
       revenueTrend: json['revenueTrend'] as String?,
     );
@@ -528,7 +546,7 @@ class CustomerIntelligence {
     required this.explanation,
     required this.behavior,
     required this.signals,
-    required     this.opportunities,
+    required this.opportunities,
     this.revenue,
   });
 
@@ -806,7 +824,9 @@ class MessageDelivery {
       submittedAt: _parseDate(json['submittedAt']),
       failedAt: _parseDate(json['failedAt']),
       returnCommitment: json['returnCommitment'] is Map
-          ? ReturnCommitmentSummary.fromJson(asJsonMap(json['returnCommitment']))
+          ? ReturnCommitmentSummary.fromJson(
+              asJsonMap(json['returnCommitment']),
+            )
           : null,
     );
   }
@@ -891,7 +911,9 @@ class AdminQueueItem {
       canMarkManualSent: json['canMarkManualSent'] as bool? ?? false,
       globalMessageStopActive: json['globalMessageStopActive'] == true,
       returnCommitment: json['returnCommitment'] is Map
-          ? ReturnCommitmentSummary.fromJson(asJsonMap(json['returnCommitment']))
+          ? ReturnCommitmentSummary.fromJson(
+              asJsonMap(json['returnCommitment']),
+            )
           : null,
     );
   }
@@ -1032,9 +1054,9 @@ class VipTargetList {
           : null,
       contacts: json['contacts'] is List
           ? (json['contacts'] as List)
-              .whereType<Map>()
-              .map((row) => VipContact.fromJson(asJsonMap(row)))
-              .toList()
+                .whereType<Map>()
+                .map((row) => VipContact.fromJson(asJsonMap(row)))
+                .toList()
           : const [],
     );
   }
@@ -1126,9 +1148,9 @@ class VipRequest {
       status: json['status'] as String,
       sampleWorks: json['sampleWorks'] is List
           ? (json['sampleWorks'] as List)
-              .whereType<Map>()
-              .map((row) => VipSampleWork.fromJson(asJsonMap(row)))
-              .toList()
+                .whereType<Map>()
+                .map((row) => VipSampleWork.fromJson(asJsonMap(row)))
+                .toList()
           : const [],
       progress: json['progress'] is Map
           ? VipRequestProgress.fromJson(asJsonMap(json['progress']))
@@ -1199,9 +1221,9 @@ class VipRequestProgress {
       latestActionAt: _parseDate(json['latestActionAt']),
       countLines: json['countLines'] is List
           ? (json['countLines'] as List)
-              .whereType<Map>()
-              .map((row) => VipProgressCountLine.fromJson(asJsonMap(row)))
-              .toList()
+                .whereType<Map>()
+                .map((row) => VipProgressCountLine.fromJson(asJsonMap(row)))
+                .toList()
           : const [],
       countsOmittedReason: json['countsOmittedReason'] as String?,
       activeStopNote: json['activeStopNote'] as String?,
@@ -1272,9 +1294,9 @@ class VipCapability {
         : (current?.status == 'AWAITING_SAMPLE_WORK' ? current : null);
     final history = json['inProgressRequests'] is List
         ? (json['inProgressRequests'] as List)
-            .whereType<Map>()
-            .map((row) => VipRequest.fromJson(asJsonMap(row)))
-            .toList()
+              .whereType<Map>()
+              .map((row) => VipRequest.fromJson(asJsonMap(row)))
+              .toList()
         : const <VipRequest>[];
     return VipCapability(
       entitled: json['entitled'] as bool? ?? false,
@@ -1287,7 +1309,8 @@ class VipCapability {
           : const [30, 50, 100],
       activeDraft: active,
       inProgressRequests: history,
-      inProgressRequestsHasMore: json['inProgressRequestsHasMore'] as bool? ?? false,
+      inProgressRequestsHasMore:
+          json['inProgressRequestsHasMore'] as bool? ?? false,
       currentRequest: active,
       latestCancelledRequest: json['latestCancelledRequest'] is Map
           ? VipRequest.fromJson(asJsonMap(json['latestCancelledRequest']))
@@ -1362,7 +1385,8 @@ class CommitmentBackedReturn {
   factory CommitmentBackedReturn.fromJson(Map<String, dynamic> json) {
     final visit = asJsonMap(json['actualVisit']);
     return CommitmentBackedReturn(
-      associationKind: json['associationKind'] as String? ?? 'COMMITMENT_BACKED',
+      associationKind:
+          json['associationKind'] as String? ?? 'COMMITMENT_BACKED',
       actualVisitId: visit['visitId'] as String,
       visitedAt: DateTime.parse(visit['visitedAt'] as String),
       associatedRevenue: AssociatedRevenue.fromJson(
@@ -1420,8 +1444,8 @@ class ReturnCommitment {
             )
           : null,
       recordedBySupport: json['recordedBySupport'] as bool? ?? false,
-      operationallyOpen: json['operationallyOpen'] as bool? ??
-          json['actualVisitId'] == null,
+      operationallyOpen:
+          json['operationallyOpen'] as bool? ?? json['actualVisitId'] == null,
     );
   }
 }
@@ -1586,7 +1610,8 @@ class AdminSalonProfile {
       entitled: json['entitled'] as bool? ?? false,
       asOf: DateTime.parse(json['asOf'] as String),
       explanation: json['explanation'] as String? ?? '',
-      distinctVipListsRequested: counts['distinctVipListsRequested'] as int? ?? 0,
+      distinctVipListsRequested:
+          counts['distinctVipListsRequested'] as int? ?? 0,
       vipRequestCount: counts['vipRequestCount'] as int? ?? 0,
       vipOpenRequestCount: counts['vipOpenRequestCount'] as int? ?? 0,
       ordinaryMessageRequestCount:
@@ -1918,7 +1943,8 @@ class RevenueDropItem {
       firstName: json['firstName'] as String? ?? '',
       lastName: json['lastName'] as String? ?? '',
       phoneNumber: json['phoneNumber'] as String? ?? '',
-      previousComparableAmount: json['previousComparableAmount'] as String? ?? '0.00',
+      previousComparableAmount:
+          json['previousComparableAmount'] as String? ?? '0.00',
       currentAmount: json['currentAmount'] as String? ?? '0.00',
       differenceAmount: json['differenceAmount'] as String? ?? '0.00',
       currency: json['currency'] as String? ?? 'IRR',
@@ -2040,11 +2066,13 @@ class VipRequestHistoryItem {
       request: VipRequest.fromJson(json),
       recordedSendCount: json['recordedSendCount'] as int? ?? 0,
       manualRecordedSendCount: json['manualRecordedSendCount'] as int? ?? 0,
-      stillQueuedOrInProgressCount: json['stillQueuedOrInProgressCount'] as int? ?? 0,
+      stillQueuedOrInProgressCount:
+          json['stillQueuedOrInProgressCount'] as int? ?? 0,
       intentionRecipientCount: json['intentionRecipientCount'] as int?,
       visitedRecipientCount: json['visitedRecipientCount'] as int?,
       recipientDenominator: json['recipientDenominator'] as int?,
-      metricsAvailability: json['metricsAvailability'] as String? ?? 'UNAVAILABLE',
+      metricsAvailability:
+          json['metricsAvailability'] as String? ?? 'UNAVAILABLE',
     );
   }
 }
@@ -2160,7 +2188,9 @@ class FollowUpPage {
     final rawItems = json['items'];
     return FollowUpPage(
       items: rawItems is List
-          ? rawItems.map((item) => FollowUpItem.fromJson(asJsonMap(item))).toList()
+          ? rawItems
+                .map((item) => FollowUpItem.fromJson(asJsonMap(item)))
+                .toList()
           : const [],
       hasMore: json['hasMore'] == true,
       openCount: json['openCount'] is int ? json['openCount'] as int : 0,
@@ -2334,7 +2364,9 @@ class PlatformMessageStop {
       active: json['active'] == true,
       reasonCode: json['reasonCode'] as String? ?? '',
       registeredAt: DateTime.parse(json['registeredAt'] as String),
-      liftedAt: json['liftedAt'] is String ? DateTime.parse(json['liftedAt'] as String) : null,
+      liftedAt: json['liftedAt'] is String
+          ? DateTime.parse(json['liftedAt'] as String)
+          : null,
       blockedRequestCount: json['blockedRequestCount'] as int? ?? 0,
       skippedRecipientCount: json['skippedRecipientCount'] as int? ?? 0,
     );

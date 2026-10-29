@@ -177,6 +177,11 @@ void main() {
     expect(AppStrings.overallPerformanceTitle, 'عملکرد کلی');
     expect(AppStrings.customers, 'مشتریان');
     expect(AppStrings.visits, 'نوبت انجام شده');
+    expect(AppStrings.dashboardWelcome, 'خوش آمدید');
+    expect(AppStrings.metricAgreedReturns, 'وقت توافق‌شده');
+    expect(AppStrings.metricMessageAssociatedReturns, 'مشتری برگشتی توسط پیام');
+    expect(AppStrings.dashboardFirstActionButton, 'مشاهده پیگیری‌ها');
+    expect(AppStrings.dashboardRequestedTag(100), 'از ۱۰۰ درخواست');
   });
 
   test('intelligence copy is localized without changing API payloads', () {

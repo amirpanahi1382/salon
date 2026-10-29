@@ -56,10 +56,23 @@ export class SalonOverallPerformanceResponseDto {
   })
   salonCustomerSentMessageCount!: number;
 
+  @ApiProperty({ description: 'All-time COUNT of ordinary salon message requests' })
+  salonCustomerMessageRequestCount!: number;
+
   @ApiProperty({
     description: 'All-time COUNT of SENT MessageDelivery rows with vip_request_id provenance',
   })
   vipSentMessageCount!: number;
+
+  @ApiProperty({ description: 'All-time COUNT of VIP message requests' })
+  vipMessageRequestCount!: number;
+
+  @ApiProperty({
+    description:
+      'Completed transaction revenue from the current Jalali month start through now, in IRR as a decimal string',
+    example: '125000000.00',
+  })
+  monthlyRecordedRevenueIrr!: string;
 
   @ApiProperty({
     description: 'All-time COUNT of ReturnCommitment rows for this salon, including fulfilled',

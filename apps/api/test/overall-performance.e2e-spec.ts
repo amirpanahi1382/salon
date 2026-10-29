@@ -14,7 +14,10 @@ const password = 'correct-horse-battery';
 type OverallPerformance = {
   customerCount: number;
   salonCustomerSentMessageCount: number;
+  salonCustomerMessageRequestCount: number;
   vipSentMessageCount: number;
+  vipMessageRequestCount: number;
+  monthlyRecordedRevenueIrr: string;
   agreedReturnCount: number;
   messageAssociatedReturnedCustomerCount: number;
   returningSalonCustomerCount: number;
@@ -23,7 +26,10 @@ type OverallPerformance = {
 const zeros: OverallPerformance = {
   customerCount: 0,
   salonCustomerSentMessageCount: 0,
+  salonCustomerMessageRequestCount: 0,
   vipSentMessageCount: 0,
+  vipMessageRequestCount: 0,
+  monthlyRecordedRevenueIrr: '0.00',
   agreedReturnCount: 0,
   messageAssociatedReturnedCustomerCount: 0,
   returningSalonCustomerCount: 0,
@@ -431,7 +437,10 @@ describeIfDb('Salon overall performance (e2e)', () => {
     const body = (await performance(a).expect(200)).body as OverallPerformance;
     expect(body.customerCount).toBe(3);
     expect(body.salonCustomerSentMessageCount).toBe(4);
+    expect(body.salonCustomerMessageRequestCount).toBe(7);
     expect(body.vipSentMessageCount).toBe(1);
+    expect(body.vipMessageRequestCount).toBe(2);
+    expect(body.monthlyRecordedRevenueIrr).toBe('0.00');
     expect(body.agreedReturnCount).toBe(3);
     expect(body.messageAssociatedReturnedCustomerCount).toBe(2);
     expect(body.returningSalonCustomerCount).toBe(1);
@@ -439,7 +448,10 @@ describeIfDb('Salon overall performance (e2e)', () => {
     const isolated = (await performance(other.token).expect(200)).body as OverallPerformance;
     expect(isolated.customerCount).toBe(1);
     expect(isolated.salonCustomerSentMessageCount).toBe(1);
+    expect(isolated.salonCustomerMessageRequestCount).toBe(1);
     expect(isolated.vipSentMessageCount).toBe(0);
+    expect(isolated.vipMessageRequestCount).toBe(0);
+    expect(isolated.monthlyRecordedRevenueIrr).toBe('0.00');
     expect(isolated.agreedReturnCount).toBe(0);
     expect(isolated.messageAssociatedReturnedCustomerCount).toBe(1);
     expect(isolated.returningSalonCustomerCount).toBe(1);
