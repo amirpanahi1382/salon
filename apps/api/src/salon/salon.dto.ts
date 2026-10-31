@@ -64,7 +64,10 @@ export class SalonOverallPerformanceResponseDto {
   })
   vipSentMessageCount!: number;
 
-  @ApiProperty({ description: 'All-time COUNT of VIP message requests' })
+  @ApiProperty({
+    description:
+      'Sum of VipRequest.requestedCount for SUBMITTED, MANUAL_QUEUED, and BALE_NOT_IMPLEMENTED. Drafts and pre-submit cancellations are excluded. Not a count of lists, batches, or recipient rows.',
+  })
   vipMessageRequestCount!: number;
 
   @ApiProperty({
@@ -75,7 +78,8 @@ export class SalonOverallPerformanceResponseDto {
   monthlyRecordedRevenueIrr!: string;
 
   @ApiProperty({
-    description: 'All-time COUNT of ReturnCommitment rows for this salon, including fulfilled',
+    description:
+      'Operational records: open ReturnCommitments plus VisitIntentions with no linked Visit, including unknown time, customer and VIP, salon-user and platform-admin authors. The two record types are counted separately. Not a count of customers.',
   })
   agreedReturnCount!: number;
 

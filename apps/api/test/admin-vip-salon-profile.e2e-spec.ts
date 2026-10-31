@@ -614,7 +614,8 @@ describeIfDisposable('Admin VIP salon profile and inventory SQL (e2e)', () => {
       id: reviewedRequestableId,
       status: 'ACTIVE',
       catalogMembership: 'ORIGINAL_TEHRAN',
-      requestableBySalons: true,
+      requestableBySalons: false,
+      nextReservationOpen: false,
       totalRequestCount: 2,
       openRequestCount: 1,
     });
@@ -627,7 +628,9 @@ describeIfDisposable('Admin VIP salon profile and inventory SQL (e2e)', () => {
       id: inUseId,
       status: 'IN_USE',
       catalogMembership: 'ORIGINAL_TEHRAN',
-      requestableBySalons: false,
+      requestableBySalons: true,
+      nextReservationOpen: false,
+      liveRequestCount: 0,
       totalRequestCount: 1,
       openRequestCount: 1,
     });
@@ -636,11 +639,17 @@ describeIfDisposable('Admin VIP salon profile and inventory SQL (e2e)', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ availability: 'ACTIVE' })
       .expect(409);
-    await request(app.getHttpServer())
+    const deactivated = await request(app.getHttpServer())
       .patch(`/admin/vip/lists/${inUseId}`)
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ availability: 'INACTIVE' })
-      .expect(409);
+      .expect(200);
+    expect(deactivated.body).toMatchObject({
+      status: 'INACTIVE',
+      requestableBySalons: false,
+      nextReservationOpen: false,
+      openRequestCount: 1,
+    });
   });
 
   it('paginates inventory and searches salons on nonempty data', async () => {

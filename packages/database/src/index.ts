@@ -58,6 +58,8 @@ export {
   deleteExpiredIdempotencyBatch,
   deleteProcessedOutboxBatch,
 } from './retention.js';
+export { expireStaleVipReservations } from './vip-reservation-expiry.js';
+export type { VipReservationExpiryScope } from './vip-reservation-expiry.js';
 export {
   ORIGINAL_TEHRAN_CATALOG,
   PERSISTENT_CATALOG_CONFIRMATION,

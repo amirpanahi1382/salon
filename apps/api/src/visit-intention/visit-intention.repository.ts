@@ -19,7 +19,10 @@ import {
   toListPage,
   type ListPage,
 } from '../infrastructure/http/list-page';
-import { operationallyOpenReturnCommitmentSql } from '../return-commitment/operational-open-return-commitment.sql';
+import {
+  openVisitIntentionSql,
+  operationallyOpenReturnCommitmentSql,
+} from '../return-commitment/operational-open-return-commitment.sql';
 import {
   agreedDateAsUtcNoon,
   formatAgreedDate,
@@ -497,7 +500,7 @@ export class VisitIntentionRepository {
         JOIN customers c ON c.id = vi.customer_id AND c.salon_id = vi.salon_id
         WHERE vi.salon_id = ${salonId}::uuid
           AND vi.subject = 'CUSTOMER'
-          AND vi.linked_visit_id IS NULL
+          AND ${openVisitIntentionSql}
       ) follow_ups
       ${this.followCursorSql(parsed)}
       ORDER BY sort_group ASC, sort_value ASC, kind ASC, id ASC
@@ -545,16 +548,20 @@ export class VisitIntentionRepository {
         FROM visit_intentions vi
         WHERE vi.salon_id = ${salonId}::uuid
           AND vi.subject = 'VIP_PROSPECT'
-          AND vi.linked_visit_id IS NULL
+          AND ${openVisitIntentionSql}
       ) follow_ups
       ${this.followCursorSql(parsed)}
       ORDER BY sort_group ASC, sort_value ASC, kind ASC, id ASC
       LIMIT ${limit + 1}
     `;
-    const counted = await this.prisma.client.visitIntention.count({
-      where: { salonId, subject: 'VIP_PROSPECT', linkedVisitId: null },
-    });
-    return { ...this.pageFollowUps(rows, limit), openCount: counted };
+    const countedRows = await this.prisma.client.$queryRaw<Array<{ count: number }>>`
+      SELECT COUNT(*)::int AS count
+      FROM visit_intentions vi
+      WHERE vi.salon_id = ${salonId}::uuid
+        AND vi.subject = 'VIP_PROSPECT'
+        AND ${openVisitIntentionSql}
+    `;
+    return { ...this.pageFollowUps(rows, limit), openCount: countedRows[0]?.count ?? 0 };
   }
 
   private async countCustomerFollowUps(salonId: string): Promise<number> {
@@ -572,7 +579,7 @@ export class VisitIntentionRepository {
           FROM visit_intentions vi
           WHERE vi.salon_id = ${salonId}::uuid
             AND vi.subject = 'CUSTOMER'
-            AND vi.linked_visit_id IS NULL
+            AND ${openVisitIntentionSql}
         )
       ) AS count
     `;

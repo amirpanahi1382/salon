@@ -77,7 +77,7 @@ export class SalonVipController {
     summary: 'ACTIVE unreserved ORIGINAL_TEHRAN lists for one canonical region',
   })
   list(@CurrentUser() user: AuthenticatedPrincipal, @Query() query: SalonVipListsQueryDto) {
-    return this.lists.execute(user, query.regionCode);
+    return this.lists.execute(user, query.regionCode, query.packageGroup);
   }
 
   @Get('requests')

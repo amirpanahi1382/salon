@@ -238,7 +238,16 @@ describeIfDisposable('Admin VIP activation concurrent reservation (e2e)', () => 
     const staleDeactivate = await prisma.client.$transaction((tx) =>
       vip.tryDeactivateUnreservedList(tx, { id: listId, now: new Date() }),
     );
-    expect(staleDeactivate).toBe(false);
+    expect(staleDeactivate).toBe(true);
+    await prisma.client.vipTargetList.update({
+      where: { id: listId },
+      data: {
+        status: 'IN_USE',
+        reservedBySalonId: entitledSalonId,
+        reservedAt: afterReserve.reservedAt,
+        nextReservationOpen: false,
+      },
+    });
 
     await request(app.getHttpServer())
       .patch(`/admin/vip/lists/${listId}`)
@@ -249,23 +258,29 @@ describeIfDisposable('Admin VIP activation concurrent reservation (e2e)', () => 
       .patch(`/admin/vip/lists/${listId}`)
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ availability: 'INACTIVE' })
-      .expect(409);
+      .expect(200);
 
     const stored = await prisma.client.vipTargetList.findUniqueOrThrow({ where: { id: listId } });
-    expect(stored.status).toBe('IN_USE');
-    expect(stored.reservedBySalonId).toBe(entitledSalonId);
-    expect(stored.reservedAt).toEqual(afterReserve.reservedAt);
+    expect(stored.status).toBe('INACTIVE');
+    expect(stored.reservedBySalonId).toBeNull();
+    expect(stored.nextReservationOpen).toBe(false);
     expect(stored.regionCode).toBe('03');
     expect(stored.catalogMembership).toBe('ORIGINAL_TEHRAN');
     const vipRequest = await prisma.client.vipRequest.findUniqueOrThrow({ where: { id: requestId } });
     expect(vipRequest.listId).toBe(listId);
     expect(vipRequest.salonId).toBe(entitledSalonId);
     expect(vipRequest.status).toBe('AWAITING_SAMPLE_WORK');
+    const hidden = await request(app.getHttpServer())
+      .get(`/admin/vip/lists/${listId}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    expect(hidden.body.requestableBySalons).toBe(false);
+    expect(hidden.body.liveRequestCount).toBe(1);
     expect(
       await prisma.client.auditLog.count({
-        where: { resourceId: listId, action: { in: ['VIP_LIST_ACTIVATED', 'VIP_LIST_DEACTIVATED'] }, result: 'SUCCESS' },
+        where: { resourceId: listId, action: 'VIP_LIST_DEACTIVATED', result: 'SUCCESS' },
       }),
-    ).toBe(auditsBefore);
+    ).toBe(1);
   });
 
   it('lets one concurrent region assignment win and keeps a stale pre-read from replacing it', async () => {

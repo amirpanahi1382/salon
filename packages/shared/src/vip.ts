@@ -6,6 +6,31 @@ import {
 
 export const VIP_ALLOWED_REQUEST_COUNTS = [30, 50, 100] as const;
 export type VipAllowedRequestCount = (typeof VIP_ALLOWED_REQUEST_COUNTS)[number];
+export type VipPackageGroup = VipAllowedRequestCount;
+
+/**
+ * Package group for browsing. Not the recipient quantity.
+ * Empty lists have no group. A nonempty list below 30 is group 30.
+ * Otherwise the closest of 30, 50, and 100; an exact tie uses the larger group.
+ */
+export function nearestVipPackageGroup(usableContactCount: number): VipPackageGroup | null {
+  if (!Number.isInteger(usableContactCount) || usableContactCount <= 0) {
+    return null;
+  }
+  if (usableContactCount < 30) {
+    return 30;
+  }
+  let best: VipPackageGroup = 30;
+  let bestDistance = Math.abs(usableContactCount - 30);
+  for (const group of [50, 100] as const) {
+    const distance = Math.abs(usableContactCount - group);
+    if (distance < bestDistance || (distance === bestDistance && group > best)) {
+      best = group;
+      bestDistance = distance;
+    }
+  }
+  return best;
+}
 
 /** Canonical Tehran VIP inventory regions. Code is identity; name is display metadata. */
 export const VIP_REGION_CODES = [

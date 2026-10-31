@@ -1,4 +1,11 @@
-import { parseMoneyString, formatMoneyString, multiplyMoney, addMoney, assertStoredMoneyRange } from './money';
+import {
+  parseMoneyString,
+  formatExactMoneyText,
+  formatMoneyString,
+  multiplyMoney,
+  addMoney,
+  assertStoredMoneyRange,
+} from './money';
 
 describe('money strings', () => {
   it('parses and formats two-decimal IRR amounts without floating point', () => {
@@ -20,6 +27,13 @@ describe('money strings', () => {
       expect(() => parseMoneyString(value)).toThrow();
     }
     expect(() => parseMoneyString(1 as unknown as string)).toThrow();
+  });
+
+  it('keeps a 17-digit monthly total as exact two-decimal text', () => {
+    expect(formatExactMoneyText('12345678901236068.40')).toBe('12345678901236068.40');
+    expect(formatExactMoneyText('12345678901236068.4')).toBe('12345678901236068.40');
+    expect(formatExactMoneyText('0')).toBe('0.00');
+    expect(() => formatExactMoneyText(12345678901236068.4)).toThrow();
   });
 
   it('accepts the NUMERIC(19,2) maximum and rejects one cent more or aggregate overflow', () => {

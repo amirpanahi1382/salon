@@ -23,6 +23,14 @@ export const operationallyOpenReturnCommitmentSql = Prisma.sql`
   )
 `;
 
+/**
+ * A VisitIntention stays operational until an explicit Visit link.
+ * There is no cancelled status. UNKNOWN, DATE, and INSTANT all qualify.
+ * The alias must be `vi`. Subject and tenant filters stay with the caller.
+ * A ReturnCommitment is not the same row and is not subtracted here.
+ */
+export const openVisitIntentionSql = Prisma.sql`vi.linked_visit_id IS NULL`;
+
 /** Inverse of operational openness for unlinked rows (attribution still null). */
 export const operationallySettledUnlinkedReturnCommitmentSql = Prisma.sql`
   rc.actual_visit_id IS NULL

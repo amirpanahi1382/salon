@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/errors/api_exception.dart';
 import '../../core/networking/api_client.dart';
 import '../../core/state/providers.dart';
 import '../../core/theme/app_tokens.dart';
@@ -273,25 +274,26 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
     await _loadLists();
   }
 
+  int? _plannedQuantity(VipCapability capability, int? group, VipTargetList? selectedList) {
+    if (group == null || selectedList == null || capability.remainingQuota <= 0) {
+      return null;
+    }
+    if (selectedList.resolvedPackageGroup != group || selectedList.sendableCount <= 0) {
+      return null;
+    }
+    final usable = selectedList.sendableCount;
+    return usable < capability.remainingQuota ? usable : capability.remainingQuota;
+  }
+
   bool _selectionAllowed(
     VipCapability capability,
     int? count,
     VipTargetList? selectedList,
     List<int> sizes,
   ) {
-    if (_busy || count == null || selectedList == null) {
-      return false;
-    }
-    if (!sizes.contains(count)) {
-      return false;
-    }
-    if (count > capability.remainingQuota) {
-      return false;
-    }
-    if (selectedList.sendableCount < count) {
-      return false;
-    }
-    return true;
+    return _plannedQuantity(capability, count, selectedList) != null &&
+        !_busy &&
+        sizes.contains(count);
   }
 
   Future<void> _submit() async {
@@ -308,9 +310,13 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
     final sizes = capability == null || capability.allowedRequestCounts.isEmpty
         ? const [30, 50, 100]
         : capability.allowedRequestCounts;
+    final planned = capability == null
+        ? null
+        : _plannedQuantity(capability, count, selectedList);
     if (capability == null ||
         count == null ||
         listId == null ||
+        planned == null ||
         !_selectionAllowed(capability, count, selectedList, sizes)) {
       return;
     }
@@ -321,7 +327,7 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
     try {
       final created = await ref.read(vipRepositoryProvider).createRequest(
             listId: listId,
-            requestedCount: count,
+            requestedCount: planned,
             geographicRange: _geo.text,
             idempotencyKey: createRequestId(),
           );
@@ -331,7 +337,11 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
       await _load();
       await _addSample(created);
     } catch (error) {
-      _snack(friendlyError(error));
+      if (error is ApiException && error.details?['effectiveRequestedCount'] is int) {
+        _snack(AppStrings.vipQuantityChanged);
+      } else {
+        _snack(friendlyError(error));
+      }
       await _load();
     } finally {
       if (mounted) {
@@ -476,12 +486,8 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
     final sizes = capability.allowedRequestCounts.isEmpty
         ? const [30, 50, 100]
         : capability.allowedRequestCounts;
-    final minimumSize = sizes.reduce((left, right) => left < right ? left : right);
-    if (capability.remainingQuota < minimumSize) {
-      final belowMinimum = capability.remainingQuota > 0;
-      final message = belowMinimum
-          ? AppStrings.vipQuotaBelowMinimum(capability.remainingQuota)
-          : AppStrings.vipQuotaExhausted;
+    if (capability.remainingQuota <= 0) {
+      final message = AppStrings.vipQuotaExhausted;
       return _scrollable(
         Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -501,8 +507,9 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
       }
     }
     final visibleLists = _lists.where((list) {
-      return count == null || list.sendableCount >= count;
+      return count == null || list.resolvedPackageGroup == count;
     }).toList();
+    final planned = _plannedQuantity(capability, count, selectedList);
     final region = _selectedRegion;
 
     final discountBlocksCreate = _discountKind != VipDiscountKind.none;
@@ -521,11 +528,10 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
             sizes: sizes,
             selected: count,
             remainingQuota: capability.remainingQuota,
-            selectedListSendableCount: selectedList?.sendableCount,
             enabled: !_busy,
             onSelected: (value) {
               ref.read(vipSelectedCountProvider.notifier).setValue(value);
-              if (selectedList != null && selectedList.sendableCount < value) {
+              if (selectedList != null && selectedList.resolvedPackageGroup != value) {
                 setState(() => _listId = null);
               }
             },
@@ -625,6 +631,7 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
           VipOrderSummary(
             key: const Key('vip-order-summary'),
             count: count,
+            plannedCount: planned,
             region: region,
             selectedList: selectedList,
             discountKind: _discountKind,

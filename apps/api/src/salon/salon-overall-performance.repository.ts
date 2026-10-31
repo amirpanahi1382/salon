@@ -1,11 +1,15 @@
 import { Prisma } from '@salon/database';
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../infrastructure/database/prisma.service';
-import { comparableJalaliMonthWindows } from '@salon/shared';
+import { comparableJalaliMonthWindows, formatExactMoneyText } from '@salon/shared';
 import {
   observedReturnCtes,
   validCommitmentSourceSql,
 } from '../recovery-outcomes/eligible-message-evidence.sql';
+import {
+  openVisitIntentionSql,
+  operationallyOpenReturnCommitmentSql,
+} from '../return-commitment/operational-open-return-commitment.sql';
 import type { SalonOverallPerformanceResponseDto } from './salon.dto';
 
 type OverallPerformanceRow = {
@@ -14,7 +18,7 @@ type OverallPerformanceRow = {
   salonCustomerMessageRequestCount: number;
   vipSentMessageCount: number;
   vipMessageRequestCount: number;
-  monthlyRecordedRevenueIrr: Prisma.Decimal | string | number;
+  monthlyRecordedRevenueIrr: string;
   agreedReturnCount: number;
   messageAssociatedReturnedCustomerCount: number;
   returningSalonCustomerCount: number;
@@ -66,17 +70,38 @@ export class SalonOverallPerformanceRepository {
             AND d.submitted_at IS NOT NULL
             AND r.vip_request_id IS NOT NULL
         ) AS "vipSentMessageCount",
-        (SELECT COUNT(*)::int FROM message_requests
-          WHERE salon_id = ${tenantId}::uuid AND vip_request_id IS NOT NULL)
+        COALESCE((
+          SELECT SUM(requested_count)
+          FROM vip_requests
+          WHERE salon_id = ${tenantId}::uuid
+            AND status IN (
+              'SUBMITTED'::"VipRequestStatus",
+              'MANUAL_QUEUED'::"VipRequestStatus",
+              'BALE_NOT_IMPLEMENTED'::"VipRequestStatus"
+            )
+        ), 0)::int
           AS "vipMessageRequestCount",
         COALESCE((SELECT SUM(amount) FROM transactions
           WHERE salon_id = ${tenantId}::uuid
             AND status = 'COMPLETED'::"TransactionStatus"
             AND occurred_at >= ${windows.currentStart}
-            AND occurred_at <= ${windows.now}), 0)::numeric
+            AND occurred_at <= ${windows.now}), 0)::numeric(19,2)::text
           AS "monthlyRecordedRevenueIrr",
-        (SELECT COUNT(*)::int FROM return_commitments WHERE salon_id = ${tenantId}::uuid)
-          AS "agreedReturnCount",
+        (
+          (
+            SELECT COUNT(*)::int
+            FROM return_commitments rc
+            JOIN message_deliveries md
+              ON md.id = rc.source_message_delivery_id AND md.salon_id = rc.salon_id
+            WHERE rc.salon_id = ${tenantId}::uuid
+              AND ${operationallyOpenReturnCommitmentSql}
+          ) + (
+            SELECT COUNT(*)::int
+            FROM visit_intentions vi
+            WHERE vi.salon_id = ${tenantId}::uuid
+              AND ${openVisitIntentionSql}
+          )
+        ) AS "agreedReturnCount",
         (SELECT COUNT(*)::int FROM message_associated_customers)
           AS "messageAssociatedReturnedCustomerCount",
         (
@@ -97,10 +122,7 @@ export class SalonOverallPerformanceRepository {
       salonCustomerMessageRequestCount: Number(row?.salonCustomerMessageRequestCount ?? 0),
       vipSentMessageCount: Number(row?.vipSentMessageCount ?? 0),
       vipMessageRequestCount: Number(row?.vipMessageRequestCount ?? 0),
-      // Keep money lossless at the API boundary. PostgreSQL NUMERIC may arrive
-      // as a string or Decimal depending on the driver configuration.
-      monthlyRecordedRevenueIrr:
-        row?.monthlyRecordedRevenueIrr?.toString() ?? '0.00',
+      monthlyRecordedRevenueIrr: formatExactMoneyText(row?.monthlyRecordedRevenueIrr ?? '0.00'),
       agreedReturnCount: Number(row?.agreedReturnCount ?? 0),
       messageAssociatedReturnedCustomerCount: Number(
         row?.messageAssociatedReturnedCustomerCount ?? 0,

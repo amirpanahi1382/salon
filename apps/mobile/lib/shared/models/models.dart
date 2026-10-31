@@ -990,6 +990,27 @@ class AdminNormalSalonFolderDetail {
   }
 }
 
+/// Closest of 30, 50, and 100. A tie uses the larger group.
+/// A nonempty count below 30 is group 30. Zero has no group.
+int? nearestVipPackageGroup(int usableContactCount) {
+  if (usableContactCount <= 0) {
+    return null;
+  }
+  if (usableContactCount < 30) {
+    return 30;
+  }
+  var best = 30;
+  var bestDistance = (usableContactCount - 30).abs();
+  for (final group in const [50, 100]) {
+    final distance = (usableContactCount - group).abs();
+    if (distance < bestDistance || (distance == bestDistance && group > best)) {
+      best = group;
+      bestDistance = distance;
+    }
+  }
+  return best;
+}
+
 class VipTargetList {
   const VipTargetList({
     required this.id,
@@ -997,6 +1018,7 @@ class VipTargetList {
     required this.status,
     required this.contactCount,
     this.sendableContactCount,
+    this.packageGroup,
     this.regionCode,
     this.regionName,
     this.createdAt,
@@ -1004,8 +1026,10 @@ class VipTargetList {
     this.reservedBySalonName,
     this.catalogMembership,
     this.requestableBySalons = false,
+    this.nextReservationOpen = false,
     this.totalRequestCount = 0,
     this.openRequestCount = 0,
+    this.liveRequestCount = 0,
     this.request,
     this.contacts = const [],
   });
@@ -1015,6 +1039,7 @@ class VipTargetList {
   final String status;
   final int contactCount;
   final int? sendableContactCount;
+  final int? packageGroup;
   final String? regionCode;
   final String? regionName;
   final DateTime? createdAt;
@@ -1022,14 +1047,18 @@ class VipTargetList {
   final String? reservedBySalonName;
   final String? catalogMembership;
   final bool requestableBySalons;
+  final bool nextReservationOpen;
   final int totalRequestCount;
   final int openRequestCount;
+  final int liveRequestCount;
   final VipRequest? request;
   final List<VipContact> contacts;
 
   bool get needsAttention => attentionRequestId != null;
 
   int get sendableCount => sendableContactCount ?? contactCount;
+
+  int? get resolvedPackageGroup => packageGroup ?? nearestVipPackageGroup(sendableCount);
 
   factory VipTargetList.fromJson(Map<String, dynamic> json) {
     return VipTargetList(
@@ -1038,6 +1067,7 @@ class VipTargetList {
       status: json['status'] as String,
       contactCount: json['contactCount'] as int? ?? 0,
       sendableContactCount: json['sendableContactCount'] as int?,
+      packageGroup: json['packageGroup'] as int?,
       regionCode: json['regionCode'] as String?,
       regionName: json['regionName'] as String?,
       createdAt: json['createdAt'] is String
@@ -1047,8 +1077,10 @@ class VipTargetList {
       reservedBySalonName: json['reservedBySalonName'] as String?,
       catalogMembership: json['catalogMembership'] as String?,
       requestableBySalons: json['requestableBySalons'] as bool? ?? false,
+      nextReservationOpen: json['nextReservationOpen'] as bool? ?? false,
       totalRequestCount: json['totalRequestCount'] as int? ?? 0,
       openRequestCount: json['openRequestCount'] as int? ?? 0,
+      liveRequestCount: json['liveRequestCount'] as int? ?? 0,
       request: json['request'] is Map
           ? VipRequest.fromJson(asJsonMap(json['request']))
           : null,

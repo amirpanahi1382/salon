@@ -1,8 +1,9 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsIn, IsOptional, IsString, MaxLength, MinLength, ValidateIf } from 'class-validator';
+import { IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength, ValidateIf } from 'class-validator';
 import {
   VIP_ALLOWED_REQUEST_COUNTS,
+  VIP_QUOTA_MAX,
   VIP_CATALOG_MEMBERSHIPS,
   VIP_GEO_RANGE_MAX_LENGTH,
   VIP_LIST_NAME_MAX_LENGTH,
@@ -50,9 +51,12 @@ export class CreateVipRequestDto {
   @MaxLength(36)
   listId!: string;
 
-  @ApiProperty({ enum: VIP_ALLOWED_REQUEST_COUNTS })
-  @IsIn([...VIP_ALLOWED_REQUEST_COUNTS])
-  requestedCount!: VipAllowedRequestCount;
+  @ApiProperty({ description: 'Confirmed actual recipient quantity, not the package group.' })
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(VIP_QUOTA_MAX)
+  requestedCount!: number;
 
   @ApiProperty()
   @IsString()
@@ -116,6 +120,13 @@ export class SalonVipListsQueryDto {
   @IsString()
   @IsIn([...VIP_REGION_CODES])
   regionCode?: string;
+
+  @ApiPropertyOptional({ enum: VIP_ALLOWED_REQUEST_COUNTS, description: 'List-size group. Not the recipient quantity.' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @IsIn([...VIP_ALLOWED_REQUEST_COUNTS])
+  packageGroup?: number;
 }
 
 export class SalonVipRequestHistoryQueryDto {
@@ -147,6 +158,9 @@ export class VipTargetListSummaryDto {
   @ApiProperty()
   contactCount!: number;
 
+  @ApiProperty({ description: 'True when an admin reopening is waiting for the next reservation.' })
+  nextReservationOpen!: boolean;
+
   @ApiProperty({ nullable: true, type: String })
   reservedBySalonId!: string | null;
 
@@ -168,7 +182,7 @@ export class VipTargetListSummaryDto {
 
   @ApiProperty({
     description:
-      'True only when ACTIVE, unreserved, ORIGINAL_TEHRAN, and a canonical Tehran region 01–14 — the same predicate salons use to browse and reserve.',
+      'True when this list is effectively requestable: canonical region 01–14, ORIGINAL_TEHRAN, and no live draft or submitted/processing request. Stored IN_USE with only an expired draft is included. Status remains the stored value. A true read is not a reservation.',
   })
   requestableBySalons!: boolean;
 
@@ -180,9 +194,15 @@ export class VipTargetListSummaryDto {
 
   @ApiProperty({
     description:
-      'vip_requests in AWAITING_SAMPLE_WORK, SUBMITTED, MANUAL_QUEUED, or BALE_NOT_IMPLEMENTED. CANCELLED excluded.',
+      'vip_requests in AWAITING_SAMPLE_WORK, SUBMITTED, MANUAL_QUEUED, or BALE_NOT_IMPLEMENTED. CANCELLED excluded. Includes an expired draft until expiry cancels it.',
   })
   openRequestCount!: number;
+
+  @ApiProperty({
+    description:
+      'Live requests for this list: unexpired AWAITING_SAMPLE_WORK plus SUBMITTED, MANUAL_QUEUED, and BALE_NOT_IMPLEMENTED.',
+  })
+  liveRequestCount!: number;
 }
 
 export class VipTargetContactDto {

@@ -135,7 +135,6 @@ class VipRequestSizeSelector extends StatelessWidget {
     required this.sizes,
     required this.selected,
     required this.remainingQuota,
-    required this.selectedListSendableCount,
     required this.enabled,
     required this.onSelected,
   });
@@ -143,7 +142,6 @@ class VipRequestSizeSelector extends StatelessWidget {
   final List<int> sizes;
   final int? selected;
   final int remainingQuota;
-  final int? selectedListSendableCount;
   final bool enabled;
   final ValueChanged<int> onSelected;
 
@@ -157,11 +155,7 @@ class VipRequestSizeSelector extends StatelessWidget {
             child: Builder(
               builder: (context) {
                 final value = sizes[index];
-                final sizeEnabled =
-                    enabled &&
-                    value <= remainingQuota &&
-                    (selectedListSendableCount == null ||
-                        selectedListSendableCount! >= value);
+                final sizeEnabled = enabled && remainingQuota > 0;
                 return VipRequestSizeChip(
                   key: Key('vip-request-size-$value'),
                   value: value,
@@ -527,6 +521,7 @@ class VipOrderSummary extends StatelessWidget {
   const VipOrderSummary({
     super.key,
     required this.count,
+    required this.plannedCount,
     required this.region,
     required this.selectedList,
     required this.discountKind,
@@ -534,6 +529,7 @@ class VipOrderSummary extends StatelessWidget {
   });
 
   final int? count;
+  final int? plannedCount;
   final VipRegion? region;
   final VipTargetList? selectedList;
   final VipDiscountKind discountKind;
@@ -564,6 +560,22 @@ class VipOrderSummary extends StatelessWidget {
                 ? AppStrings.vipSummaryUnset
                 : AppStrings.vipSummaryRecipientCount(count!),
             placeholder: count == null,
+          ),
+          VipSummaryRow(
+            icon: Icons.person_outline,
+            label: AppStrings.vipSummaryActualRecipients,
+            value: plannedCount == null
+                ? AppStrings.vipSummaryUnset
+                : AppStrings.vipSummaryRecipientCount(plannedCount!),
+            placeholder: plannedCount == null,
+          ),
+          VipSummaryRow(
+            icon: Icons.pie_chart_outline,
+            label: AppStrings.vipSummaryQuotaUse,
+            value: plannedCount == null
+                ? AppStrings.vipSummaryUnset
+                : AppStrings.vipSummaryRecipientCount(plannedCount!),
+            placeholder: plannedCount == null,
           ),
           VipSummaryRow(
             icon: Icons.location_on_outlined,

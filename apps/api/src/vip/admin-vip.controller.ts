@@ -49,6 +49,7 @@ import {
   ListAdminSalonsUseCase,
   ListVipListsUseCase,
   PatchVipListUseCase,
+  ReopenVipListUseCase,
   RevokeVipEntitlementUseCase,
 } from './vip.use-cases';
 
@@ -62,6 +63,7 @@ export class AdminVipController {
     private readonly listLists: ListVipListsUseCase,
     private readonly getList: GetVipListUseCase,
     private readonly patchList: PatchVipListUseCase,
+    private readonly reopenList: ReopenVipListUseCase,
     private readonly deleteList: DeleteVipListUseCase,
     private readonly grantEntitlement: GrantVipEntitlementUseCase,
     private readonly revokeEntitlement: RevokeVipEntitlementUseCase,
@@ -166,6 +168,21 @@ export class AdminVipController {
     @Query() query: ListCursorQueryDto,
   ) {
     return this.listSalonResults.execute(id, query.cursor);
+  }
+
+  @Post('lists/:id/reopen')
+  @HttpCode(200)
+  @ApiHeader({ name: 'Idempotency-Key', required: true })
+  @ApiOperation({
+    summary:
+      'Open an occupied VIP list for one later reservation by another salon. Existing requests stay. Replaying this key does not grant another opening.',
+  })
+  reopen(
+    @CurrentPlatformAdmin() admin: PlatformAdminPrincipal,
+    @Param('id', UuidParam) id: string,
+    @Headers('idempotency-key') idempotencyKey: string | string[] | undefined,
+  ) {
+    return this.reopenList.execute(admin, id, requireIdempotencyKey(idempotencyKey));
   }
 
   @Patch('lists/:id')

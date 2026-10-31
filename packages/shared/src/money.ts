@@ -31,6 +31,17 @@ export function formatMoneyString(minorUnits: bigint): string {
   return `${whole.toString()}.${fraction.toString().padStart(2, '0')}`;
 }
 
+/**
+ * Exact two-decimal IRR text. Accepts only a string so a JavaScript number
+ * cannot round a NUMERIC(19,2) value before formatting.
+ */
+export function formatExactMoneyText(value: unknown): string {
+  if (typeof value !== 'string') {
+    throw new ValidationError('amount must be a decimal string');
+  }
+  return formatMoneyString(parseMoneyString(value.trim()));
+}
+
 export function multiplyMoney(unitMinor: bigint, quantity: number): bigint {
   if (!Number.isInteger(quantity) || quantity < 1 || quantity > 9_999) {
     throw new ValidationError('quantity must be an integer from 1 to 9999');

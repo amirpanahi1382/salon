@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable, OnModuleDestroy, OnModuleInit, Optional } from '@nestjs/common';
+import { expireStaleVipReservations } from '@salon/database';
 import type { ObjectStorage } from '@salon/object-storage';
 import { withTimeout } from '@salon/shared';
 import type { Logger } from 'pino';
@@ -71,6 +72,19 @@ export class VipSampleWorkRecoveryProcessor implements OnModuleInit, OnModuleDes
 
   private async runBatch(): Promise<void> {
     try {
+      await this.expireStaleReservations();
+    } catch {
+      this.logger.error(
+        {
+          operation: 'vip_reservation_expiry.tick',
+          outcome: 'failed',
+          errorCode: 'VIP_RESERVATION_EXPIRY_FAILED',
+          errorType: 'Error',
+        },
+        'VIP reservation expiry failed',
+      );
+    }
+    try {
       const expired = await this.releaseExpiredUploads();
       const cleanups = await this.claimCleanups();
       const results = await Promise.allSettled(cleanups.map((claim) => this.processCleanup(claim)));
@@ -92,6 +106,18 @@ export class VipSampleWorkRecoveryProcessor implements OnModuleInit, OnModuleDes
         'VIP sample-work recovery failed',
       );
     }
+  }
+
+  /**
+   * Cross-salon draft expiry. This worker is the background owner.
+   * A salon command expires only its own drafts and, when reserving, one list.
+   */
+  async expireStaleReservations(now = new Date()): Promise<number> {
+    const limit = this.config.values.VIP_UPLOAD_RECOVERY_BATCH_SIZE;
+    const result = await this.prisma.client.$transaction((tx) =>
+      expireStaleVipReservations(tx, now, { mode: 'platform', limit }),
+    );
+    return result.cancelledRequests;
   }
 
   async releaseExpiredUploads(now = new Date()): Promise<number> {

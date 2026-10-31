@@ -1,5 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { ThrottlerGuard } from '@nestjs/throttler';
+
+const originalThrottleCanActivate = ThrottlerGuard.prototype.canActivate;
 import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
 import {
@@ -80,6 +83,7 @@ describeIfDb('VIP multiple requests and rolling quota (e2e)', () => {
       .overrideProvider(OBJECT_STORAGE)
       .useValue(new MemoryObjectStorage())
       .compile();
+    ThrottlerGuard.prototype.canActivate = () => true;
     app = moduleRef.createNestApplication();
     app.useGlobalPipes(
       new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }),
@@ -109,15 +113,25 @@ describeIfDb('VIP multiple requests and rolling quota (e2e)', () => {
     expect(admin.body.accountKind).toBe('PLATFORM_ADMIN');
     expect(admin.body.admin.id).toBe(admin.adminId);
     adminToken = admin.accessToken;
+    await prisma.client.platformMessageStop.updateMany({
+      where: { active: true },
+      data: {
+        active: false,
+        liftedAt: new Date(),
+        liftedByAdminId: admin.adminId,
+      },
+    });
   });
 
   afterAll(async () => {
+    ThrottlerGuard.prototype.canActivate = originalThrottleCanActivate;
     await app?.close();
   });
 
   function nextPrefix() {
     phoneSerial += 1;
-    return `09${String(phoneSerial).padStart(2, '0')}`;
+    const two = ((phoneSerial - 1) % 90) + 10;
+    return `09${String(two).padStart(2, '0')}`;
   }
 
   async function createOwner(label: string) {
@@ -282,8 +296,13 @@ describeIfDb('VIP multiple requests and rolling quota (e2e)', () => {
       expect(stored.status).toBe('SUBMITTED');
       expect(stored.requestedCount).toBe(count);
     }
-    const rejected = await createRequest(owner, await readyList(30), 20);
-    expect(rejected.status).toBe(400);
+    const mismatched = await createRequest(owner, await readyList(30), 20);
+    expect(mismatched.status).toBe(409);
+    expect(mismatched.body.details).toMatchObject({
+      usableContactCount: 30,
+      effectiveRequestedCount: 30,
+      packageGroup: 30,
+    });
   });
 
   it('keeps a submitted request in history and allows another request with remaining quota', async () => {
@@ -293,6 +312,9 @@ describeIfDb('VIP multiple requests and rolling quota (e2e)', () => {
     const created = await createRequest(owner, firstList, 100);
     expect(created.status).toBe(201);
     await submitRequest(owner, created.body.id as string);
+    const sameList = await createRequest(owner, firstList, 100);
+    expect(sameList.status).toBe(409);
+    expect(sameList.body.message).toBe('This salon already has an active request for this VIP list');
     const capability = await request(app.getHttpServer())
       .get('/vip/capability')
       .set('Authorization', `Bearer ${owner.token}`)
@@ -401,15 +423,25 @@ describeIfDb('VIP multiple requests and rolling quota (e2e)', () => {
     await grantVip(owner.tenantId);
     const cancelledDraft = await createRequest(owner, await readyList(100), 100);
     expect(cancelledDraft.status).toBe(201);
-    // Timestamp only. Capability then runs reservation expiry, which cancels the draft.
+    // Timestamp only. Capability is a read and must not cancel the draft.
     await prisma.client.vipRequest.update({
       where: { id: cancelledDraft.body.id as string },
       data: { reservedUntil: new Date(Date.now() - 60_000) },
     });
-    await request(app.getHttpServer())
+    const capabilityBefore = await request(app.getHttpServer())
       .get('/vip/capability')
       .set('Authorization', `Bearer ${owner.token}`)
       .expect(200);
+    expect(capabilityBefore.body.usedQuota).toBe(0);
+    const stillDraft = await prisma.client.vipRequest.findUniqueOrThrow({
+      where: { id: cancelledDraft.body.id as string },
+    });
+    expect(stillDraft.status).toBe('AWAITING_SAMPLE_WORK');
+    expect(stillDraft.cancelledAt).toBeNull();
+    const { expireStaleVipReservations } = await import('@salon/database');
+    await prisma.client.$transaction((tx) =>
+      expireStaleVipReservations(tx, new Date(), { mode: 'salon', salonId: owner.tenantId }),
+    );
     const cancelled = await prisma.client.vipRequest.findUniqueOrThrow({
       where: { id: cancelledDraft.body.id as string },
     });
@@ -523,9 +555,20 @@ describeIfDb('VIP multiple requests and rolling quota (e2e)', () => {
     };
     const rejected = await createRequest(owner, rejectedList, 30, rejectedKey);
     expect(rejected.status).toBe(409);
-    expect(rejected.body.message).toBe(VIP_QUOTA_EXCEEDED_MESSAGE);
+    expect(rejected.body.message).toBe('Confirm the refreshed VIP recipient quantity.');
+    expect(rejected.body.details).toMatchObject({
+      usableContactCount: 30,
+      remainingQuota: 20,
+      effectiveRequestedCount: 20,
+      packageGroup: 30,
+    });
     expect(await used(owner.tenantId)).toBe(480);
     await expectRejectedCreateLeavesNoResidue(owner, rejectedList, rejectedKey, committed);
+    const capped = await createRequest(owner, rejectedList, 20);
+    expect(capped.status).toBe(201);
+    expect(capped.body.requestedCount).toBe(20);
+    expect(await prisma.client.vipRequestRecipient.count({ where: { vipRequestId: capped.body.id as string } })).toBe(20);
+    expect(await used(owner.tenantId)).toBe(500);
   });
 
   it('does not double-count an idempotent replay', async () => {
@@ -597,7 +640,12 @@ describeIfDb('VIP multiple requests and rolling quota (e2e)', () => {
     const listId = await readyList(30);
     const key = `rollback-${randomUUID()}`;
     const failed = await createRequest(owner, listId, 50, key);
-    expect(failed.status).toBe(400);
+    expect(failed.status).toBe(409);
+    expect(failed.body.details).toMatchObject({
+      usableContactCount: 30,
+      effectiveRequestedCount: 30,
+      packageGroup: 30,
+    });
     const list = await prisma.client.vipTargetList.findUniqueOrThrow({ where: { id: listId } });
     expect(list.status).toBe('ACTIVE');
     expect(list.reservedBySalonId).toBeNull();
@@ -756,5 +804,600 @@ describeIfDb('VIP multiple requests and rolling quota (e2e)', () => {
     ]);
     expect(hidden.body.inProgressRequestsHasMore).toBe(false);
     expect(hidden.body.inProgressRequests.every((row: { id: string }) => !ids.includes(row.id))).toBe(true);
+  });
+
+  it('uses the usable contact count for the request and one admin opening at a time', async () => {
+    const owner = await createOwner('group-qty');
+    await grantVip(owner.tenantId);
+    const groups: Array<[number, number]> = [[28, 30], [40, 50], [52, 50], [75, 100], [92, 100]];
+    for (const [contacts, group] of groups) {
+      const listId = await readyList(contacts);
+      const visible = await request(app.getHttpServer())
+        .get('/vip/lists')
+        .query({ regionCode: '03', packageGroup: group })
+        .set('Authorization', `Bearer ${owner.token}`)
+        .expect(200);
+      expect(visible.body.items.map((row: { id: string }) => row.id)).toContain(listId);
+      const otherGroup = group === 50 ? 30 : 50;
+      const hidden = await request(app.getHttpServer())
+        .get('/vip/lists')
+        .query({ regionCode: '03', packageGroup: otherGroup })
+        .set('Authorization', `Bearer ${owner.token}`)
+        .expect(200);
+      expect(hidden.body.items.map((row: { id: string }) => row.id)).not.toContain(listId);
+    }
+
+    const fullList = await readyList(52);
+    await prisma.client.vipTargetList.update({
+      where: { id: fullList },
+      data: { contactCount: 30 },
+    });
+    const grouped = await request(app.getHttpServer())
+      .get('/vip/lists')
+      .query({ regionCode: '03', packageGroup: 50 })
+      .set('Authorization', `Bearer ${owner.token}`)
+      .expect(200);
+    const row = grouped.body.items.find((item: { id: string }) => item.id === fullList);
+    expect(row).toMatchObject({ sendableContactCount: 52, packageGroup: 50, contactCount: 30 });
+    const fullKey = `fifty-two-${randomUUID()}`;
+    const created = await createRequest(owner, fullList, 52, fullKey);
+    expect(created.status).toBe(201);
+    expect(created.body.requestedCount).toBe(52);
+    const replay = await createRequest(owner, fullList, 52, fullKey);
+    expect(replay.status).toBe(201);
+    expect(replay.body.id).toBe(created.body.id);
+    const changed = await createRequest(owner, fullList, 51, fullKey);
+    expect(changed.status).toBe(409);
+    expect(changed.body.message).toBe('Idempotency-Key was already used with a different request');
+    expect(await prisma.client.vipRequestRecipient.count({
+      where: { vipRequestId: created.body.id as string },
+    })).toBe(52);
+    await submitRequest(owner, created.body.id as string);
+    await dispatchManual(created.body.id as string);
+    const fullReport = await request(app.getHttpServer())
+      .get('/salon/overall-performance')
+      .set('Authorization', `Bearer ${owner.token}`)
+      .expect(200);
+    expect(fullReport.body.vipMessageRequestCount).toBe(52);
+
+    const capped = await createOwner('cap-20');
+    await grantVip(capped.tenantId);
+    const prior = await acceptSubmitted(capped, 100);
+    await prisma.client.vipRequest.update({
+      where: { id: prior.requestId },
+      data: { requestedCount: 480 },
+    });
+    const capList = await readyList(52);
+    const preview = await createRequest(capped, capList, 52);
+    expect(preview.status).toBe(409);
+    expect(preview.body.details).toMatchObject({
+      usableContactCount: 52,
+      remainingQuota: 20,
+      effectiveRequestedCount: 20,
+      packageGroup: 50,
+    });
+    const partial = await createRequest(capped, capList, 20);
+    expect(partial.status).toBe(201);
+    expect(partial.body.requestedCount).toBe(20);
+    const partialPhones = await prisma.client.vipRequestRecipient.findMany({
+      where: { vipRequestId: partial.body.id as string },
+      orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+      select: { phoneNumber: true },
+    });
+    expect(partialPhones).toHaveLength(20);
+    const sourcePhones = await prisma.client.vipTargetContact.findMany({
+      where: { listId: capList },
+      orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+      select: { phoneNumber: true },
+    });
+    expect(partialPhones.map((item) => item.phoneNumber)).toEqual(
+      sourcePhones.slice(0, 20).map((item) => item.phoneNumber),
+    );
+    await submitRequest(capped, partial.body.id as string);
+    await dispatchManual(partial.body.id as string);
+    const capReport = await request(app.getHttpServer())
+      .get('/salon/overall-performance')
+      .set('Authorization', `Bearer ${capped.token}`)
+      .expect(200);
+    expect(capReport.body.vipMessageRequestCount).toBe(500);
+    const none = await createRequest(capped, await readyList(30), 30);
+    expect(none.status).toBe(409);
+    expect(none.body.message).toBe(VIP_QUOTA_EXCEEDED_MESSAGE);
+
+    const stoppedOwner = await createOwner('stopped');
+    await grantVip(stoppedOwner.tenantId);
+    const stoppedList = await readyList(30);
+    const stoppedContact = await prisma.client.vipTargetContact.findFirstOrThrow({
+      where: { listId: stoppedList },
+      orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+    });
+    const admin = await prisma.client.platformAdmin.findFirstOrThrow();
+    await prisma.client.platformMessageStop.upsert({
+      where: { phoneNumber: stoppedContact.phoneNumber },
+      update: {
+        active: true,
+        reasonCode: 'RECIPIENT_REQUEST',
+        liftedAt: null,
+        liftedByAdminId: null,
+        updatedAt: new Date(),
+      },
+      create: {
+        id: randomUUID(),
+        phoneNumber: stoppedContact.phoneNumber,
+        active: true,
+        reasonCode: 'RECIPIENT_REQUEST',
+        registeredByAdminId: admin.id,
+        registeredAt: new Date(),
+        updatedAt: new Date(),
+      },
+    });
+    const reduced = await createRequest(stoppedOwner, stoppedList, 29);
+    expect(reduced.status).toBe(201);
+    expect(reduced.body.requestedCount).toBe(29);
+    const reducedPhones = await prisma.client.vipRequestRecipient.findMany({
+      where: { vipRequestId: reduced.body.id as string },
+      select: { phoneNumber: true },
+    });
+    expect(reducedPhones.map((item) => item.phoneNumber)).not.toContain(stoppedContact.phoneNumber);
+
+    const first = await createOwner('reopen-a');
+    const second = await createOwner('reopen-b');
+    const third = await createOwner('reopen-c');
+    await grantVip(first.tenantId);
+    await grantVip(second.tenantId);
+    await grantVip(third.tenantId);
+    const shared = await readyList(30);
+    const held = await createRequest(first, shared, 30);
+    expect(held.status).toBe(201);
+    const before = await request(app.getHttpServer())
+      .get('/vip/lists')
+      .query({ regionCode: '03', packageGroup: 30 })
+      .set('Authorization', `Bearer ${second.token}`)
+      .expect(200);
+    expect(before.body.items.map((item: { id: string }) => item.id)).not.toContain(shared);
+    const reopenKey = `reopen-${randomUUID()}`;
+    const opened = await request(app.getHttpServer())
+      .post(`/admin/vip/lists/${shared}/reopen`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .set('Idempotency-Key', reopenKey)
+      .expect(200);
+    expect(opened.body.nextReservationOpen).toBe(true);
+    expect(opened.body.liveRequestCount).toBe(1);
+    const replayedOpen = await request(app.getHttpServer())
+      .post(`/admin/vip/lists/${shared}/reopen`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .set('Idempotency-Key', reopenKey)
+      .expect(200);
+    expect(replayedOpen.body.nextReservationOpen).toBe(true);
+    expect(await prisma.client.auditLog.count({
+      where: { resourceId: shared, action: 'VIP_LIST_REOPENED', result: 'SUCCESS' },
+    })).toBe(1);
+    const ownView = await request(app.getHttpServer())
+      .get('/vip/lists')
+      .query({ regionCode: '03', packageGroup: 30 })
+      .set('Authorization', `Bearer ${first.token}`)
+      .expect(200);
+    expect(ownView.body.items.map((item: { id: string }) => item.id)).not.toContain(shared);
+    const [left, right] = await Promise.all([
+      createRequest(second, shared, 30),
+      createRequest(third, shared, 30),
+    ]);
+    expect([left.status, right.status].sort()).toEqual([201, 409]);
+    const winner = [left, right].find((item) => item.status === 201)!;
+    const loser = [left, right].find((item) => item.status === 409)!;
+    expect(await prisma.client.vipRequest.findUniqueOrThrow({
+      where: { id: held.body.id as string },
+    })).toMatchObject({ status: 'AWAITING_SAMPLE_WORK', requestedCount: 30 });
+    expect(await prisma.client.vipTargetList.findUniqueOrThrow({ where: { id: shared } })).toMatchObject({
+      nextReservationOpen: false,
+      status: 'IN_USE',
+    });
+    const openedAgain = await request(app.getHttpServer())
+      .post(`/admin/vip/lists/${shared}/reopen`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .set('Idempotency-Key', `reopen-again-${randomUUID()}`)
+      .expect(200);
+    expect(openedAgain.body.nextReservationOpen).toBe(true);
+    const thirdTry = await createRequest(
+      loser === left ? second : third,
+      shared,
+      30,
+    );
+    expect(thirdTry.status).toBe(201);
+    expect(await prisma.client.vipRequest.count({
+      where: { listId: shared, status: 'AWAITING_SAMPLE_WORK' },
+    })).toBe(3);
+    await prisma.client.vipRequest.update({
+      where: { id: held.body.id as string },
+      data: { reservedUntil: new Date(Date.now() - 60_000) },
+    });
+    const { expireStaleVipReservations } = await import('@salon/database');
+    await prisma.client.$transaction((tx) =>
+      expireStaleVipReservations(tx, new Date(), { mode: 'salon', salonId: first.tenantId }),
+    );
+    expect((await prisma.client.vipRequest.findUniqueOrThrow({
+      where: { id: held.body.id as string },
+    })).status).toBe('CANCELLED');
+    expect(await prisma.client.vipRequest.count({
+      where: { listId: shared, status: 'AWAITING_SAMPLE_WORK' },
+    })).toBe(2);
+    expect((await prisma.client.vipTargetList.findUniqueOrThrow({ where: { id: shared } })).status).toBe('IN_USE');
+    await request(app.getHttpServer())
+      .patch(`/admin/vip/lists/${shared}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ availability: 'INACTIVE' })
+      .expect(200);
+    expect(await prisma.client.vipRequest.count({
+      where: { listId: shared, status: 'AWAITING_SAMPLE_WORK' },
+    })).toBe(2);
+    await request(app.getHttpServer())
+      .post(`/admin/vip/lists/${shared}/reopen`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .set('Idempotency-Key', `reopen-inactive-${randomUUID()}`)
+      .expect(409);
+    expect(winner.body.requestedCount).toBe(30);
+  });
+
+  it('deactivates an occupied list, restores it, and reopens one reservation', async () => {
+    const first = await createOwner('round-a');
+    const second = await createOwner('round-b');
+    const third = await createOwner('round-c');
+    await grantVip(first.tenantId);
+    await grantVip(second.tenantId);
+    await grantVip(third.tenantId);
+    const listId = await readyList(30);
+    const held = await createRequest(first, listId, 30);
+    expect(held.status).toBe(201);
+    await submitRequest(first, held.body.id as string);
+    const opened = await request(app.getHttpServer())
+      .post(`/admin/vip/lists/${listId}/reopen`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .set('Idempotency-Key', `round-open-${randomUUID()}`)
+      .expect(200);
+    expect(opened.body.nextReservationOpen).toBe(true);
+    const secondHeld = await createRequest(second, listId, 30);
+    expect(secondHeld.status).toBe(201);
+    const before = {
+      firstCount: (await prisma.client.vipRequest.findUniqueOrThrow({ where: { id: held.body.id as string } })).requestedCount,
+      secondCount: (await prisma.client.vipRequest.findUniqueOrThrow({ where: { id: secondHeld.body.id as string } })).requestedCount,
+      snapshots: await prisma.client.vipRequestRecipient.count({ where: { vipRequest: { listId } } }),
+      quota: await used(first.tenantId) + await used(second.tenantId),
+    };
+    expect(before).toEqual({ firstCount: 30, secondCount: 30, snapshots: 60, quota: 60 });
+
+    const [deactivated, racedOpen] = await Promise.all([
+      request(app.getHttpServer())
+        .patch(`/admin/vip/lists/${listId}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ availability: 'INACTIVE' }),
+      request(app.getHttpServer())
+        .post(`/admin/vip/lists/${listId}/reopen`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .set('Idempotency-Key', `round-race-open-${randomUUID()}`),
+    ]);
+    expect(deactivated.status).toBeLessThan(500);
+    expect(racedOpen.status).toBeLessThan(500);
+    const inactive = await prisma.client.vipTargetList.findUniqueOrThrow({ where: { id: listId } });
+    expect(inactive.status).toBe('INACTIVE');
+    expect(inactive.nextReservationOpen).toBe(false);
+    expect(inactive.reservedBySalonId).toBeNull();
+    expect(await prisma.client.vipRequest.count({
+      where: { listId, status: { in: ['SUBMITTED', 'AWAITING_SAMPLE_WORK'] } },
+    })).toBe(2);
+
+    const hidden = await request(app.getHttpServer())
+      .get('/vip/lists')
+      .query({ regionCode: '03', packageGroup: 30 })
+      .set('Authorization', `Bearer ${third.token}`)
+      .expect(200);
+    expect(hidden.body.items.map((row: { id: string }) => row.id)).not.toContain(listId);
+    const blockedReserve = await createRequest(third, listId, 30);
+    expect(blockedReserve.status).toBe(409);
+    await request(app.getHttpServer())
+      .post(`/admin/vip/lists/${listId}/reopen`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .set('Idempotency-Key', `round-inactive-${randomUUID()}`)
+      .expect(409);
+
+    await dispatchManual(held.body.id as string);
+    expect((await prisma.client.vipRequest.findUniqueOrThrow({
+      where: { id: held.body.id as string },
+    })).status).toBe('MANUAL_QUEUED');
+    expect((await prisma.client.vipRequest.findUniqueOrThrow({
+      where: { id: secondHeld.body.id as string },
+    })).status).toBe('AWAITING_SAMPLE_WORK');
+    const history = await request(app.getHttpServer())
+      .get('/vip/requests')
+      .set('Authorization', `Bearer ${first.token}`)
+      .expect(200);
+    expect(history.body.items.map((row: { id: string }) => row.id)).toContain(held.body.id);
+
+    const activated = await request(app.getHttpServer())
+      .patch(`/admin/vip/lists/${listId}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ availability: 'ACTIVE', regionCode: '03' })
+      .expect(200);
+    expect(activated.body).toMatchObject({
+      status: 'ACTIVE',
+      nextReservationOpen: false,
+      requestableBySalons: false,
+      liveRequestCount: 2,
+    });
+    const stillBlocked = await createRequest(third, listId, 30);
+    expect(stillBlocked.status).toBe(409);
+    expect(await prisma.client.vipRequest.count({ where: { listId } })).toBe(2);
+
+    const reopened = await request(app.getHttpServer())
+      .post(`/admin/vip/lists/${listId}/reopen`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .set('Idempotency-Key', `round-reopen-${randomUUID()}`)
+      .expect(200);
+    expect(reopened.body.nextReservationOpen).toBe(true);
+    const admitted = await createRequest(third, listId, 30);
+    expect(admitted.status).toBe(201);
+    expect(admitted.body.requestedCount).toBe(30);
+    const firstAgain = await createRequest(first, listId, 30);
+    const secondAgain = await createRequest(second, listId, 30);
+    expect(firstAgain.status).toBe(409);
+    expect(secondAgain.status).toBe(409);
+    expect(await prisma.client.vipRequestRecipient.count({
+      where: { vipRequestId: held.body.id as string },
+    })).toBe(30);
+    expect((await prisma.client.vipTargetList.findUniqueOrThrow({ where: { id: listId } })).nextReservationOpen).toBe(false);
+  });
+
+  it('recalculates a changed quantity and keeps one quota winner', async () => {
+    const owner = await createOwner('preview');
+    await grantVip(owner.tenantId);
+    const listId = await readyList(52);
+    const preview = await request(app.getHttpServer())
+      .get('/vip/lists')
+      .query({ regionCode: '03', packageGroup: 50 })
+      .set('Authorization', `Bearer ${owner.token}`)
+      .expect(200);
+    expect(preview.body.items.find((row: { id: string }) => row.id === listId)).toMatchObject({
+      sendableContactCount: 52,
+      packageGroup: 50,
+    });
+    const prior = await acceptSubmitted(owner, 100);
+    await prisma.client.vipRequest.update({
+      where: { id: prior.requestId },
+      data: { requestedCount: 480 },
+    });
+    const stale = await createRequest(owner, listId, 52);
+    expect(stale.status).toBe(409);
+    expect(stale.body.details).toMatchObject({
+      usableContactCount: 52,
+      remainingQuota: 20,
+      effectiveRequestedCount: 20,
+      packageGroup: 50,
+    });
+    expect(await prisma.client.vipRequest.count({ where: { listId } })).toBe(0);
+    expect(await used(owner.tenantId)).toBe(480);
+
+    const contact = await prisma.client.vipTargetContact.findFirstOrThrow({
+      where: { listId },
+      orderBy: [{ sortOrder: 'desc' }, { id: 'desc' }],
+    });
+    const admin = await prisma.client.platformAdmin.findFirstOrThrow();
+    await prisma.client.platformMessageStop.upsert({
+      where: { phoneNumber: contact.phoneNumber },
+      update: { active: true, liftedAt: null, liftedByAdminId: null, updatedAt: new Date() },
+      create: {
+        id: randomUUID(),
+        phoneNumber: contact.phoneNumber,
+        active: true,
+        reasonCode: 'RECIPIENT_REQUEST',
+        registeredByAdminId: admin.id,
+        registeredAt: new Date(),
+        updatedAt: new Date(),
+      },
+    });
+    const keptKey = `preview-kept-${randomUUID()}`;
+    const sameQuantity = await createRequest(owner, listId, 20, keptKey);
+    expect(sameQuantity.status).toBe(201);
+    expect(sameQuantity.body.requestedCount).toBe(20);
+    const lost = await createRequest(owner, listId, 20, keptKey);
+    expect(lost.status).toBe(201);
+    expect(lost.body.id).toBe(sameQuantity.body.id);
+    expect(await prisma.client.vipRequestRecipient.count({
+      where: { vipRequestId: sameQuantity.body.id as string },
+    })).toBe(20);
+    expect(await used(owner.tenantId)).toBe(500);
+
+    const fresh = await createOwner('preview-fresh');
+    await grantVip(fresh.tenantId);
+    const seededFresh = await acceptSubmitted(fresh, 100);
+    await prisma.client.vipRequest.update({
+      where: { id: seededFresh.requestId },
+      data: { requestedCount: 480 },
+    });
+    const movable = await readyList(52);
+    const groupPreview = await request(app.getHttpServer())
+      .get('/vip/lists')
+      .query({ regionCode: '03', packageGroup: 50 })
+      .set('Authorization', `Bearer ${fresh.token}`)
+      .expect(200);
+    expect(groupPreview.body.items.map((row: { id: string }) => row.id)).toContain(movable);
+    const movableContacts = await prisma.client.vipTargetContact.findMany({
+      where: { listId: movable },
+      orderBy: [{ sortOrder: 'desc' }, { id: 'desc' }],
+      take: 24,
+    });
+    for (const row of movableContacts) {
+      await prisma.client.platformMessageStop.upsert({
+        where: { phoneNumber: row.phoneNumber },
+        update: { active: true, liftedAt: null, liftedByAdminId: null, updatedAt: new Date() },
+        create: {
+          id: randomUUID(),
+          phoneNumber: row.phoneNumber,
+          active: true,
+          reasonCode: 'RECIPIENT_REQUEST',
+          registeredByAdminId: admin.id,
+          registeredAt: new Date(),
+          updatedAt: new Date(),
+        },
+      });
+    }
+    const moved = await request(app.getHttpServer())
+      .get('/vip/lists')
+      .query({ regionCode: '03', packageGroup: 30 })
+      .set('Authorization', `Bearer ${fresh.token}`)
+      .expect(200);
+    const movedRow = moved.body.items.find((row: { id: string }) => row.id === movable);
+    expect(movedRow).toMatchObject({ sendableContactCount: 28, packageGroup: 30 });
+    const confirmed = await createRequest(fresh, movable, 20);
+    expect(confirmed.status).toBe(201);
+    expect(confirmed.body.requestedCount).toBe(20);
+    const shiftedOwner = await createOwner('preview-shift');
+    await grantVip(shiftedOwner.tenantId);
+    const shifted = await readyList(52);
+    const shiftedContacts = await prisma.client.vipTargetContact.findMany({
+      where: { listId: shifted },
+      orderBy: [{ sortOrder: 'desc' }, { id: 'desc' }],
+      take: 12,
+    });
+    for (const row of shiftedContacts) {
+      await prisma.client.platformMessageStop.upsert({
+        where: { phoneNumber: row.phoneNumber },
+        update: { active: true, liftedAt: null, liftedByAdminId: null, updatedAt: new Date() },
+        create: {
+          id: randomUUID(),
+          phoneNumber: row.phoneNumber,
+          active: true,
+          reasonCode: 'RECIPIENT_REQUEST',
+          registeredByAdminId: admin.id,
+          registeredAt: new Date(),
+          updatedAt: new Date(),
+        },
+      });
+    }
+    const shiftedRequest = await createRequest(shiftedOwner, shifted, 52);
+    expect(shiftedRequest.status).toBe(409);
+    expect(shiftedRequest.body.details).toMatchObject({
+      usableContactCount: 40,
+      effectiveRequestedCount: 40,
+      packageGroup: 50,
+    });
+    expect(await prisma.client.vipRequest.count({ where: { listId: shifted } })).toBe(0);
+    expect((await prisma.client.vipTargetList.findUniqueOrThrow({ where: { id: shifted } })).status).toBe('ACTIVE');
+
+    const quotaOwner = await createOwner('quota-pair');
+    await grantVip(quotaOwner.tenantId);
+    const seeded = await acceptSubmitted(quotaOwner, 100);
+    await prisma.client.vipRequest.update({
+      where: { id: seeded.requestId },
+      data: { requestedCount: 470 },
+    });
+    const left = await readyList(30);
+    const right = await readyList(30);
+    const [a, b] = await Promise.all([
+      createRequest(quotaOwner, left, 30),
+      createRequest(quotaOwner, right, 30),
+    ]);
+    expect([a.status, b.status].sort()).toEqual([201, 409]);
+    expect(await used(quotaOwner.tenantId)).toBe(500);
+    expect(await prisma.client.vipRequest.count({
+      where: { salonId: quotaOwner.tenantId, status: 'AWAITING_SAMPLE_WORK' },
+    })).toBe(1);
+
+    const overlapA = await createOwner('overlap-a');
+    const overlapB = await createOwner('overlap-b');
+    await grantVip(overlapA.tenantId);
+    await grantVip(overlapB.tenantId);
+    const sharedPhone = `0912${String(phoneSerial).padStart(7, '0')}`;
+    const firstList = await readyList(30);
+    const secondList = await readyList(30);
+    await prisma.client.vipTargetContact.updateMany({
+      where: { listId: firstList, sortOrder: 1 },
+      data: { phoneNumber: sharedPhone },
+    });
+    await prisma.client.vipTargetContact.updateMany({
+      where: { listId: secondList, sortOrder: 1 },
+      data: { phoneNumber: sharedPhone },
+    });
+    const raced = await Promise.all([
+      createRequest(overlapA, firstList, 30),
+      createRequest(overlapB, secondList, 30),
+    ]);
+    expect(raced.map((row) => row.status).sort()).toEqual([201, 201]);
+    expect(raced.every((row) => row.status < 500)).toBe(true);
+  });
+
+  it('replaces an expired draft without touching another salon or replaying a second request', async () => {
+    const owner = await createOwner('expire-same');
+    const other = await createOwner('expire-other');
+    await grantVip(owner.tenantId);
+    await grantVip(other.tenantId);
+    const listId = await readyList(30);
+    const firstKey = `expire-first-${randomUUID()}`;
+    const created = await createRequest(owner, listId, 30, firstKey);
+    expect(created.status).toBe(201);
+    await request(app.getHttpServer())
+      .post(`/admin/vip/lists/${listId}/reopen`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .set('Idempotency-Key', `expire-open-${randomUUID()}`)
+      .expect(200);
+    const otherHeld = await createRequest(other, listId, 30);
+    expect(otherHeld.status).toBe(201);
+    const boundary = new Date();
+    await prisma.client.vipRequest.update({
+      where: { id: created.body.id as string },
+      data: { reservedUntil: boundary },
+    });
+    const { expireStaleVipReservations } = await import('@salon/database');
+    const equal = await prisma.client.$transaction((tx) =>
+      expireStaleVipReservations(tx, boundary, { mode: 'salon', salonId: owner.tenantId }),
+    );
+    expect(equal.cancelledRequests).toBe(0);
+    expect((await prisma.client.vipRequest.findUniqueOrThrow({
+      where: { id: created.body.id as string },
+    })).status).toBe('AWAITING_SAMPLE_WORK');
+    const read = await request(app.getHttpServer())
+      .get('/vip/capability')
+      .set('Authorization', `Bearer ${owner.token}`)
+      .expect(200);
+    expect(read.body.activeDraft.id).toBe(created.body.id);
+    expect((await prisma.client.vipRequest.findUniqueOrThrow({
+      where: { id: created.body.id as string },
+    })).status).toBe('AWAITING_SAMPLE_WORK');
+
+    await prisma.client.vipRequest.update({
+      where: { id: created.body.id as string },
+      data: { reservedUntil: new Date(boundary.getTime() - 1) },
+    });
+    const replacementList = await readyList(30);
+    const [left, right] = await Promise.all([
+      createRequest(owner, replacementList, 30),
+      createRequest(owner, await readyList(30), 30),
+    ]);
+    expect([left.status, right.status].sort()).toEqual([201, 409]);
+    expect((await prisma.client.vipRequest.findUniqueOrThrow({
+      where: { id: created.body.id as string },
+    })).status).toBe('CANCELLED');
+    expect((await prisma.client.vipRequest.findUniqueOrThrow({
+      where: { id: otherHeld.body.id as string },
+    })).status).toBe('AWAITING_SAMPLE_WORK');
+    expect((await prisma.client.vipTargetList.findUniqueOrThrow({ where: { id: listId } })).status).toBe('IN_USE');
+    const replay = await createRequest(owner, listId, 30, firstKey);
+    expect(replay.status).toBe(201);
+    expect(replay.body.id).toBe(created.body.id);
+    expect(await prisma.client.vipRequest.count({
+      where: { salonId: owner.tenantId, listId, status: 'AWAITING_SAMPLE_WORK' },
+    })).toBe(0);
+
+    const live = await createOwner('expire-live');
+    await grantVip(live.tenantId);
+    const liveList = await readyList(30);
+    const liveDraft = await createRequest(live, liveList, 30);
+    expect(liveDraft.status).toBe(201);
+    const duplicates = await Promise.all([
+      createRequest(live, await readyList(30), 30),
+      createRequest(live, await readyList(30), 30),
+    ]);
+    expect(duplicates.map((row) => row.status)).toEqual([409, 409]);
+    expect(await prisma.client.vipRequest.count({
+      where: { salonId: live.tenantId, status: 'AWAITING_SAMPLE_WORK' },
+    })).toBe(1);
   });
 });

@@ -23,6 +23,8 @@ export const DOMAIN_EVENT_TYPES = {
   MessageSendRequested: 'MessageSendRequested',
   VipRequestCreated: 'VipRequestCreated',
   VipRequestSubmitted: 'VipRequestSubmitted',
+  /** Platform fact. The worker records it and does not send. */
+  VipListReopened: 'VipListReopened',
 } as const;
 
 export type DomainEventType =

@@ -254,7 +254,12 @@ class AppStrings {
   static const adminVipNeedsActivationConfirm =
       'منطقه ثبت شده، ولی فعال‌سازی هنوز کامل نیست. با تأیید فعال‌سازی، سالن‌های دارای دسترسی VIP در همین منطقه می‌توانند آن را ببینند و رزرو کنند.';
   static const adminVipInUseReason =
-      'این لیست رزرو شده و برای سالن دیگری قابل درخواست نیست.';
+      'این لیست درخواست فعال دارد. «در دسترس کردن» یک رزرو بعدی را برای سالن دیگر باز می‌کند و درخواست‌های فعلی را تغییر نمی‌دهد.';
+  static const adminVipReopenList = 'در دسترس کردن';
+  static const adminVipReopenListConfirm =
+      'این لیست برای یک رزرو بعدی در دسترس سالن‌های دیگر قرار می‌گیرد. درخواست‌های فعلی باقی می‌مانند.';
+  static const adminVipReopenAlreadyOpen =
+      'این لیست همین حالا برای یک رزرو بعدی باز است.';
   static const adminVipInUseCannotChange =
       'این لیست برای یک درخواست رزرو شده است. تا آزاد شدن رزرو نمی‌توان آن را فعال یا غیرفعال کرد.';
   static const adminVipActivateList = 'فعال کردن لیست';
@@ -542,7 +547,7 @@ class AppStrings {
   static const vipSendBale = 'ارسال با بله';
   static const vipBaleNotImplemented =
       'ارسال با بله برای VIP هنوز فعال نشده است.';
-  static const vipChooseCount = 'تعداد پیام را انتخاب کنید';
+  static const vipChooseCount = 'اندازه گروه لیست را انتخاب کنید';
   static const vipDesiredRegion = 'محدوده موردنظر';
   static const vipSelectRegion = 'انتخاب محدوده';
   static const vipSelectList = 'لیست VIP را انتخاب کنید';
@@ -562,7 +567,11 @@ class AppStrings {
   static const vipDiscountUnavailable =
       'ثبت درخواست VIP با تخفیف هنوز ممکن نیست. درخواست بدون تخفیف را می‌توانید ثبت کنید.';
   static const vipOrderSummary = 'خلاصه سفارش';
-  static const vipSummaryPackage = 'بسته انتخابی';
+  static const vipSummaryPackage = 'گروه لیست';
+  static const vipSummaryActualRecipients = 'تعداد گیرنده این درخواست';
+  static const vipSummaryQuotaUse = 'مصرف سهمیه';
+  static const vipQuantityChanged =
+      'تعداد گیرنده تغییر کرد. خلاصه سفارش را دوباره ببینید و تأیید کنید.';
   static const vipSummaryRegion = 'محدوده انتخابی';
   static const vipSummaryList = 'لیست انتخابی';
   static const vipSummaryRange = 'محدوده سالن';

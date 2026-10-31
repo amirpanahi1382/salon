@@ -28,6 +28,7 @@ VipTargetList _list(
   String? regionCode,
   String? regionName,
   int contactCount = 2,
+  int liveRequestCount = 0,
   List<VipContact> contacts = const [],
 }) => VipTargetList(
   id: id,
@@ -40,6 +41,7 @@ VipTargetList _list(
   requestableBySalons: requestable,
   totalRequestCount: total,
   openRequestCount: open,
+  liveRequestCount: liveRequestCount,
   contacts: contacts,
 );
 
@@ -367,6 +369,7 @@ void main() {
             regionName: 'شمال',
             total: 1,
             open: 1,
+            liveRequestCount: 1,
           ),
         ],
         listCount: 3,
@@ -440,14 +443,15 @@ void main() {
 
     await tester.tap(find.text('لیست رزروشده'));
     await tester.pumpAndSettle();
-    expect(find.text(AppStrings.adminVipInUseCannotChange), findsOneWidget);
+    expect(find.text(AppStrings.adminVipInUseReason), findsOneWidget);
+    expect(find.byKey(const ValueKey('vip-reopen-list')), findsOneWidget);
     expect(
       tester.widget<FilledButton>(find.byKey(const ValueKey('vip-activate-list'))).onPressed,
       isNull,
     );
     expect(
       tester.widget<FilledButton>(find.byKey(const ValueKey('vip-deactivate-list'))).onPressed,
-      isNull,
+      isNotNull,
     );
   });
 

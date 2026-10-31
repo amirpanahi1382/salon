@@ -473,6 +473,32 @@ class _AdminVipListDetailScreenState extends ConsumerState<AdminVipListDetailScr
     }
   }
 
+  Future<void> _confirmReopen(VipTargetList list) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text(AppStrings.adminVipReopenList),
+        content: const Text(AppStrings.adminVipReopenListConfirm),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text(AppStrings.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text(AppStrings.adminVipReopenList),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) {
+      return;
+    }
+    await _run(() async {
+      await ref.read(vipRepositoryProvider).reopenList(list.id, createRequestId());
+    });
+  }
+
   Future<void> _confirmAvailability(VipTargetList list, String availability) async {
     final activate = availability == 'ACTIVE';
     if (!activate) {
@@ -617,12 +643,32 @@ class _AdminVipListDetailScreenState extends ConsumerState<AdminVipListDetailScr
                                 ),
                               ),
                             ),
-                            onPressed: _busy || list.status == 'IN_USE'
+                            onPressed: _busy
                                 ? null
                                 : () => _confirmAvailability(list, 'INACTIVE'),
                             icon: const Icon(Icons.pause_circle_outline_rounded, size: 18),
                             label: const Text('غیرفعال‌سازی'),
                           ),
+                          if ((list.status == 'ACTIVE' || list.status == 'IN_USE') &&
+                              list.liveRequestCount > 0 &&
+                              !list.nextReservationOpen)
+                            FilledButton.tonalIcon(
+                              key: const ValueKey('vip-reopen-list'),
+                              style: const ButtonStyle(
+                                visualDensity: VisualDensity.compact,
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                minimumSize: WidgetStatePropertyAll(Size(0, 40)),
+                                padding: WidgetStatePropertyAll(
+                                  EdgeInsets.symmetric(
+                                    horizontal: AppTokens.space12,
+                                    vertical: AppTokens.space8,
+                                  ),
+                                ),
+                              ),
+                              onPressed: _busy ? null : () => _confirmReopen(list),
+                              icon: const Icon(Icons.lock_open_rounded, size: 18),
+                              label: const Text(AppStrings.adminVipReopenList),
+                            ),
                           TextButton.icon(
                             style: const ButtonStyle(visualDensity: VisualDensity.compact),
                             onPressed: _busy ? null : () => _rename(list),
@@ -651,9 +697,7 @@ class _AdminVipListDetailScreenState extends ConsumerState<AdminVipListDetailScr
                           const SizedBox(width: AppTokens.space8),
                           Expanded(
                             child: Text(
-                              list.status == 'IN_USE'
-                                  ? AppStrings.adminVipInUseCannotChange
-                                  : adminVipUnavailabilityReason(list)!,
+                              adminVipUnavailabilityReason(list)!,
                               style: Theme.of(context).textTheme.bodySmall
                                   ?.copyWith(color: AppTokens.textSecondary),
                             ),
@@ -661,6 +705,12 @@ class _AdminVipListDetailScreenState extends ConsumerState<AdminVipListDetailScr
                         ],
                       ),
                     ),
+                  ),
+                if (list.nextReservationOpen)
+                  Padding(
+                    key: const ValueKey('vip-reopen-open'),
+                    padding: const EdgeInsets.only(top: AppTokens.space12),
+                    child: Text(AppStrings.adminVipReopenAlreadyOpen),
                   ),
                 if (list.needsAttention) ...[
                   const SizedBox(height: AppTokens.space12),

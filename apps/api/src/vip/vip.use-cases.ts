@@ -21,6 +21,7 @@ import {
   createId,
   isUsableCustomerPhone,
   isVipRegionCode,
+  nearestVipPackageGroup,
   renderVipMessageTemplate,
   vipRegionName,
   type AuthenticatedPrincipal,
@@ -38,7 +39,7 @@ import {
 } from '../infrastructure/http/idempotency';
 import { decodeCursor, encodeCursor, parseCursorInstant, parseCursorUuid, toListPage } from '../infrastructure/http/list-page';
 import type { ListAdminSalonsQueryDto } from './vip.dto';
-import { loadVipListRequestCounts } from './vip-list-request-counts';
+import { loadEffectivelyRequestableListIds, loadVipListRequestCounts } from './vip-list-request-counts';
 import { mapPrismaError } from '../infrastructure/http/prisma-error';
 import { OBJECT_STORAGE, type ObjectStorage } from '../infrastructure/storage/object-storage';
 import { Inject } from '@nestjs/common';
@@ -47,6 +48,7 @@ import { messageBusinessDateValue } from '@salon/shared';
 import {
   VIP_DISPATCH_BALE_OPERATION,
   VIP_DISPATCH_MANUAL_OPERATION,
+  VIP_LIST_REOPEN_OPERATION,
   VIP_DISPATCH_TX_TIMEOUT_MS,
   VIP_ENTITLEMENT_GRANT_OPERATION,
   VIP_ENTITLEMENT_REVOKE_OPERATION,
@@ -65,6 +67,7 @@ import {
   vipDispatchHash,
   vipEntitlementHash,
   vipListImportHash,
+  vipListReopenHash,
   vipRequestCreateHash,
   vipRequestSubmitHash,
   vipSampleWorkHash,
@@ -261,7 +264,8 @@ export class ImportVipListUseCase {
     if (!list) {
       throw new NotFoundError('VIP list not found');
     }
-    return toListSummary(list);
+    const requestable = await loadEffectivelyRequestableListIds(this.prisma, [id], new Date());
+    return toListSummary(list, undefined, requestable.has(id));
   }
 }
 
@@ -290,12 +294,14 @@ export class ListVipListsUseCase {
     const page = toListPage(rows, ADMIN_VIP_LIST_PAGE_SIZE, (row) =>
       encodeAdminVipListCursor(row, catalogMembership),
     );
-    const requestCounts = await loadVipListRequestCounts(
-      this.prisma,
-      page.items.map((row) => row.id),
-    );
+    const now = new Date();
+    const pageIds = page.items.map((row) => row.id);
+    const [requestCounts, requestable] = await Promise.all([
+      loadVipListRequestCounts(this.prisma, pageIds),
+      loadEffectivelyRequestableListIds(this.prisma, pageIds, now),
+    ]);
     return {
-      items: page.items.map((row) => toListSummary(row, requestCounts.get(row.id))),
+      items: page.items.map((row) => toListSummary(row, requestCounts.get(row.id), requestable.has(row.id))),
       hasMore: page.hasMore,
       nextCursor: page.nextCursor,
       listCount: summary.listCount,
@@ -342,7 +348,8 @@ export class GetVipListUseCase {
     if (!list) {
       throw new NotFoundError('VIP list not found');
     }
-    const [latestRequest, requestCounts] = await Promise.all([
+    const now = new Date();
+    const [latestRequest, requestCounts, requestable] = await Promise.all([
       this.vip.client.vipRequest.findFirst({
         where: { listId: id, status: { not: 'CANCELLED' } },
         orderBy: { createdAt: 'desc' },
@@ -353,11 +360,12 @@ export class GetVipListUseCase {
         },
       }),
       loadVipListRequestCounts(this.prisma, [id]),
+      loadEffectivelyRequestableListIds(this.prisma, [id], now),
     ]);
     return {
-      ...toListSummary(list, requestCounts.get(id)),
+      ...toListSummary(list, requestCounts.get(id), requestable.has(id)),
       request: latestRequest
-        ? await presentSalonVipRequest(this.vip, latestRequest.salonId, latestRequest, new Date())
+        ? await presentSalonVipRequest(this.vip, latestRequest.salonId, latestRequest, now)
         : null,
     };
   }
@@ -506,8 +514,107 @@ export class PatchVipListUseCase {
     if (!list) {
       throw new NotFoundError('VIP list not found');
     }
-    const requestCounts = await loadVipListRequestCounts(this.prisma, [id]);
-    return toListSummary(list, requestCounts.get(id));
+    const [requestCounts, requestable] = await Promise.all([
+      loadVipListRequestCounts(this.prisma, [id]),
+      loadEffectivelyRequestableListIds(this.prisma, [id], now),
+    ]);
+    return toListSummary(list, requestCounts.get(id), requestable.has(id));
+  }
+}
+
+@Injectable()
+export class ReopenVipListUseCase {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly vip: VipRepository,
+  ) {}
+
+  async execute(admin: PlatformAdminPrincipal, id: string, idempotencyKey: string) {
+    const requestHash = vipListReopenHash(id);
+    const now = new Date();
+    await this.prisma.client.$transaction(async (tx) => {
+      const claimed = await replayOrClaim(tx, {
+        tenantId: admin.adminId,
+        actorId: admin.adminId,
+        operation: VIP_LIST_REOPEN_OPERATION,
+        key: idempotencyKey,
+        requestHash,
+        resourceType: 'vip_target_list',
+        resourceId: id,
+      });
+      if (claimed !== 'inserted') {
+        return;
+      }
+      const granted = await this.vip.tryOpenNextReservation(tx, id, now);
+      if (!granted) {
+        const current = await tx.vipTargetList.findUnique({
+          where: { id },
+          select: {
+            status: true,
+            nextReservationOpen: true,
+            catalogMembership: true,
+            regionCode: true,
+          },
+        });
+        if (!current) {
+          throw new NotFoundError('VIP list not found');
+        }
+        const occupied = await tx.$queryRaw<Array<{ id: string }>>`
+          SELECT id FROM vip_target_lists
+          WHERE id = ${id}::uuid
+            AND next_reservation_open = true
+            AND catalog_membership = 'ORIGINAL_TEHRAN'::"VipCatalogMembership"
+            AND region_code IN (${Prisma.join(['01','02','03','04','05','06','07','08','09','10','11','12','13','14'].map((code) => Prisma.sql`${code}`))})
+            AND status IN ('ACTIVE'::"VipTargetListStatus", 'IN_USE'::"VipTargetListStatus")
+            AND EXISTS (
+              SELECT 1 FROM vip_requests live
+              WHERE live.list_id = ${id}::uuid
+                AND (
+                  live.status IN (
+                    'SUBMITTED'::"VipRequestStatus",
+                    'MANUAL_QUEUED'::"VipRequestStatus",
+                    'BALE_NOT_IMPLEMENTED'::"VipRequestStatus"
+                  )
+                  OR (
+                    live.status = 'AWAITING_SAMPLE_WORK'::"VipRequestStatus"
+                    AND live.reserved_until >= ${now}
+                  )
+                )
+            )
+        `;
+        if (occupied.length === 1 && current.nextReservationOpen) {
+          return;
+        }
+        throw new ConflictError('This VIP list cannot be opened for another reservation');
+      }
+      await tx.outboxEvent.create({
+        data: {
+          id: createId(),
+          eventType: DOMAIN_EVENT_TYPES.VipListReopened,
+          payload: { listId: id },
+        },
+      });
+      await tx.auditLog.create({
+        data: {
+          id: createId(),
+          actorId: admin.adminId,
+          action: 'VIP_LIST_REOPENED',
+          resource: 'vip_target_list',
+          resourceId: id,
+          result: 'SUCCESS',
+          metadata: { listId: id },
+        },
+      });
+    });
+    const list = await this.vip.findListById(id);
+    if (!list) {
+      throw new NotFoundError('VIP list not found');
+    }
+    const [requestCounts, requestable] = await Promise.all([
+      loadVipListRequestCounts(this.prisma, [id], now),
+      loadEffectivelyRequestableListIds(this.prisma, [id], now),
+    ]);
+    return toListSummary(list, requestCounts.get(id), requestable.has(id));
   }
 }
 
@@ -718,16 +825,20 @@ export class GetVipCapabilityUseCase {
     const evaluatedAt = new Date();
     const windowStartsAt = this.vip.quotaWindowStart(evaluatedAt);
     const snapshot = entitled
-      ? await this.vip.client.$transaction(async (tx) => {
-          await this.vip.expireStaleReservations(evaluatedAt, tx);
-          const usedQuota = await this.vip.quotaUsedSince(tx, principal.tenantId, windowStartsAt);
-          const activeDraft = await this.vip.findActiveDraft(principal.tenantId, tx);
+      ? await (async () => {
+          // Read path. Overdue drafts stay stored; quota and headlines use evaluatedAt.
+          const usedQuota = await this.vip.quotaUsedSince(
+            this.vip.client,
+            principal.tenantId,
+            windowStartsAt,
+            evaluatedAt,
+          );
+          const activeDraft = await this.vip.findActiveDraft(principal.tenantId);
           const inProgressRows = await this.vip.listInProgressRequests(
             principal.tenantId,
             VIP_CAPABILITY_IN_PROGRESS_LIMIT + 1,
-            tx,
           );
-          const latestCancelled = await this.vip.findLatestCancelledRequest(principal.tenantId, tx);
+          const latestCancelled = await this.vip.findLatestCancelledRequest(principal.tenantId);
           const visible = [
             ...(activeDraft ? [activeDraft] : []),
             ...inProgressRows.slice(0, VIP_CAPABILITY_IN_PROGRESS_LIMIT),
@@ -738,10 +849,9 @@ export class GetVipCapabilityUseCase {
             principal.tenantId,
             visible,
             evaluatedAt,
-            tx,
           );
           return { usedQuota, activeDraft, inProgressRows, latestCancelled, presented };
-        })
+        })()
       : {
           usedQuota: 0,
           activeDraft: null,
@@ -789,8 +899,7 @@ export class ListVipRegionsUseCase {
     if (!(await this.vip.findActiveEntitlement(principal.tenantId))) {
       throw new ForbiddenError('VIP outreach is not enabled for this salon');
     }
-    await this.vip.expireStaleReservations(new Date(), this.vip.client);
-    const items = await this.vip.summarizeAvailableRegions();
+    const items = await this.vip.summarizeAvailableRegions(principal.tenantId, new Date());
     return { items };
   }
 }
@@ -799,16 +908,18 @@ export class ListVipRegionsUseCase {
 export class ListActiveVipListsUseCase {
   constructor(private readonly vip: VipRepository) {}
 
-  async execute(principal: AuthenticatedPrincipal, regionCode?: string) {
+  async execute(principal: AuthenticatedPrincipal, regionCode?: string, packageGroup?: number) {
     if (!(await this.vip.findActiveEntitlement(principal.tenantId))) {
       throw new ForbiddenError('VIP outreach is not enabled for this salon');
     }
     if (!regionCode || !isVipRegionCode(regionCode)) {
       throw new ValidationError('regionCode must be a canonical VIP region');
     }
-    await this.vip.expireStaleReservations(new Date(), this.vip.client);
-    const items = await this.vip.listActiveListsByRegion(regionCode);
-    const sendable = await this.vip.sendableContactCounts(items.map((row) => row.id));
+    if (packageGroup !== undefined && !VIP_ALLOWED_REQUEST_COUNTS.includes(packageGroup as 30 | 50 | 100)) {
+      throw new ValidationError('packageGroup must be 30, 50, or 100');
+    }
+    const now = new Date();
+    const items = await this.vip.listActiveListsByRegion(regionCode, principal.tenantId, now, packageGroup);
     return {
       items: items.map((row) => ({
         id: row.id,
@@ -817,7 +928,8 @@ export class ListActiveVipListsUseCase {
         regionName: vipRegionName(regionCode),
         status: row.status,
         contactCount: row.contactCount,
-        sendableContactCount: sendable.get(row.id) ?? 0,
+        sendableContactCount: row.sendableContactCount,
+        packageGroup: row.packageGroup,
         createdAt: row.createdAt.toISOString(),
       })),
     };
@@ -856,7 +968,13 @@ export class CreateVipRequestUseCase {
           if (claimed !== 'inserted') {
             return;
           }
-          await this.vip.expireStaleReservations(now, tx);
+          await tx.$queryRaw`
+            SELECT id FROM vip_target_lists WHERE id = ${body.listId}::uuid FOR UPDATE
+          `;
+          await this.vip.expireStaleReservations(now, tx, {
+            mode: 'salon',
+            salonId: principal.tenantId,
+          });
           const entitlement = await this.vip.lockEntitlement(tx, principal.tenantId);
           if (!entitlement || entitlement.revoked_at) {
             throw new ForbiddenError('VIP outreach is not enabled for this salon');
@@ -870,8 +988,33 @@ export class CreateVipRequestUseCase {
             principal.tenantId,
             this.vip.quotaWindowStart(now),
           );
-          if (used + body.requestedCount > VIP_QUOTA_MAX) {
-            throw new ConflictError(VIP_QUOTA_EXCEEDED_MESSAGE);
+          const remaining = VIP_QUOTA_MAX - used;
+          const sendable = await this.vip.sendableContactCounts([body.listId], tx);
+          const usable = sendable.get(body.listId) ?? 0;
+          const effective = Math.min(usable, Math.max(remaining, 0));
+          if (usable <= 0) {
+            throw new ConflictError('This VIP list has no usable contacts', {
+              usableContactCount: 0,
+              remainingQuota: Math.max(remaining, 0),
+              effectiveRequestedCount: 0,
+              packageGroup: null,
+            });
+          }
+          if (remaining <= 0 || effective <= 0) {
+            throw new ConflictError(VIP_QUOTA_EXCEEDED_MESSAGE, {
+              usableContactCount: usable,
+              remainingQuota: Math.max(remaining, 0),
+              effectiveRequestedCount: 0,
+              packageGroup: nearestVipPackageGroup(usable),
+            });
+          }
+          if (body.requestedCount !== effective) {
+            throw new ConflictError('Confirm the refreshed VIP recipient quantity.', {
+              usableContactCount: usable,
+              remainingQuota: remaining,
+              effectiveRequestedCount: effective,
+              packageGroup: nearestVipPackageGroup(usable),
+            });
           }
           const listPhones = await tx.$queryRaw<Array<{ phoneNumber: string }>>`
             SELECT DISTINCT phone_number AS "phoneNumber"
@@ -886,18 +1029,36 @@ export class CreateVipRequestUseCase {
           }
           const reserved = await this.vip.tryReserveList(tx, body.listId, principal.tenantId, now);
           if (!reserved) {
+            const ownLive = await tx.$queryRaw<Array<{ id: string }>>`
+              SELECT id FROM vip_requests
+              WHERE list_id = ${body.listId}::uuid
+                AND salon_id = ${principal.tenantId}::uuid
+                AND (
+                  status IN (
+                    'SUBMITTED'::"VipRequestStatus",
+                    'MANUAL_QUEUED'::"VipRequestStatus",
+                    'BALE_NOT_IMPLEMENTED'::"VipRequestStatus"
+                  )
+                  OR (
+                    status = 'AWAITING_SAMPLE_WORK'::"VipRequestStatus"
+                    AND reserved_until >= ${now}
+                  )
+                )
+              LIMIT 1
+            `;
+            if (ownLive.length === 1) {
+              throw new ConflictError('This salon already has an active request for this VIP list');
+            }
             throw new ConflictError('This VIP list is not available');
           }
-          const list = await tx.vipTargetList.findUniqueOrThrow({
-            where: { id: body.listId },
-            select: { contactCount: true, name: true },
-          });
-          if (list.contactCount < body.requestedCount) {
-            throw new ValidationError('This VIP list does not have enough contacts');
-          }
-          const contacts = await this.vip.selectContacts(body.listId, body.requestedCount, tx);
-          if (contacts.length !== body.requestedCount) {
-            throw new ValidationError('This VIP list does not have enough contacts');
+          const contacts = await this.vip.selectContacts(body.listId, effective, tx);
+          if (contacts.length !== effective) {
+            throw new ConflictError('Confirm the refreshed VIP recipient quantity.', {
+              usableContactCount: contacts.length,
+              remainingQuota: remaining,
+              effectiveRequestedCount: Math.min(contacts.length, remaining),
+              packageGroup: nearestVipPackageGroup(contacts.length),
+            });
           }
           await tx.vipRequest.create({
             data: {
@@ -905,7 +1066,7 @@ export class CreateVipRequestUseCase {
               salonId: principal.tenantId,
               listId: body.listId,
               createdByUserId: principal.userId,
-              requestedCount: body.requestedCount,
+              requestedCount: effective,
               geographicRange,
               status: 'AWAITING_SAMPLE_WORK',
               reservedUntil: this.vip.reservationDeadline(now),
@@ -939,7 +1100,7 @@ export class CreateVipRequestUseCase {
               resource: 'vip_request',
               resourceId: requestId,
               result: 'SUCCESS',
-              metadata: { listId: body.listId, requestedCount: body.requestedCount },
+              metadata: { listId: body.listId, requestedCount: effective },
             },
           });
         },
@@ -954,10 +1115,19 @@ export class CreateVipRequestUseCase {
       ) {
         throw error;
       }
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2010') {
+        const meta = JSON.stringify(error.meta ?? {});
+        if (meta.includes('40P01')) {
+          throw new ConflictError('This VIP list is not available');
+        }
+      }
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
         const target = JSON.stringify(error.meta ?? {});
         if (target.includes('vip_requests_one_awaiting_draft_per_salon')) {
           throw new ConflictError(VIP_ONE_ACTIVE_DRAFT_MESSAGE);
+        }
+        if (target.includes('vip_requests_one_active_per_salon_list')) {
+          throw new ConflictError('This salon already has an active request for this VIP list');
         }
       }
       const mapped = mapPrismaError(error);
@@ -1047,7 +1217,10 @@ export class UploadVipSampleWorkUseCase {
     }
     const now = new Date();
     const execution = await this.prisma.client.$transaction(async (tx) => {
-      await this.vip.expireStaleReservations(now, tx);
+      await this.vip.expireStaleReservations(now, tx, {
+        mode: 'salon',
+        salonId: principal.tenantId,
+      });
       await tx.$queryRaw`SELECT id FROM vip_requests WHERE id = ${requestId}::uuid FOR UPDATE`;
       const request = await tx.vipRequest.findFirst({
         where: { id: requestId, salonId: principal.tenantId },
@@ -1286,7 +1459,10 @@ export class SubmitVipRequestUseCase {
 
     const now = new Date();
     await this.prisma.client.$transaction(async (tx) => {
-      await this.vip.expireStaleReservations(now, tx);
+      await this.vip.expireStaleReservations(now, tx, {
+        mode: 'salon',
+        salonId: principal.tenantId,
+      });
     });
 
     const candidate = await this.prisma.client.vipRequest.findFirst({

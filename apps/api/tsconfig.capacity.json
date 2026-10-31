@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./dist-capacity",
+    "rootDir": "."
+  },
+  "include": ["src/**/*.ts", "perf/capacity-main.ts"],
+  "exclude": ["src/**/*.spec.ts", "test", "dist", "dist-capacity", "node_modules"]
+}

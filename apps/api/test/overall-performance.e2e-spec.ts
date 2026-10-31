@@ -439,9 +439,9 @@ describeIfDb('Salon overall performance (e2e)', () => {
     expect(body.salonCustomerSentMessageCount).toBe(4);
     expect(body.salonCustomerMessageRequestCount).toBe(7);
     expect(body.vipSentMessageCount).toBe(1);
-    expect(body.vipMessageRequestCount).toBe(2);
+    expect(body.vipMessageRequestCount).toBe(30);
     expect(body.monthlyRecordedRevenueIrr).toBe('0.00');
-    expect(body.agreedReturnCount).toBe(3);
+    expect(body.agreedReturnCount).toBe(1);
     expect(body.messageAssociatedReturnedCustomerCount).toBe(2);
     expect(body.returningSalonCustomerCount).toBe(1);
 

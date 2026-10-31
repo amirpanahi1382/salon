@@ -6,6 +6,7 @@ import {
   VIP_ENTITLEMENT_REVOKE_OPERATION,
   VIP_LIST_IMPORT_OPERATION,
   VIP_LIST_PATCH_OPERATION,
+  VIP_LIST_REOPEN_OPERATION,
   VIP_REQUEST_CREATE_OPERATION,
   VIP_REQUEST_SUBMIT_OPERATION,
   VIP_SAMPLE_WORK_UPLOAD_OPERATION,
@@ -18,6 +19,7 @@ export {
   VIP_ENTITLEMENT_REVOKE_OPERATION,
   VIP_LIST_IMPORT_OPERATION,
   VIP_LIST_PATCH_OPERATION,
+  VIP_LIST_REOPEN_OPERATION,
   VIP_REQUEST_CREATE_OPERATION,
   VIP_REQUEST_SUBMIT_OPERATION,
   VIP_SAMPLE_WORK_UPLOAD_OPERATION,
@@ -29,6 +31,10 @@ export function vipListImportHash(contactCount: number, phonesFingerprint: strin
 
 export function vipListPatchHash(listId: string, name: string, availability: string): string {
   return hashIdempotencyPayload(VIP_LIST_PATCH_OPERATION, `${listId}:${name}:${availability}`);
+}
+
+export function vipListReopenHash(listId: string): string {
+  return hashIdempotencyPayload(VIP_LIST_REOPEN_OPERATION, listId);
 }
 
 export function vipEntitlementHash(salonId: string, action: 'grant' | 'revoke'): string {

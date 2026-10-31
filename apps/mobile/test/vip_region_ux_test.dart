@@ -256,11 +256,68 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.textContaining('01 — '));
     await tester.pumpAndSettle();
-    await tester.tap(vipSize(30));
+    await tester.tap(vipSize(100));
+    await tester.pumpAndSettle();
+    expect(find.text('VIP-01-08'), findsNothing);
+    await tester.tap(vipSize(50));
     await tester.pumpAndSettle();
     await tester.tap(find.text('VIP-01-08'));
     await tester.pumpAndSettle();
-    expect(sizeChip(tester, 100).onSelected, isNull);
+    expect(find.text(AppStrings.vipSummaryRecipientCount(65)), findsWidgets);
+    expect(sizeChip(tester, 100).onSelected, isNotNull);
+  });
+
+  testWidgets('a 52-contact group 50 list plans the quota cap', (tester) async {
+    final repo = _FakeVipRepository(
+      regionItems: _regions(),
+      listsByCode: {
+        '01': [
+          _list(id: 'fifty-two', name: 'VIP-01-52', regionCode: '01', contactCount: 52),
+        ],
+      },
+      capabilityValue: const VipCapability(
+        entitled: true,
+        remainingQuota: 20,
+        usedQuota: 480,
+        allowedRequestCounts: [30, 50, 100],
+      ),
+    );
+    await _pump(tester, repo);
+    await _chooseRegion01(tester);
+    await tester.tap(vipSize(50));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('VIP-01-52'));
+    await tester.pumpAndSettle();
+    expect(find.text(AppStrings.vipSummaryRecipientCount(50)), findsWidgets);
+    expect(find.text(AppStrings.vipSummaryRecipientCount(20)), findsWidgets);
+    expect(find.text(AppStrings.vipSummaryActualRecipients), findsOneWidget);
+  });
+
+  testWidgets('a refreshed quantity conflict does not submit a second order', (tester) async {
+    final repo = _FakeVipRepository(
+      regionItems: _regions(),
+      listsByCode: {
+        '01': [_list(id: 'a', name: 'VIP-01-01', regionCode: '01', contactCount: 100)],
+      },
+      createError: const ApiException(
+        statusCode: 409,
+        code: 'CONFLICT',
+        message: 'Confirm the refreshed VIP recipient quantity.',
+        details: {'effectiveRequestedCount': 20, 'packageGroup': 100},
+      ),
+    );
+    await _pump(tester, repo);
+    await _chooseRegion01(tester);
+    await tester.tap(vipSize(100));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('VIP-01-01'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text(AppStrings.sendMessageAction));
+    await tester.tap(find.text(AppStrings.sendMessageAction));
+    await tester.pumpAndSettle();
+    expect(find.text(AppStrings.vipQuantityChanged), findsOneWidget);
+    expect(repo.createCalls, hasLength(1));
+    expect(repo.createCalls.single['requestedCount'], 100);
   });
 
   testWidgets('list load error is not treated as an empty region', (tester) async {
@@ -300,7 +357,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.textContaining('01 — '));
     await tester.pumpAndSettle();
-    await tester.tap(vipSize(30));
+    await tester.tap(vipSize(100));
     await tester.pumpAndSettle();
     await tester.tap(find.text('VIP-01-01'));
     await tester.pumpAndSettle();
@@ -357,7 +414,7 @@ void main() {
     expect(find.textContaining('AWAITING_SAMPLE_WORK'), findsNothing);
   });
 
-  testWidgets('sizes above remaining quota are disabled', (tester) async {
+  testWidgets('package groups stay selectable when quota is below the group', (tester) async {
     final repo = _FakeVipRepository(
       regionItems: _regions(),
       capabilityValue: const VipCapability(
@@ -369,8 +426,8 @@ void main() {
     );
     await _pump(tester, repo);
     expect(sizeChip(tester, 30).onSelected, isNotNull);
-    expect(sizeChip(tester, 50).onSelected, isNull);
-    expect(sizeChip(tester, 100).onSelected, isNull);
+    expect(sizeChip(tester, 50).onSelected, isNotNull);
+    expect(sizeChip(tester, 100).onSelected, isNotNull);
   });
 
   testWidgets('an older capability response cannot replace a newer one', (tester) async {
@@ -432,7 +489,7 @@ void main() {
     expect(find.text(AppStrings.vipAddSample), findsNothing);
   });
 
-  testWidgets('remaining quota below the minimum request size is explained', (tester) async {
+  testWidgets('remaining quota below a group still shows the request form', (tester) async {
     final repo = _FakeVipRepository(
       regionItems: _regions(),
       capabilityValue: const VipCapability(
@@ -444,10 +501,9 @@ void main() {
       ),
     );
     await _pump(tester, repo);
-    expect(find.text(AppStrings.vipQuotaBelowMinimum(20)), findsWidgets);
+    expect(find.text(AppStrings.vipQuotaBelowMinimum(20)), findsNothing);
     expect(find.text(AppStrings.vipQuotaExhausted), findsNothing);
-    expect(find.byType(VipRequestSizeChip), findsNothing);
-    expect(find.text(AppStrings.sendMessageAction), findsNothing);
+    expect(find.byType(VipRequestSizeChip), findsWidgets);
   });
 
   testWidgets('history statuses use Persian labels', (tester) async {
@@ -472,7 +528,7 @@ void main() {
     expect(find.textContaining('BALE_NOT_IMPLEMENTED'), findsNothing);
   });
 
-  testWidgets('a refreshed capability disables a stale oversized selection', (tester) async {
+  testWidgets('a refreshed lower quota caps the planned recipient quantity', (tester) async {
     final responses = <VipCapability>[
       const VipCapability(
         entitled: true,
@@ -513,9 +569,9 @@ void main() {
     await refresh;
     await tester.pumpAndSettle();
     expect(calls, 2);
-    expect(sizeChip(tester, 100).onSelected, isNull);
-    expect(sizeChip(tester, 30).onSelected, isNotNull);
-    expect(tester.widget<FilledButton>(find.widgetWithText(FilledButton, AppStrings.sendMessageAction)).onPressed, isNull);
+    expect(sizeChip(tester, 100).onSelected, isNotNull);
+    expect(find.text(AppStrings.vipSummaryRecipientCount(40)), findsWidgets);
+    expect(tester.widget<FilledButton>(find.widgetWithText(FilledButton, AppStrings.sendMessageAction)).onPressed, isNotNull);
     expect(calls, 2);
   });
 
@@ -613,7 +669,7 @@ void main() {
     );
     await _pump(tester, repo);
     await _chooseRegion01(tester);
-    await tester.tap(vipSize(30));
+    await tester.tap(vipSize(100));
     await tester.pumpAndSettle();
     await tester.tap(find.text('VIP-01-01'));
     await tester.pumpAndSettle();
@@ -651,7 +707,7 @@ void main() {
     );
     await _pump(tester, repo);
     await _chooseRegion01(tester);
-    await tester.tap(vipSize(50));
+    await tester.tap(vipSize(100));
     await tester.pumpAndSettle();
     await tester.tap(find.text('VIP-01-01'));
     await tester.pumpAndSettle();

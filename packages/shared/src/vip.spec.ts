@@ -7,6 +7,7 @@ import {
   VIP_BALE_NOT_AVAILABLE_MESSAGE,
   VIP_IN_PROGRESS_STATUSES,
   VIP_OUTREACH_EXECUTION_STATES,
+  nearestVipPackageGroup,
   VIP_QUOTA_EXCEEDED_MESSAGE,
   VIP_QUOTA_MAX,
   VIP_QUOTA_WINDOW_DAYS,
@@ -20,12 +21,23 @@ import {
 } from './vip';
 
 describe('VIP shared rules', () => {
-  it('allows only 30, 50, and 100', () => {
+  it('keeps 30, 50, and 100 as package groups', () => {
     expect(isVipAllowedRequestCount(30)).toBe(true);
     expect(isVipAllowedRequestCount(50)).toBe(true);
     expect(isVipAllowedRequestCount(100)).toBe(true);
     expect(isVipAllowedRequestCount(101)).toBe(false);
     expect(isVipAllowedRequestCount(0)).toBe(false);
+  });
+
+  it('assigns the nearest package group and breaks ties upward', () => {
+    expect(nearestVipPackageGroup(0)).toBeNull();
+    expect(nearestVipPackageGroup(28)).toBe(30);
+    expect(nearestVipPackageGroup(30)).toBe(30);
+    expect(nearestVipPackageGroup(40)).toBe(50);
+    expect(nearestVipPackageGroup(52)).toBe(50);
+    expect(nearestVipPackageGroup(75)).toBe(100);
+    expect(nearestVipPackageGroup(92)).toBe(100);
+    expect(nearestVipPackageGroup(100)).toBe(100);
   });
 
   it('keeps the rolling seven-day quota and one-draft rule as shared policy', () => {

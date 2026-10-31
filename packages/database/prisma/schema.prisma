@@ -639,6 +639,8 @@ model VipTargetList {
   reservedBySalonId  String?             @map("reserved_by_salon_id") @db.Uuid
   reservedBySalon    Salon?              @relation("VipListReservedBySalon", fields: [reservedBySalonId], references: [id], onDelete: Restrict)
   reservedAt         DateTime?           @map("reserved_at") @db.Timestamptz(3)
+  /// One explicit admin grant for the next reservation while other requests remain.
+  nextReservationOpen Boolean            @default(false) @map("next_reservation_open")
   createdAt          DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt          DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
   contacts           VipTargetContact[]

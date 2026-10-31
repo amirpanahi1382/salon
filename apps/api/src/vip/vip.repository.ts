@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma } from '@salon/database';
+import { Prisma, expireStaleVipReservations, type VipReservationExpiryScope } from '@salon/database';
 import {
   VIP_ACTIVE_DRAFT_STATUS,
   VIP_IN_PROGRESS_STATUSES,
@@ -9,7 +9,10 @@ import {
   VIP_RESERVATION_TTL_MS,
 } from '@salon/shared';
 import { PrismaService } from '../infrastructure/database/prisma.service';
-import { salonRequestableListWhere, vipListRequestableJoinSql, VIP_LIST_REQUESTABLE_SQL } from './vip-list-request-counts';
+import {
+  vipListBlockingRequestSql,
+  vipListEffectivelyAvailableSql,
+} from './vip-list-request-counts';
 import {
   VIP_RECIPIENT_PROGRESS_COUNTS,
   VIP_RECIPIENT_STOP_JOIN,
@@ -28,6 +31,7 @@ const LIST_SUMMARY_SELECT = {
   status: true,
   catalogMembership: true,
   contactCount: true,
+  nextReservationOpen: true,
   reservedBySalonId: true,
   reservedBySalon: { select: { name: true } },
   createdAt: true,
@@ -105,22 +109,58 @@ export class VipRepository {
     });
   }
 
-  listActiveListsByRegion(regionCode: string) {
-    return this.prisma.client.vipTargetList.findMany({
-      where: salonRequestableListWhere(regionCode),
-      select: {
-        id: true,
-        name: true,
-        regionCode: true,
-        status: true,
-        contactCount: true,
-        createdAt: true,
-      },
-      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-    });
+  listActiveListsByRegion(regionCode: string, salonId: string, now = new Date(), packageGroup?: number) {
+    const groupFilter = packageGroup
+      ? Prisma.sql`AND usable.package_group = ${packageGroup}`
+      : Prisma.empty;
+    return this.prisma.client.$queryRaw<Array<{
+      id: string;
+      name: string;
+      regionCode: string | null;
+      status: string;
+      contactCount: number;
+      sendableContactCount: number;
+      packageGroup: number | null;
+      createdAt: Date;
+    }>>`
+      SELECT
+        l.id,
+        l.name,
+        l.region_code AS "regionCode",
+        l.status::text AS status,
+        l.contact_count AS "contactCount",
+        usable.sendable AS "sendableContactCount",
+        usable.package_group AS "packageGroup",
+        l.created_at AS "createdAt"
+      FROM vip_target_lists l
+      JOIN LATERAL (
+        SELECT
+          COUNT(*)::int AS sendable,
+          CASE
+            WHEN COUNT(*) = 0 THEN NULL
+            WHEN COUNT(*) < 30 THEN 30
+            WHEN abs(COUNT(*) - 30) < abs(COUNT(*) - 50)
+              AND abs(COUNT(*) - 30) < abs(COUNT(*) - 100) THEN 30
+            WHEN abs(COUNT(*) - 50) < abs(COUNT(*) - 100) THEN 50
+            WHEN abs(COUNT(*) - 50) = abs(COUNT(*) - 100) THEN 100
+            WHEN abs(COUNT(*) - 100) <= abs(COUNT(*) - 50) THEN 100
+            ELSE 50
+          END AS package_group
+        FROM vip_target_contacts c
+        WHERE c.list_id = l.id
+          AND NOT EXISTS (
+            SELECT 1 FROM platform_message_stops s
+            WHERE s.phone_number = c.phone_number AND s.active = true
+          )
+      ) usable ON true
+      WHERE l.region_code = ${regionCode}
+        AND ${vipListEffectivelyAvailableSql('l', now, salonId)}
+        ${groupFilter}
+      ORDER BY l.created_at DESC, l.id DESC
+    `;
   }
 
-  summarizeAvailableRegions() {
+  summarizeAvailableRegions(salonId: string, now = new Date()) {
     const catalog = VIP_REGIONS.map(
       (row, index) => Prisma.sql`(${row.code}::text, ${row.name}::text, ${index}::int)`,
     );
@@ -144,7 +184,7 @@ export class VipRepository {
           FROM vip_target_contacts ct
           JOIN vip_target_lists listed ON listed.id = ct.list_id
           WHERE listed.region_code = c.code
-            AND ${vipListRequestableJoinSql('listed')}
+            AND ${vipListEffectivelyAvailableSql('listed', now, salonId)}
             AND NOT EXISTS (
               SELECT 1
               FROM platform_message_stops s
@@ -155,7 +195,7 @@ export class VipRepository {
       FROM catalog c
       LEFT JOIN vip_target_lists l
         ON l.region_code = c.code
-       AND ${vipListRequestableJoinSql('l')}
+       AND ${vipListEffectivelyAvailableSql('l', now, salonId)}
       GROUP BY c.code, c.name, c.sort
       ORDER BY c.sort
     `;
@@ -212,43 +252,16 @@ export class VipRepository {
     return counts;
   }
 
-  async expireStaleReservations(now: Date, db: Db): Promise<void> {
-    const stale = await db.vipRequest.findMany({
-      where: {
-        status: 'AWAITING_SAMPLE_WORK',
-        reservedUntil: { lt: now },
-      },
-      select: { id: true, listId: true, salonId: true },
-    });
-    for (const row of stale) {
-      await db.vipRequest.updateMany({
-        where: { id: row.id, status: 'AWAITING_SAMPLE_WORK' },
-        data: { status: 'CANCELLED', cancelledAt: now, updatedAt: now },
-      });
-      // Release only this salon's hold, and only when no live request still owns the list.
-      await db.$executeRaw`
-        UPDATE vip_target_lists
-        SET
-          status = 'ACTIVE',
-          reserved_by_salon_id = NULL,
-          reserved_at = NULL,
-          updated_at = ${now}
-        WHERE id = ${row.listId}::uuid
-          AND status = 'IN_USE'
-          AND reserved_by_salon_id = ${row.salonId}::uuid
-          AND NOT EXISTS (
-            SELECT 1
-            FROM vip_requests
-            WHERE list_id = ${row.listId}::uuid
-              AND status IN (
-                'AWAITING_SAMPLE_WORK',
-                'SUBMITTED',
-                'MANUAL_QUEUED',
-                'BALE_NOT_IMPLEMENTED'
-              )
-          )
-      `;
-    }
+  /**
+   * Owning draft-expiry write. Callers must pass salon scope on a tenant command
+   * or platform scope from the background worker. Reads do not call this.
+   */
+  async expireStaleReservations(
+    now: Date,
+    db: Db,
+    scope: VipReservationExpiryScope,
+  ): Promise<{ cancelledRequests: number; releasedLists: number }> {
+    return expireStaleVipReservations(db, now, scope);
   }
 
   async lockEntitlement(tx: Prisma.TransactionClient, salonId: string) {
@@ -261,13 +274,24 @@ export class VipRepository {
     return rows[0] ?? null;
   }
 
-  async quotaUsedSince(tx: Prisma.TransactionClient, salonId: string, since: Date) {
-    const rows = await tx.$queryRaw<Array<{ used: bigint }>>`
+  /**
+   * Stored quota excludes CANCELLED. When `evaluatedAt` is set, an overdue
+   * sample draft also does not consume quota. That read does not cancel the row.
+   */
+  async quotaUsedSince(db: Db, salonId: string, since: Date, evaluatedAt?: Date) {
+    const effectiveDraft = evaluatedAt
+      ? Prisma.sql`AND NOT (
+          status = 'AWAITING_SAMPLE_WORK'::"VipRequestStatus"
+          AND reserved_until < ${evaluatedAt}
+        )`
+      : Prisma.empty;
+    const rows = await db.$queryRaw<Array<{ used: bigint }>>`
       SELECT COALESCE(SUM(requested_count), 0) AS used
       FROM vip_requests
       WHERE salon_id = ${salonId}::uuid
-        AND status <> 'CANCELLED'
+        AND status <> 'CANCELLED'::"VipRequestStatus"
         AND created_at >= ${since}
+        ${effectiveDraft}
     `;
     return Number(rows[0]?.used ?? 0);
   }
@@ -284,9 +308,38 @@ export class VipRepository {
         status = 'IN_USE',
         reserved_by_salon_id = ${salonId}::uuid,
         reserved_at = ${now},
+        next_reservation_open = false,
         updated_at = ${now}
       WHERE id = ${listId}::uuid
-        AND ${VIP_LIST_REQUESTABLE_SQL}
+        AND catalog_membership = 'ORIGINAL_TEHRAN'::"VipCatalogMembership"
+        AND region_code IN (${Prisma.join([...VIP_REGION_CODES].map((code) => Prisma.sql`${code}`))})
+        AND status IN ('ACTIVE'::"VipTargetListStatus", 'IN_USE'::"VipTargetListStatus")
+        AND NOT EXISTS (
+          SELECT 1 FROM vip_requests own
+          WHERE own.list_id = ${listId}::uuid
+            AND own.salon_id = ${salonId}::uuid
+            AND (
+              own.status IN (
+                'SUBMITTED'::"VipRequestStatus",
+                'MANUAL_QUEUED'::"VipRequestStatus",
+                'BALE_NOT_IMPLEMENTED'::"VipRequestStatus"
+              )
+              OR (
+                own.status = 'AWAITING_SAMPLE_WORK'::"VipRequestStatus"
+                AND own.reserved_until >= ${now}
+              )
+            )
+        )
+        AND (
+          (
+            NOT ${vipListBlockingRequestSql(Prisma.sql`${listId}::uuid`, now)}
+            AND (
+              (status = 'ACTIVE'::"VipTargetListStatus" AND reserved_by_salon_id IS NULL)
+              OR status = 'IN_USE'::"VipTargetListStatus"
+            )
+          )
+          OR next_reservation_open = true
+        )
       RETURNING id
     `;
     return updated.length === 1;
@@ -329,7 +382,34 @@ export class VipRepository {
   }
 
   /**
-   * Deactivate only if the list is still unreserved. Leaves region, catalog, and reservation fields unchanged.
+   * One explicit opening for the next reservation. Does not clear the current
+   * reserver or change existing requests. A second call while the flag is
+   * already true matches no row.
+   */
+  async tryOpenNextReservation(
+    tx: Prisma.TransactionClient,
+    listId: string,
+    now: Date,
+  ): Promise<boolean> {
+    const updated = await tx.$queryRaw<Array<{ id: string }>>`
+      UPDATE vip_target_lists
+      SET next_reservation_open = true,
+          updated_at = ${now}
+      WHERE id = ${listId}::uuid
+        AND next_reservation_open = false
+        AND catalog_membership = 'ORIGINAL_TEHRAN'::"VipCatalogMembership"
+        AND region_code IN (${Prisma.join([...VIP_REGION_CODES].map((code) => Prisma.sql`${code}`))})
+        AND status IN ('ACTIVE'::"VipTargetListStatus", 'IN_USE'::"VipTargetListStatus")
+        AND ${vipListBlockingRequestSql(Prisma.sql`${listId}::uuid`, now)}
+      RETURNING id
+    `;
+    return updated.length === 1;
+  }
+
+  /**
+   * Deactivation stops new reservations, including an open grant.
+   * Existing requests stay. Reservation columns are cleared because a
+   * non-IN_USE row cannot keep them. Request rows remain the occupancy record.
    */
   async tryDeactivateUnreservedList(
     tx: Prisma.TransactionClient,
@@ -339,11 +419,13 @@ export class VipRepository {
       UPDATE vip_target_lists
       SET
         status = 'INACTIVE',
+        next_reservation_open = false,
+        reserved_by_salon_id = NULL,
+        reserved_at = NULL,
         ${input.name ? Prisma.sql`name = ${input.name},` : Prisma.sql``}
         updated_at = ${input.now}
       WHERE id = ${input.id}::uuid
-        AND status IN ('PENDING', 'INACTIVE', 'ACTIVE')
-        AND reserved_by_salon_id IS NULL
+        AND status IN ('PENDING', 'INACTIVE', 'ACTIVE', 'IN_USE')
       RETURNING id
     `;
     return updated.length === 1;

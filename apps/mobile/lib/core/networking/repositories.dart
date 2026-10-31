@@ -1126,6 +1126,17 @@ class VipRepository {
     );
   }
 
+  Future<VipTargetList> reopenList(String id, String idempotencyKey) async {
+    return VipTargetList.fromJson(
+      asJsonMap(
+        await _api.post(
+          '/admin/vip/lists/$id/reopen',
+          headers: {'Idempotency-Key': idempotencyKey},
+        ),
+      ),
+    );
+  }
+
   Future<VipTargetList> patchList(
     String id, {
     String? name,

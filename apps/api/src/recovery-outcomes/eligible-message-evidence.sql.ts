@@ -38,7 +38,13 @@ export const validCommitmentSourceSql = Prisma.sql`
   AND d.submitted_at IS NOT NULL
 `;
 
-/** Raw last-touch / first-claim selection, then effective COMMITMENT_BACKED visit precedence. */
+/**
+ * Raw last-touch / first-claim selection, then effective COMMITMENT_BACKED visit precedence.
+ * `eligible` is referenced twice, so PostgreSQL materializes it. On the large salon that
+ * tuplestore is about 4.1MB and spills at the 4MB work_mem. Inlining it avoids the spill
+ * but the parallel plan exhausts the container's /dev/shm (SQLSTATE 53100) and is slower
+ * under the API pool, so the materialized form stays.
+ */
 export function observedReturnCtes(tenantId: string) {
   return Prisma.sql`
   eligible AS (
