@@ -297,7 +297,11 @@ export class VipCapabilityDto {
   @ApiProperty({ description: 'Requests created at or after this instant count toward the window' })
   quotaWindowStartsAt!: string;
 
-  @ApiProperty({ type: [Number], example: [30, 50, 100] })
+  @ApiProperty({
+    type: [Number],
+    example: [30, 50, 100],
+    description: 'VIP browse package groups, not permitted recipient quantities.',
+  })
   allowedRequestCounts!: number[];
 
   @ApiProperty({ nullable: true, type: () => VipRequestDto })

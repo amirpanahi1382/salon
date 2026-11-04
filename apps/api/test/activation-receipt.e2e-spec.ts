@@ -887,9 +887,11 @@ describeIfDisposable('manual transfer receipt review on a disposable database', 
       expect(await prisma.client.auditLog.count({
         where: { resourceId: unverifiedRow.id, action: 'ACTIVATION_RECEIPT_STORED' },
       })).toBe(0);
-      expect(deletedKeys).toContain(unverifiedRow.objectKey);
+      // A failed verification becomes a durable cleanup candidate. It is not
+      // synchronously deleted while a fixed PUT authorization may still be live.
+      expect(deletedKeys).not.toContain(unverifiedRow.objectKey);
       expect(deletedKeys).not.toContain(firstRow.objectKey);
-      await expect(storage.getObject(unverifiedRow.objectKey)).rejects.toThrow();
+      expect((await storage.getObject(unverifiedRow.objectKey)).body.length).toBe(unverifiedRow.byteSize);
       expect((await storage.getObject(firstRow.objectKey)).body.equals(firstBody)).toBe(true);
 
       const replacement = await upload(owner.token, replacementBody);

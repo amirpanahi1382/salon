@@ -5,6 +5,7 @@ import { MemoryObjectStorage } from '../infrastructure/storage/memory.object-sto
 import { OBJECT_STORAGE } from '../infrastructure/storage/object-storage';
 import { S3CompatibleObjectStorage } from '../infrastructure/storage/s3-compatible.object-storage';
 import { ManualTransferEnabledGuard } from './activation-enabled.guard';
+import { ACTIVATION_RECEIPT_UPLOAD_LIFECYCLE, noOpActivationReceiptUploadLifecycle } from './activation-receipt-upload-lifecycle';
 import { ActivationController, AdminActivationController } from './activation.controller';
 import {
   DecideActivationReceiptUseCase,
@@ -22,6 +23,7 @@ import {
   controllers: [ActivationController, AdminActivationController],
   providers: [
     ManualTransferEnabledGuard,
+    { provide: ACTIVATION_RECEIPT_UPLOAD_LIFECYCLE, useValue: noOpActivationReceiptUploadLifecycle },
     {
       provide: OBJECT_STORAGE,
       inject: [AppConfigService],

@@ -43,6 +43,7 @@ import {
   inspectReceiptImage,
   readVerifiedActivationObject,
 } from './receipt-image';
+import { ACTIVATION_RECEIPT_UPLOAD_LIFECYCLE, type ActivationReceiptUploadLifecycle } from './activation-receipt-upload-lifecycle';
 
 const SUBMIT_OPERATION = 'activation_receipt_submit';
 const DECIDE_OPERATION = 'activation_receipt_decision';
@@ -138,6 +139,7 @@ export class UploadActivationReceiptUseCase {
     private readonly prisma: PrismaService,
     private readonly config: AppConfigService,
     @Inject(OBJECT_STORAGE) private readonly storage: ObjectStorage,
+    @Inject(ACTIVATION_RECEIPT_UPLOAD_LIFECYCLE) private readonly lifecycle: ActivationReceiptUploadLifecycle,
   ) {}
 
   async execute(
@@ -155,14 +157,20 @@ export class UploadActivationReceiptUseCase {
     const receiptId = createId();
     const objectKey = activationObjectKey(principal.tenantId, receiptId);
     const expiresAt = new Date(Date.now() + ACTIVATION_UPLOAD_LEASE_MS);
+    const uploadOwnerToken = createId();
     const intent = await this.prisma.client.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM salons WHERE id = ${principal.tenantId}::uuid FOR UPDATE`;
+      // A pre-recovery attempt has no ownership/authorization record and can
+      // never be finalized by this version. Close it only to unblock a fresh
+      // attempt; its object remains inventory-only and is never auto-deleted.
       await tx.$executeRaw`
         UPDATE activation_receipts
-        SET phase = 'FAILED'::"ActivationReceiptPhase", updated_at = clock_timestamp()
+        SET phase = 'FAILED'::"ActivationReceiptPhase",
+            upload_last_error_code = 'LEGACY_UPLOAD_UNOWNED', updated_at = clock_timestamp()
         WHERE salon_id = ${principal.tenantId}::uuid
           AND phase = 'UPLOADING'::"ActivationReceiptPhase"
-          AND created_at < clock_timestamp() - interval '60 seconds'
+          AND upload_owner_token IS NULL
+          AND upload_locked_until IS NULL
       `;
       const uploading = await tx.activationReceipt.findFirst({
         where: { salonId: principal.tenantId, phase: 'UPLOADING' },
@@ -193,6 +201,8 @@ export class UploadActivationReceiptUseCase {
           byteSize: image.buffer.length,
           sha256: image.sha256,
           phase: 'UPLOADING',
+          uploadOwnerToken,
+          uploadLockedUntil: expiresAt,
           updatedAt: new Date(),
         },
       });
@@ -215,16 +225,20 @@ export class UploadActivationReceiptUseCase {
         sha256: image.sha256,
       });
     } catch {
-      await this.prisma.client.$executeRaw`
-        UPDATE activation_receipts
-        SET phase = 'FAILED'::"ActivationReceiptPhase", updated_at = clock_timestamp()
-        WHERE id = ${receiptId}::uuid
-          AND salon_id = ${principal.tenantId}::uuid
-          AND phase = 'UPLOADING'::"ActivationReceiptPhase"
-      `;
-      await this.storage.deleteObject(objectKey).catch(() => undefined);
+      await scheduleActivationReceiptCleanup(this.prisma, {
+        receiptId,
+        salonId: principal.tenantId,
+        objectKey,
+        uploadOwnerToken,
+        expiresAt,
+        errorCode: 'UPLOAD_OR_VERIFY_FAILED',
+        availableAt: new Date(Date.now() + this.config.values.MINIO_REQUEST_TIMEOUT_MS),
+        settleUntil: new Date(expiresAt.getTime() + this.config.values.VIP_UPLOAD_CLEANUP_SETTLE_MS),
+      });
       throw new InfrastructureError('File storage is temporarily unavailable');
     }
+
+    await this.lifecycle.afterObjectVerified({ receiptId });
 
     try {
       await this.prisma.client.$transaction(async (tx) => {
@@ -263,6 +277,9 @@ export class UploadActivationReceiptUseCase {
           UPDATE activation_receipts
           SET phase = 'STORED'::"ActivationReceiptPhase",
               stored_at = clock_timestamp(),
+              upload_owner_token = NULL,
+              upload_locked_until = NULL,
+              upload_last_error_code = NULL,
               updated_at = clock_timestamp()
           WHERE id = ${receiptId}::uuid
             AND salon_id = ${principal.tenantId}::uuid
@@ -295,13 +312,16 @@ export class UploadActivationReceiptUseCase {
       });
     } catch (error) {
       if (error instanceof ConflictError) {
-        await this.prisma.client.$executeRaw`
-          UPDATE activation_receipts
-          SET phase = 'FAILED'::"ActivationReceiptPhase", updated_at = clock_timestamp()
-          WHERE id = ${receiptId}::uuid
-            AND salon_id = ${principal.tenantId}::uuid
-            AND phase = 'UPLOADING'::"ActivationReceiptPhase"
-        `;
+        await scheduleActivationReceiptCleanup(this.prisma, {
+          receiptId,
+          salonId: principal.tenantId,
+          objectKey,
+          uploadOwnerToken,
+          expiresAt,
+          errorCode: 'FINALIZE_CONFLICT',
+          availableAt: new Date(Date.now() + this.config.values.MINIO_REQUEST_TIMEOUT_MS),
+          settleUntil: new Date(expiresAt.getTime() + this.config.values.VIP_UPLOAD_CLEANUP_SETTLE_MS),
+        });
       }
       throw error;
     }
@@ -312,6 +332,46 @@ export class UploadActivationReceiptUseCase {
       contentType: image.contentType,
     };
   }
+}
+
+async function scheduleActivationReceiptCleanup(
+  prisma: PrismaService,
+  input: {
+    receiptId: string;
+    salonId: string;
+    objectKey: string;
+    uploadOwnerToken: string;
+    expiresAt: Date;
+    errorCode: string;
+    availableAt: Date;
+    settleUntil: Date;
+  },
+): Promise<void> {
+  await prisma.client.$transaction(async (tx) => {
+    const failed = await tx.$executeRaw`
+      UPDATE activation_receipts
+      SET phase = 'FAILED'::"ActivationReceiptPhase",
+          upload_owner_token = NULL,
+          upload_locked_until = NULL,
+          upload_last_error_code = ${input.errorCode},
+          updated_at = clock_timestamp()
+      WHERE id = ${input.receiptId}::uuid
+        AND salon_id = ${input.salonId}::uuid
+        AND phase = 'UPLOADING'::"ActivationReceiptPhase"
+        AND upload_owner_token = ${input.uploadOwnerToken}::uuid
+        AND upload_locked_until = ${input.expiresAt}
+    `;
+    if (failed !== 1) return;
+    await tx.$executeRaw`
+      INSERT INTO activation_receipt_upload_cleanups
+        (id, receipt_id, object_key, upload_generation, available_at, settle_until, status,
+         claim_generation, delete_passes, attempts, created_at)
+      VALUES
+        (${createId()}::uuid, ${input.receiptId}::uuid, ${input.objectKey}, 1,
+         ${input.availableAt}, ${input.settleUntil}, 'PENDING', 0, 0, 0, clock_timestamp())
+      ON CONFLICT (object_key) DO NOTHING
+    `;
+  });
 }
 
 @Injectable()

@@ -1159,8 +1159,41 @@ model ActivationReceipt {
   bankAttestationWording   String?                 @map("bank_attestation_wording") @db.Text
   createdAt                DateTime                @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt                DateTime                @updatedAt @map("updated_at") @db.Timestamptz(3)
+  uploadGeneration         BigInt                  @default(1) @map("upload_generation")
+  uploadOwnerToken         String?                 @map("upload_owner_token") @db.Uuid
+  uploadLockedUntil        DateTime?               @map("upload_locked_until") @db.Timestamptz(3)
+  uploadLastErrorCode      String?                 @map("upload_last_error_code")
+  uploadCleanups           ActivationReceiptUploadCleanup[]
 
   @@index([salonId, createdAt])
   @@index([phase, submittedAt])
   @@map("activation_receipts")
+}
+
+enum ActivationReceiptCleanupStatus {
+  PENDING
+  PROCESSING
+  PROCESSED
+}
+
+model ActivationReceiptUploadCleanup {
+  id              String                         @id @db.Uuid
+  receiptId       String                         @map("receipt_id") @db.Uuid
+  receipt         ActivationReceipt              @relation(fields: [receiptId], references: [id], onDelete: Restrict)
+  objectKey       String                         @unique @map("object_key")
+  uploadGeneration BigInt                        @map("upload_generation")
+  availableAt     DateTime                       @map("available_at") @db.Timestamptz(3)
+  settleUntil     DateTime                       @map("settle_until") @db.Timestamptz(3)
+  status          ActivationReceiptCleanupStatus @default(PENDING)
+  claimGeneration BigInt                         @default(0) @map("claim_generation")
+  claimToken      String?                        @map("claim_token") @db.Uuid
+  lockedUntil     DateTime?                      @map("locked_until") @db.Timestamptz(3)
+  deletePasses    Int                            @default(0) @map("delete_passes")
+  attempts        Int                            @default(0)
+  lastErrorCode   String?                        @map("last_error_code")
+  processedAt     DateTime?                      @map("processed_at") @db.Timestamptz(3)
+  createdAt       DateTime                       @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([status, availableAt, id])
+  @@map("activation_receipt_upload_cleanups")
 }

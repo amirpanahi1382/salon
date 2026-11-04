@@ -182,6 +182,12 @@ const envSchema = z.object({
   VIP_UPLOAD_RECOVERY_BATCH_SIZE: z.coerce.number().int().min(1).max(1_000).default(50),
   /** Must exceed the object store's maximum time to finish or discard an accepted PUT. */
   VIP_UPLOAD_CLEANUP_SETTLE_MS: z.coerce.number().int().min(60_000).max(604_800_000).default(3_600_000),
+  /**
+   * Receipt orphan deletion needs a deployment-specific bound on completion of
+   * PUTs accepted before their fixed expiry. Keep discovery and quarantine on,
+   * but do not delete receipt bytes until that bound is evidenced.
+   */
+  ACTIVATION_RECEIPT_AUTOMATIC_CLEANUP_ENABLED: booleanFromString.default(false),
   API_SHUTDOWN_GRACE_MS: z.coerce.number().int().min(1000).max(120_000).default(15_000),
   HTTP_TIMEOUT_MS: z.coerce.number().int().min(100).max(120_000).default(5_000),
   HEALTH_CHECK_TIMEOUT_MS: z.coerce.number().int().min(100).max(10_000).default(2_000),

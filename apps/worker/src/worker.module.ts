@@ -11,6 +11,10 @@ import {
   VIP_OBJECT_STORAGE,
   VipSampleWorkRecoveryProcessor,
 } from './vip/vip-sample-work-recovery.processor';
+import {
+  ACTIVATION_RECEIPT_OBJECT_STORAGE,
+  ActivationReceiptRecoveryProcessor,
+} from './activation/activation-receipt-recovery.processor';
 
 @Module({
   imports: [AppConfigModule, DatabaseModule],
@@ -25,6 +29,12 @@ import {
       useFactory: (config: AppConfigService) => new S3CompatibleObjectStorage(config.values),
     },
     VipSampleWorkRecoveryProcessor,
+    {
+      provide: ACTIVATION_RECEIPT_OBJECT_STORAGE,
+      inject: [AppConfigService],
+      useFactory: (config: AppConfigService) => new S3CompatibleObjectStorage(config.values),
+    },
+    ActivationReceiptRecoveryProcessor,
   ],
 })
 export class WorkerModule {}
