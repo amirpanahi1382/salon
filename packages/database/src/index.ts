@@ -40,6 +40,8 @@ export {
 } from './dev-catalog.js';
 export { applyDatabasePoolParams, createPrismaClient } from './client.js';
 export type { PrismaPoolOptions } from './client.js';
+export { assertCanonicalDatabase } from './canonical-database.js';
+export type { CanonicalDatabaseProof } from './canonical-database.js';
 export {
   claimOutboxEvents,
   markOutboxDeadLetter,

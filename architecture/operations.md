@@ -53,6 +53,40 @@ During SIGTERM/SIGINT the API marks itself draining; readiness returns 503 while
 
 The worker has no HTTP server. Orchestrators should treat process exit / container status as liveness.
 
+### Isolated activation-receipt quarantine recovery
+
+`pnpm --filter @salon/worker start:activation-recovery` starts only the bounded
+activation-receipt recovery processor. Its Nest context contains configuration,
+the restricted PostgreSQL runtime client, and that processor; it does **not**
+import `WorkerModule`, outbox consumers, Bale/Safir clients, VIP recovery, or
+retention jobs. It uses the existing `FOR UPDATE SKIP LOCKED` claims and
+generation fences, so concurrent isolated instances cannot duplicate terminal
+facts. A tick is non-overlapping, bounded by `VIP_UPLOAD_RECOVERY_BATCH_SIZE`,
+and a signal stops polling, drains the current bounded tick, then closes Prisma.
+
+This process is quarantine-only. It fails before connecting when
+`ACTIVATION_RECEIPT_AUTOMATIC_CLEANUP_ENABLED=true`, has no object-storage
+adapter in its module, and therefore cannot issue a storage DELETE. It changes
+only expired owned `UPLOADING` attempts to `FAILED` and records durable cleanup
+metadata. Ownerless legacy uploads and `STORED`, `UNDER_REVIEW`, `APPROVED`,
+`REJECTED`, and `SUPERSEDED` evidence remain untouched. Tick failures are
+logged with stable recovery codes and polling continues; raw storage or database
+errors are not logged.
+
+For a disposable environment, build first with
+`pnpm build:packages && pnpm --filter @salon/worker build`, then explicitly
+provide that environment's `DATABASE_URL` and run
+`pnpm --filter @salon/worker start:activation-recovery`. It never loads the
+repository root `.env` itself. Canonical operation, after a separate approval,
+uses `pnpm start:canonical:activation-recovery`; that wrapper loads only
+`.env.phone-first-product`, requires `canonical_database_identity()` to match,
+forces automatic deletion off, caps its own `salon_app` pool at two connections,
+and runs as `salon_app`. Confirm a zero-delete configuration and process logs
+before enabling it. Roll back by stopping this process; its committed
+quarantine facts are historical evidence and must not be rewritten. Automatic
+deletion remains a separate deployment decision requiring a proven accepted-PUT
+completion bound for the actual storage/proxy/ingress path.
+
 ## Shutdown
 
 **API:** stop advertising ready → HTTP server stops accepting new connections → in-flight requests may finish up to `API_SHUTDOWN_GRACE_MS` (default 15s) → Prisma disconnects. If close hangs past the grace period, the process exits 1.

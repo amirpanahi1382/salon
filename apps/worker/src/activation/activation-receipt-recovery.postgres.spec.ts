@@ -96,6 +96,19 @@ describeIfDisposable('activation receipt recovery quarantine (PostgreSQL + MinIO
     expect(storage.deleted).toEqual([]);
   });
 
+  it('lets concurrent recovery instances create one fenced quarantine fact', async () => {
+    const attempt = await seed('UPLOADING', { owned: true, expired: true });
+    const now = new Date();
+    const [first, second] = await Promise.all([
+      processor().releaseExpiredAttempts(now),
+      processor().releaseExpiredAttempts(now),
+    ]);
+    expect(first + second).toBe(1);
+    expect((await row(attempt.id)).phase).toBe('FAILED');
+    expect(await app.activationReceiptUploadCleanup.count({ where: { receiptId: attempt.id } })).toBe(1);
+    expect(storage.deleted).toEqual([]);
+  });
+
   it('never claims protected history and does not call DELETE while quarantine-only is configured', async () => {
     const phases = ['STORED', 'UNDER_REVIEW', 'APPROVED', 'REJECTED', 'SUPERSEDED'] as const;
     for (const phase of phases) {

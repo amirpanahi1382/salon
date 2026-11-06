@@ -34,7 +34,7 @@ export class ActivationReceiptRecoveryProcessor implements OnModuleInit, OnModul
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: AppConfigService,
-    @Inject(ACTIVATION_RECEIPT_OBJECT_STORAGE) private readonly storage: ObjectStorage,
+    @Optional() @Inject(ACTIVATION_RECEIPT_OBJECT_STORAGE) private readonly storage?: ObjectStorage,
     @Optional() logger?: Logger,
   ) {
     this.logger = logger ?? createWorkerLogger(config.values);
@@ -148,6 +148,9 @@ export class ActivationReceiptRecoveryProcessor implements OnModuleInit, OnModul
   }
 
   async processCleanup(claim: CleanupClaim, now = new Date()): Promise<void> {
+    if (!this.storage) {
+      throw new Error('Activation receipt storage is unavailable for automatic cleanup');
+    }
     const current = await this.prisma.client.$queryRaw<Array<{ id: string }>>`
       SELECT r.id FROM activation_receipt_upload_cleanups c
       JOIN activation_receipts r ON r.id = c.receipt_id

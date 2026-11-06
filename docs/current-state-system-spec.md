@@ -245,6 +245,7 @@ Canonical `salon-db` holds the transferred VIP inventory: 29 `ORIGINAL_TEHRAN` l
 | Concern | Status |
 | --- | --- |
 | Outbox + worker | **Implemented** |
+| Isolated activation-receipt quarantine recovery | **Implemented:** a separate restricted-runtime process can quarantine expired owned receipt uploads without loading outbox, providers, VIP recovery, retention, or a deletion adapter; automatic object deletion is rejected and remains deferred |
 | Audit | **Implemented** |
 | Idempotency table | **Implemented** (7-day retention) |
 | Health / ready / metrics | **Implemented** — ready = Postgres |

@@ -23,7 +23,7 @@ describe('assertCanonicalDatabase', () => {
     ).resolves.toBeUndefined();
   });
 
-  it('rejects a different database, comment, or unreadable function', async () => {
+  it('rejects each mismatched identity field and an unreadable function without exposing its error', async () => {
     await expect(
       assertCanonicalDatabase(client([{
         database_name: 'salon_opp_integrity_20261024',
@@ -35,11 +35,29 @@ describe('assertCanonicalDatabase', () => {
       assertCanonicalDatabase(client([{
         database_name: expected.databaseName,
         system_identifier: '1',
+        database_comment: expected.databaseComment,
+      }]) as never, expected),
+    ).rejects.toThrow(/does not match/);
+    await expect(
+      assertCanonicalDatabase(client([{
+        database_name: expected.databaseName,
+        system_identifier: expected.systemIdentifier,
         database_comment: 'other',
       }]) as never, expected),
     ).rejects.toThrow(/does not match/);
     await expect(
       assertCanonicalDatabase(client(new Error('permission denied')) as never, expected),
     ).rejects.toThrow(/could not be read/);
+  });
+
+  it('rejects incomplete canonical configuration before querying', async () => {
+    const query = jest.fn();
+    await expect(
+      assertCanonicalDatabase({ $queryRaw: query } as never, {
+        ...expected,
+        databaseComment: '',
+      }),
+    ).rejects.toThrow(/identity is incomplete/);
+    expect(query).not.toHaveBeenCalled();
   });
 });

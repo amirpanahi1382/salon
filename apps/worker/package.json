@@ -5,6 +5,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "start": "node dist/main.js",
+    "start:activation-recovery": "node dist/activation-recovery-main.js",
     "start:dev": "tsc -p tsconfig.json && node dist/main.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "jest --config jest.config.cjs"

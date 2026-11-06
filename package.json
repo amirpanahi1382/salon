@@ -21,6 +21,8 @@
     "dev:worker": "pnpm build:packages && dotenv -e .env -- pnpm --filter @salon/worker start:dev",
     "start:api": "dotenv -e .env -- pnpm --filter @salon/api start",
     "start:canonical": "bash scripts/start-canonical-api.sh",
+    "start:activation-recovery": "pnpm build:packages && pnpm --filter @salon/worker build && pnpm --filter @salon/worker start:activation-recovery",
+    "start:canonical:activation-recovery": "bash scripts/start-canonical-activation-recovery.sh",
     "db:migrate:canonical": "dotenv -e .env.phone-first-migrate -- bash scripts/canonical-migrate.sh",
     "start:worker": "dotenv -e .env -- pnpm --filter @salon/worker start",
     "test": "dotenv -e .env -- pnpm -r --if-present test",
