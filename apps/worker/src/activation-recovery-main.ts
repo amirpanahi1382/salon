@@ -28,6 +28,14 @@ async function bootstrap(): Promise<void> {
       await app.close();
       throw error;
     }
+    logger.info(
+      {
+        operation: 'activation_receipt_recovery.canonical_identity',
+        database: config.CANONICAL_DATABASE_NAME,
+        outcome: 'verified',
+      },
+      'Canonical database identity verified',
+    );
   }
   const runtimeConfig = app.get(AppConfigService).values;
   logger.info(
