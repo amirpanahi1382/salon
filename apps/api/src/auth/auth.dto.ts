@@ -110,3 +110,50 @@ export class PhoneLoginDto {
   @MaxLength(128)
   password!: string;
 }
+
+export class StartPasswordRecoveryDto {
+  @ApiProperty({ description: 'Iranian mobile number. Stored only as a keyed hash.' })
+  @IsString()
+  @MinLength(10)
+  @MaxLength(24)
+  phone!: string;
+}
+
+export class VerifyPasswordRecoveryDto {
+  @ApiProperty()
+  @IsString()
+  @MinLength(10)
+  @MaxLength(24)
+  phone!: string;
+
+  @ApiProperty({ description: 'Recovery possession code. Not an account password.' })
+  @IsString()
+  @Matches(/^\d{4,8}$/, { message: 'Enter the recovery code.' })
+  otpCode!: string;
+}
+
+export class CompletePasswordRecoveryDto {
+  @ApiProperty()
+  @IsString()
+  @MinLength(10)
+  @MaxLength(24)
+  phone!: string;
+
+  @ApiProperty({ description: 'One-time recovery proof from phone verification. Not a session.' })
+  @IsString()
+  @MinLength(20)
+  @MaxLength(128)
+  recoveryProof!: string;
+
+  @ApiProperty()
+  @IsString()
+  @MinLength(8)
+  @MaxLength(128)
+  password!: string;
+
+  @ApiProperty({ description: 'Must match password. Not stored.' })
+  @IsString()
+  @MinLength(8)
+  @MaxLength(128)
+  passwordConfirmation!: string;
+}

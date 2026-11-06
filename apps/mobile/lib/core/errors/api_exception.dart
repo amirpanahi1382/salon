@@ -42,40 +42,49 @@ class ApiException implements Exception {
     if (isForbidden) {
       return AppStrings.permissionDenied;
     }
-    if (code == 'SIGNUP_RESEND_COOLDOWN') {
+    if (code == 'SIGNUP_RESEND_COOLDOWN' ||
+        code == 'PASSWORD_RECOVERY_RESEND_COOLDOWN') {
       final seconds = retryAfterSeconds;
       return seconds == null
           ? AppStrings.signupResendWait
           : AppStrings.signupResendWaitSeconds(seconds);
     }
-    if (code == 'SIGNUP_SEND_LIMIT') {
+    if (code == 'SIGNUP_SEND_LIMIT' || code == 'PASSWORD_RECOVERY_SEND_LIMIT') {
       final seconds = retryAfterSeconds;
       return seconds == null
           ? AppStrings.signupSendLimit
           : AppStrings.signupSendLimitSeconds(seconds);
     }
-    if (code == 'SIGNUP_VERIFICATION_LIMIT') {
+    if (code == 'SIGNUP_VERIFICATION_LIMIT' ||
+        code == 'PASSWORD_RECOVERY_VERIFICATION_LIMIT') {
       return AppStrings.signupVerificationLimit;
     }
-    if (code == 'SIGNUP_VERIFICATION_FAILED') {
+    if (code == 'SIGNUP_VERIFICATION_FAILED' ||
+        code == 'PASSWORD_RECOVERY_VERIFICATION_FAILED') {
       return AppStrings.signupCodeInvalid;
     }
-    if (code == 'SIGNUP_CHALLENGE_EXPIRED') {
+    if (code == 'SIGNUP_CHALLENGE_EXPIRED' ||
+        code == 'PASSWORD_RECOVERY_CHALLENGE_EXPIRED') {
       return AppStrings.signupCodeExpired;
     }
-    if (code == 'SIGNUP_CHALLENGE_SUPERSEDED') {
+    if (code == 'SIGNUP_CHALLENGE_SUPERSEDED' ||
+        code == 'PASSWORD_RECOVERY_CHALLENGE_SUPERSEDED') {
       return AppStrings.signupChallengeSuperseded;
     }
-    if (code == 'SIGNUP_PROOF_EXPIRED') {
+    if (code == 'SIGNUP_PROOF_EXPIRED' ||
+        code == 'PASSWORD_RECOVERY_PROOF_EXPIRED') {
       return AppStrings.signupProofExpired;
     }
-    if (code == 'SIGNUP_PROOF_ALREADY_ISSUED') {
+    if (code == 'SIGNUP_PROOF_ALREADY_ISSUED' ||
+        code == 'PASSWORD_RECOVERY_PROOF_ALREADY_ISSUED') {
       return AppStrings.signupProofAlreadyIssued;
     }
-    if (code == 'SIGNUP_SEND_UNCONFIRMED') {
+    if (code == 'SIGNUP_SEND_UNCONFIRMED' ||
+        code == 'PASSWORD_RECOVERY_SEND_UNCONFIRMED') {
       return AppStrings.signupSendUnconfirmed;
     }
-    if (code == 'SIGNUP_VERIFICATION_UNCONFIRMED') {
+    if (code == 'SIGNUP_VERIFICATION_UNCONFIRMED' ||
+        code == 'PASSWORD_RECOVERY_VERIFICATION_UNCONFIRMED') {
       return AppStrings.signupVerificationUnconfirmed;
     }
     if (code == 'INFRASTRUCTURE_ERROR') {

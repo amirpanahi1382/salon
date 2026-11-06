@@ -41,6 +41,9 @@ class FakeAuthRepository extends AuthRepository {
   Object? nextError;
 
   @override
+  Future<bool> passwordRecoveryAvailable() async => true;
+
+  @override
   Future<AuthSession> loginWithPhone({
     required String phone,
     required String password,
@@ -1055,7 +1058,12 @@ CustomerIntelligence _intelligence() {
 void main() {
   testWidgets('login validates empty fields', (tester) async {
     await tester.pumpWidget(
-      const ProviderScope(child: MaterialApp(home: LoginScreen())),
+      ProviderScope(
+        overrides: [
+          authRepositoryProvider.overrideWithValue(FakeAuthRepository()),
+        ],
+        child: const MaterialApp(home: LoginScreen()),
+      ),
     );
     await tester.tap(find.byType(AppButton));
     await tester.pump();

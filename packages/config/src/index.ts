@@ -109,6 +109,23 @@ const envSchema = z.object({
   PHONE_SIGNUP_MAX_TTL_SECONDS: z.coerce.number().int().min(30).max(60).default(60),
   PHONE_SIGNUP_PROOF_TTL_SECONDS: z.coerce.number().int().min(60).max(3600).default(600),
   /**
+   * HMAC secret for password-recovery phone hashes, request hashes, and proofs.
+   * Unset: GET availability returns available:false; start/verify/complete 404.
+   * Independent of PHONE_SIGNUP_ENABLED.
+   */
+  PASSWORD_RECOVERY_HASH_SECRET: z.preprocess((value) => {
+    if (value === undefined || value === '') {
+      return undefined;
+    }
+    return value;
+  }, z.string().min(32).max(512).optional()),
+  PASSWORD_RECOVERY_RESEND_COOLDOWN_SECONDS: z.coerce.number().int().min(30).max(3600).default(60),
+  PASSWORD_RECOVERY_MAX_SENDS: z.coerce.number().int().min(1).max(10).default(3),
+  PASSWORD_RECOVERY_SEND_WINDOW_SECONDS: z.coerce.number().int().min(60).max(86_400).default(900),
+  PASSWORD_RECOVERY_MAX_VERIFY_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(5),
+  PASSWORD_RECOVERY_MAX_TTL_SECONDS: z.coerce.number().int().min(30).max(60).default(60),
+  PASSWORD_RECOVERY_PROOF_TTL_SECONDS: z.coerce.number().int().min(60).max(3600).default(600),
+  /**
    * Agreement presentation and acceptance. Off until an operator enables it.
    * Does not enable phone signup, payment, or product access.
    */

@@ -15,6 +15,11 @@ import { OtpyProvider } from './otp-provider';
 import { PhoneLoginUseCase } from './phone-login.use-case';
 import { PhoneSignupEnabledGuard } from './phone-signup-enabled.guard';
 import {
+  CompletePasswordRecoveryUseCase,
+  StartPasswordRecoveryUseCase,
+  VerifyPasswordRecoveryUseCase,
+} from './password-recovery.use-cases';
+import {
   ConsumeSignupProofUseCase,
   StartPhoneSignupUseCase,
   VerifyPhoneSignupUseCase,
@@ -47,6 +52,9 @@ import {
     CompletePhoneSignupUseCase,
     PhoneLoginUseCase,
     ExchangeProductSessionUseCase,
+    StartPasswordRecoveryUseCase,
+    VerifyPasswordRecoveryUseCase,
+    CompletePasswordRecoveryUseCase,
   ],
   exports: [JwtAuthGuard, RolesGuard, PlatformAdminGuard],
 })

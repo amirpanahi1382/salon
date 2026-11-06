@@ -102,7 +102,7 @@ Flutter: see [`apps/mobile/README.md`](apps/mobile/README.md).
 
 ## Authentication
 
-Phone and password sign in through `POST /auth/login/phone`. The server chooses a salon user or a platform admin. Salon claims include `sub`, `tid`, and `role`. A platform admin token has `scp=platform` and no `tid`. `GET /auth/me` and `GET /admin/auth/me` return the matching principal. `POST /auth/register`, `POST /auth/login`, and `POST /admin/auth/login` are closed. Expiry `JWT_EXPIRES_IN` (default `8h`). No refresh token. Logout is client-side.
+Phone and password sign in through `POST /auth/login/phone`. The server chooses a salon user or a platform admin. Salon claims include `sub`, `tid`, `role`, and `ver`. A platform admin token has `scp=platform`, `ver`, and no `tid`. Password recovery is `POST /auth/password-recovery/start|verify|complete` when `PASSWORD_RECOVERY_HASH_SECRET` is set; it does not auto-login and increments `ver` so earlier tokens stop working. `GET /auth/me` and `GET /admin/auth/me` return the matching principal. `POST /auth/register`, `POST /auth/login`, and `POST /admin/auth/login` are closed. Expiry `JWT_EXPIRES_IN` (default `8h`). No refresh token. Logout is client-side.
 
 Tenant is always taken from the authenticated user. A body `salonId` is ignored/rejected.
 

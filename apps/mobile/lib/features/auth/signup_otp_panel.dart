@@ -66,6 +66,18 @@ String normalizeSignupCode(String value) {
   return buffer.toString().trim();
 }
 
+bool _isExpiredCode(String code) =>
+    code == 'SIGNUP_CHALLENGE_EXPIRED' ||
+    code == 'PASSWORD_RECOVERY_CHALLENGE_EXPIRED';
+
+bool _isVerificationLimit(String code) =>
+    code == 'SIGNUP_VERIFICATION_LIMIT' ||
+    code == 'PASSWORD_RECOVERY_VERIFICATION_LIMIT';
+
+bool _isSuperseded(String code) =>
+    code == 'SIGNUP_CHALLENGE_SUPERSEDED' ||
+    code == 'PASSWORD_RECOVERY_CHALLENGE_SUPERSEDED';
+
 bool isSignupErrorAmbiguous(Object error) {
   if (error is NetworkException) {
     return true;
@@ -73,7 +85,9 @@ bool isSignupErrorAmbiguous(Object error) {
   if (error is ApiException) {
     return error.statusCode >= 500 ||
         error.code == 'SIGNUP_SEND_UNCONFIRMED' ||
-        error.code == 'SIGNUP_VERIFICATION_UNCONFIRMED';
+        error.code == 'SIGNUP_VERIFICATION_UNCONFIRMED' ||
+        error.code == 'PASSWORD_RECOVERY_SEND_UNCONFIRMED' ||
+        error.code == 'PASSWORD_RECOVERY_VERIFICATION_UNCONFIRMED';
   }
   return false;
 }
@@ -89,6 +103,9 @@ class SignupOtpPanel extends StatefulWidget {
     this.onResendConfirmed,
     this.now = DateTime.now,
     this.keyFactory = createRequestId,
+    this.heading = AppStrings.signupOtpHeading,
+    this.startChallenge,
+    this.verifyChallenge,
   });
 
   final String phone;
@@ -99,6 +116,16 @@ class SignupOtpPanel extends StatefulWidget {
   final VoidCallback? onResendConfirmed;
   final DateTime Function() now;
   final String Function() keyFactory;
+  final String heading;
+  final Future<PhoneSignupChallenge> Function({
+    required String phone,
+    required String idempotencyKey,
+  })? startChallenge;
+  final Future<String> Function({
+    required String phone,
+    required String otpCode,
+    required String idempotencyKey,
+  })? verifyChallenge;
 
   @override
   State<SignupOtpPanel> createState() => _SignupOtpPanelState();
@@ -302,7 +329,8 @@ class _SignupOtpPanelState extends State<SignupOtpPanel>
       }
     });
     try {
-      final challenge = await widget.repository.startPhoneSignup(
+      final start = widget.startChallenge ?? widget.repository.startPhoneSignup;
+      final challenge = await start(
         phone: widget.phone,
         idempotencyKey: key,
       );
@@ -389,7 +417,9 @@ class _SignupOtpPanelState extends State<SignupOtpPanel>
       }
     });
     try {
-      final proof = await widget.repository.verifyPhoneSignup(
+      final verifyChallenge =
+          widget.verifyChallenge ?? widget.repository.verifyPhoneSignup;
+      final proof = await verifyChallenge(
         phone: widget.phone,
         otpCode: code,
         idempotencyKey: key,
@@ -413,11 +443,10 @@ class _SignupOtpPanelState extends State<SignupOtpPanel>
       final ambiguous = isSignupErrorAmbiguous(error);
       setState(() {
         if (expiredDuringRequest ||
-            (error is ApiException &&
-                error.code == 'SIGNUP_CHALLENGE_EXPIRED')) {
+            (error is ApiException && _isExpiredCode(error.code))) {
           _applyExpiredCodeState();
           if (error is ApiException) {
-            if (error.code == 'SIGNUP_VERIFICATION_LIMIT') {
+            if (_isVerificationLimit(error.code)) {
               _attemptsExhausted = true;
             }
             _applyRetryAfter(error);
@@ -438,14 +467,14 @@ class _SignupOtpPanelState extends State<SignupOtpPanel>
         }
         _error = friendlyError(error);
         if (error is ApiException) {
-          if (error.code == 'SIGNUP_VERIFICATION_LIMIT') {
+          if (_isVerificationLimit(error.code)) {
             _attemptsExhausted = true;
             _verifyKey = null;
             _verifyPhone = null;
             _verifyCodeValue = null;
             _verifyAmbiguous = false;
           }
-          if (error.code == 'SIGNUP_CHALLENGE_SUPERSEDED') {
+          if (_isSuperseded(error.code)) {
             // Expire the obsolete challenge but keep the superseded next step.
             _codeDeadline = widget.now();
             _codeSeconds = 0;
@@ -491,7 +520,7 @@ class _SignupOtpPanelState extends State<SignupOtpPanel>
             Semantics(
               header: true,
               child: Text(
-                AppStrings.signupOtpHeading,
+                widget.heading,
                 key: const Key('signup-otp-heading'),
                 textAlign: TextAlign.center,
                 style: const TextStyle(

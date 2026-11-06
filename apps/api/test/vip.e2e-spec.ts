@@ -795,14 +795,16 @@ describeIfDb('VIP outreach (e2e)', () => {
       .set('Idempotency-Key', `q470-deny50-${randomUUID()}`)
       .send({ listId: used[6], requestedCount: 50, geographicRange: 'ونک' })
       .expect(409);
-    expect(deny50.body.message).toBe(VIP_QUOTA_EXCEEDED_MESSAGE);
+    expect(deny50.body.message).toBe('Confirm the refreshed VIP recipient quantity.');
+    expect(deny50.body.details.effectiveRequestedCount).toBe(20);
     const deny30 = await request(app.getHttpServer())
       .post('/vip/requests')
       .set('Authorization', `Bearer ${salonB.token}`)
       .set('Idempotency-Key', `q470-deny30-${randomUUID()}`)
       .send({ listId: used[7], requestedCount: 30, geographicRange: 'ونک' })
       .expect(409);
-    expect(deny30.body.message).toBe(VIP_QUOTA_EXCEEDED_MESSAGE);
+    expect(deny30.body.message).toBe('Confirm the refreshed VIP recipient quantity.');
+    expect(deny30.body.details.effectiveRequestedCount).toBe(20);
 
     const salonC = await createOwner('vip-quota-window');
     await grantVip(salonC.tenantId);
@@ -904,7 +906,7 @@ describeIfDb('VIP outreach (e2e)', () => {
     const expired = await prisma.client.vipRequest.findUniqueOrThrow({
       where: { id: created.body.id as string },
     });
-    expect(expired.status).toBe('CANCELLED');
+    expect(expired.status).toBe('AWAITING_SAMPLE_WORK');
     await prisma.client.vipRequest.update({
       where: { id: created.body.id as string },
       data: { reservedUntil: new Date(Date.now() - 120_000) },
@@ -1475,18 +1477,24 @@ describeIfDb('VIP outreach (e2e)', () => {
     expect(unclassifiedAttempts.map((res) => res.status)).toEqual([409, 409]);
     expect(await prisma.client.vipRequest.count({ where: { listId: unclassifiedActive } })).toBe(0);
 
-    await request(app.getHttpServer())
+    const tooBig = await request(app.getHttpServer())
       .post('/vip/requests')
       .set('Authorization', `Bearer ${salon.token}`)
       .set('Idempotency-Key', `too-big-${randomUUID()}`)
       .send({ listId: region01Active, requestedCount: 100, geographicRange: 'ونک' })
-      .expect(400);
+      .expect(409);
+    expect(tooBig.body.message).toBe('Confirm the refreshed VIP recipient quantity.');
+    expect(tooBig.body.details.effectiveRequestedCount).toBe(65);
 
     const created = await request(app.getHttpServer())
       .post('/vip/requests')
       .set('Authorization', `Bearer ${salon.token}`)
       .set('Idempotency-Key', `ok-65-${randomUUID()}`)
-      .send({ listId: region01Active, requestedCount: 50, geographicRange: VIP_REGION_CATALOG['01'] })
+      .send({
+        listId: region01Active,
+        requestedCount: tooBig.body.details.effectiveRequestedCount,
+        geographicRange: VIP_REGION_CATALOG['01'],
+      })
       .expect(201);
     expect(created.body.listId).toBe(region01Active);
     const snapshotted = await prisma.client.vipRequestRecipient.findFirstOrThrow({
@@ -1504,7 +1512,11 @@ describeIfDb('VIP outreach (e2e)', () => {
       .post('/vip/requests')
       .set('Authorization', `Bearer ${other.token}`)
       .set('Idempotency-Key', `stale-${randomUUID()}`)
-      .send({ listId: region01Active, requestedCount: 50, geographicRange: 'ونک' })
+      .send({
+        listId: region01Active,
+        requestedCount: tooBig.body.details.effectiveRequestedCount,
+        geographicRange: 'ونک',
+      })
       .expect(409);
     expect(stale.body.message).toBe('This VIP list is not available');
 

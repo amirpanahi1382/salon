@@ -19,6 +19,16 @@ export type AppErrorCode =
   | 'SIGNUP_PROOF_EXPIRED'
   | 'SIGNUP_CHALLENGE_SUPERSEDED'
   | 'SIGNUP_CHALLENGE_EXPIRED'
+  | 'PASSWORD_RECOVERY_SEND_UNCONFIRMED'
+  | 'PASSWORD_RECOVERY_VERIFICATION_UNCONFIRMED'
+  | 'PASSWORD_RECOVERY_RESEND_COOLDOWN'
+  | 'PASSWORD_RECOVERY_SEND_LIMIT'
+  | 'PASSWORD_RECOVERY_VERIFICATION_FAILED'
+  | 'PASSWORD_RECOVERY_VERIFICATION_LIMIT'
+  | 'PASSWORD_RECOVERY_PROOF_ALREADY_ISSUED'
+  | 'PASSWORD_RECOVERY_PROOF_EXPIRED'
+  | 'PASSWORD_RECOVERY_CHALLENGE_SUPERSEDED'
+  | 'PASSWORD_RECOVERY_CHALLENGE_EXPIRED'
   | 'AGREEMENT_PHONE_UNVERIFIED'
   | 'BUSINESS_RULE'
   | 'INFRASTRUCTURE_ERROR'
@@ -217,6 +227,97 @@ export class SignupChallengeExpiredError extends AppError {
   constructor(message = 'This signup request has expired. It will not send another message.') {
     super('SIGNUP_CHALLENGE_EXPIRED', message, 409);
     this.name = 'SignupChallengeExpiredError';
+  }
+}
+
+export class PasswordRecoverySendUnconfirmedError extends AppError {
+  constructor(
+    message = 'The recovery message was not confirmed. Retrying this same request will not send another message.',
+  ) {
+    super('PASSWORD_RECOVERY_SEND_UNCONFIRMED', message, 409);
+    this.name = 'PasswordRecoverySendUnconfirmedError';
+  }
+}
+
+export class PasswordRecoveryVerificationUnconfirmedError extends AppError {
+  constructor(
+    message = 'The verification result was not confirmed. Retrying this same request will not submit the code again.',
+  ) {
+    super('PASSWORD_RECOVERY_VERIFICATION_UNCONFIRMED', message, 409);
+    this.name = 'PasswordRecoveryVerificationUnconfirmedError';
+  }
+}
+
+export class PasswordRecoveryResendCooldownError extends AppError {
+  constructor(retryAfterSeconds: number) {
+    super(
+      'PASSWORD_RECOVERY_RESEND_COOLDOWN',
+      `Another recovery message cannot be sent yet. Try again in ${retryAfterSeconds} seconds.`,
+      429,
+      { retryAfterSeconds },
+    );
+    this.name = 'PasswordRecoveryResendCooldownError';
+  }
+}
+
+export class PasswordRecoverySendLimitError extends AppError {
+  constructor(retryAfterSeconds?: number) {
+    super(
+      'PASSWORD_RECOVERY_SEND_LIMIT',
+      'Another recovery message cannot be sent yet.',
+      429,
+      retryAfterSeconds === undefined ? undefined : { retryAfterSeconds },
+    );
+    this.name = 'PasswordRecoverySendLimitError';
+  }
+}
+
+export class PasswordRecoveryVerificationFailedError extends AppError {
+  constructor(message = 'The code could not be verified.') {
+    super('PASSWORD_RECOVERY_VERIFICATION_FAILED', message, 400);
+    this.name = 'PasswordRecoveryVerificationFailedError';
+  }
+}
+
+export class PasswordRecoveryVerificationLimitError extends AppError {
+  constructor(retryAfterSeconds?: number) {
+    super(
+      'PASSWORD_RECOVERY_VERIFICATION_LIMIT',
+      'Too many verification attempts for this recovery code.',
+      429,
+      retryAfterSeconds === undefined ? undefined : { retryAfterSeconds },
+    );
+    this.name = 'PasswordRecoveryVerificationLimitError';
+  }
+}
+
+export class PasswordRecoveryProofAlreadyIssuedError extends AppError {
+  constructor(
+    message = 'This verification already returned a recovery proof. That proof is not issued again.',
+  ) {
+    super('PASSWORD_RECOVERY_PROOF_ALREADY_ISSUED', message, 409);
+    this.name = 'PasswordRecoveryProofAlreadyIssuedError';
+  }
+}
+
+export class PasswordRecoveryProofExpiredError extends AppError {
+  constructor(message = 'This recovery proof has expired. Verify the phone again.') {
+    super('PASSWORD_RECOVERY_PROOF_EXPIRED', message, 409);
+    this.name = 'PasswordRecoveryProofExpiredError';
+  }
+}
+
+export class PasswordRecoveryChallengeSupersededError extends AppError {
+  constructor(message = 'This recovery request was replaced by a later one.') {
+    super('PASSWORD_RECOVERY_CHALLENGE_SUPERSEDED', message, 409);
+    this.name = 'PasswordRecoveryChallengeSupersededError';
+  }
+}
+
+export class PasswordRecoveryChallengeExpiredError extends AppError {
+  constructor(message = 'This recovery request has expired. It will not send another message.') {
+    super('PASSWORD_RECOVERY_CHALLENGE_EXPIRED', message, 409);
+    this.name = 'PasswordRecoveryChallengeExpiredError';
   }
 }
 

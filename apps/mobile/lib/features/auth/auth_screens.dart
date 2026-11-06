@@ -34,6 +34,21 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _password = TextEditingController();
   String? _error;
   bool _loading = false;
+  bool _recoveryAvailable = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRecoveryAvailability();
+  }
+
+  Future<void> _loadRecoveryAvailability() async {
+    final available =
+        await ref.read(authRepositoryProvider).passwordRecoveryAvailable();
+    if (mounted) {
+      setState(() => _recoveryAvailable = available);
+    }
+  }
 
   @override
   void dispose() {
@@ -109,6 +124,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               onPressed: _submit,
               loading: _loading,
             ),
+            if (_recoveryAvailable)
+              TextButton(
+                key: const Key('forgot-password'),
+                onPressed: () => context.go('/forgot-password'),
+                child: const Text(AppStrings.forgotPassword),
+              ),
             TextButton(
               onPressed: () => context.go('/register'),
               child: const Text(AppStrings.needAccount),

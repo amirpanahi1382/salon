@@ -49,6 +49,8 @@ No AsyncLocalStorage: request fields ride on the Express request / Pino `customP
 
 Redis is **not** a readiness dependency and is **not used by application code**. MinIO is used for VIP sample-work and private activation-receipt upload/download on the API; it is still **not** part of `/health/ready` (Postgres only). A MinIO outage fails those image use-cases, not process liveness.
 
+First-release sending is **manual platform-admin processing**. Do not treat a running Bale worker as required for launch. Automatic VIP provider sending, automatic object deletion, large-data query tuning, and off-device backups remain deferred.
+
 During SIGTERM/SIGINT the API marks itself draining; readiness returns 503 while in-flight requests finish.
 
 The worker has no HTTP server. Orchestrators should treat process exit / container status as liveness.

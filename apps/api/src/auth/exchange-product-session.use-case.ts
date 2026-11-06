@@ -33,6 +33,7 @@ export class ExchangeProductSessionUseCase {
         name: true,
         email: true,
         role: true,
+        credentialsVersion: true,
         salon: { select: { accessState: true } },
       },
     });
@@ -44,6 +45,7 @@ export class ExchangeProductSessionUseCase {
       salonId: user.salonId,
       role: user.role,
       accessState: 'PRODUCT',
+      credentialsVersion: user.credentialsVersion,
     });
     if (session.sessionScope !== 'product') {
       throw new ForbiddenError();

@@ -61,6 +61,15 @@ class AppStrings {
   static const createAccount = 'ساخت حساب';
   static const needAccount = 'حساب سالن ندارید؟ همین حالا بسازید';
   static const haveAccount = 'حساب دارید؟ وارد شوید';
+  static const forgotPassword = 'رمز عبور را فراموش کرده‌اید؟';
+  static const forgotPasswordTitle = 'بازیابی رمز عبور';
+  static const passwordRecoveryUnavailable =
+      'بازیابی رمز عبور فعلاً در دسترس نیست.';
+  static const sendRecoveryCode = 'ارسال کد';
+  static const newPassword = 'رمز عبور جدید';
+  static const setNewPassword = 'ثبت رمز عبور جدید';
+  static const passwordResetDone = 'رمز عبور به‌روز شد. با رمز جدید وارد شوید.';
+  static const recoveryOtpHeading = 'کد بازیابی را وارد کنید';
   static const dashboard = 'امروز';
   static const customers = 'مشتریان';
   static const visits = 'نوبت انجام شده';

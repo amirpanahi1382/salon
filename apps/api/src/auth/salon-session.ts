@@ -18,14 +18,27 @@ export function resolveSalonSession(
 
 export async function signSalonSession(
   jwt: JwtService,
-  user: { id: string; salonId: string; role: string; accessState: SalonAccessState },
+  user: {
+    id: string;
+    salonId: string;
+    role: string;
+    accessState: SalonAccessState;
+    credentialsVersion?: number;
+  },
 ): Promise<{ accessToken: string; sessionScope: SessionScope; sessionId: string }> {
   const sessionScope: SessionScope = user.accessState === 'PRODUCT' ? 'product' : 'onboarding';
   const sessionId = randomUUID();
-  const payload: { sub: string; tid: string; role: string; scp?: 'onboarding' } = {
+  const payload: {
+    sub: string;
+    tid: string;
+    role: string;
+    scp?: 'onboarding';
+    ver: number;
+  } = {
     sub: user.id,
     tid: user.salonId,
     role: user.role,
+    ver: user.credentialsVersion ?? 0,
   };
   if (sessionScope === 'onboarding') {
     payload.scp = 'onboarding';

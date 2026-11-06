@@ -28,8 +28,11 @@ Platform-owned: `platform_admins`, `vip_target_lists`, `vip_target_contacts` (li
 | `agreement_presentations` | Server rendering | Immutable. Declared fields and rendered text are AES-256-GCM ciphertext |
 | `agreement_acceptances` | Explicit acceptance | Immutable. One presentation. Encrypted snapshot. `checkbox_confirmed` must be true |
 | `activation_receipts` | Transfer evidence | Private object `activation-receipts/{salonId}/{id}`. Phases `UPLOADING`, `FAILED`, `STORED`, `SUPERSEDED`, `UNDER_REVIEW`, `APPROVED`, `REJECTED`. One stored, one uploading, and one under-review row per salon. `APPROVED` requires `bank_attestation_wording` to be the admin’s exact manual sentence. Evidence columns and a decided row do not change. Not a ledger payment |
-| `users` | Operator | Required unique canonical `phone`. Nullable unique `email` is contact only. A trigger rejects a phone that a platform admin already has. Unique `(id, salon_id)` supports composite creator FKs |
-| `platform_admins` | Platform operator | No tenant. Required unique canonical `phone`. Nullable unique `email` is contact only. The same trigger rejects a salon user's phone |
+| `users` | Operator | Required unique canonical `phone`. Nullable unique `email` is contact only. A trigger rejects a phone that a platform admin already has. Unique `(id, salon_id)` supports composite creator FKs. `credentials_version` starts at 0 and increments on password recovery |
+| `platform_admins` | Platform operator | No tenant. Required unique canonical `phone`. Nullable unique `email` is contact only. The same trigger rejects a salon user's phone. Same `credentials_version` rule |
+| `password_recovery_challenges` | Recovery possession | Phone hash only. Separate from `signup_phone_challenges`. One open challenge per phone hash |
+| `password_recovery_verify_attempts` | Recovery verify | HMAC of the verify request. Never the code |
+| `password_recovery_completions` | Recovery idempotency | Replays a consumed proof by Idempotency-Key. No phone, password, or proof stored |
 | `customers` | Business fact | Unique `(salon_id, phone_number)` |
 | `visits` | Business fact | `visited_at`; unique `(id, salon_id)` |
 | `services` | Catalog | Unique `(salon_id, name)` |

@@ -6,14 +6,23 @@ import { CurrentUser } from '../infrastructure/auth/current-user.decorator';
 import { Roles } from '../infrastructure/auth/roles.decorator';
 import { RolesGuard } from '../infrastructure/auth/roles.guard';
 import {
+  CompletePasswordRecoveryDto,
   CompletePhoneSignupDto,
   PhoneLoginDto,
+  StartPasswordRecoveryDto,
   StartPhoneSignupDto,
+  VerifyPasswordRecoveryDto,
   VerifyPhoneSignupDto,
 } from './auth.dto';
 import { CompletePhoneSignupUseCase } from './complete-phone-signup.use-case';
 import { ExchangeProductSessionUseCase } from './exchange-product-session.use-case';
 import { JwtAuthGuard } from './jwt-auth.guard';
+import {
+  CompletePasswordRecoveryUseCase,
+  StartPasswordRecoveryUseCase,
+  VerifyPasswordRecoveryUseCase,
+} from './password-recovery.use-cases';
+import { AppConfigService } from '../infrastructure/config/app-config.service';
 import { PhoneLoginUseCase } from './phone-login.use-case';
 import { PhoneSignupEnabledGuard } from './phone-signup-enabled.guard';
 import { StartPhoneSignupUseCase, VerifyPhoneSignupUseCase } from './phone-signup.use-cases';
@@ -28,6 +37,10 @@ export class AuthController {
     private readonly completePhoneSignup: CompletePhoneSignupUseCase,
     private readonly phoneLogin: PhoneLoginUseCase,
     private readonly exchangeProductSession: ExchangeProductSessionUseCase,
+    private readonly startPasswordRecovery: StartPasswordRecoveryUseCase,
+    private readonly verifyPasswordRecovery: VerifyPasswordRecoveryUseCase,
+    private readonly completePasswordRecovery: CompletePasswordRecoveryUseCase,
+    private readonly config: AppConfigService,
   ) {}
 
   @Post('signup/phone/start')
@@ -92,6 +105,65 @@ export class AuthController {
   })
   signInWithPhone(@Body() body: PhoneLoginDto) {
     return this.phoneLogin.execute(body);
+  }
+
+  @Get('password-recovery/availability')
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  @ApiOperation({
+    summary:
+      'Whether password recovery is configured. Does not reveal accounts, secrets, or provider state.',
+  })
+  passwordRecoveryAvailability() {
+    return { available: Boolean(this.config.values.PASSWORD_RECOVERY_HASH_SECRET) };
+  }
+
+  @Post('password-recovery/start')
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  @ApiOperation({
+    summary:
+      'Start a phone-possession challenge for password recovery. Independent of signup. Does not reveal whether the phone has an account.',
+  })
+  startPasswordRecoveryChallenge(
+    @Body() body: StartPasswordRecoveryDto,
+    @Headers('idempotency-key') idempotencyKey: string | string[] | undefined,
+  ) {
+    return this.startPasswordRecovery.execute({ phone: body.phone, idempotencyKey });
+  }
+
+  @Post('password-recovery/verify')
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  @ApiOperation({
+    summary:
+      'Verify a recovery possession code and return a one-time recovery proof. A signup proof cannot reset a password.',
+  })
+  verifyPasswordRecoveryChallenge(
+    @Body() body: VerifyPasswordRecoveryDto,
+    @Headers('idempotency-key') idempotencyKey: string | string[] | undefined,
+  ) {
+    return this.verifyPasswordRecovery.execute({
+      phone: body.phone,
+      otpCode: body.otpCode,
+      idempotencyKey,
+    });
+  }
+
+  @Post('password-recovery/complete')
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @ApiOperation({
+    summary:
+      'Consume a recovery proof and set a new Argon2id password. Does not issue a session. Existing JWTs with a previous credentials version stop authenticating.',
+  })
+  completePasswordRecoveryChallenge(
+    @Body() body: CompletePasswordRecoveryDto,
+    @Headers('idempotency-key') idempotencyKey: string | string[] | undefined,
+  ) {
+    return this.completePasswordRecovery.execute({
+      phone: body.phone,
+      recoveryProof: body.recoveryProof,
+      password: body.password,
+      passwordConfirmation: body.passwordConfirmation,
+      idempotencyKey,
+    });
   }
 
   @Get('account')

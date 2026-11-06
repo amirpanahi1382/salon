@@ -45,12 +45,13 @@ export class PhoneLoginUseCase implements OnModuleInit {
           role: true,
           status: true,
           passwordHash: true,
+          credentialsVersion: true,
           salon: { select: { status: true, accessState: true } },
         },
       }),
       this.prisma.client.platformAdmin.findUnique({
         where: { phone },
-        select: { id: true, name: true, status: true, passwordHash: true },
+        select: { id: true, name: true, status: true, passwordHash: true, credentialsVersion: true },
       }),
     ]);
 
@@ -74,7 +75,11 @@ export class PhoneLoginUseCase implements OnModuleInit {
     }
 
     if (adminMatch && admin) {
-      const accessToken = await this.jwt.signAsync({ sub: admin.id, scp: 'platform' });
+      const accessToken = await this.jwt.signAsync({
+        sub: admin.id,
+        scp: 'platform',
+        ver: admin.credentialsVersion,
+      });
       return {
         accountKind: 'PLATFORM_ADMIN' as const,
         accessToken,
@@ -90,6 +95,7 @@ export class PhoneLoginUseCase implements OnModuleInit {
       salonId: user.salonId,
       role: user.role,
       accessState: user.salon.accessState,
+      credentialsVersion: user.credentialsVersion,
     });
 
     if (session.sessionScope === 'onboarding') {

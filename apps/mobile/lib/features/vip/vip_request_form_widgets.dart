@@ -524,30 +524,15 @@ class VipOrderSummary extends StatelessWidget {
     required this.plannedCount,
     required this.region,
     required this.selectedList,
-    required this.discountKind,
-    required this.discountParse,
   });
 
   final int? count;
   final int? plannedCount;
   final VipRegion? region;
   final VipTargetList? selectedList;
-  final VipDiscountKind discountKind;
-  final VipDiscountParse discountParse;
 
   @override
   Widget build(BuildContext context) {
-    final discountValue = switch (discountKind) {
-      VipDiscountKind.none => AppStrings.vipNoDiscount,
-      VipDiscountKind.percent =>
-        discountParse.valid && discountParse.asciiAmount != null
-            ? AppStrings.vipSummaryPercentValue(discountParse.asciiAmount!)
-            : AppStrings.vipSummaryUnset,
-      VipDiscountKind.irr =>
-        discountParse.valid && discountParse.asciiAmount != null
-            ? AppStrings.vipSummaryRialValue(discountParse.asciiAmount!)
-            : AppStrings.vipSummaryUnset,
-    };
     return VipSectionCard(
       title: AppStrings.vipOrderSummary,
       icon: Icons.description_outlined,
@@ -594,13 +579,6 @@ class VipOrderSummary extends StatelessWidget {
                 ? AppStrings.vipSummaryUnset
                 : selectedList!.name,
             placeholder: selectedList == null,
-          ),
-          VipSummaryRow(
-            icon: Icons.sell_outlined,
-            label: AppStrings.vipSummaryDiscount,
-            value: discountValue,
-            placeholder: discountKind != VipDiscountKind.none &&
-                !(discountParse.valid && discountParse.isNonzero),
           ),
         ],
       ),

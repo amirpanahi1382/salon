@@ -625,13 +625,14 @@ void main() {
     await _pump(tester, repo);
     expect(find.text(AppStrings.vipRemainingQuota(370)), findsOneWidget);
     expect(find.text(AppStrings.vipRemainingQuota(500)), findsNothing);
-    expect(find.text(AppStrings.vipIntendedDiscount), findsOneWidget);
+    expect(find.text(AppStrings.vipIntendedDiscount), findsNothing);
     expect(find.text(AppStrings.vipOrderSummary), findsOneWidget);
-    expect(find.text(AppStrings.vipNoDiscount), findsWidgets);
-    expect(find.text(AppStrings.vipSummaryPercentValue('15')), findsNothing);
+    expect(find.text(AppStrings.vipNoDiscount), findsNothing);
+    expect(find.byKey(const Key('vip-discount-percent')), findsNothing);
+    expect(find.byKey(const Key('vip-discount-rial')), findsNothing);
   });
 
-  testWidgets('summary reflects region, list, count, and no-discount by default', (
+  testWidgets('summary reflects region, list, and count without discount controls', (
     tester,
   ) async {
     final repo = _FakeVipRepository(
@@ -649,7 +650,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text(AppStrings.vipSummaryRecipientCount(100)), findsWidgets);
     expect(find.text('VIP-01-01'), findsWidgets);
-    expect(find.text(AppStrings.vipNoDiscount), findsWidgets);
+    expect(find.text(AppStrings.vipIntendedDiscount), findsNothing);
+    expect(find.text(AppStrings.vipSummaryDiscount), findsNothing);
     expect(
       tester
           .widget<FilledButton>(
@@ -658,101 +660,6 @@ void main() {
           .onPressed,
       isNotNull,
     );
-  });
-
-  testWidgets('percentage discount blocks create and is not sent', (tester) async {
-    final repo = _FakeVipRepository(
-      regionItems: _regions(),
-      listsByCode: {
-        '01': [_list(id: 'a', name: 'VIP-01-01', regionCode: '01', contactCount: 100)],
-      },
-    );
-    await _pump(tester, repo);
-    await _chooseRegion01(tester);
-    await tester.tap(vipSize(100));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('VIP-01-01'));
-    await tester.pumpAndSettle();
-    await tester.ensureVisible(find.byKey(const Key('vip-discount-percent')));
-    await tester.tap(find.byKey(const Key('vip-discount-percent')));
-    await tester.pumpAndSettle();
-    expect(find.text(AppStrings.vipDiscountUnavailable), findsNothing);
-    expect(find.byKey(const Key('vip-discount-amount')), findsOneWidget);
-    await tester.enterText(find.byKey(const Key('vip-discount-amount')), '20');
-    await tester.pumpAndSettle();
-    expect(find.text(AppStrings.vipSummaryPercentValue('20')), findsOneWidget);
-    expect(find.text(AppStrings.vipSummaryPercentValue('15')), findsNothing);
-    expect(find.text(AppStrings.vipSummaryRange), findsNothing);
-    expect(
-      tester
-          .widget<FilledButton>(
-            find.widgetWithText(FilledButton, AppStrings.sendMessageAction),
-          )
-          .onPressed,
-      isNull,
-    );
-    await tester.tap(find.text(AppStrings.sendMessageAction));
-    await tester.pumpAndSettle();
-    expect(repo.createCalls, isEmpty);
-  });
-
-  testWidgets('IRR discount blocks create and can be cleared back to no-discount', (
-    tester,
-  ) async {
-    final repo = _FakeVipRepository(
-      regionItems: _regions(),
-      listsByCode: {
-        '01': [_list(id: 'a', name: 'VIP-01-01', regionCode: '01', contactCount: 100)],
-      },
-    );
-    await _pump(tester, repo);
-    await _chooseRegion01(tester);
-    await tester.tap(vipSize(100));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('VIP-01-01'));
-    await tester.pumpAndSettle();
-    await tester.ensureVisible(find.byKey(const Key('vip-discount-rial')));
-    await tester.tap(find.byKey(const Key('vip-discount-rial')));
-    await tester.pumpAndSettle();
-    await tester.enterText(find.byKey(const Key('vip-discount-amount')), '۵۰۰۰۰');
-    await tester.pumpAndSettle();
-    expect(find.text(AppStrings.vipSummaryRialValue('50000')), findsOneWidget);
-    expect(find.text(AppStrings.vipSummaryRange), findsNothing);
-    expect(
-      tester
-          .widget<FilledButton>(
-            find.widgetWithText(FilledButton, AppStrings.sendMessageAction),
-          )
-          .onPressed,
-      isNull,
-    );
-    await tester.tap(find.text(AppStrings.vipDiscountClear));
-    await tester.pumpAndSettle();
-    expect(find.byKey(const Key('vip-discount-amount')), findsNothing);
-    expect(find.text(AppStrings.vipDiscountUnavailable), findsNothing);
-    expect(
-      tester
-          .widget<FilledButton>(
-            find.widgetWithText(FilledButton, AppStrings.sendMessageAction),
-          )
-          .onPressed,
-      isNotNull,
-    );
-    expect(repo.createCalls, isEmpty);
-  });
-
-  testWidgets('invalid percent is explained and does not invent a value', (
-    tester,
-  ) async {
-    final repo = _FakeVipRepository(regionItems: _regions());
-    await _pump(tester, repo);
-    await tester.ensureVisible(find.byKey(const Key('vip-discount-percent')));
-    await tester.tap(find.byKey(const Key('vip-discount-percent')));
-    await tester.pumpAndSettle();
-    await tester.enterText(find.byKey(const Key('vip-discount-amount')), '150');
-    await tester.pumpAndSettle();
-    expect(find.text(AppStrings.vipDiscountPercentRange), findsOneWidget);
-    expect(find.text(AppStrings.vipSummaryPercentValue('15')), findsNothing);
   });
 }
 

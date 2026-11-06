@@ -20,6 +20,7 @@ These capabilities exist in the repository (API + schema + tests; Flutter unless
 - Public email registration (`POST /auth/register`) is closed in every registration mode. It does not create a salon. Public salon creation is phone signup, which stays disabled until `PHONE_SIGNUP_ENABLED` is turned on
 - Phone completion (`POST /auth/signup/phone/complete`) creates one `AWAITING_AGREEMENT` salon and its phone-owning OWNER. Agreement acceptance can then move that salon to `AWAITING_PAYMENT` when `AGREEMENT_ACCEPTANCE_ENABLED` is on. Manual card transfer and admin receipt review can then activate that salon when `MANUAL_TRANSFER_ENABLED` is on. Signup, agreement, and transfer flags all default off. There is no payment gateway. A receipt photograph is not confirmed payment; only admin approval sets `PRODUCT`, and that approval requires the platform admin’s explicit manual bank attestation
 - Login JWT. The visible app sends only phone and password to `POST /auth/login/phone`; the server decides salon user or platform admin. Email registration and email-password login are closed. Email may be stored later as contact and is not an identity. A pending salon receives an onboarding session only
+- Forgot-password through phone OTP (`POST /auth/password-recovery/*`). Hidden until `PASSWORD_RECOVERY_HASH_SECRET` is set. Does not auto-login. Successful reset invalidates earlier JWTs via `credentials_version`
 - Roles: `OWNER`, `MANAGER`, `STAFF`
 - Salon profile `GET/PATCH /salon`
 - User administration APIs (create, role, status, last-OWNER invariant)
@@ -96,6 +97,20 @@ These capabilities exist in the repository (API + schema + tests; Flutter unless
 | Phone-first onboarding | OTP possession and completion; one restricted owner; versioned agreement presentation/acceptance; manual card-transfer instructions, receipt upload/review, admin approval, and Flutter screens. All three write-path flags default off | Live OTP/cutover, legal approval, publication of `CONTRACT_V1` on the target API, actual bank-transfer verification, and a payment gateway |
 
 ---
+
+## First release
+
+The implemented salon loop in this file is the first-release scope: phone login, optional phone signup/onboarding flags, customers, completed visits and sales, derived intelligence, opportunity actions, ordinary and VIP message **intent**, and platform-admin **manual** sending.
+
+First-release operating mode for sending remains **manual admin processing**. The worker Bale path exists for ordinary messages and is not required to operate the first release. VIP Bale stays unimplemented.
+
+Deferred after first release (not implementation tasks now):
+
+- VIP percent/IRR discounts (persistence and messaging)
+- Automatic VIP provider sending
+- Automatic object deletion for abandoned VIP samples and activation receipts
+- Large-data query tuning (dashboard/revenue-drop spills, indexes, cache, partitions)
+- Server-era supervision and off-device backups
 
 ## Deferred (allowed later, not current work)
 

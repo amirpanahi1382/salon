@@ -14,6 +14,8 @@ export {
   TransactionStatus,
   SignupPhoneChallengeStatus,
   SignupPhoneVerifyState,
+  PasswordRecoveryChallengeStatus,
+  PasswordRecoveryVerifyState,
   SalonAccessState,
 } from '@prisma/client';
 export type {

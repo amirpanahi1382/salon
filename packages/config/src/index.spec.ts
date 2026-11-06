@@ -32,6 +32,13 @@ describe('loadConfig', () => {
     expect(config.PHONE_SIGNUP_MAX_VERIFY_ATTEMPTS).toBe(5);
     expect(config.PHONE_SIGNUP_MAX_TTL_SECONDS).toBe(60);
     expect(config.PHONE_SIGNUP_PROOF_TTL_SECONDS).toBe(600);
+    expect(config.PASSWORD_RECOVERY_HASH_SECRET).toBeUndefined();
+    expect(config.PASSWORD_RECOVERY_RESEND_COOLDOWN_SECONDS).toBe(60);
+    expect(config.PASSWORD_RECOVERY_MAX_SENDS).toBe(3);
+    expect(config.PASSWORD_RECOVERY_SEND_WINDOW_SECONDS).toBe(900);
+    expect(config.PASSWORD_RECOVERY_MAX_VERIFY_ATTEMPTS).toBe(5);
+    expect(config.PASSWORD_RECOVERY_MAX_TTL_SECONDS).toBe(60);
+    expect(config.PASSWORD_RECOVERY_PROOF_TTL_SECONDS).toBe(600);
     expect(config.AGREEMENT_ACCEPTANCE_ENABLED).toBe(false);
     expect(config.MANUAL_TRANSFER_ENABLED).toBe(false);
     expect(config.AGREEMENT_EVIDENCE_KEY).toBeUndefined();
@@ -146,6 +153,18 @@ describe('loadConfig', () => {
     expect(() =>
       loadConfig({ ...valid, PHONE_SIGNUP_MAX_TTL_SECONDS: '61' }),
     ).toThrow(/PHONE_SIGNUP_MAX_TTL_SECONDS/);
+  });
+
+  it('accepts an optional password-recovery hash secret of at least 32 characters', () => {
+    expect(() =>
+      loadConfig({ ...valid, PASSWORD_RECOVERY_HASH_SECRET: 'too-short' }),
+    ).toThrow(/PASSWORD_RECOVERY_HASH_SECRET/);
+    expect(
+      loadConfig({
+        ...valid,
+        PASSWORD_RECOVERY_HASH_SECRET: 'password-recovery-hash-secret-at-least-32',
+      }).PASSWORD_RECOVERY_HASH_SECRET,
+    ).toBe('password-recovery-hash-secret-at-least-32');
   });
 
   it('requires the phone-signup hash secret only when the challenge is enabled', () => {

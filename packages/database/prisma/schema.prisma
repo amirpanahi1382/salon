@@ -299,6 +299,8 @@ model User {
   /// Unique among salon users. A database trigger also rejects a platform-admin phone.
   phone        String     @unique
   passwordHash String     @map("password_hash")
+  /// Incremented on password recovery. JWT `ver` must match. Missing claim is 0.
+  credentialsVersion Int  @default(0) @map("credentials_version")
   role         UserRole
   status       UserStatus @default(ACTIVE)
   createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
@@ -363,6 +365,7 @@ model PlatformAdmin {
   /// Public signup does not set this. Unique, and distinct from every salon user phone.
   phone        String     @unique
   passwordHash String     @map("password_hash")
+  credentialsVersion Int  @default(0) @map("credentials_version")
   name         String
   status       UserStatus @default(ACTIVE)
   createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
@@ -1012,6 +1015,75 @@ model SignupPhoneVerifyAttempt {
 
   @@index([challengeId, createdAt])
   @@map("signup_phone_verify_attempts")
+}
+
+enum PasswordRecoveryChallengeStatus {
+  DISPATCHING
+  SENT
+  AMBIGUOUS
+  INVALIDATED
+  VERIFIED
+  EXPIRED
+}
+
+enum PasswordRecoveryVerifyState {
+  IN_PROGRESS
+  REJECTED
+  UNCONFIRMED
+  SUCCEEDED
+}
+
+/// Phone-possession challenge for password recovery. Separate from signup.
+/// The mobile number, OTP code, recovery proof, and provider key are not stored.
+model PasswordRecoveryChallenge {
+  id                 String                             @id @db.Uuid
+  phoneHash          String                             @map("phone_hash")
+  status             PasswordRecoveryChallengeStatus
+  idempotencyKey     String                             @unique @map("idempotency_key")
+  requestHash        String                             @map("request_hash")
+  providerRequestId  String?                            @map("provider_request_id")
+  expiresAt          DateTime                           @map("expires_at") @db.Timestamptz(3)
+  verifyAttempts     Int                                @default(0) @map("verify_attempts")
+  proofHash          String?                            @unique @map("proof_hash")
+  proofExpiresAt     DateTime?                          @map("proof_expires_at") @db.Timestamptz(3)
+  proofConsumedAt    DateTime?                          @map("proof_consumed_at") @db.Timestamptz(3)
+  proofClosedAt      DateTime?                          @map("proof_closed_at") @db.Timestamptz(3)
+  verifiedAt         DateTime?                          @map("verified_at") @db.Timestamptz(3)
+  invalidatedAt      DateTime?                          @map("invalidated_at") @db.Timestamptz(3)
+  createdAt          DateTime                           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime                           @updatedAt @map("updated_at") @db.Timestamptz(3)
+  verifyAttemptsLog  PasswordRecoveryVerifyAttempt[]
+  completions        PasswordRecoveryCompletion[]
+
+  @@index([phoneHash, createdAt])
+  @@map("password_recovery_challenges")
+}
+
+model PasswordRecoveryVerifyAttempt {
+  id             String                      @id @db.Uuid
+  challengeId    String                      @map("challenge_id") @db.Uuid
+  challenge      PasswordRecoveryChallenge   @relation(fields: [challengeId], references: [id], onDelete: Restrict)
+  idempotencyKey String                      @unique @map("idempotency_key")
+  requestHash    String                      @map("request_hash")
+  state          PasswordRecoveryVerifyState
+  createdAt      DateTime                    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime                    @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([challengeId, createdAt])
+  @@map("password_recovery_verify_attempts")
+}
+
+/// Committed recovery so a lost HTTP response can be retried by idempotency key.
+/// Does not store the phone, password, proof, or OTP.
+model PasswordRecoveryCompletion {
+  id             String                    @id @db.Uuid
+  idempotencyKey String                    @unique @map("idempotency_key")
+  requestHash    String                    @map("request_hash")
+  challengeId    String                    @map("challenge_id") @db.Uuid
+  challenge      PasswordRecoveryChallenge @relation(fields: [challengeId], references: [id], onDelete: Restrict)
+  createdAt      DateTime                  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@map("password_recovery_completions")
 }
 
 /// Committed phone-owner signup, so a lost HTTP response can be retried by idempotency key.

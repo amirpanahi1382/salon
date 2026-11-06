@@ -116,6 +116,62 @@ class AuthRepository {
     );
   }
 
+  Future<bool> passwordRecoveryAvailable() async {
+    try {
+      final data = asJsonMap(await api.get('/auth/password-recovery/availability'));
+      return data['available'] == true;
+    } on Object {
+      return false;
+    }
+  }
+
+  Future<PhoneSignupChallenge> startPasswordRecovery({
+    required String phone,
+    required String idempotencyKey,
+  }) async {
+    return PhoneSignupChallenge.fromJson(
+      await api.post(
+        '/auth/password-recovery/start',
+        data: {'phone': phone.trim()},
+        headers: {'Idempotency-Key': idempotencyKey},
+      ),
+    );
+  }
+
+  Future<String> verifyPasswordRecovery({
+    required String phone,
+    required String otpCode,
+    required String idempotencyKey,
+  }) async {
+    final data = asJsonMap(
+      await api.post(
+        '/auth/password-recovery/verify',
+        data: {'phone': phone.trim(), 'otpCode': otpCode},
+        headers: {'Idempotency-Key': idempotencyKey},
+      ),
+    );
+    return requiredJsonString(data['recoveryProof'], 'recoveryProof');
+  }
+
+  Future<void> completePasswordRecovery({
+    required String phone,
+    required String recoveryProof,
+    required String password,
+    required String passwordConfirmation,
+    required String idempotencyKey,
+  }) async {
+    await api.post(
+      '/auth/password-recovery/complete',
+      data: {
+        'phone': phone.trim(),
+        'recoveryProof': recoveryProof,
+        'password': password,
+        'passwordConfirmation': passwordConfirmation,
+      },
+      headers: {'Idempotency-Key': idempotencyKey},
+    );
+  }
+
   Future<AuthSession> exchangeProductSession() async {
     final stored = await sessionStore.read();
     final data = await api.post('/auth/session/product');

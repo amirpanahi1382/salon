@@ -14,6 +14,7 @@ import '../../features/admin/admin_vip_salon_profile_screen.dart';
 import '../../features/activation/payment_screen.dart';
 import '../../features/agreement/agreement_screen.dart';
 import '../../features/auth/auth_screens.dart';
+import '../../features/auth/password_recovery_screen.dart';
 import '../../features/customers/customer_edit_loader.dart';
 import '../../features/customers/customer_import_screen.dart';
 import '../../features/customers/customer_screens.dart';
@@ -54,7 +55,9 @@ final routerProvider = Provider<GoRouter>((ref) {
     redirect: (context, state) {
       final auth = ref.read(authControllerProvider);
       final loggingIn =
-          state.matchedLocation == '/login' || state.matchedLocation == '/register';
+          state.matchedLocation == '/login' ||
+          state.matchedLocation == '/register' ||
+          state.matchedLocation == '/forgot-password';
       final splashing = state.matchedLocation == '/splash';
       final isPlatformAdmin = auth.user?.isPlatformAdmin == true;
       final onAdmin = state.matchedLocation.startsWith('/admin');
@@ -92,6 +95,10 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const SplashScreen(),
       ),
       GoRoute(path: '/login', builder: (context, state) => const LoginScreen()),
+      GoRoute(
+        path: '/forgot-password',
+        builder: (context, state) => const PasswordRecoveryScreen(),
+      ),
       GoRoute(
         path: '/admin/messages',
         builder: (context, state) => const AdminMessageQueueScreen(),

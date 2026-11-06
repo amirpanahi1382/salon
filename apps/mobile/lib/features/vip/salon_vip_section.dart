@@ -11,7 +11,6 @@ import '../../core/widgets/app_widgets.dart';
 import '../../shared/jalali.dart';
 import '../../shared/labels.dart';
 import '../../shared/models/models.dart';
-import 'vip_discount.dart';
 import 'vip_progress_card.dart';
 import 'vip_request_form_widgets.dart';
 
@@ -53,14 +52,15 @@ class VipFormPreviewSeed {
     this.regionCode,
     this.count,
     this.listId,
-    this.discountKind = VipDiscountKind.none,
+    this.discountKind,
     this.discountAmount = '',
   });
 
   final String? regionCode;
   final int? count;
   final String? listId;
-  final VipDiscountKind discountKind;
+  /// Unused first-release field kept so isolated preview seeds still compile.
+  final Object? discountKind;
   final String discountAmount;
 }
 
@@ -81,8 +81,6 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
   String? _regionCode;
   String? _listId;
   final _geo = TextEditingController();
-  final _discountAmount = TextEditingController();
-  VipDiscountKind _discountKind = VipDiscountKind.none;
   bool _loading = true;
   bool _listsLoading = false;
   bool _busy = false;
@@ -95,7 +93,6 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
   void initState() {
     super.initState();
     _geo.addListener(_onDraftChanged);
-    _discountAmount.addListener(_onDraftChanged);
     _load();
   }
 
@@ -108,35 +105,8 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
   @override
   void dispose() {
     _geo.removeListener(_onDraftChanged);
-    _discountAmount.removeListener(_onDraftChanged);
     _geo.dispose();
-    _discountAmount.dispose();
     super.dispose();
-  }
-
-  VipDiscountCopy get _discountCopy => const VipDiscountCopy(
-    percentRange: AppStrings.vipDiscountPercentRange,
-    amountRequired: AppStrings.vipDiscountAmountRequired,
-    rialRequired: AppStrings.vipDiscountRialRequired,
-  );
-
-  VipDiscountParse get _discountParse =>
-      parseVipDiscount(_discountKind, _discountAmount.text, copy: _discountCopy);
-
-  void _setDiscountKind(VipDiscountKind kind) {
-    setState(() {
-      if (_discountKind != kind) {
-        _discountAmount.clear();
-      }
-      _discountKind = kind;
-    });
-  }
-
-  void _clearDiscount() {
-    setState(() {
-      _discountKind = VipDiscountKind.none;
-      _discountAmount.clear();
-    });
   }
 
   VipRegion? get _selectedRegion {
@@ -215,15 +185,6 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
     if (seed.listId != null && mounted) {
       setState(() => _listId = seed.listId);
     }
-    if (!mounted) {
-      return;
-    }
-    setState(() {
-      _discountKind = seed.discountKind;
-      _discountAmount.text = toPersianDigits(
-        fromPersianDigits(seed.discountAmount),
-      );
-    });
   }
 
   Future<void> _loadLists() async {
@@ -318,9 +279,6 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
         listId == null ||
         planned == null ||
         !_selectionAllowed(capability, count, selectedList, sizes)) {
-      return;
-    }
-    if (_discountKind != VipDiscountKind.none) {
       return;
     }
     setState(() => _busy = true);
@@ -512,10 +470,8 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
     final planned = _plannedQuantity(capability, count, selectedList);
     final region = _selectedRegion;
 
-    final discountBlocksCreate = _discountKind != VipDiscountKind.none;
     final canSubmit =
-        _selectionAllowed(capability, count, selectedList, sizes) &&
-        !discountBlocksCreate;
+        _selectionAllowed(capability, count, selectedList, sizes);
     return _scrollable(
       Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -609,24 +565,6 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
               ],
             const SizedBox(height: AppTokens.space8),
           ],
-          const SizedBox(height: AppTokens.space8),
-          VipDiscountSection(
-            kind: _discountKind,
-            amountController: _discountAmount,
-            parse: _discountParse,
-            enabled: !_busy,
-            onKindSelected: _setDiscountKind,
-            onAmountChanged: (value) {
-              final normalized = toPersianDigits(fromPersianDigits(value));
-              if (normalized != value) {
-                _discountAmount.value = TextEditingValue(
-                  text: normalized,
-                  selection: TextSelection.collapsed(offset: normalized.length),
-                );
-              }
-            },
-            onClear: _clearDiscount,
-          ),
           const SizedBox(height: AppTokens.space16),
           VipOrderSummary(
             key: const Key('vip-order-summary'),
@@ -634,8 +572,6 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
             plannedCount: planned,
             region: region,
             selectedList: selectedList,
-            discountKind: _discountKind,
-            discountParse: _discountParse,
           ),
           const SizedBox(height: AppTokens.space16),
           VipPrimaryAction(

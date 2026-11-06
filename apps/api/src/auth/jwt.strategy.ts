@@ -11,6 +11,7 @@ import {
 } from '@salon/shared';
 import { AppConfigService } from '../infrastructure/config/app-config.service';
 import { PrismaService } from '../infrastructure/database/prisma.service';
+import { credentialsVersionFromJwt } from './password-recovery';
 import { resolveSalonSession } from './salon-session';
 
 interface JwtPayload {
@@ -19,6 +20,7 @@ interface JwtPayload {
   role?: string;
   scp?: string;
   jti?: string;
+  ver?: number;
 }
 
 @Injectable()
@@ -40,11 +42,15 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     }
 
     if (payload.scp === 'platform') {
+      const tokenVersion = credentialsVersionFromJwt(payload.ver);
+      if (tokenVersion < 0) {
+        throw new UnauthenticatedError('Invalid authentication token');
+      }
       const admin = await this.prisma.client.platformAdmin.findFirst({
         where: { id: payload.sub, status: 'ACTIVE' },
-        select: { id: true },
+        select: { id: true, credentialsVersion: true },
       });
-      if (!admin) {
+      if (!admin || admin.credentialsVersion !== tokenVersion) {
         throw new UnauthenticatedError('Invalid authentication token');
       }
       return { kind: 'platform', adminId: admin.id };
@@ -62,6 +68,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     if (sessionId !== undefined && !isSafeRequestId(sessionId)) {
       throw new UnauthenticatedError('Invalid authentication token');
     }
+    const tokenVersion = credentialsVersionFromJwt(payload.ver);
+    if (tokenVersion < 0) {
+      throw new UnauthenticatedError('Invalid authentication token');
+    }
     const user = await this.prisma.client.user.findFirst({
       where: {
         id: payload.sub,
@@ -73,11 +83,12 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         id: true,
         salonId: true,
         role: true,
+        credentialsVersion: true,
         salon: { select: { accessState: true } },
       },
     });
 
-    if (!user) {
+    if (!user || user.credentialsVersion !== tokenVersion) {
       throw new UnauthenticatedError('Invalid authentication token');
     }
 
