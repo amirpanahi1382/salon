@@ -6,6 +6,7 @@ import {
   recoveryProofMatches,
   recoveryStartHash,
   recoveryVerifyHash,
+  resolveRecoveryEligibility,
 } from './password-recovery';
 import { signupPhoneHash, signupProofHash } from './signup-phone';
 
@@ -50,5 +51,53 @@ describe('password recovery hashes', () => {
     expect(credentialsVersionFromJwt(-1)).toBe(-1);
     expect(credentialsVersionFromJwt(1.5)).toBe(-1);
     expect(credentialsVersionFromJwt('1')).toBe(-1);
+  });
+});
+
+describe('resolveRecoveryEligibility', () => {
+  it('allows one ACTIVE salon user on an ACTIVE salon, including onboarding access', () => {
+    expect(
+      resolveRecoveryEligibility({
+        user: { status: 'ACTIVE', salonStatus: 'ACTIVE' },
+        admin: null,
+      }),
+    ).toEqual({ eligible: true, kind: 'salon' });
+  });
+
+  it('allows one ACTIVE platform admin', () => {
+    expect(
+      resolveRecoveryEligibility({
+        user: null,
+        admin: { status: 'ACTIVE' },
+      }),
+    ).toEqual({ eligible: true, kind: 'admin' });
+  });
+
+  it('refuses unknown, disabled, suspended, and ambiguous identities', () => {
+    expect(resolveRecoveryEligibility({ user: null, admin: null })).toEqual({ eligible: false });
+    expect(
+      resolveRecoveryEligibility({
+        user: { status: 'DISABLED', salonStatus: 'ACTIVE' },
+        admin: null,
+      }),
+    ).toEqual({ eligible: false });
+    expect(
+      resolveRecoveryEligibility({
+        user: { status: 'ACTIVE', salonStatus: 'SUSPENDED' },
+        admin: null,
+      }),
+    ).toEqual({ eligible: false });
+    expect(
+      resolveRecoveryEligibility({
+        user: null,
+        admin: { status: 'DISABLED' },
+      }),
+    ).toEqual({ eligible: false });
+    expect(
+      resolveRecoveryEligibility({
+        user: { status: 'ACTIVE', salonStatus: 'ACTIVE' },
+        admin: { status: 'ACTIVE' },
+      }),
+    ).toEqual({ eligible: false });
   });
 });

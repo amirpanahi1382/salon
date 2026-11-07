@@ -285,6 +285,8 @@ Do not raise pool size without measuring. Same `DATABASE_URL` in API and worker 
 
 `@nestjs/throttler` is **in-memory per process**. Phone login and phone-signup completion have tighter limits. Email registration and email-password login are closed.
 
+Password recovery OTP uses Otpy only after the canonical phone resolves to one ACTIVE salon user on an ACTIVE salon, or one ACTIVE platform admin. Ineligible starts persist `SUPPRESSED`, reuse the public pending countdown, and must not be labeled provider `SENT`. A disable between the committed start and the provider HTTP call is rechecked before send; a code that still arrives cannot reset after verify/complete recheck eligibility. Do not send recovery OTP from operator SQL or from the canonical API as a diagnostic.
+
 - Single API instance: counters are correct for that process.
 - Multiple API replicas: limits are **not** globally consistent. Redis-backed throttling is deferred until multi-instance deployment is an actual requirement. Redis failure must not silently disable brute-force protection; that is why Redis is not in the path today.
 

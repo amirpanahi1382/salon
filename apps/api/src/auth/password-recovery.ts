@@ -54,3 +54,36 @@ export function credentialsVersionFromJwt(value: unknown): number {
   }
   return -1;
 }
+
+/**
+ * Recovery OTP is sent only for one unambiguous ACTIVE identity:
+ * an ACTIVE salon user on an ACTIVE salon, or an ACTIVE platform admin.
+ * PRODUCT access is not required. Unknown, disabled, suspended, and
+ * cross-role collisions are ineligible.
+ */
+export type RecoveryEligibilitySnapshot = {
+  user: { status: string; salonStatus: string } | null;
+  admin: { status: string } | null;
+};
+
+export type RecoveryEligibility =
+  | { eligible: true; kind: 'salon' }
+  | { eligible: true; kind: 'admin' }
+  | { eligible: false };
+
+export function resolveRecoveryEligibility(
+  snapshot: RecoveryEligibilitySnapshot,
+): RecoveryEligibility {
+  const salonMatch =
+    snapshot.user !== null &&
+    snapshot.user.status === 'ACTIVE' &&
+    snapshot.user.salonStatus === 'ACTIVE';
+  const adminMatch = snapshot.admin !== null && snapshot.admin.status === 'ACTIVE';
+  if (salonMatch && !adminMatch) {
+    return { eligible: true, kind: 'salon' };
+  }
+  if (adminMatch && !salonMatch) {
+    return { eligible: true, kind: 'admin' };
+  }
+  return { eligible: false };
+}

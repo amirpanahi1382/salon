@@ -379,6 +379,7 @@ describeIfDisposable('password recovery on a disposable database', () => {
     expect(unknownStart.body.outcome).toBe('pending');
     expect(knownStart.body.outcome).toBe('pending');
     expect(Object.keys(unknownStart.body).sort()).toEqual(Object.keys(knownStart.body).sort());
+    expect(otp.sends).toEqual([known.phone]);
 
     const unknownWrong = await verify(unknown, '111111');
     const knownWrong = await verify(known.phone, '111111');
@@ -386,16 +387,14 @@ describeIfDisposable('password recovery on a disposable database', () => {
     expect(knownWrong.status).toBe(400);
     expect(unknownWrong.body.error).toBe('PASSWORD_RECOVERY_VERIFICATION_FAILED');
     expect(knownWrong.body.error).toBe('PASSWORD_RECOVERY_VERIFICATION_FAILED');
+    expect(otp.verifyCalls).toBe(1);
 
     otp.mode = 'always';
-    const unknownProof = await verify(unknown, '222222').expect(201);
-    const completed = await complete({
-      phone: unknown,
-      recoveryProof: unknownProof.body.recoveryProof as string,
-      password: 'new-password-value',
-      passwordConfirmation: 'new-password-value',
-    }).expect(201);
-    expect(completed.body).toEqual({ outcome: 'reset' });
+    const unknownProof = await verify(unknown, '222222');
+    expect(unknownProof.status).toBe(400);
+    expect(unknownProof.body.error).toBe('PASSWORD_RECOVERY_VERIFICATION_FAILED');
+    expect(unknownProof.body).not.toHaveProperty('recoveryProof');
+    expect(otp.verifyCalls).toBe(1);
     expect(await prisma.client.user.count({ where: { phone: unknown } })).toBe(0);
     expect(await prisma.client.platformAdmin.count({ where: { phone: unknown } })).toBe(0);
   });
@@ -458,9 +457,184 @@ describeIfDisposable('password recovery on a disposable database', () => {
   });
 
   it('returns an unconfirmed send when the provider fails', async () => {
+    const account = await createProductOwnerSession(prisma.client, app.getHttpServer());
     otp.mode = 'failure';
-    const failed = await start('09129990003');
+    const failed = await start(account.phone);
     expect(failed.status).toBe(409);
     expect(failed.body.error).toBe('PASSWORD_RECOVERY_SEND_UNCONFIRMED');
+    expect(otp.sends).toEqual([account.phone]);
+  });
+
+  it('sends OTP for an onboarding owner and resets that password', async () => {
+    const account = await createProductOwnerSession(prisma.client, app.getHttpServer(), {
+      password: 'old-awaiting-password',
+      accessState: 'AWAITING_PAYMENT',
+    });
+    await start(account.phone).expect(201);
+    expect(otp.sends).toEqual([account.phone]);
+    otp.mode = 'always';
+    const verified = await verify(account.phone, '222222').expect(201);
+    await complete({
+      phone: account.phone,
+      recoveryProof: verified.body.recoveryProof as string,
+      password: 'new-awaiting-password',
+      passwordConfirmation: 'new-awaiting-password',
+    }).expect(201);
+    await request(app.getHttpServer())
+      .post('/auth/login/phone')
+      .send({ phone: account.phone, password: 'new-awaiting-password' })
+      .expect(201);
+  });
+
+  it('suppresses unknown, disabled, suspended, and disabled-admin phones without provider calls', async () => {
+    const unknown = '09129990011';
+    const disabledUser = await createProductOwnerSession(prisma.client, app.getHttpServer());
+    await prisma.client.user.update({
+      where: { id: disabledUser.userId },
+      data: { status: 'DISABLED' },
+    });
+    const suspended = await createProductOwnerSession(prisma.client, app.getHttpServer());
+    await prisma.client.salon.update({
+      where: { id: suspended.salonId },
+      data: { status: 'SUSPENDED' },
+    });
+    const disabledAdmin = await createPlatformAdminSession(prisma.client, app.getHttpServer());
+    await prisma.client.platformAdmin.update({
+      where: { id: disabledAdmin.adminId },
+      data: { status: 'DISABLED' },
+    });
+
+    for (const phone of [unknown, disabledUser.phone, suspended.phone, disabledAdmin.phone]) {
+      const started = await start(phone).expect(201);
+      expect(started.body.outcome).toBe('pending');
+      const row = await prisma.client.passwordRecoveryChallenge.findFirstOrThrow({
+        where: { phoneHash: recoveryPhoneHash(secret, phone) },
+        orderBy: { createdAt: 'desc' },
+      });
+      expect(row.status).toBe(PasswordRecoveryChallengeStatus.SUPPRESSED);
+      expect(row.providerRequestId).toBeNull();
+      otp.mode = 'always';
+      const verified = await verify(phone, '222222');
+      expect(verified.status).toBe(400);
+      expect(verified.body.error).toBe('PASSWORD_RECOVERY_VERIFICATION_FAILED');
+      expect(verified.body).not.toHaveProperty('recoveryProof');
+    }
+    expect(otp.sends).toEqual([]);
+    expect(otp.verifyCalls).toBe(0);
+    const challengeIds = (
+      await prisma.client.passwordRecoveryChallenge.findMany({
+        where: {
+          phoneHash: {
+            in: [unknown, disabledUser.phone, suspended.phone, disabledAdmin.phone].map((phone) =>
+              recoveryPhoneHash(secret, phone),
+            ),
+          },
+        },
+        select: { id: true },
+      })
+    ).map((row) => row.id);
+    expect(challengeIds).toHaveLength(4);
+    expect(
+      await prisma.client.auditLog.count({
+        where: { action: 'PASSWORD_RECOVERY_CHALLENGE_SENT', resourceId: { in: challengeIds } },
+      }),
+    ).toBe(0);
+    expect(
+      await prisma.client.auditLog.count({
+        where: {
+          action: 'PASSWORD_RECOVERY_CHALLENGE_SUPPRESSED',
+          resourceId: { in: challengeIds },
+        },
+      }),
+    ).toBe(4);
+  });
+
+  it('does not send after an eligible start if the account is disabled before verify or complete', async () => {
+    const beforeVerify = await createProductOwnerSession(prisma.client, app.getHttpServer(), {
+      password: 'keep-before-verify',
+    });
+    await start(beforeVerify.phone).expect(201);
+    expect(otp.sends).toEqual([beforeVerify.phone]);
+    await prisma.client.user.update({
+      where: { id: beforeVerify.userId },
+      data: { status: 'DISABLED' },
+    });
+    otp.mode = 'always';
+    const blockedVerify = await verify(beforeVerify.phone, '222222');
+    expect(blockedVerify.status).toBe(400);
+    expect(blockedVerify.body.error).toBe('PASSWORD_RECOVERY_VERIFICATION_FAILED');
+    expect(otp.verifyCalls).toBe(0);
+
+    const beforeComplete = await createProductOwnerSession(prisma.client, app.getHttpServer(), {
+      password: 'keep-before-complete',
+    });
+    otp.sends = [];
+    otp.verifyCalls = 0;
+    await start(beforeComplete.phone).expect(201);
+    otp.mode = 'always';
+    const verified = await verify(beforeComplete.phone, '222222').expect(201);
+    expect(otp.verifyCalls).toBe(1);
+    await prisma.client.user.update({
+      where: { id: beforeComplete.userId },
+      data: { status: 'DISABLED' },
+    });
+    await complete({
+      phone: beforeComplete.phone,
+      recoveryProof: verified.body.recoveryProof as string,
+      password: 'must-not-apply',
+      passwordConfirmation: 'must-not-apply',
+    }).expect(201);
+    const user = await prisma.client.user.findUniqueOrThrow({
+      where: { id: beforeComplete.userId },
+      select: { credentialsVersion: true },
+    });
+    expect(user.credentialsVersion).toBe(0);
+    await prisma.client.user.update({
+      where: { id: beforeComplete.userId },
+      data: { status: 'ACTIVE' },
+    });
+    await request(app.getHttpServer())
+      .post('/auth/login/phone')
+      .send({ phone: beforeComplete.phone, password: 'keep-before-complete' })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post('/auth/login/phone')
+      .send({ phone: beforeComplete.phone, password: 'must-not-apply' })
+      .expect(401);
+  });
+
+  it('does not revive a suppressed challenge after the phone becomes eligible', async () => {
+    const phone = '09129990012';
+    await start(phone).expect(201);
+    expect(otp.sends).toEqual([]);
+    const account = await createProductOwnerSession(prisma.client, app.getHttpServer(), {
+      password: 'later-eligible-password',
+    });
+    await prisma.client.user.update({
+      where: { id: account.userId },
+      data: { phone },
+    });
+    otp.mode = 'always';
+    const revived = await verify(phone, '222222');
+    expect(revived.status).toBe(400);
+    expect(revived.body).not.toHaveProperty('recoveryProof');
+    expect(otp.sends).toEqual([]);
+    expect(otp.verifyCalls).toBe(0);
+  });
+
+  it('rejects a recovery proof on a different phone', async () => {
+    const account = await createProductOwnerSession(prisma.client, app.getHttpServer());
+    const other = await createProductOwnerSession(prisma.client, app.getHttpServer());
+    await start(account.phone).expect(201);
+    otp.mode = 'always';
+    const verified = await verify(account.phone, '222222').expect(201);
+    const crossed = await complete({
+      phone: other.phone,
+      recoveryProof: verified.body.recoveryProof as string,
+      password: 'crossed-password-value',
+      passwordConfirmation: 'crossed-password-value',
+    });
+    expect(crossed.status).toBe(400);
+    expect(crossed.body.error).toBe('PASSWORD_RECOVERY_VERIFICATION_FAILED');
   });
 });

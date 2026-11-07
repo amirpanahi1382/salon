@@ -34,6 +34,8 @@ import {
   recoveryProofHash,
   recoveryStartHash,
   recoveryVerifyHash,
+  resolveRecoveryEligibility,
+  type RecoveryEligibility,
 } from './password-recovery';
 import { normalizeIranianMobile } from './signup-phone';
 
@@ -50,6 +52,7 @@ const OPEN_STATUSES: PasswordRecoveryChallengeStatus[] = [
   PasswordRecoveryChallengeStatus.DISPATCHING,
   PasswordRecoveryChallengeStatus.SENT,
   PasswordRecoveryChallengeStatus.AMBIGUOUS,
+  PasswordRecoveryChallengeStatus.SUPPRESSED,
 ];
 
 @Injectable()
@@ -79,6 +82,27 @@ export class StartPasswordRecoveryUseCase {
     }
     if (decision.kind === 'error') {
       throw decision.error;
+    }
+
+    // Provider HTTP is outside the DB transaction. Recheck eligibility immediately
+    // before send. A disable during the provider round-trip can still deliver an
+    // OTP; verify and complete refuse a reset unless the identity is still eligible.
+    const stillEligible = await this.prisma.client.$transaction(async (tx) => {
+      const identity = await tx.passwordRecoveryChallenge.findUnique({
+        where: { id: decision.challengeId },
+        select: { phoneHash: true, status: true },
+      });
+      if (!identity || identity.status !== PasswordRecoveryChallengeStatus.DISPATCHING) {
+        return false;
+      }
+      await lockRecoveryPhone(tx, identity.phoneHash);
+      return eligibilityOf(await loadRecoveryAccounts(tx, phone)).eligible;
+    });
+    if (!stillEligible) {
+      return this.markSuppressed(
+        decision.challengeId,
+        limits.PASSWORD_RECOVERY_RESEND_COOLDOWN_SECONDS,
+      );
     }
 
     let receipt: OtpSendReceipt;
@@ -176,7 +200,7 @@ export class StartPasswordRecoveryUseCase {
         ))))::int AS wait_seconds
       FROM password_recovery_challenges
       WHERE phone_hash = ${phoneHash}
-        AND status IN ('DISPATCHING', 'SENT', 'AMBIGUOUS')
+        AND status IN ('DISPATCHING', 'SENT', 'AMBIGUOUS', 'SUPPRESSED')
         AND expires_at > clock_timestamp()
       ORDER BY created_at DESC
       LIMIT 1
@@ -185,7 +209,10 @@ export class StartPasswordRecoveryUseCase {
     if (open) {
       const wait = asInt(open.wait_seconds);
       if (wait > 0) {
-        if (open.status === PasswordRecoveryChallengeStatus.SENT) {
+        if (
+          open.status === PasswordRecoveryChallengeStatus.SENT ||
+          open.status === PasswordRecoveryChallengeStatus.SUPPRESSED
+        ) {
           return { kind: 'error', error: new PasswordRecoveryResendCooldownError(wait) };
         }
         return { kind: 'error', error: new PasswordRecoverySendUnconfirmedError() };
@@ -234,7 +261,7 @@ export class StartPasswordRecoveryUseCase {
             invalidated_at = clock_timestamp(),
             updated_at = clock_timestamp()
         WHERE id = ${open.id}::uuid
-          AND status IN ('DISPATCHING', 'SENT', 'AMBIGUOUS')
+          AND status IN ('DISPATCHING', 'SENT', 'AMBIGUOUS', 'SUPPRESSED')
           AND expires_at > clock_timestamp()
         RETURNING id
       `;
@@ -246,6 +273,46 @@ export class StartPasswordRecoveryUseCase {
     }
 
     const challengeId = createId();
+    const eligible = eligibilityOf(await loadRecoveryAccounts(tx, input.phone)).eligible;
+    if (!eligible) {
+      const suppressed = await tx.$queryRaw<
+        Array<{ expires_in_seconds: number | bigint; resend_in_seconds: number | bigint }>
+      >`
+        INSERT INTO password_recovery_challenges (
+          id, phone_hash, status, idempotency_key, request_hash,
+          expires_at, verify_attempts, created_at, updated_at
+        ) VALUES (
+          ${challengeId}::uuid,
+          ${phoneHash},
+          'SUPPRESSED',
+          ${input.key},
+          ${requestHash},
+          clock_timestamp() + (${input.maxTtlSeconds}::int * interval '1 second'),
+          0,
+          clock_timestamp(),
+          clock_timestamp()
+        )
+        RETURNING
+          GREATEST(0, ceil(extract(epoch FROM (expires_at - clock_timestamp()))))::int
+            AS expires_in_seconds,
+          GREATEST(0, ceil(extract(epoch FROM (
+            created_at + (${input.cooldownSeconds}::int * interval '1 second') - clock_timestamp()
+          ))))::int AS resend_in_seconds
+      `;
+      const confirmed = suppressed[0];
+      if (!confirmed) {
+        throw new PasswordRecoverySendUnconfirmedError();
+      }
+      await writeAudit(tx, 'PASSWORD_RECOVERY_CHALLENGE_SUPPRESSED', challengeId);
+      return {
+        kind: 'pending',
+        body: recoveryPendingResponse(
+          asInt(confirmed.expires_in_seconds),
+          asInt(confirmed.resend_in_seconds),
+        ),
+      };
+    }
+
     await tx.$executeRaw`
       INSERT INTO password_recovery_challenges (
         id, phone_hash, status, idempotency_key, request_hash,
@@ -276,6 +343,74 @@ export class StartPasswordRecoveryUseCase {
         await writeAudit(tx, 'PASSWORD_RECOVERY_CHALLENGE_AMBIGUOUS', challengeId);
       }
     });
+  }
+
+  private async markSuppressed(challengeId: string, cooldownSeconds: number) {
+    const outcome = await this.prisma.client.$transaction(async (tx) => {
+      const identity = await tx.passwordRecoveryChallenge.findUnique({
+        where: { id: challengeId },
+        select: { phoneHash: true },
+      });
+      if (!identity) {
+        return { kind: 'unconfirmed' as const };
+      }
+      await lockRecoveryPhone(tx, identity.phoneHash);
+      await expireOpenChallenges(tx, identity.phoneHash);
+      const suppressed = await tx.$queryRaw<
+        Array<{ expires_in_seconds: number | bigint; resend_in_seconds: number | bigint }>
+      >`
+        UPDATE password_recovery_challenges
+        SET status = 'SUPPRESSED',
+            updated_at = clock_timestamp()
+        WHERE id = ${challengeId}::uuid
+          AND status = 'DISPATCHING'
+          AND expires_at > clock_timestamp()
+        RETURNING
+          GREATEST(0, ceil(extract(epoch FROM (expires_at - clock_timestamp()))))::int
+            AS expires_in_seconds,
+          GREATEST(0, ceil(extract(epoch FROM (
+            created_at + (${cooldownSeconds}::int * interval '1 second') - clock_timestamp()
+          ))))::int AS resend_in_seconds
+      `;
+      const confirmed = suppressed[0];
+      if (confirmed) {
+        await writeAudit(tx, 'PASSWORD_RECOVERY_CHALLENGE_SUPPRESSED', challengeId);
+        return {
+          kind: 'pending' as const,
+          body: recoveryPendingResponse(
+            asInt(confirmed.expires_in_seconds),
+            asInt(confirmed.resend_in_seconds),
+          ),
+        };
+      }
+      await markExpiredIfDue(tx, challengeId);
+      const current = await tx.passwordRecoveryChallenge.findUnique({
+        where: { id: challengeId },
+        select: { status: true },
+      });
+      if (current?.status === PasswordRecoveryChallengeStatus.EXPIRED) {
+        return { kind: 'expired' as const };
+      }
+      if (current?.status === PasswordRecoveryChallengeStatus.SUPPRESSED) {
+        return replayStart(tx, {
+          id: challengeId,
+          status: current.status,
+          requestHash: '',
+          phoneHash: identity.phoneHash,
+        }, cooldownSeconds);
+      }
+      return { kind: 'unconfirmed' as const };
+    }, { maxWait: 5_000, timeout: 15_000 });
+    if (outcome.kind === 'expired') {
+      throw new PasswordRecoveryChallengeExpiredError();
+    }
+    if (outcome.kind === 'error') {
+      throw outcome.error;
+    }
+    if (outcome.kind === 'unconfirmed') {
+      throw new PasswordRecoverySendUnconfirmedError();
+    }
+    return outcome.body;
   }
 
   private async markSent(challengeId: string, receipt: OtpSendReceipt, maxTtlSeconds: number) {
@@ -411,6 +546,9 @@ export class VerifyPasswordRecoveryUseCase {
     if (opened.kind === 'failed') {
       throw new PasswordRecoveryVerificationFailedError();
     }
+    if (opened.kind === 'deny') {
+      throw new PasswordRecoveryVerificationFailedError();
+    }
 
     let verified: boolean;
     try {
@@ -430,6 +568,7 @@ export class VerifyPasswordRecoveryUseCase {
         this.saveProof(tx, {
           challengeId: opened.challengeId,
           attemptId: opened.attemptId,
+          phone,
           proofHash: recoveryProofHash(secret, proof),
           proofTtlSeconds: this.config.values.PASSWORD_RECOVERY_PROOF_TTL_SECONDS,
         }),
@@ -456,6 +595,7 @@ export class VerifyPasswordRecoveryUseCase {
     },
   ): Promise<
     | { kind: 'call'; challengeId: string; attemptId: string }
+    | { kind: 'deny' }
     | { kind: 'already_issued' }
     | { kind: 'unconfirmed' }
     | { kind: 'superseded' }
@@ -502,7 +642,7 @@ export class VerifyPasswordRecoveryUseCase {
       SET verify_attempts = verify_attempts + 1,
           updated_at = clock_timestamp()
       WHERE id = ${challenge.id}::uuid
-        AND status IN ('DISPATCHING', 'SENT', 'AMBIGUOUS')
+        AND status IN ('DISPATCHING', 'SENT', 'AMBIGUOUS', 'SUPPRESSED')
         AND verify_attempts < ${input.maxAttempts}
         AND expires_at > clock_timestamp()
       RETURNING id
@@ -529,6 +669,21 @@ export class VerifyPasswordRecoveryUseCase {
     }
 
     const attemptId = createId();
+    const eligible = eligibilityOf(await loadRecoveryAccounts(tx, input.phone)).eligible;
+    if (!eligible || challenge.status === PasswordRecoveryChallengeStatus.SUPPRESSED) {
+      await tx.passwordRecoveryVerifyAttempt.create({
+        data: {
+          id: attemptId,
+          challengeId: challenge.id,
+          idempotencyKey: input.key,
+          requestHash,
+          state: PasswordRecoveryVerifyState.REJECTED,
+          updatedAt: new Date(),
+        },
+      });
+      return { kind: 'deny' };
+    }
+
     await tx.passwordRecoveryVerifyAttempt.create({
       data: {
         id: attemptId,
@@ -554,7 +709,13 @@ export class VerifyPasswordRecoveryUseCase {
 
   private async saveProof(
     tx: Prisma.TransactionClient,
-    input: { challengeId: string; attemptId: string; proofHash: string; proofTtlSeconds: number },
+    input: {
+      challengeId: string;
+      attemptId: string;
+      phone: string;
+      proofHash: string;
+      proofTtlSeconds: number;
+    },
   ): Promise<boolean> {
     const identity = await tx.passwordRecoveryChallenge.findUnique({
       where: { id: input.challengeId },
@@ -568,6 +729,21 @@ export class VerifyPasswordRecoveryUseCase {
       return false;
     }
     await lockRecoveryPhone(tx, identity.phoneHash);
+    const challenge = await tx.passwordRecoveryChallenge.findUnique({
+      where: { id: input.challengeId },
+      select: { status: true },
+    });
+    if (
+      !challenge ||
+      challenge.status === PasswordRecoveryChallengeStatus.SUPPRESSED ||
+      !eligibilityOf(await loadRecoveryAccounts(tx, input.phone)).eligible
+    ) {
+      await tx.passwordRecoveryVerifyAttempt.updateMany({
+        where: { id: input.attemptId, state: PasswordRecoveryVerifyState.IN_PROGRESS },
+        data: { state: PasswordRecoveryVerifyState.REJECTED },
+      });
+      return false;
+    }
     const updated = await tx.$queryRaw<Array<{ id: string }>>`
       UPDATE password_recovery_challenges
       SET status = 'VERIFIED',
@@ -682,27 +858,11 @@ export class CompletePasswordRecoveryUseCase {
     }
 
     const consumed = await consumeProof(tx, recoveryProofHash(input.secret, input.proof), phoneHash);
-    const [user, admin] = await Promise.all([
-      tx.user.findUnique({
-        where: { phone: input.phone },
-        select: {
-          id: true,
-          salonId: true,
-          status: true,
-          salon: { select: { status: true } },
-        },
-      }),
-      tx.platformAdmin.findUnique({
-        where: { phone: input.phone },
-        select: { id: true, status: true },
-      }),
-    ]);
-    const salonMatch =
-      user !== null && user.status === 'ACTIVE' && user.salon.status === 'ACTIVE';
-    const adminMatch = admin !== null && admin.status === 'ACTIVE';
-    if (salonMatch && !adminMatch && user) {
+    const accounts = await loadRecoveryAccounts(tx, input.phone);
+    const eligibility = eligibilityOf(accounts);
+    if (eligibility.eligible && eligibility.kind === 'salon' && accounts.user) {
       await tx.user.update({
-        where: { id: user.id },
+        where: { id: accounts.user.id },
         data: {
           passwordHash: input.passwordHash,
           credentialsVersion: { increment: 1 },
@@ -710,12 +870,12 @@ export class CompletePasswordRecoveryUseCase {
       });
       await writeAudit(tx, 'PASSWORD_RECOVERY_PASSWORD_RESET', consumed.challengeId, {
         accountKind: 'SALON_USER',
-        accountId: user.id,
-        tenantId: user.salonId,
+        accountId: accounts.user.id,
+        tenantId: accounts.user.salonId,
       });
-    } else if (adminMatch && !salonMatch && admin) {
+    } else if (eligibility.eligible && eligibility.kind === 'admin' && accounts.admin) {
       await tx.platformAdmin.update({
-        where: { id: admin.id },
+        where: { id: accounts.admin.id },
         data: {
           passwordHash: input.passwordHash,
           credentialsVersion: { increment: 1 },
@@ -723,7 +883,7 @@ export class CompletePasswordRecoveryUseCase {
       });
       await writeAudit(tx, 'PASSWORD_RECOVERY_PASSWORD_RESET', consumed.challengeId, {
         accountKind: 'PLATFORM_ADMIN',
-        accountId: admin.id,
+        accountId: accounts.admin.id,
       });
     }
 
@@ -788,7 +948,10 @@ async function replayStart(
     }
   | { kind: 'error'; error: Error }
 > {
-  if (existing.status === PasswordRecoveryChallengeStatus.SENT) {
+  if (
+    existing.status === PasswordRecoveryChallengeStatus.SENT ||
+    existing.status === PasswordRecoveryChallengeStatus.SUPPRESSED
+  ) {
     const rows = await tx.$queryRaw<
       Array<{
         still_open: boolean;
@@ -805,7 +968,7 @@ async function replayStart(
         ))))::int AS resend_in_seconds
       FROM password_recovery_challenges
       WHERE id = ${existing.id}::uuid
-        AND status = 'SENT'
+        AND status IN ('SENT', 'SUPPRESSED')
     `;
     const row = rows[0];
     if (!row?.still_open) {
@@ -881,7 +1044,7 @@ async function expireOpenChallenges(
     SET status = 'EXPIRED',
         updated_at = clock_timestamp()
     WHERE phone_hash = ${phoneHash}
-      AND status IN ('DISPATCHING', 'SENT', 'AMBIGUOUS')
+      AND status IN ('DISPATCHING', 'SENT', 'AMBIGUOUS', 'SUPPRESSED')
       AND expires_at <= clock_timestamp()
     RETURNING id
   `;
@@ -933,7 +1096,7 @@ async function markExpiredIfDue(
     SET status = 'EXPIRED',
         updated_at = clock_timestamp()
     WHERE id = ${challengeId}::uuid
-      AND status IN ('DISPATCHING', 'SENT', 'AMBIGUOUS')
+      AND status IN ('DISPATCHING', 'SENT', 'AMBIGUOUS', 'SUPPRESSED')
       AND expires_at <= clock_timestamp()
     RETURNING id
   `;
@@ -978,6 +1141,47 @@ function requirePhone(raw: string): string {
     throw new ValidationError('Enter an Iranian mobile number.');
   }
   return phone;
+}
+
+type RecoveryAccounts = {
+  user: {
+    id: string;
+    salonId: string;
+    status: string;
+    salon: { status: string };
+  } | null;
+  admin: { id: string; status: string } | null;
+};
+
+async function loadRecoveryAccounts(
+  tx: Prisma.TransactionClient,
+  phone: string,
+): Promise<RecoveryAccounts> {
+  const [user, admin] = await Promise.all([
+    tx.user.findUnique({
+      where: { phone },
+      select: {
+        id: true,
+        salonId: true,
+        status: true,
+        salon: { select: { status: true } },
+      },
+    }),
+    tx.platformAdmin.findUnique({
+      where: { phone },
+      select: { id: true, status: true },
+    }),
+  ]);
+  return { user, admin };
+}
+
+function eligibilityOf(accounts: RecoveryAccounts): RecoveryEligibility {
+  return resolveRecoveryEligibility({
+    user: accounts.user
+      ? { status: accounts.user.status, salonStatus: accounts.user.salon.status }
+      : null,
+    admin: accounts.admin ? { status: accounts.admin.status } : null,
+  });
 }
 
 function requireRecoverySecret(config: AppConfigService): string {

@@ -1021,6 +1021,7 @@ enum PasswordRecoveryChallengeStatus {
   DISPATCHING
   SENT
   AMBIGUOUS
+  SUPPRESSED
   INVALIDATED
   VERIFIED
   EXPIRED
@@ -1035,6 +1036,7 @@ enum PasswordRecoveryVerifyState {
 
 /// Phone-possession challenge for password recovery. Separate from signup.
 /// The mobile number, OTP code, recovery proof, and provider key are not stored.
+/// SUPPRESSED is an ineligible start that never called the SMS provider.
 model PasswordRecoveryChallenge {
   id                 String                             @id @db.Uuid
   phoneHash          String                             @map("phone_hash")
@@ -1055,6 +1057,10 @@ model PasswordRecoveryChallenge {
   verifyAttemptsLog  PasswordRecoveryVerifyAttempt[]
   completions        PasswordRecoveryCompletion[]
 
+  /// Partial unique index password_recovery_challenges_one_open_phone
+  /// on phone_hash WHERE status IN (DISPATCHING, SENT, AMBIGUOUS, SUPPRESSED).
+  /// Partial unique index password_recovery_challenges_one_open_proof
+  /// on phone_hash WHERE status = VERIFIED AND proof_closed_at IS NULL.
   @@index([phoneHash, createdAt])
   @@map("password_recovery_challenges")
 }
