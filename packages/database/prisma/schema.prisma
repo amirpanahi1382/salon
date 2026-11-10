@@ -111,6 +111,12 @@ enum VipRequestStatus {
   CANCELLED
 }
 
+/// Confirmed salon offer copied into the recipient message snapshot. Null is no discount.
+enum VipDiscountKind {
+  PERCENT
+  RIAL
+}
+
 enum VipSampleUploadStatus {
   RETRYABLE
   UPLOADING
@@ -698,6 +704,9 @@ model VipRequest {
   createdByUser      User              @relation(fields: [createdByUserId, salonId], references: [id, salonId], onDelete: Restrict, onUpdate: Restrict)
   requestedCount     Int               @map("requested_count")
   geographicRange    String            @map("geographic_range")
+  /// Null with null amount is no discount, including historical rows.
+  discountKind       VipDiscountKind?  @map("discount_kind")
+  discountAmount     Decimal?          @map("discount_amount") @db.Decimal(19, 2)
   status             VipRequestStatus
   reservedUntil      DateTime          @map("reserved_until") @db.Timestamptz(3)
   submittedAt        DateTime?         @map("submitted_at") @db.Timestamptz(3)

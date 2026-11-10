@@ -1,6 +1,7 @@
 import {
   deriveVipRequestProgress,
   isVipRegionCode,
+  parseVipConfirmedOffer,
   vipRegionName,
   type VipProgressFacts,
   type VipRequestProgress,
@@ -70,6 +71,8 @@ export function toVipRequest(row: {
   list: { name: string };
   requestedCount: number;
   geographicRange: string;
+  discountKind?: 'PERCENT' | 'RIAL' | null;
+  discountAmount?: { toFixed?: (digits: number) => string } | string | null;
   status: VipRequestDto['status'];
   reservedUntil: Date;
   submittedAt: Date | null;
@@ -81,6 +84,10 @@ export function toVipRequest(row: {
     byteSize: number;
   }>;
 }, progress?: VipRequestProgress): VipRequestDto {
+  const offer = parseVipConfirmedOffer(
+    row.discountKind ?? null,
+    row.discountAmount == null ? null : String(row.discountAmount),
+  );
   return {
     id: row.id,
     salonId: row.salonId,
@@ -89,6 +96,8 @@ export function toVipRequest(row: {
     listName: row.list.name,
     requestedCount: row.requestedCount,
     geographicRange: row.geographicRange,
+    discountKind: offer?.kind ?? null,
+    discountAmount: offer?.amount ?? null,
     status: row.status,
     reservedUntil: row.reservedUntil.toISOString(),
     submittedAt: row.submittedAt?.toISOString() ?? null,

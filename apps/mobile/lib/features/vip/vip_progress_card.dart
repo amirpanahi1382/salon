@@ -4,6 +4,7 @@ import '../../core/theme/app_tokens.dart';
 import '../../core/widgets/app_widgets.dart';
 import '../../shared/jalali.dart';
 import '../../shared/models/models.dart';
+import 'vip_progress_copy.dart';
 
 class VipProgressCard extends StatelessWidget {
   const VipProgressCard({super.key, required this.progress, this.action});
@@ -24,11 +25,14 @@ class VipProgressCard extends StatelessWidget {
       _ => Icons.flag_outlined,
     };
     final latest = progress.latestActionAt;
+    final showExplanation = shouldDisplayVipProgressExplanation(progress.explanation);
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Semantics(
       container: true,
-      label: '${progress.headline}. ${progress.nextActorLabel}. ${progress.explanation}',
+      label: showExplanation
+          ? '${progress.headline}. ${progress.nextActorLabel}. ${progress.explanation}'
+          : '${progress.headline}. ${progress.nextActorLabel}',
       child: AppSurface(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -50,8 +54,10 @@ class VipProgressCard extends StatelessWidget {
               progress.nextActorLabel,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: tone),
             ),
-            const SizedBox(height: AppTokens.space8),
-            Text(progress.explanation),
+            if (showExplanation) ...[
+              const SizedBox(height: AppTokens.space8),
+              Text(progress.explanation),
+            ],
             if (progress.listReservationNote != null) ...[
               const SizedBox(height: AppTokens.space8),
               Text(

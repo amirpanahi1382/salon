@@ -524,12 +524,14 @@ class VipOrderSummary extends StatelessWidget {
     required this.plannedCount,
     required this.region,
     required this.selectedList,
+    this.discountLabel,
   });
 
   final int? count;
   final int? plannedCount;
   final VipRegion? region;
   final VipTargetList? selectedList;
+  final String? discountLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -580,6 +582,12 @@ class VipOrderSummary extends StatelessWidget {
                 : selectedList!.name,
             placeholder: selectedList == null,
           ),
+          VipSummaryRow(
+            icon: Icons.sell_outlined,
+            label: AppStrings.vipSummaryDiscount,
+            value: discountLabel ?? AppStrings.vipNoDiscount,
+            placeholder: discountLabel == null || discountLabel == AppStrings.vipSummaryUnset,
+          ),
         ],
       ),
     );
@@ -601,6 +609,7 @@ class VipPrimaryAction extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return FilledButton(
+      key: const Key('vip-submit'),
       onPressed: enabled && !busy ? onPressed : null,
       child: busy
           ? const SizedBox(

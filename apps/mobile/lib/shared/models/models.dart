@@ -1148,6 +1148,8 @@ class VipRequest {
     required this.listName,
     required this.requestedCount,
     required this.geographicRange,
+    this.discountKind,
+    this.discountAmount,
     required this.status,
     this.sampleWorks = const [],
     this.progress,
@@ -1162,6 +1164,8 @@ class VipRequest {
   final String listName;
   final int requestedCount;
   final String geographicRange;
+  final String? discountKind;
+  final String? discountAmount;
   final String status;
   final List<VipSampleWork> sampleWorks;
   final VipRequestProgress? progress;
@@ -1177,6 +1181,8 @@ class VipRequest {
       listName: json['listName'] as String? ?? '',
       requestedCount: json['requestedCount'] as int? ?? 0,
       geographicRange: json['geographicRange'] as String? ?? '',
+      discountKind: json['discountKind'] as String?,
+      discountAmount: json['discountAmount'] as String?,
       status: json['status'] as String,
       sampleWorks: json['sampleWorks'] is List
           ? (json['sampleWorks'] as List)
@@ -2077,6 +2083,7 @@ class VipRequestHistoryItem {
     required this.manualRecordedSendCount,
     required this.stillQueuedOrInProgressCount,
     this.intentionRecipientCount,
+    this.reportedIntentionCount,
     this.visitedRecipientCount,
     this.recipientDenominator,
     required this.metricsAvailability,
@@ -2087,6 +2094,7 @@ class VipRequestHistoryItem {
   final int manualRecordedSendCount;
   final int stillQueuedOrInProgressCount;
   final int? intentionRecipientCount;
+  final int? reportedIntentionCount;
   final int? visitedRecipientCount;
   final int? recipientDenominator;
   final String metricsAvailability;
@@ -2101,6 +2109,7 @@ class VipRequestHistoryItem {
       stillQueuedOrInProgressCount:
           json['stillQueuedOrInProgressCount'] as int? ?? 0,
       intentionRecipientCount: json['intentionRecipientCount'] as int?,
+      reportedIntentionCount: json['reportedIntentionCount'] as int?,
       visitedRecipientCount: json['visitedRecipientCount'] as int?,
       recipientDenominator: json['recipientDenominator'] as int?,
       metricsAvailability:

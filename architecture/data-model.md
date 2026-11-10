@@ -46,7 +46,7 @@ Platform-owned: `platform_admins`, `vip_target_lists`, `vip_target_contacts` (li
 | `vip_target_lists` | Platform list | Reservation CHECK: `IN_USE` iff reserved fields set. Optional `region_code` (`01`–`14` CHECK); null = historical/non-regional. Optional `catalog_membership` (`ORIGINAL_TEHRAN`); null = not in that reviewed collection. The column does not rewrite status, reservation, or contacts |
 | `vip_target_contacts` | List rows | Phone CHECK `09[0-9]{9}`; unique phone per list; display name optional |
 | `vip_salon_entitlements` | Product flag | Unique `salon_id`; revoke pair CHECK |
-| `vip_requests` | Intent | Unique `(id, salon_id)` |
+| `vip_requests` | Intent | Unique `(id, salon_id)`. Optional `discount_kind` (`PERCENT` / `RIAL`) and `discount_amount` NUMERIC(19,2); both null means no discount |
 | `vip_request_recipients` | Snapshot | Optional `message_request_id`; linked request must share `salon_id` |
 | `vip_sample_works` | Committed metadata | Unique `object_key`; bytes in MinIO; nullable `verified_at` is point-in-time evidence and remains null for unverified history |
 | `vip_sample_work_uploads` | Durable upload intent | Request/tenant, digest/type/size, reserved position, generation/token/lease, and optional committed sample link |

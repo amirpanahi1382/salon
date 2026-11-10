@@ -10,6 +10,7 @@ export {
   MessageChannel,
   VipTargetListStatus,
   VipRequestStatus,
+  VipDiscountKind,
   ServiceStatus,
   TransactionStatus,
   SignupPhoneChallengeStatus,

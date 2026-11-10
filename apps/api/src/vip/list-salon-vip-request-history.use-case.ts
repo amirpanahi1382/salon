@@ -16,6 +16,7 @@ export const VIP_REQUEST_HISTORY_LIMIT = 50;
 type IntentionVisitCounts = {
   vipRequestId: string;
   intentionRecipientCount: number;
+  reportedIntentionCount: number;
   visitedRecipientCount: number;
 };
 
@@ -24,6 +25,7 @@ export type SalonVipRequestHistoryItem = ReturnType<typeof toVipRequest> & {
   manualRecordedSendCount: number;
   stillQueuedOrInProgressCount: number;
   intentionRecipientCount: number | null;
+  reportedIntentionCount: number | null;
   visitedRecipientCount: number | null;
   recipientDenominator: number | null;
   /**
@@ -127,6 +129,8 @@ export class ListSalonVipRequestHistoryUseCase {
         listId: true,
         requestedCount: true,
         geographicRange: true,
+        discountKind: true,
+        discountAmount: true,
         status: true,
         reservedUntil: true,
         submittedAt: true,
@@ -151,21 +155,45 @@ export class ListSalonVipRequestHistoryUseCase {
     }
     const rows = await this.vip.client.$queryRaw<IntentionVisitCounts[]>`
       SELECT
-        vi.vip_request_id AS "vipRequestId",
-        COUNT(DISTINCT vi.vip_request_recipient_id)::int AS "intentionRecipientCount",
-        COUNT(DISTINCT vi.vip_request_recipient_id) FILTER (
+        rec.vip_request_id AS "vipRequestId",
+        COUNT(DISTINCT rec.id) FILTER (
+          WHERE vi.id IS NOT NULL
+        )::int AS "intentionRecipientCount",
+        (
+          SELECT COUNT(*)::int
+          FROM visit_intentions reported
+          WHERE reported.salon_id = ${salonId}::uuid
+            AND reported.vip_request_id = rec.vip_request_id
+            AND reported.subject = 'VIP_PROSPECT'::"VisitIntentionSubject"
+        ) AS "reportedIntentionCount",
+        COUNT(DISTINCT rec.id) FILTER (
           WHERE vi.linked_visit_id IS NOT NULL
+            OR (
+              request.submitted_at IS NOT NULL
+              AND EXISTS (
+                SELECT 1
+                FROM customers customer
+                INNER JOIN visits visit
+                  ON visit.salon_id = customer.salon_id
+                 AND visit.customer_id = customer.id
+                 AND visit.visited_at >= request.submitted_at
+                WHERE customer.salon_id = rec.salon_id
+                  AND customer.phone_number = rec.phone_number
+              )
+            )
         )::int AS "visitedRecipientCount"
-      FROM visit_intentions vi
-      INNER JOIN vip_request_recipients vrr
-        ON vrr.id = vi.vip_request_recipient_id
-        AND vrr.salon_id = vi.salon_id
-        AND vrr.vip_request_id = vi.vip_request_id
-      WHERE vi.salon_id = ${salonId}::uuid
-        AND vi.subject = 'VIP_PROSPECT'::"VisitIntentionSubject"
-        AND vi.vip_request_id IN (${Prisma.join(requestIds.map((id) => Prisma.sql`${id}::uuid`))})
-        AND vi.vip_request_recipient_id IS NOT NULL
-      GROUP BY vi.vip_request_id
+      FROM vip_request_recipients rec
+      INNER JOIN vip_requests request
+        ON request.id = rec.vip_request_id
+       AND request.salon_id = rec.salon_id
+      LEFT JOIN visit_intentions vi
+        ON vi.vip_request_recipient_id = rec.id
+       AND vi.vip_request_id = rec.vip_request_id
+       AND vi.salon_id = rec.salon_id
+       AND vi.subject = 'VIP_PROSPECT'::"VisitIntentionSubject"
+      WHERE rec.salon_id = ${salonId}::uuid
+        AND rec.vip_request_id IN (${Prisma.join(requestIds.map((id) => Prisma.sql`${id}::uuid`))})
+      GROUP BY rec.vip_request_id
     `;
     for (const row of rows) {
       map.set(row.vipRequestId, row);
@@ -183,6 +211,8 @@ function toHistoryItem(
     list: { name: string };
     requestedCount: number;
     geographicRange: string;
+    discountKind?: 'PERCENT' | 'RIAL' | null;
+    discountAmount?: { toFixed?: (digits: number) => string } | string | null;
     status: Parameters<typeof toVipRequest>[0]['status'];
     reservedUntil: Date;
     submittedAt: Date | null;
@@ -222,6 +252,7 @@ export function historyMetrics(
   | 'manualRecordedSendCount'
   | 'stillQueuedOrInProgressCount'
   | 'intentionRecipientCount'
+  | 'reportedIntentionCount'
   | 'visitedRecipientCount'
   | 'recipientDenominator'
   | 'metricsAvailability'
@@ -244,6 +275,7 @@ export function historyMetrics(
     manualRecordedSendCount,
     stillQueuedOrInProgressCount,
     intentionRecipientCount: metricsUnavailable ? null : intentions?.intentionRecipientCount ?? 0,
+    reportedIntentionCount: metricsUnavailable ? null : intentions?.reportedIntentionCount ?? 0,
     visitedRecipientCount: metricsUnavailable ? null : intentions?.visitedRecipientCount ?? 0,
     recipientDenominator: metricsUnavailable ? null : fact?.recipientCount ?? 0,
     metricsAvailability: metricsUnavailable ? 'UNAVAILABLE' : 'AVAILABLE',

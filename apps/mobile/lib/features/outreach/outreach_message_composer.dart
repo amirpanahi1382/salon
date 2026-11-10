@@ -261,18 +261,21 @@ class _OutreachMessageComposerState extends ConsumerState<OutreachMessageCompose
                     ),
                     const SizedBox(height: AppTokens.space12),
                     _EditableChipField(
+                      fieldKey: const Key('outreach-customer-name'),
                       label: AppStrings.outreachFieldCustomerName,
                       controller: _customerName,
                       enabled: !_busy && _status == null,
                     ),
                     const _FixedLine('عزیز برای'),
                     _EditableChipField(
+                      fieldKey: const Key('outreach-date'),
                       label: AppStrings.outreachFieldDate,
                       controller: _date,
                       enabled: !_busy && _status == null,
                     ),
                     const _FixedLine('ساعت'),
                     _EditableChipField(
+                      fieldKey: const Key('outreach-time'),
                       label: AppStrings.outreachFieldTime,
                       controller: _time,
                       enabled: !_busy && _status == null,
@@ -281,6 +284,7 @@ class _OutreachMessageComposerState extends ConsumerState<OutreachMessageCompose
                     ),
                     const _FixedLine('می‌توانیم با'),
                     _EditableChipField(
+                      fieldKey: const Key('outreach-discount'),
                       label: AppStrings.outreachFieldDiscount,
                       controller: _discount,
                       enabled: !_busy && _status == null,
@@ -290,12 +294,14 @@ class _OutreachMessageComposerState extends ConsumerState<OutreachMessageCompose
                     ),
                     const _FixedLine('هزار تومان تخفیف در سالن'),
                     _EditableChipField(
+                      fieldKey: const Key('outreach-salon-name'),
                       label: AppStrings.outreachFieldSalonName,
                       controller: _salonName,
                       enabled: !_busy && _status == null,
                     ),
                     const _FixedLine('در خدمت شما باشیم! برای رزرو این وقت با شماره'),
                     _EditableChipField(
+                      fieldKey: const Key('outreach-salon-phone'),
                       label: AppStrings.outreachFieldSalonPhone,
                       controller: _salonPhone,
                       enabled: !_busy && _status == null,
@@ -308,6 +314,7 @@ class _OutreachMessageComposerState extends ConsumerState<OutreachMessageCompose
                       width: double.infinity,
                       height: AppTokens.buttonHeight,
                       child: FilledButton(
+                        key: const Key('outreach-send'),
                         onPressed: _busy || _status != null ? null : _confirmAndSend,
                         child: _busy
                             ? const SizedBox(
@@ -356,11 +363,13 @@ class _EditableChipField extends StatelessWidget {
     required this.label,
     required this.controller,
     required this.enabled,
+    this.fieldKey,
     this.keyboardType,
     this.textDirection,
     this.inputFormatters,
   });
 
+  final Key? fieldKey;
   final String label;
   final TextEditingController controller;
   final bool enabled;
@@ -370,16 +379,21 @@ class _EditableChipField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return TextField(
-      controller: controller,
-      enabled: enabled,
-      keyboardType: keyboardType,
-      textDirection: textDirection,
-      inputFormatters: inputFormatters,
-      decoration: InputDecoration(
-        labelText: label,
-        filled: true,
-        fillColor: AppTokens.accentMuted,
+    return Semantics(
+      label: label,
+      textField: true,
+      child: TextField(
+        key: fieldKey,
+        controller: controller,
+        enabled: enabled,
+        keyboardType: keyboardType,
+        textDirection: textDirection,
+        inputFormatters: inputFormatters,
+        decoration: InputDecoration(
+          labelText: label,
+          filled: true,
+          fillColor: AppTokens.accentMuted,
+        ),
       ),
     );
   }

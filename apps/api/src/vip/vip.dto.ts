@@ -63,6 +63,21 @@ export class CreateVipRequestDto {
   @MinLength(1)
   @MaxLength(VIP_GEO_RANGE_MAX_LENGTH)
   geographicRange!: string;
+
+  @ApiPropertyOptional({ enum: ['PERCENT', 'RIAL'], nullable: true })
+  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined && value !== null && value !== '')
+  @IsIn(['PERCENT', 'RIAL'])
+  discountKind?: 'PERCENT' | 'RIAL' | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'PERCENT: integer 1-100. RIAL: positive IRR decimal string.',
+  })
+  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined && value !== null && value !== '')
+  @IsString()
+  discountAmount?: string | null;
 }
 
 export class ListCursorQueryDto {
@@ -251,6 +266,12 @@ export class VipRequestDto {
 
   @ApiProperty()
   geographicRange!: string;
+
+  @ApiPropertyOptional({ enum: ['PERCENT', 'RIAL'], nullable: true })
+  discountKind!: 'PERCENT' | 'RIAL' | null;
+
+  @ApiPropertyOptional({ nullable: true, type: String })
+  discountAmount!: string | null;
 
   @ApiProperty({ enum: VIP_REQUEST_STATUSES })
   status!: VipRequestStatus;

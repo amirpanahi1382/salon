@@ -1079,6 +1079,8 @@ class VipRepository {
     required String listId,
     required int requestedCount,
     required String geographicRange,
+    String? discountKind,
+    String? discountAmount,
     required String idempotencyKey,
   }) async {
     final data = asJsonMap(
@@ -1088,6 +1090,8 @@ class VipRepository {
           'listId': listId,
           'requestedCount': requestedCount,
           'geographicRange': geographicRange,
+          if (discountKind != null) 'discountKind': discountKind,
+          if (discountAmount != null) 'discountAmount': discountAmount,
         },
         headers: {'Idempotency-Key': idempotencyKey},
       ),

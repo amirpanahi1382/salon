@@ -11,6 +11,7 @@ import '../../core/widgets/app_widgets.dart';
 import '../../shared/jalali.dart';
 import '../../shared/labels.dart';
 import '../../shared/models/models.dart';
+import 'vip_discount.dart';
 import 'vip_progress_card.dart';
 import 'vip_request_form_widgets.dart';
 
@@ -59,7 +60,6 @@ class VipFormPreviewSeed {
   final String? regionCode;
   final int? count;
   final String? listId;
-  /// Unused first-release field kept so isolated preview seeds still compile.
   final Object? discountKind;
   final String discountAmount;
 }
@@ -81,6 +81,8 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
   String? _regionCode;
   String? _listId;
   final _geo = TextEditingController();
+  final _discountAmount = TextEditingController();
+  VipDiscountKind _discountKind = VipDiscountKind.none;
   bool _loading = true;
   bool _listsLoading = false;
   bool _busy = false;
@@ -88,11 +90,14 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
   Object? _listsError;
   int _loadGeneration = 0;
   int _listGeneration = 0;
+  VipRequest? _justSubmitted;
+  bool _startingAnotherRequest = false;
 
   @override
   void initState() {
     super.initState();
     _geo.addListener(_onDraftChanged);
+    _discountAmount.addListener(_onDraftChanged);
     _load();
   }
 
@@ -105,7 +110,9 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
   @override
   void dispose() {
     _geo.removeListener(_onDraftChanged);
+    _discountAmount.removeListener(_onDraftChanged);
     _geo.dispose();
+    _discountAmount.dispose();
     super.dispose();
   }
 
@@ -185,7 +192,23 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
     if (seed.listId != null && mounted) {
       setState(() => _listId = seed.listId);
     }
+    if (seed.discountKind is VipDiscountKind) {
+      setState(() => _discountKind = seed.discountKind as VipDiscountKind);
+    }
+    if (seed.discountAmount.isNotEmpty) {
+      _discountAmount.text = seed.discountAmount;
+    }
   }
+
+  VipDiscountParse get _discountParse => parseVipDiscount(
+        _discountKind,
+        _discountAmount.text,
+        copy: const VipDiscountCopy(
+          percentRange: AppStrings.vipDiscountPercentRange,
+          amountRequired: AppStrings.vipDiscountAmountRequired,
+          rialRequired: AppStrings.vipDiscountRialRequired,
+        ),
+      );
 
   Future<void> _loadLists() async {
     final code = _regionCode;
@@ -274,11 +297,21 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
     final planned = capability == null
         ? null
         : _plannedQuantity(capability, count, selectedList);
+    final parse = _discountParse;
     if (capability == null ||
         count == null ||
         listId == null ||
         planned == null ||
+        _geo.text.trim().isEmpty ||
+        parse.blocksCreate ||
         !_selectionAllowed(capability, count, selectedList, sizes)) {
+      if (parse.blocksCreate && parse.error != null) {
+        _snack(parse.error!);
+      } else if (_geo.text.trim().isEmpty) {
+        _snack(AppStrings.vipSelectRegion);
+      } else {
+        _snack(AppStrings.vipQuantityChanged);
+      }
       return;
     }
     setState(() => _busy = true);
@@ -287,6 +320,12 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
             listId: listId,
             requestedCount: planned,
             geographicRange: _geo.text,
+            discountKind: parse.kind == VipDiscountKind.none
+                ? null
+                : parse.kind == VipDiscountKind.percent
+                    ? 'PERCENT'
+                    : 'RIAL',
+            discountAmount: parse.kind == VipDiscountKind.none ? null : parse.asciiAmount,
             idempotencyKey: createRequestId(),
           );
       if (!mounted) {
@@ -350,7 +389,14 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
     }
     setState(() => _busy = true);
     try {
-      await ref.read(vipRepositoryProvider).submit(request.id, createRequestId());
+      final submitted = await ref
+          .read(vipRepositoryProvider)
+          .submit(request.id, createRequestId());
+      if (!mounted) {
+        return;
+      }
+      _justSubmitted = submitted;
+      _startingAnotherRequest = false;
       await _load();
     } catch (error) {
       _snack(friendlyError(error));
@@ -359,6 +405,36 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
       if (mounted) {
         setState(() => _busy = false);
       }
+    }
+  }
+
+  VipRequest? _focusedSubmittedRequest(VipCapability capability) {
+    if (_startingAnotherRequest) {
+      return null;
+    }
+    final local = _justSubmitted;
+    if (local == null) {
+      return null;
+    }
+    for (final request in capability.inProgressRequests) {
+      if (request.id == local.id) {
+        return request;
+      }
+    }
+    if (local.status != 'AWAITING_SAMPLE_WORK') {
+      return local;
+    }
+    return null;
+  }
+
+  Future<void> _startAnotherRequest() async {
+    setState(() {
+      _startingAnotherRequest = true;
+      _justSubmitted = null;
+      _listId = null;
+    });
+    if (_regionCode != null) {
+      await _loadLists();
     }
   }
 
@@ -441,6 +517,17 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
     if (draft != null && draft.status == 'AWAITING_SAMPLE_WORK') {
       return _scrollable(_currentRequestView(capability, draft));
     }
+    final focusedSubmitted = _focusedSubmittedRequest(capability);
+    if (focusedSubmitted != null) {
+      return _scrollable(
+        _currentRequestView(
+          capability,
+          focusedSubmitted,
+          hideFromHistoryId: focusedSubmitted.id,
+          showStartAnother: capability.remainingQuota > 0,
+        ),
+      );
+    }
     final sizes = capability.allowedRequestCounts.isEmpty
         ? const [30, 50, 100]
         : capability.allowedRequestCounts;
@@ -470,8 +557,11 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
     final planned = _plannedQuantity(capability, count, selectedList);
     final region = _selectedRegion;
 
+    final parse = _discountParse;
     final canSubmit =
-        _selectionAllowed(capability, count, selectedList, sizes);
+        _selectionAllowed(capability, count, selectedList, sizes) &&
+        _geo.text.trim().isNotEmpty &&
+        !parse.blocksCreate;
     return _scrollable(
       Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -528,7 +618,15 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
                     tone: _listId == list.id
                         ? AppSurfaceTone.hero
                         : AppSurfaceTone.elevated,
-                    onTap: _busy ? null : () => setState(() => _listId = list.id),
+                    onTap: _busy
+                        ? null
+                        : () {
+                            setState(() => _listId = list.id);
+                            final group = list.resolvedPackageGroup;
+                            if (group != null) {
+                              ref.read(vipSelectedCountProvider.notifier).setValue(group);
+                            }
+                          },
                     padding: const EdgeInsets.all(AppTokens.space12),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -566,12 +664,30 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
             const SizedBox(height: AppTokens.space8),
           ],
           const SizedBox(height: AppTokens.space16),
+          VipDiscountSection(
+            kind: _discountKind,
+            amountController: _discountAmount,
+            parse: parse,
+            enabled: !_busy,
+            onKindSelected: (value) => setState(() => _discountKind = value),
+            onAmountChanged: (_) => setState(() {}),
+            onClear: () {
+              _discountAmount.clear();
+              setState(() => _discountKind = VipDiscountKind.none);
+            },
+          ),
+          const SizedBox(height: AppTokens.space16),
           VipOrderSummary(
             key: const Key('vip-order-summary'),
             count: count,
             plannedCount: planned,
             region: region,
             selectedList: selectedList,
+            discountLabel: parse.kind == VipDiscountKind.none || !parse.valid
+                ? AppStrings.vipNoDiscount
+                : parse.kind == VipDiscountKind.percent
+                    ? AppStrings.vipSummaryPercentValue(parse.asciiAmount ?? '')
+                    : AppStrings.vipSummaryRialValue(parse.asciiAmount ?? ''),
           ),
           const SizedBox(height: AppTokens.space16),
           VipPrimaryAction(
@@ -590,16 +706,25 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
       child: ListView(
         key: const Key('vip-request-form-scroll'),
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.all(AppTokens.space16),
+        padding: EdgeInsets.fromLTRB(
+          AppTokens.space16,
+          AppTokens.space16,
+          AppTokens.space16,
+          AppTokens.space16 + MediaQuery.paddingOf(context).bottom + 96,
+        ),
         children: [child],
       ),
     );
   }
 
-  Widget _history(VipCapability capability) {
+  Widget _history(VipCapability capability, {String? hideRequestId}) {
     final cancelled = capability.latestCancelledRequest;
+    final visibleInProgress = [
+      for (final request in capability.inProgressRequests)
+        if (request.id != hideRequestId) request,
+    ];
     final hasInProgress =
-        capability.inProgressRequests.isNotEmpty || capability.inProgressRequestsHasMore;
+        visibleInProgress.isNotEmpty || capability.inProgressRequestsHasMore;
     if (!hasInProgress && cancelled == null) {
       return const SizedBox.shrink();
     }
@@ -612,7 +737,7 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
             style: Theme.of(context).textTheme.titleMedium,
           ),
           const SizedBox(height: 8),
-          for (final request in capability.inProgressRequests)
+          for (final request in visibleInProgress)
             _associatedRequest(request),
           if (capability.inProgressRequestsHasMore) ...[
             const SizedBox(height: 4),
@@ -651,7 +776,12 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
     );
   }
 
-  Widget _currentRequestView(VipCapability capability, VipRequest current) {
+  Widget _currentRequestView(
+    VipCapability capability,
+    VipRequest current, {
+    String? hideFromHistoryId,
+    bool showStartAnother = false,
+  }) {
     final awaiting = current.progress == null
         ? current.status == 'AWAITING_SAMPLE_WORK'
         : current.progress!.reservationStillValid;
@@ -674,7 +804,7 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _history(capability),
+        _history(capability, hideRequestId: hideFromHistoryId),
         Text('${AppStrings.vipListNameLabel}: ${current.listName}'),
         Text(AppStrings.vipRequestedRecipientCount(current.requestedCount)),
         const SizedBox(height: 8),
@@ -695,6 +825,14 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
         if (current.progress == null && awaiting) ...[
           const SizedBox(height: 12),
           sampleActions,
+        ],
+        if (showStartAnother) ...[
+          const SizedBox(height: 12),
+          OutlinedButton(
+            key: const Key('vip-start-another'),
+            onPressed: _busy ? null : _startAnotherRequest,
+            child: const Text(AppStrings.vipStartNewRequest),
+          ),
         ],
       ],
     );

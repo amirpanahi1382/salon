@@ -18,7 +18,7 @@ class VipDiscountParse {
   final String? asciiAmount;
   final String? error;
 
-  bool get blocksCreate => kind != VipDiscountKind.none;
+  bool get blocksCreate => !valid;
 }
 
 class VipDiscountCopy {
@@ -80,7 +80,9 @@ VipDiscountParse parseVipDiscount(
       asciiAmount: value.toString(),
     );
   }
-  if (digits.length > 12 || RegExp(r'^0+$').hasMatch(digits)) {
+  if (!RegExp(r'^(0|[1-9]\d*)(\.\d{1,2})?$').hasMatch(digits) ||
+      digits.length > 15 ||
+      RegExp(r'^0+(\.0+)?$').hasMatch(digits)) {
     return VipDiscountParse(
       kind: kind,
       valid: false,
@@ -89,10 +91,13 @@ VipDiscountParse parseVipDiscount(
       error: copy.rialRequired,
     );
   }
+  final parts = digits.split('.');
+  final whole = parts[0].replaceFirst(RegExp(r'^0+'), '');
+  final frac = ((parts.length > 1 ? parts[1] : '') + '00').substring(0, 2);
   return VipDiscountParse(
     kind: kind,
     valid: true,
     isNonzero: true,
-    asciiAmount: digits.replaceFirst(RegExp(r'^0+'), ''),
+    asciiAmount: '${whole.isEmpty ? '0' : whole}.$frac',
   );
 }

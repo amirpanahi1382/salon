@@ -450,7 +450,7 @@ describeIfDb('Opportunities serving paths integrity (e2e)', () => {
         id: listId,
         name: `secret-list-${listId.slice(0, 8)}`,
         status: 'IN_USE',
-        contactCount: 2,
+        contactCount: 3,
         regionCode: '01',
         catalogMembership: 'ORIGINAL_TEHRAN',
         createdByAdminId: adminId,
@@ -459,7 +459,7 @@ describeIfDb('Opportunities serving paths integrity (e2e)', () => {
         updatedAt: now,
       },
     });
-    const contactPhones = [syntheticMobile(), syntheticMobile()];
+    const contactPhones = [syntheticMobile(), syntheticMobile(), syntheticMobile()];
     for (let i = 0; i < contactPhones.length; i += 1) {
       await prisma.client.vipTargetContact.create({
         data: {
@@ -598,6 +598,57 @@ describeIfDb('Opportunities serving paths integrity (e2e)', () => {
         updatedAt: now,
       },
     });
+    // Recipient C has no intention at all. A later independent salon Visit must
+    // still be counted once via the same-tenant customer phone and visit fact.
+    const independentCustomerId = randomUUID();
+    await prisma.client.customer.create({
+      data: {
+        id: independentCustomerId,
+        salonId: salonA.tenantId,
+        firstName: 'Independent',
+        lastName: 'Visit',
+        phoneNumber: contactPhones[2]!,
+        updatedAt: now,
+      },
+    });
+    for (let i = 1; i <= 2; i += 1) {
+      await prisma.client.visit.create({
+        data: {
+          id: randomUUID(),
+          salonId: salonA.tenantId,
+          customerId: independentCustomerId,
+          visitedAt: new Date(now.getTime() + i * 60_000),
+          updatedAt: now,
+        },
+      });
+    }
+    // A pre-submission Visit for B and a later Visit in another salon must not
+    // turn B's open intention into a recorded Visit for this request.
+    for (const [tenantId, visitedAt] of [
+      [salonA.tenantId, new Date(now.getTime() - 60_000)],
+      [salonB.tenantId, new Date(now.getTime() + 60_000)],
+    ] as const) {
+      const customerId = randomUUID();
+      await prisma.client.customer.create({
+        data: {
+          id: customerId,
+          salonId: tenantId,
+          firstName: 'Earlier',
+          lastName: 'Visit',
+          phoneNumber: contactPhones[1]!,
+          updatedAt: now,
+        },
+      });
+      await prisma.client.visit.create({
+        data: {
+          id: randomUUID(),
+          salonId: tenantId,
+          customerId,
+          visitedAt,
+          updatedAt: now,
+        },
+      });
+    }
     await prisma.client.visitIntention.create({
       data: {
         id: randomUUID(),
@@ -701,15 +752,17 @@ describeIfDb('Opportunities serving paths integrity (e2e)', () => {
     expect(cancelled).toBeTruthy();
     expect(submitted.listName).toBe(`secret-list-${listId.slice(0, 8)}`);
     expect(submitted.metricsAvailability).toBe('AVAILABLE');
-    expect(submitted.recipientDenominator).toBe(2);
+    expect(submitted.recipientDenominator).toBe(3);
     expect(submitted.recordedSendCount).toBe(1);
     expect(submitted.manualRecordedSendCount).toBe(1);
     expect(submitted.stillQueuedOrInProgressCount).toBeGreaterThanOrEqual(1);
     expect(submitted.intentionRecipientCount).toBe(2);
-    expect(submitted.visitedRecipientCount).toBe(1);
+    expect(submitted.reportedIntentionCount).toBe(4);
+    expect(submitted.visitedRecipientCount).toBe(2);
     expect(submitted.sentMeans).toBe('RECORDED_SEND_NOT_CONFIRMED_DELIVERY');
     expect(cancelled.metricsAvailability).toBe('UNAVAILABLE');
     expect(cancelled.intentionRecipientCount).toBeNull();
+    expect(cancelled.reportedIntentionCount).toBeNull();
     expect(cancelled.visitedRecipientCount).toBeNull();
     expect(cancelled.recipientDenominator).toBeNull();
 
@@ -764,21 +817,30 @@ describeIfDb('Opportunities serving paths integrity (e2e)', () => {
     const explainVip = await prisma.client.$queryRawUnsafe<Array<{ 'QUERY PLAN': string }>>(
       `EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT)
        SELECT
-         vi.vip_request_id,
-         COUNT(DISTINCT vi.vip_request_recipient_id)::int AS intention_recipients,
-         COUNT(DISTINCT vi.vip_request_recipient_id) FILTER (
-           WHERE vi.linked_visit_id IS NOT NULL
+         rec.vip_request_id,
+         COUNT(DISTINCT rec.id) FILTER (WHERE vi.id IS NOT NULL)::int AS intention_recipients,
+         (SELECT COUNT(*)::int FROM visit_intentions reported
+           WHERE reported.salon_id = $1::uuid
+             AND reported.vip_request_id = rec.vip_request_id
+             AND reported.subject = 'VIP_PROSPECT'::"VisitIntentionSubject"
+         ) AS reported_intentions,
+         COUNT(DISTINCT rec.id) FILTER (
+           WHERE vi.linked_visit_id IS NOT NULL OR (
+             vr.submitted_at IS NOT NULL AND EXISTS (
+               SELECT 1 FROM customers c
+               INNER JOIN visits v ON v.salon_id = c.salon_id
+                 AND v.customer_id = c.id AND v.visited_at >= vr.submitted_at
+               WHERE c.salon_id = rec.salon_id AND c.phone_number = rec.phone_number
+             )
+           )
          )::int AS visited_recipients
-       FROM visit_intentions vi
-       INNER JOIN vip_request_recipients vrr
-         ON vrr.id = vi.vip_request_recipient_id
-         AND vrr.salon_id = vi.salon_id
-         AND vrr.vip_request_id = vi.vip_request_id
-       WHERE vi.salon_id = $1::uuid
+       FROM vip_request_recipients rec
+       INNER JOIN vip_requests vr ON vr.id = rec.vip_request_id AND vr.salon_id = rec.salon_id
+       LEFT JOIN visit_intentions vi ON vi.vip_request_recipient_id = rec.id
+         AND vi.vip_request_id = rec.vip_request_id AND vi.salon_id = rec.salon_id
          AND vi.subject = 'VIP_PROSPECT'::"VisitIntentionSubject"
-         AND vi.vip_request_id = $2::uuid
-         AND vi.vip_request_recipient_id IS NOT NULL
-       GROUP BY vi.vip_request_id`,
+       WHERE rec.salon_id = $1::uuid AND rec.vip_request_id = $2::uuid
+       GROUP BY rec.vip_request_id`,
       salonA.tenantId,
       requestId,
     );

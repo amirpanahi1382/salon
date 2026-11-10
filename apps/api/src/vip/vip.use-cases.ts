@@ -22,6 +22,7 @@ import {
   isUsableCustomerPhone,
   isVipRegionCode,
   nearestVipPackageGroup,
+  parseVipConfirmedOffer,
   renderVipMessageTemplate,
   vipRegionName,
   type AuthenticatedPrincipal,
@@ -949,7 +950,8 @@ export class CreateVipRequestUseCase {
     idempotencyKey: string,
   ) {
     const geographicRange = sanitizeGeo(body.geographicRange);
-    const requestHash = vipRequestCreateHash(body.listId, body.requestedCount, geographicRange);
+    const offer = parseVipConfirmedOffer(body.discountKind, body.discountAmount);
+    const requestHash = vipRequestCreateHash(body.listId, body.requestedCount, geographicRange, offer);
     const requestId = createId();
     const now = new Date();
 
@@ -1068,6 +1070,8 @@ export class CreateVipRequestUseCase {
               createdByUserId: principal.userId,
               requestedCount: effective,
               geographicRange,
+              discountKind: offer?.kind ?? null,
+              discountAmount: offer ? offer.amount : null,
               status: 'AWAITING_SAMPLE_WORK',
               reservedUntil: this.vip.reservationDeadline(now),
               updatedAt: now,
@@ -1078,7 +1082,7 @@ export class CreateVipRequestUseCase {
                   sourceContactId: contact.id,
                   displayName: contact.displayName,
                   phoneNumber: contact.phoneNumber,
-                  messageText: renderVipMessageTemplate(contact.displayName, geographicRange),
+                  messageText: renderVipMessageTemplate(contact.displayName, geographicRange, offer),
                 })),
               },
             },

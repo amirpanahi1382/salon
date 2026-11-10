@@ -38,6 +38,7 @@ describe('VIP request history metrics', () => {
     );
     expect(result.metricsAvailability).toBe('UNAVAILABLE');
     expect(result.intentionRecipientCount).toBeNull();
+    expect(result.reportedIntentionCount).toBeNull();
     expect(result.visitedRecipientCount).toBeNull();
     expect(result.recipientDenominator).toBeNull();
   });
@@ -46,10 +47,12 @@ describe('VIP request history metrics', () => {
     const result = historyMetrics({ status: 'SUBMITTED', submittedAt: new Date() }, undefined, {
       vipRequestId: 'x',
       intentionRecipientCount: 3,
+      reportedIntentionCount: 4,
       visitedRecipientCount: 1,
     });
     expect(result.metricsAvailability).toBe('UNAVAILABLE');
     expect(result.intentionRecipientCount).toBeNull();
+    expect(result.reportedIntentionCount).toBeNull();
     expect(result.visitedRecipientCount).toBeNull();
   });
 
@@ -64,13 +67,14 @@ describe('VIP request history metrics', () => {
         inPipelineCount: 1,
         recipientCount: 10,
       }),
-      { vipRequestId: 'x', intentionRecipientCount: 2, visitedRecipientCount: 1 },
+      { vipRequestId: 'x', intentionRecipientCount: 2, reportedIntentionCount: 3, visitedRecipientCount: 1 },
     );
     expect(result.metricsAvailability).toBe('AVAILABLE');
     expect(result.recordedSendCount).toBe(4);
     expect(result.manualRecordedSendCount).toBe(1);
     expect(result.stillQueuedOrInProgressCount).toBe(6);
     expect(result.intentionRecipientCount).toBe(2);
+    expect(result.reportedIntentionCount).toBe(3);
     expect(result.visitedRecipientCount).toBe(1);
     expect(result.recipientDenominator).toBe(10);
   });
@@ -83,6 +87,7 @@ describe('VIP request history metrics', () => {
     );
     expect(result.metricsAvailability).toBe('AVAILABLE');
     expect(result.intentionRecipientCount).toBe(0);
+    expect(result.reportedIntentionCount).toBe(0);
     expect(result.visitedRecipientCount).toBe(0);
     expect(result.recipientDenominator).toBe(8);
   });
@@ -91,9 +96,10 @@ describe('VIP request history metrics', () => {
     const result = historyMetrics(
       { status: 'SUBMITTED', submittedAt: new Date() },
       fact({ recipientCount: 5 }),
-      { vipRequestId: 'x', intentionRecipientCount: 1, visitedRecipientCount: 1 },
+      { vipRequestId: 'x', intentionRecipientCount: 1, reportedIntentionCount: 2, visitedRecipientCount: 1 },
     );
     expect(result.intentionRecipientCount).toBe(1);
+    expect(result.reportedIntentionCount).toBe(2);
     expect(result.visitedRecipientCount).toBe(1);
   });
 
@@ -164,7 +170,7 @@ describe('VIP request history use case read path', () => {
       new Map([[requestId, fact({ id: requestId, recipientCount: 5, sentCount: 2 })]]),
     );
     const queryRaw = jest.fn().mockResolvedValue([
-      { vipRequestId: requestId, intentionRecipientCount: 1, visitedRecipientCount: 0 },
+      { vipRequestId: requestId, intentionRecipientCount: 1, reportedIntentionCount: 1, visitedRecipientCount: 0 },
     ]);
 
     const vip = {

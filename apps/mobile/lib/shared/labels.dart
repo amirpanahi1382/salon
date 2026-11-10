@@ -500,12 +500,10 @@ class AppStrings {
   static const ordinaryMessageStatusSent = 'ارسال ثبت‌شده';
   static const ordinaryMessageStatusFailed = 'ناموفق';
   static const ordinaryMessageStatusCancelled = 'لغو شده';
-  static const vipHistoryRecordedSends = 'ارسال ثبت‌شده';
-  static const vipHistoryInProgress = 'در صف / در حال رسیدگی';
-  static const vipHistoryIntentions = 'نیت مراجعه ثبت‌شده';
-  static const vipHistoryVisited = 'مراجعهٔ لینک‌شده';
-  static const vipHistoryMetricsUnavailable =
-      'شمارش برای این درخواست در دسترس نیست.';
+  static const vipHistoryRequested = 'ارسال درخواست شده سالن';
+  static const vipHistoryRecordedSends = 'ارسال شده';
+  static const vipHistoryIntentions = 'قصد مراجعه ثبت شده کاربران';
+  static const vipHistoryVisited = 'مراجعه ثبت شده';
   static const vipHistoryOpenRequest = 'جزئیات درخواست';
   static const logout = 'خروج';
   static const retry = 'تلاش مجدد';
@@ -607,6 +605,7 @@ class AppStrings {
   static const vipUploadSamples = 'نمونه کارها را بارگذاری کنید';
   static const vipAddSample = 'افزودن نمونه کار';
   static const vipSubmit = 'ثبت درخواست';
+  static const vipStartNewRequest = 'ثبت درخواست جدید';
   static const vipNeedEntitlement = 'ارسال VIP برای این سالن فعال نیست.';
   static const vipNeedsReview = 'نیازمند بررسی';
   static const vipMaxSamples = 'حداکثر ۳ نمونه کار مجاز است.';

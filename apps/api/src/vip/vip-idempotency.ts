@@ -48,11 +48,11 @@ export function vipRequestCreateHash(
   listId: string,
   requestedCount: number,
   geographicRange: string,
+  offer?: { kind: 'PERCENT' | 'RIAL'; amount: string } | null,
 ): string {
-  return hashIdempotencyPayload(
-    VIP_REQUEST_CREATE_OPERATION,
-    `${listId}:${requestedCount}:${geographicRange}`,
-  );
+  const base = `${listId}:${requestedCount}:${geographicRange}`;
+  const payload = offer ? `${base}:${offer.kind}:${offer.amount}` : base;
+  return hashIdempotencyPayload(VIP_REQUEST_CREATE_OPERATION, payload);
 }
 
 export function vipSampleWorkHash(requestId: string, sha256: string): string {

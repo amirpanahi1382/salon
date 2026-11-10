@@ -48,6 +48,7 @@ AdminVipOutreachRequest _request({
   String? regionName = 'مرکز؛ حسن‌آباد، بازار و انقلاب',
   int sent = 0,
   int pending = 30,
+  int requestedCount = 30,
   String status = 'SUBMITTED',
   VipRequestProgress? progress,
 }) {
@@ -59,7 +60,7 @@ AdminVipOutreachRequest _request({
     listName: listName,
     regionCode: regionCode,
     regionName: regionName,
-    requestedCount: 30,
+    requestedCount: requestedCount,
     geographicRange: regionName ?? 'ونک',
     status: status,
     recipientCount: pending + sent,
@@ -726,6 +727,66 @@ void main() {
     expect(find.text(AppStrings.vipOutreachDispatchAllManual), findsOneWidget);
     expect(find.text(AppStrings.vipOutreachDispatchPrerequisite), findsNothing);
   });
+
+  testWidgets(
+    'admin request detail keeps 2 recorded and 98 pending without the handling paragraph',
+    (tester) async {
+      const explanation =
+          'رسیدگی دستی شروع شده است. کل درخواست ارسال‌شده نیست. هر گیرنده جداگانه هنوز در صف نیست، در صف یا در حال رسیدگی است، علامت ارسال دستی دارد، ناموفق است، لغو شده، یا برای همین درخواست رد شده است. علامت ارسال دستی تحویل پیام را ثابت نمی‌کند.';
+      final repo = _FakeVipRepository(
+        requestsBySalon: {
+          's1': [
+            _request(
+              id: 'r1',
+              salonId: 's1',
+              status: 'MANUAL_QUEUED',
+              sent: 2,
+              pending: 98,
+              requestedCount: 100,
+              progress: _progress(
+                headline: 'رسیدگی دستی شروع شده',
+                explanation: explanation,
+                countLines: const [
+                  VipProgressCountLine(
+                    key: 'manuallyMarkedSent',
+                    label: 'علامت‌خورده به‌عنوان ارسال دستی',
+                    count: 2,
+                  ),
+                  VipProgressCountLine(
+                    key: 'notYetQueued',
+                    label: 'هنوز به صف پیام نرسیده',
+                    count: 98,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        },
+      );
+      tester.view.physicalSize = const Size(800, 1800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [vipRepositoryProvider.overrideWithValue(repo)],
+          child: const MaterialApp(
+            home: AdminVipOutreachRequestScreen(requestId: 'r1'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('رسیدگی دستی شروع شده'), findsOneWidget);
+      expect(find.text('اقدام بعدی با پلتفرم است'), findsOneWidget);
+      expect(find.text('علامت‌خورده به‌عنوان ارسال دستی: ۲'), findsOneWidget);
+      expect(find.text('هنوز به صف پیام نرسیده: ۹۸'), findsOneWidget);
+      expect(find.text(explanation), findsNothing);
+      expect(find.textContaining('کل درخواست ارسال‌شده نیست'), findsNothing);
+      expect(
+        find.textContaining('علامت ارسال دستی تحویل پیام را ثابت نمی‌کند'),
+        findsNothing,
+      );
+    },
+  );
 }
 
 Future<void> _submitAdminDisclosure(WidgetTester tester) async {

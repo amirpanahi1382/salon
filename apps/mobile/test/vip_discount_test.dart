@@ -21,7 +21,7 @@ void main() {
     final parsed = parseVipDiscount(VipDiscountKind.percent, '۲۰', copy: _copy);
     expect(parsed.valid, isTrue);
     expect(parsed.isNonzero, isTrue);
-    expect(parsed.blocksCreate, isTrue);
+    expect(parsed.blocksCreate, isFalse);
     expect(parsed.asciiAmount, '20');
   });
 
@@ -39,8 +39,8 @@ void main() {
   test('rial accepts a positive integer string and rejects zero', () {
     final parsed = parseVipDiscount(VipDiscountKind.irr, '۵۰۰۰۰', copy: _copy);
     expect(parsed.valid, isTrue);
-    expect(parsed.asciiAmount, '50000');
-    expect(parsed.blocksCreate, isTrue);
+    expect(parsed.asciiAmount, '50000.00');
+    expect(parsed.blocksCreate, isFalse);
     expect(
       parseVipDiscount(VipDiscountKind.irr, '0', copy: _copy).valid,
       isFalse,

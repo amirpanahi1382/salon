@@ -586,6 +586,8 @@ class FakeVipRepository extends VipRepository {
     required String listId,
     required int requestedCount,
     required String geographicRange,
+    String? discountKind,
+    String? discountAmount,
     required String idempotencyKey,
   }) async {
     if (createError != null) {
@@ -1671,7 +1673,7 @@ void main() {
       entitled: true,
       historyItems: [
         VipRequestHistoryItem(
-          request: const VipRequest(
+          request: VipRequest(
             id: 'vip-1',
             salonId: 's1',
             salonName: 'Rose Salon',
@@ -1680,11 +1682,20 @@ void main() {
             requestedCount: 20,
             geographicRange: 'تهران',
             status: 'SUBMITTED',
+            submittedAt: DateTime.utc(2026, 10, 1),
+            progress: const VipRequestProgress(
+              headline: 'درخواست شما ثبت شد، به محض تأیید ادمین ارسال می‌شود',
+              explanation: 'این عنوان فقط ثبت درخواست است و به معنای ارسال یا تحویل پیام نیست. علامت ارسال دستی تحویل قطعی پیام نیست و نتیجهٔ ناموفق، لغو یا ارسال‌نشدن پنهان نمی‌شود.',
+              nextActor: 'PLATFORM_ADMIN',
+              nextActorLabel: 'ادامهٔ کار با تأیید ادمین است',
+              reservationStillValid: false,
+            ),
           ),
           recordedSendCount: 5,
           manualRecordedSendCount: 2,
           stillQueuedOrInProgressCount: 3,
           intentionRecipientCount: 1,
+          reportedIntentionCount: 3,
           visitedRecipientCount: 1,
           recipientDenominator: 20,
           metricsAvailability: 'AVAILABLE',
@@ -1723,8 +1734,19 @@ void main() {
     await tester.tap(find.widgetWithText(ChoiceChip, 'پیام‌های VIP'));
     await tester.pumpAndSettle();
     expect(find.text('Tehran VIP A'), findsOneWidget);
-    expect(find.textContaining('ارسال ثبت‌شده'), findsWidgets);
-    expect(find.textContaining('نیت مراجعه ثبت‌شده'), findsOneWidget);
+    expect(find.text('ارسال درخواست شده سالن: 20'), findsOneWidget);
+    expect(find.text('قصد مراجعه ثبت شده کاربران: 3'), findsOneWidget);
+    expect(find.text('ارسال شده: 2'), findsOneWidget);
+    expect(find.text('مراجعه ثبت شده: 1'), findsOneWidget);
+    expect(find.textContaining('در صف / در حال رسیدگی'), findsNothing);
+    expect(find.textContaining('شناسه:'), findsNothing);
+    expect(find.textContaining('دستی:'), findsNothing);
+    expect(find.textContaining('درخواست شما ثبت شد'), findsNothing);
+    expect(find.textContaining('این عنوان فقط ثبت درخواست است'), findsNothing);
+    expect(
+      find.textContaining('به معنای ارسال یا تحویل پیام نیست'),
+      findsNothing,
+    );
 
     await tester.tap(find.widgetWithText(ChoiceChip, 'ارسال پیام عادی'));
     await tester.pumpAndSettle();

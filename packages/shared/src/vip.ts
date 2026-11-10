@@ -3,6 +3,8 @@ import {
   messageAdminCapabilities,
   type MessageExecutionState,
 } from './messaging.js';
+import { formatMoneyString, parseMoneyString } from './money.js';
+import { ValidationError } from './errors.js';
 
 export const VIP_ALLOWED_REQUEST_COUNTS = [30, 50, 100] as const;
 export type VipAllowedRequestCount = (typeof VIP_ALLOWED_REQUEST_COUNTS)[number];
@@ -179,11 +181,64 @@ export function isVipAllowedRequestCount(value: number): value is VipAllowedRequ
   return (VIP_ALLOWED_REQUEST_COUNTS as readonly number[]).includes(value);
 }
 
+export type VipOfferKind = 'PERCENT' | 'RIAL';
+
+export type VipConfirmedOffer = {
+  kind: VipOfferKind;
+  amount: string;
+};
+
+const PERSIAN_DIGITS = '۰۱۲۳۴۵۶۷۸۹';
+
+export function toPersianDigits(value: string): string {
+  return value.replace(/\d/g, (digit) => PERSIAN_DIGITS[Number(digit)] ?? digit);
+}
+
+/** Null means no discount. Older rows and omitted create fields map here. */
+export function parseVipConfirmedOffer(
+  kind: string | null | undefined,
+  amount: string | null | undefined,
+): VipConfirmedOffer | null {
+  const rawKind = typeof kind === 'string' ? kind.trim() : '';
+  const rawAmount = typeof amount === 'string' ? amount.trim() : '';
+  if (!rawKind && !rawAmount) {
+    return null;
+  }
+  if (rawKind === 'PERCENT') {
+    const whole = rawAmount.replace(/\.0+$/, '');
+    if (!/^(100|[1-9]\d?)$/.test(whole)) {
+      throw new ValidationError('Percent discount must be an integer from 1 to 100.');
+    }
+    return { kind: 'PERCENT', amount: String(Number(whole)) };
+  }
+  if (rawKind === 'RIAL') {
+    const minor = parseMoneyString(rawAmount);
+    if (minor <= 0n) {
+      throw new ValidationError('Rial discount must be a positive IRR decimal string.');
+    }
+    return { kind: 'RIAL', amount: formatMoneyString(minor) };
+  }
+  throw new ValidationError('discountKind must be PERCENT or RIAL.');
+}
+
+export function renderVipOfferSentence(offer: VipConfirmedOffer | null | undefined): string | null {
+  if (!offer) {
+    return null;
+  }
+  if (offer.kind === 'PERCENT') {
+    return `این پیام با ${toPersianDigits(offer.amount)}٪ تخفیف است.`;
+  }
+  return `این پیام با ${toPersianDigits(offer.amount)} ریال تخفیف است.`;
+}
+
 export function renderVipMessageTemplate(
   customerName: string | null | undefined,
   geographicRange: string,
+  offer?: VipConfirmedOffer | null,
 ): string {
-  const body = `نمونه کارها خدمتتون ارسال شده. ما در محدوده ${geographicRange} تا حالا سعادت حضور شما را نداشتیم و برای رزرو با من تماس بگیرید.`;
+  const offerSentence = renderVipOfferSentence(offer);
+  const offerClause = offerSentence ? ` ${offerSentence}` : '';
+  const body = `نمونه کارها خدمتتون ارسال شده.${offerClause} ما در محدوده ${geographicRange} تا حالا سعادت حضور شما را نداشتیم و برای رزرو با من تماس بگیرید.`;
   const name = typeof customerName === 'string' ? customerName.trim() : '';
   if (!name) {
     return body;

@@ -74,12 +74,16 @@ class _FakeVipRepository extends VipRepository {
     required String listId,
     required int requestedCount,
     required String geographicRange,
+    String? discountKind,
+    String? discountAmount,
     required String idempotencyKey,
   }) async {
     createCalls.add({
       'listId': listId,
       'requestedCount': requestedCount,
       'geographicRange': geographicRange,
+      'discountKind': ?discountKind,
+      'discountAmount': ?discountAmount,
     });
     if (createError != null) {
       throw createError!;
@@ -625,14 +629,14 @@ void main() {
     await _pump(tester, repo);
     expect(find.text(AppStrings.vipRemainingQuota(370)), findsOneWidget);
     expect(find.text(AppStrings.vipRemainingQuota(500)), findsNothing);
-    expect(find.text(AppStrings.vipIntendedDiscount), findsNothing);
+    expect(find.text(AppStrings.vipIntendedDiscount), findsOneWidget);
     expect(find.text(AppStrings.vipOrderSummary), findsOneWidget);
-    expect(find.text(AppStrings.vipNoDiscount), findsNothing);
-    expect(find.byKey(const Key('vip-discount-percent')), findsNothing);
-    expect(find.byKey(const Key('vip-discount-rial')), findsNothing);
+    expect(find.text(AppStrings.vipNoDiscount), findsWidgets);
+    expect(find.byKey(const Key('vip-discount-percent')), findsOneWidget);
+    expect(find.byKey(const Key('vip-discount-rial')), findsOneWidget);
   });
 
-  testWidgets('summary reflects region, list, and count without discount controls', (
+  testWidgets('summary reflects region, list, count, and default no-discount offer', (
     tester,
   ) async {
     final repo = _FakeVipRepository(
@@ -650,8 +654,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text(AppStrings.vipSummaryRecipientCount(100)), findsWidgets);
     expect(find.text('VIP-01-01'), findsWidgets);
-    expect(find.text(AppStrings.vipIntendedDiscount), findsNothing);
-    expect(find.text(AppStrings.vipSummaryDiscount), findsNothing);
+    expect(find.text(AppStrings.vipIntendedDiscount), findsOneWidget);
+    expect(find.text(AppStrings.vipSummaryDiscount), findsOneWidget);
     expect(
       tester
           .widget<FilledButton>(
@@ -660,6 +664,50 @@ void main() {
           .onPressed,
       isNotNull,
     );
+  });
+
+  testWidgets('selecting a list sets its package group and submit creates the request', (
+    tester,
+  ) async {
+    final repo = _FakeVipRepository(
+      regionItems: _regions(),
+      listsByCode: {
+        '01': [_list(id: 'offer-list', name: 'VIP-01-offer', regionCode: '01', contactCount: 30)],
+      },
+    );
+    await _pump(tester, repo);
+    await _chooseRegion01(tester);
+    await tester.tap(find.text('VIP-01-offer'));
+    await tester.pumpAndSettle();
+    expect(find.text(AppStrings.vipSummaryRecipientCount(30)), findsWidgets);
+    await tester.tap(find.byKey(const Key('vip-submit')));
+    await tester.pumpAndSettle();
+    expect(repo.createCalls, isNotEmpty);
+    expect(repo.createCalls.single['listId'], 'offer-list');
+    expect(repo.createCalls.single['requestedCount'], 30);
+    expect(repo.createCalls.single['discountKind'], isNull);
+  });
+
+  testWidgets('percent offer is included in the create payload', (tester) async {
+    final repo = _FakeVipRepository(
+      regionItems: _regions(),
+      listsByCode: {
+        '01': [_list(id: 'offer-list', name: 'VIP-01-offer', regionCode: '01', contactCount: 30)],
+      },
+    );
+    await _pump(tester, repo);
+    await _chooseRegion01(tester);
+    await tester.tap(find.text('VIP-01-offer'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('vip-discount-percent')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('vip-discount-amount')), '20');
+    await tester.pumpAndSettle();
+    expect(find.text(AppStrings.vipSummaryPercentValue('20')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('vip-submit')));
+    await tester.pumpAndSettle();
+    expect(repo.createCalls.single['discountKind'], 'PERCENT');
+    expect(repo.createCalls.single['discountAmount'], '20');
   });
 }
 

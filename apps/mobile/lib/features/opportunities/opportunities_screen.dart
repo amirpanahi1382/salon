@@ -79,8 +79,9 @@ class _OpportunitiesScreenState extends ConsumerState<OpportunitiesScreen> {
     try {
       switch (section) {
         case _OpportunitiesSection.revenueDrop:
-          final page =
-              await ref.read(intelligenceRepositoryProvider).revenueDrops();
+          final page = await ref
+              .read(intelligenceRepositoryProvider)
+              .revenueDrops();
           if (!_isCurrentLoad(generation, section)) return;
           setState(() {
             _revenueItems = page.items;
@@ -100,8 +101,9 @@ class _OpportunitiesScreenState extends ConsumerState<OpportunitiesScreen> {
             _loading = false;
           });
         case _OpportunitiesSection.ordinary:
-          final page =
-              await ref.read(messageRepositoryProvider).listOrdinaryHistory();
+          final page = await ref
+              .read(messageRepositoryProvider)
+              .listOrdinaryHistory();
           if (!_isCurrentLoad(generation, section)) return;
           setState(() {
             _ordinaryItems = page.items;
@@ -205,10 +207,10 @@ class _OpportunitiesScreenState extends ConsumerState<OpportunitiesScreen> {
   }
 
   bool get _hasMore => switch (_section) {
-        _OpportunitiesSection.revenueDrop => _revenueHasMore,
-        _OpportunitiesSection.vip => _vipHasMore,
-        _OpportunitiesSection.ordinary => _ordinaryHasMore,
-      };
+    _OpportunitiesSection.revenueDrop => _revenueHasMore,
+    _OpportunitiesSection.vip => _vipHasMore,
+    _OpportunitiesSection.ordinary => _ordinaryHasMore,
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -254,8 +256,9 @@ class _OpportunitiesScreenState extends ConsumerState<OpportunitiesScreen> {
         actions: [
           if (selecting)
             TextButton(
-              onPressed: () =>
-                  ref.read(manualOutreachSelectionProvider.notifier).exitSelection(),
+              onPressed: () => ref
+                  .read(manualOutreachSelectionProvider.notifier)
+                  .exitSelection(),
               child: const Text(AppStrings.cancelSelection),
             )
           else if (_section == _OpportunitiesSection.revenueDrop)
@@ -263,8 +266,8 @@ class _OpportunitiesScreenState extends ConsumerState<OpportunitiesScreen> {
               onPressed: _revenueItems.isEmpty
                   ? null
                   : () => ref
-                      .read(manualOutreachSelectionProvider.notifier)
-                      .enterSelection(),
+                        .read(manualOutreachSelectionProvider.notifier)
+                        .enterSelection(),
               child: const Text(AppStrings.selectMultipleCustomers),
             )
           else if (_section == _OpportunitiesSection.vip && _vipEntitled)
@@ -338,42 +341,41 @@ class _OpportunitiesScreenState extends ConsumerState<OpportunitiesScreen> {
             child: _loading
                 ? const LoadingSkeleton(lines: 5)
                 : _error != null
-                    ? ErrorView(message: friendlyError(_error!), onRetry: _load)
-                    : RefreshIndicator(
-                        onRefresh: _load,
-                        child: PagedNotificationListener(
-                          hasMore: _hasMore,
-                          loading: _loading || _loadingMore,
-                          onLoadMore: _loadMore,
-                          child: ListView(
-                            padding: const EdgeInsets.fromLTRB(
-                              AppTokens.space16,
-                              AppTokens.space8,
-                              AppTokens.space16,
-                              AppTokens.space32,
-                            ),
-                            children: [
-                              if (pending.isNotEmpty &&
-                                  (_section ==
-                                          _OpportunitiesSection.revenueDrop ||
-                                      _section ==
-                                          _OpportunitiesSection.ordinary)) ...[
-                                const SectionHeader(
-                                  AppStrings.workspacePendingSelectionTitle,
-                                ),
-                                for (final customer in pending)
-                                  _PendingComposerTile(
-                                    name: customer.fullName,
-                                    onCompose: () => _openComposer(customer.id),
-                                  ),
-                                const SizedBox(height: AppTokens.space16),
-                              ],
-                              ..._sectionBody(context, selecting, outreach),
-                              if (_hasMore) PagedFooter(loading: _loadingMore),
-                            ],
-                          ),
+                ? ErrorView(message: friendlyError(_error!), onRetry: _load)
+                : RefreshIndicator(
+                    onRefresh: _load,
+                    child: PagedNotificationListener(
+                      hasMore: _hasMore,
+                      loading: _loading || _loadingMore,
+                      onLoadMore: _loadMore,
+                      child: ListView(
+                        padding: const EdgeInsets.fromLTRB(
+                          AppTokens.space16,
+                          AppTokens.space8,
+                          AppTokens.space16,
+                          AppTokens.space32,
                         ),
+                        children: [
+                          if (pending.isNotEmpty &&
+                              (_section == _OpportunitiesSection.revenueDrop ||
+                                  _section ==
+                                      _OpportunitiesSection.ordinary)) ...[
+                            const SectionHeader(
+                              AppStrings.workspacePendingSelectionTitle,
+                            ),
+                            for (final customer in pending)
+                              _PendingComposerTile(
+                                name: customer.fullName,
+                                onCompose: () => _openComposer(customer.id),
+                              ),
+                            const SizedBox(height: AppTokens.space16),
+                          ],
+                          ..._sectionBody(context, selecting, outreach),
+                          if (_hasMore) PagedFooter(loading: _loadingMore),
+                        ],
                       ),
+                    ),
+                  ),
           ),
         ],
       ),
@@ -419,7 +421,9 @@ class _OpportunitiesScreenState extends ConsumerState<OpportunitiesScreen> {
               selecting: selecting,
               selected: outreach.isSelected(item.customerId),
               onToggle: () {
-                ref.read(manualOutreachSelectionProvider.notifier).toggle(
+                ref
+                    .read(manualOutreachSelectionProvider.notifier)
+                    .toggle(
                       Customer(
                         id: item.customerId,
                         firstName: item.firstName,
@@ -479,10 +483,7 @@ class _OpportunitiesScreenState extends ConsumerState<OpportunitiesScreen> {
 }
 
 class _PendingComposerTile extends StatelessWidget {
-  const _PendingComposerTile({
-    required this.name,
-    required this.onCompose,
-  });
+  const _PendingComposerTile({required this.name, required this.onCompose});
 
   final String name;
   final VoidCallback onCompose;
@@ -585,7 +586,6 @@ class _VipHistoryTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final request = item.request;
-    final progress = request.progress;
     return Card(
       margin: const EdgeInsets.only(bottom: AppTokens.space12),
       child: Padding(
@@ -597,47 +597,25 @@ class _VipHistoryTile extends StatelessWidget {
               request.listName,
               style: Theme.of(context).textTheme.titleMedium,
             ),
-            const SizedBox(height: 4),
-            Text(
-              'شناسه: ${request.id}',
-              style: Theme.of(context).textTheme.labelSmall,
-            ),
-            Text(
-              '${request.requestedCount} مخاطب · ${request.status}'
-              '${request.createdAt != null ? ' · ${request.createdAt!.toLocal()}' : ''}',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-            if (progress != null) ...[
-              const SizedBox(height: 8),
-              Text(progress.headline),
-              Text(
-                progress.explanation,
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ],
             const SizedBox(height: 8),
             Text(
-              '${AppStrings.vipHistoryRecordedSends}: ${item.recordedSendCount}'
-              '${item.manualRecordedSendCount > 0 ? ' (دستی: ${item.manualRecordedSendCount})' : ''}',
-            ),
-            Text(
-              '${AppStrings.vipHistoryInProgress}: ${item.stillQueuedOrInProgressCount}',
+              '${AppStrings.vipHistoryRequested}: ${request.submittedAt == null ? 0 : request.requestedCount}',
             ),
             if (!item.metricsAvailable)
-              const Text(AppStrings.vipHistoryMetricsUnavailable)
-            else ...[
+              const Text('${AppStrings.vipHistoryIntentions}: —')
+            else
               Text(
-                '${AppStrings.vipHistoryIntentions}: ${item.intentionRecipientCount ?? 0}'
-                '${item.recipientDenominator != null ? ' / ${item.recipientDenominator}' : ''}',
+                '${AppStrings.vipHistoryIntentions}: ${item.reportedIntentionCount ?? 0}',
               ),
+            Text(
+              '${AppStrings.vipHistoryRecordedSends}: ${item.manualRecordedSendCount}',
+            ),
+            if (!item.metricsAvailable)
+              const Text('${AppStrings.vipHistoryVisited}: —')
+            else
               Text(
-                '${AppStrings.vipHistoryVisited}: ${item.visitedRecipientCount ?? 0}'
-                '${item.recipientDenominator != null ? ' / ${item.recipientDenominator}' : ''}',
+                '${AppStrings.vipHistoryVisited}: ${item.visitedRecipientCount ?? 0}',
               ),
-            ],
-            if (progress != null)
-              for (final line in progress.countLines)
-                Text('${line.label}: ${line.count}'),
           ],
         ),
       ),
@@ -646,10 +624,7 @@ class _VipHistoryTile extends StatelessWidget {
 }
 
 class _OrdinaryMessageTile extends StatelessWidget {
-  const _OrdinaryMessageTile({
-    required this.item,
-    required this.onOpen,
-  });
+  const _OrdinaryMessageTile({required this.item, required this.onOpen});
 
   final OrdinaryMessageHistoryItem item;
   final VoidCallback onOpen;

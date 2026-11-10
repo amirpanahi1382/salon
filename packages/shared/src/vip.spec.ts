@@ -2,6 +2,7 @@ import {
   deriveVipOutreachExecutionState,
   isVipAllowedRequestCount,
   isVipRegionCode,
+  parseVipConfirmedOffer,
   renderVipMessageTemplate,
   VIP_ACTIVE_DRAFT_STATUS,
   VIP_BALE_NOT_AVAILABLE_MESSAGE,
@@ -55,6 +56,23 @@ describe('VIP shared rules', () => {
     expect(renderVipMessageTemplate('مریم', 'ونک')).toBe(
       'مریم عزیز، نمونه کارها خدمتتون ارسال شده. ما در محدوده ونک تا حالا سعادت حضور شما را نداشتیم و برای رزرو با من تماس بگیرید.',
     );
+    expect(renderVipMessageTemplate('مریم', 'ونک', null)).toBe(
+      renderVipMessageTemplate('مریم', 'ونک'),
+    );
+    expect(renderVipMessageTemplate('مریم', 'ونک', { kind: 'PERCENT', amount: '20' })).toBe(
+      'مریم عزیز، نمونه کارها خدمتتون ارسال شده. این پیام با ۲۰٪ تخفیف است. ما در محدوده ونک تا حالا سعادت حضور شما را نداشتیم و برای رزرو با من تماس بگیرید.',
+    );
+    expect(renderVipMessageTemplate('مریم', 'ونک', { kind: 'RIAL', amount: '50000.00' })).toBe(
+      'مریم عزیز، نمونه کارها خدمتتون ارسال شده. این پیام با ۵۰۰۰۰.۰۰ ریال تخفیف است. ما در محدوده ونک تا حالا سعادت حضور شما را نداشتیم و برای رزرو با من تماس بگیرید.',
+    );
+  });
+
+  it('parses percent and rial offers and treats omitted fields as no discount', () => {
+    expect(parseVipConfirmedOffer(undefined, undefined)).toBeNull();
+    expect(parseVipConfirmedOffer('PERCENT', '20')).toEqual({ kind: 'PERCENT', amount: '20' });
+    expect(parseVipConfirmedOffer('RIAL', '50000')).toEqual({ kind: 'RIAL', amount: '50000.00' });
+    expect(() => parseVipConfirmedOffer('PERCENT', '0')).toThrow(/1 to 100/);
+    expect(() => parseVipConfirmedOffer('RIAL', '0.00')).toThrow(/positive/);
   });
 
   it('omits the vocative when the VIP target has no name', () => {

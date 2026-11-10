@@ -100,7 +100,9 @@ class _AdminMessageQueueScreenState extends ConsumerState<AdminMessageQueueScree
             ? ErrorView(message: friendlyError(_error!), onRetry: _load)
             : _loading && _items.isEmpty
                 ? const LoadingSkeleton(lines: 6)
-                : ListView(
+                : RefreshIndicator(
+                    onRefresh: () => _load(),
+                    child: ListView(
                     padding: const EdgeInsets.all(AppTokens.space16),
                     children: [
                       TextField(
@@ -124,9 +126,14 @@ class _AdminMessageQueueScreenState extends ConsumerState<AdminMessageQueueScree
                       else
                         for (final folder in _items) ...[
                           AppSurface(
-                            onTap: () => context.push(
-                              '/admin/messages/salons/${folder.salonId}',
-                            ),
+                            onTap: () async {
+                              await context.push(
+                                '/admin/messages/salons/${folder.salonId}',
+                              );
+                              if (mounted) {
+                                await _load();
+                              }
+                            },
                             padding: const EdgeInsets.all(AppTokens.space12),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -157,6 +164,7 @@ class _AdminMessageQueueScreenState extends ConsumerState<AdminMessageQueueScree
                         ),
                     ],
                   ),
+                    ),
       ),
     );
   }
