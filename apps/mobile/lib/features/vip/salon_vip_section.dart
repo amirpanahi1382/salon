@@ -566,7 +566,7 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
       Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _history(capability),
+          if (count == null) _history(capability),
           VipQuotaCard(remaining: capability.remainingQuota),
           const SizedBox(height: AppTokens.space16),
           const SectionHeader(AppStrings.vipDesiredRegion),
