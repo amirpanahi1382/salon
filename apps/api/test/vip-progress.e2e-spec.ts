@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
-import { createPrismaClient } from '@salon/database';
+import { createPrismaClient, expireStaleVipReservations } from '@salon/database';
 import * as argon2 from 'argon2';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
@@ -657,19 +657,74 @@ describeIfDb('VIP request progress (e2e)', () => {
     expect(JSON.stringify(adminDetail.body.request.progress)).not.toContain(bodyMarker);
     expect(adminDetail.body.request.status).toBe('MANUAL_QUEUED');
 
+    const expiredBeforeRead = await prisma.client.vipRequest.findUniqueOrThrow({ where: { id: ids.expired } });
+    expect(expiredBeforeRead.status).toBe('AWAITING_SAMPLE_WORK');
+    expect(expiredBeforeRead.cancelledAt).toBeNull();
+    const auditsBeforeRead = await prisma.client.auditLog.count();
+    const outboxBeforeRead = await prisma.client.outboxEvent.count();
+
     const salonB = await request(app.getHttpServer())
       .get('/vip/capability')
       .set('Authorization', `Bearer ${ids.tokenB}`)
       .expect(200);
-    expect(salonB.body.latestCancelledRequest.id).toBe(ids.expired);
-    expect(salonB.body.latestCancelledRequest.status).toBe('CANCELLED');
-    expect(salonB.body.latestCancelledRequest.progress.headline).toBe('اتمام مهلت ارسال درخواست');
+    expect(salonB.body.latestCancelledRequest).toBeNull();
+    expect(salonB.body.activeDraft?.id).toBe(ids.expired);
+    expect(salonB.body.activeDraft?.status).toBe('AWAITING_SAMPLE_WORK');
+    expect(salonB.body.activeDraft?.progress.headline).toBe('دوباره تلاش کنید');
+    expect(salonB.body.activeDraft?.progress.reservationStillValid).toBe(false);
     expect(JSON.stringify(salonB.body)).not.toContain(ids.submitted);
     assertNoIdentity(salonB.body);
+
+    const historyBeforeExpiry = await request(app.getHttpServer())
+      .get('/vip/requests')
+      .set('Authorization', `Bearer ${ids.tokenB}`)
+      .expect(200);
+    const overdueHistory = historyBeforeExpiry.body.items.find((item: { id: string }) => item.id === ids.expired);
+    expect(overdueHistory.status).toBe('AWAITING_SAMPLE_WORK');
+    expect(overdueHistory.progress.headline).toBe('دوباره تلاش کنید');
+
+    const historyA = await request(app.getHttpServer())
+      .get('/vip/requests')
+      .set('Authorization', `Bearer ${ids.tokenA}`)
+      .expect(200);
+    const cancelledHistory = historyA.body.items.find((item: { id: string }) => item.id === ids.cancelled);
+    expect(cancelledHistory.status).toBe('CANCELLED');
+    expect(cancelledHistory.progress.headline).toBe('اتمام مهلت ارسال درخواست');
+
+    const expiredAfterRead = await prisma.client.vipRequest.findUniqueOrThrow({ where: { id: ids.expired } });
+    expect(expiredAfterRead.status).toBe('AWAITING_SAMPLE_WORK');
+    expect(expiredAfterRead.cancelledAt).toBeNull();
+    expect(expiredAfterRead.updatedAt.toISOString()).toBe(expiredBeforeRead.updatedAt.toISOString());
+    expect(await prisma.client.auditLog.count()).toBe(auditsBeforeRead);
+    expect(await prisma.client.outboxEvent.count()).toBe(outboxBeforeRead);
+
+    const expiry = await prisma.client.$transaction((tx) =>
+      expireStaleVipReservations(tx, new Date(), { mode: 'salon', salonId: ids.salonB }),
+    );
+    expect(expiry.cancelledRequests).toBe(1);
 
     const stored = await prisma.client.vipRequest.findUniqueOrThrow({ where: { id: ids.expired } });
     expect(stored.status).toBe('CANCELLED');
     expect(stored.cancelledAt).not.toBeNull();
+    expect(await prisma.client.auditLog.count()).toBe(auditsBeforeRead);
+
+    const salonBAfterExpiry = await request(app.getHttpServer())
+      .get('/vip/capability')
+      .set('Authorization', `Bearer ${ids.tokenB}`)
+      .expect(200);
+    expect(salonBAfterExpiry.body.activeDraft).toBeNull();
+    expect(salonBAfterExpiry.body.latestCancelledRequest.id).toBe(ids.expired);
+    expect(salonBAfterExpiry.body.latestCancelledRequest.status).toBe('CANCELLED');
+    expect(salonBAfterExpiry.body.latestCancelledRequest.progress.headline).toBe('اتمام مهلت ارسال درخواست');
+
+    const historyAfterExpiry = await request(app.getHttpServer())
+      .get('/vip/requests')
+      .set('Authorization', `Bearer ${ids.tokenB}`)
+      .expect(200);
+    const cancelledOverdue = historyAfterExpiry.body.items.find((item: { id: string }) => item.id === ids.expired);
+    expect(cancelledOverdue.status).toBe('CANCELLED');
+    expect(cancelledOverdue.progress.headline).toBe('اتمام مهلت ارسال درخواست');
+
     const manualStored = await prisma.client.vipRequest.findUniqueOrThrow({ where: { id: ids.manual } });
     expect(manualStored.status).toBe('MANUAL_QUEUED');
   });

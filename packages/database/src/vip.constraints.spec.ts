@@ -1,11 +1,53 @@
-import { randomUUID } from 'node:crypto';
+import { randomInt, randomUUID } from 'node:crypto';
 import { createPrismaClient } from './client';
 
 const databaseUrl = process.env.DATABASE_URL;
-const describeIfDb = databaseUrl ? describe : describe.skip;
+const dedicatedUrl = process.env.VIP_CONSTRAINTS_DISPOSABLE_DATABASE_URL;
+const REFUSED_SYSIDS = new Set(['7700113693112733735', '7683163620851879970']);
+const FORBIDDEN_PORTS = new Set(['5432', '15442', '15490']);
+const FORBIDDEN_NAMES = new Set(['salon', 'salon_preview', 'salon-db', 'phone_first_product', 'postgres']);
 
-describeIfDb('VIP outreach constraints', () => {
+const disposableTarget = (() => {
+  if (!databaseUrl || !dedicatedUrl || databaseUrl !== dedicatedUrl) return null;
+  if (process.env.OTPY_API_KEY || process.env.BALE_SAFIR_API_ACCESS_KEY) return null;
+  try {
+    const parsed = new URL(databaseUrl);
+    const name = decodeURIComponent(parsed.pathname.replace(/^\//, ''));
+    if (parsed.hostname !== '127.0.0.1' || !parsed.port || FORBIDDEN_PORTS.has(parsed.port)) return null;
+    if (FORBIDDEN_NAMES.has(name) || !/^salon_vip_constraints_[a-z0-9]+$/.test(name)) return null;
+    return { name, token: name.slice('salon_vip_constraints_'.length), port: parsed.port };
+  } catch {
+    return null;
+  }
+})();
+
+const describeIfDisposable = disposableTarget ? describe : describe.skip;
+
+function syntheticMobile(): string {
+  return `0914${randomInt(0, 10_000_000).toString().padStart(7, '0')}`;
+}
+
+describeIfDisposable('VIP outreach constraints', () => {
   const prisma = createPrismaClient(databaseUrl as string);
+
+  beforeAll(async () => {
+    const identity = await prisma.$queryRaw<Array<{ name: string; comment: string | null; sysid: string }>>`
+      SELECT current_database() AS name,
+             shobj_description(oid, 'pg_database') AS comment,
+             (SELECT system_identifier::text FROM pg_control_system()) AS sysid
+      FROM pg_database
+      WHERE datname = current_database()
+    `;
+    const row = identity[0];
+    if (
+      !disposableTarget ||
+      row?.name !== disposableTarget.name ||
+      row.comment !== `vip-constraints-disposable:${disposableTarget.token}` ||
+      REFUSED_SYSIDS.has(row.sysid ?? '')
+    ) {
+      throw new Error('Refusing VIP constraint tests without this run’s disposable database');
+    }
+  });
 
   afterAll(async () => {
     await prisma.$disconnect();
@@ -15,17 +57,19 @@ describeIfDb('VIP outreach constraints', () => {
     const adminId = randomUUID();
     const salonId = randomUUID();
     const userId = randomUUID();
+    const now = new Date();
     await prisma.platformAdmin.create({
       data: {
         id: adminId,
         email: `vip-admin-${randomUUID()}@example.test`,
+        phone: syntheticMobile(),
         passwordHash: 'hash',
         name: 'Admin',
-        updatedAt: new Date(),
+        updatedAt: now,
       },
     });
     await prisma.salon.create({
-      data: { id: salonId, name: 'VIP Salon', updatedAt: new Date() },
+      data: { id: salonId, name: 'VIP Salon', updatedAt: now },
     });
     await prisma.user.create({
       data: {
@@ -33,12 +77,34 @@ describeIfDb('VIP outreach constraints', () => {
         salonId,
         name: 'Owner',
         email: `vip-owner-${randomUUID()}@example.test`,
+        phone: syntheticMobile(),
         passwordHash: 'hash',
         role: 'OWNER',
-        updatedAt: new Date(),
+        updatedAt: now,
       },
     });
     return { adminId, salonId, userId };
+  }
+
+  async function createList(
+    adminId: string,
+    input: { status?: 'PENDING' | 'ACTIVE' | 'IN_USE'; reservedBySalonId?: string; reservedAt?: Date } = {},
+  ) {
+    const listId = randomUUID();
+    const now = new Date();
+    await prisma.vipTargetList.create({
+      data: {
+        id: listId,
+        name: `list-${listId.slice(0, 8)}`,
+        status: input.status ?? 'ACTIVE',
+        contactCount: 52,
+        createdByAdminId: adminId,
+        reservedBySalonId: input.reservedBySalonId ?? null,
+        reservedAt: input.reservedAt ?? null,
+        updatedAt: now,
+      },
+    });
+    return listId;
   }
 
   it('rejects a list with more than 100 contacts', async () => {
@@ -57,81 +123,129 @@ describeIfDb('VIP outreach constraints', () => {
     ).rejects.toThrow(/vip_target_lists_contact_count_range/);
   });
 
-  it('allows only one concurrent ACTIVE-to-IN_USE reservation per list', async () => {
-    const a = await seedAdminAndSalon();
-    const b = await seedAdminAndSalon();
-    const listId = randomUUID();
-    await prisma.vipTargetList.create({
+  it('accepts requested quantities 1 through 500 and rejects 0 and 501', async () => {
+    const seeded = await seedAdminAndSalon();
+    const listId = await createList(seeded.adminId);
+    const now = new Date();
+    await prisma.vipRequest.create({
       data: {
-        id: listId,
-        name: 'shared',
-        status: 'ACTIVE',
-        contactCount: 1,
-        createdByAdminId: a.adminId,
-        updatedAt: new Date(),
+        id: randomUUID(),
+        salonId: seeded.salonId,
+        listId,
+        createdByUserId: seeded.userId,
+        requestedCount: 52,
+        geographicRange: 'ونک',
+        status: 'SUBMITTED',
+        reservedUntil: now,
+        submittedAt: now,
+        updatedAt: now,
       },
     });
-    const now = new Date();
-    const reserve = (salonId: string) =>
-      prisma.$executeRaw`
-        UPDATE vip_target_lists
-        SET status = 'IN_USE', reserved_by_salon_id = ${salonId}::uuid, reserved_at = ${now}, updated_at = ${now}
-        WHERE id = ${listId}::uuid AND status = 'ACTIVE' AND reserved_by_salon_id IS NULL
-      `;
-    const results = await Promise.all([reserve(a.salonId), reserve(b.salonId)]);
-    expect(results.filter((count) => count === 1)).toHaveLength(1);
-    expect(results.filter((count) => count === 0)).toHaveLength(1);
-    const list = await prisma.vipTargetList.findUniqueOrThrow({ where: { id: listId } });
-    expect(list.status).toBe('IN_USE');
-    expect([a.salonId, b.salonId]).toContain(list.reservedBySalonId);
+    const otherList = await createList(seeded.adminId);
+    await prisma.vipRequest.create({
+      data: {
+        id: randomUUID(),
+        salonId: seeded.salonId,
+        listId: otherList,
+        createdByUserId: seeded.userId,
+        requestedCount: 1,
+        geographicRange: 'ونک',
+        status: 'MANUAL_QUEUED',
+        reservedUntil: now,
+        submittedAt: now,
+        updatedAt: now,
+      },
+    });
+    const boundList = await createList(seeded.adminId);
+    await expect(
+      prisma.vipRequest.create({
+        data: {
+          id: randomUUID(),
+          salonId: seeded.salonId,
+          listId: boundList,
+          createdByUserId: seeded.userId,
+          requestedCount: 0,
+          geographicRange: 'ونک',
+          status: 'AWAITING_SAMPLE_WORK',
+          reservedUntil: now,
+          updatedAt: now,
+        },
+      }),
+    ).rejects.toThrow(/vip_requests_count_positive/);
+    await expect(
+      prisma.vipRequest.create({
+        data: {
+          id: randomUUID(),
+          salonId: seeded.salonId,
+          listId: boundList,
+          createdByUserId: seeded.userId,
+          requestedCount: 501,
+          geographicRange: 'ونک',
+          status: 'AWAITING_SAMPLE_WORK',
+          reservedUntil: now,
+          updatedAt: now,
+        },
+      }),
+    ).rejects.toThrow(/vip_requests_count_positive/);
   });
 
-  it('rejects requested counts other than 30, 50, or 100', async () => {
-    const seeded = await seedAdminAndSalon();
-    const listId = randomUUID();
-    await prisma.vipTargetList.create({
+  it('allows two salons one active request each on the same list and rejects a second active request from the same salon', async () => {
+    const a = await seedAdminAndSalon();
+    const b = await seedAdminAndSalon();
+    const listId = await createList(a.adminId);
+    const now = new Date();
+    await prisma.vipRequest.create({
       data: {
-        id: listId,
-        name: 'counts',
-        status: 'ACTIVE',
-        contactCount: 30,
-        createdByAdminId: seeded.adminId,
-        updatedAt: new Date(),
+        id: randomUUID(),
+        salonId: a.salonId,
+        listId,
+        createdByUserId: a.userId,
+        requestedCount: 40,
+        geographicRange: 'ونک',
+        status: 'SUBMITTED',
+        reservedUntil: now,
+        submittedAt: now,
+        updatedAt: now,
+      },
+    });
+    await prisma.vipRequest.create({
+      data: {
+        id: randomUUID(),
+        salonId: b.salonId,
+        listId,
+        createdByUserId: b.userId,
+        requestedCount: 40,
+        geographicRange: 'ونک',
+        status: 'AWAITING_SAMPLE_WORK',
+        reservedUntil: now,
+        updatedAt: now,
       },
     });
     await expect(
       prisma.vipRequest.create({
         data: {
           id: randomUUID(),
-          salonId: seeded.salonId,
+          salonId: a.salonId,
           listId,
-          createdByUserId: seeded.userId,
-          requestedCount: 101,
+          createdByUserId: a.userId,
+          requestedCount: 10,
           geographicRange: 'ونک',
           status: 'AWAITING_SAMPLE_WORK',
-          reservedUntil: new Date(),
-          updatedAt: new Date(),
+          reservedUntil: now,
+          updatedAt: now,
         },
       }),
-    ).rejects.toThrow(/vip_requests_count_allowed/);
+    ).rejects.toThrow(/vip_requests_one_active_per_salon_list|Unique constraint failed/);
   });
 
   it('rejects more than 3 sample-work positions', async () => {
     const seeded = await seedAdminAndSalon();
-    const listId = randomUUID();
-    const requestId = randomUUID();
-    await prisma.vipTargetList.create({
-      data: {
-        id: listId,
-        name: 'images',
-        status: 'IN_USE',
-        contactCount: 30,
-        createdByAdminId: seeded.adminId,
-        reservedBySalonId: seeded.salonId,
-        reservedAt: new Date(),
-        updatedAt: new Date(),
-      },
+    const listId = await createList(seeded.adminId, {
+      status: 'IN_USE',
+      reservedBySalonId: seeded.salonId,
+      reservedAt: new Date(),
     });
+    const requestId = randomUUID();
     await prisma.vipRequest.create({
       data: {
         id: requestId,
@@ -221,21 +335,13 @@ describeIfDb('VIP outreach constraints', () => {
   it('rejects sample and recipient rows whose salon_id does not match the request', async () => {
     const owner = await seedAdminAndSalon();
     const other = await seedAdminAndSalon();
-    const listId = randomUUID();
+    const listId = await createList(owner.adminId, {
+      status: 'IN_USE',
+      reservedBySalonId: owner.salonId,
+      reservedAt: new Date(),
+    });
     const requestId = randomUUID();
     const now = new Date();
-    await prisma.vipTargetList.create({
-      data: {
-        id: listId,
-        name: 'fk',
-        status: 'IN_USE',
-        contactCount: 30,
-        createdByAdminId: owner.adminId,
-        reservedBySalonId: owner.salonId,
-        reservedAt: now,
-        updatedAt: now,
-      },
-    });
     await prisma.vipRequest.create({
       data: {
         id: requestId,
