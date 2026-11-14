@@ -12,8 +12,11 @@ import '../../shared/jalali.dart';
 import '../../shared/jalali_date_picker.dart';
 import '../../shared/labels.dart';
 import '../../shared/models/models.dart';
+import 'follow_ups_tab.dart';
 
-Future<Map<String, dynamic>?> promptVisitIntentionTime(BuildContext context) async {
+Future<Map<String, dynamic>?> promptVisitIntentionTime(
+  BuildContext context,
+) async {
   final precision = await showDialog<String>(
     context: context,
     builder: (dialogContext) => SimpleDialog(
@@ -49,11 +52,16 @@ Future<Map<String, dynamic>?> promptVisitIntentionTime(BuildContext context) asy
   if (precision == 'DATE') {
     return {'precision': 'DATE', 'agreedDate': agreedDate};
   }
-  final clock = await showTimePicker(context: context, initialTime: TimeOfDay.now());
+  final clock = await showTimePicker(
+    context: context,
+    initialTime: TimeOfDay.now(),
+  );
   if (clock == null) return null;
   return {
     'precision': 'INSTANT',
-    'agreedInstant': toApiInstant(jalaliWithTimeToLocal(date, clock.hour, clock.minute)),
+    'agreedInstant': toApiInstant(
+      jalaliWithTimeToLocal(date, clock.hour, clock.minute),
+    ),
   };
 }
 
@@ -89,39 +97,90 @@ String visitOutcomeLabel({
 }
 
 class FollowUpsScreen extends ConsumerStatefulWidget {
-  const FollowUpsScreen({super.key});
+  const FollowUpsScreen({super.key, this.initialTab = FollowUpsTab.customers});
+
+  final FollowUpsTab initialTab;
 
   @override
   ConsumerState<FollowUpsScreen> createState() => _FollowUpsScreenState();
 }
 
-class _FollowUpsScreenState extends ConsumerState<FollowUpsScreen> {
+class _FollowUpsScreenState extends ConsumerState<FollowUpsScreen>
+    with SingleTickerProviderStateMixin {
   FollowUpPage? _customers;
   FollowUpPage? _vip;
   Object? _customerError;
   Object? _vipError;
-  bool _customerLoading = true;
-  bool _vipLoading = true;
-  int _generation = 0;
+  bool _customerLoading = false;
+  bool _vipLoading = false;
+  bool _customersRequested = false;
+  bool _vipRequested = false;
+  int _customerGeneration = 0;
+  int _vipGeneration = 0;
+  late final TabController _tabs;
 
   @override
   void initState() {
     super.initState();
-    _loadCustomers();
-    _loadVip();
+    _tabs = TabController(
+      length: 2,
+      vsync: this,
+      initialIndex: widget.initialTab.index,
+    );
+    _tabs.addListener(_onTabTick);
+    _ensureLoaded(widget.initialTab);
+  }
+
+  @override
+  void didUpdateWidget(covariant FollowUpsScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.initialTab != widget.initialTab &&
+        _tabs.index != widget.initialTab.index) {
+      _tabs.index = widget.initialTab.index;
+      _ensureLoaded(widget.initialTab);
+    }
+  }
+
+  @override
+  void dispose() {
+    _tabs.removeListener(_onTabTick);
+    _tabs.dispose();
+    super.dispose();
+  }
+
+  void _onTabTick() {
+    _ensureLoaded(FollowUpsTab.values[_tabs.index]);
+  }
+
+  FollowUpsTab get _visibleTab => FollowUpsTab.values[_tabs.index];
+
+  void _ensureLoaded(FollowUpsTab tab) {
+    switch (tab) {
+      case FollowUpsTab.customers:
+        if (!_customersRequested) {
+          _loadCustomers();
+        }
+      case FollowUpsTab.vip:
+        if (!_vipRequested) {
+          _loadVip();
+        }
+    }
   }
 
   Future<void> _loadCustomers({bool more = false}) async {
-    final generation = _generation;
+    if (!more) {
+      _customersRequested = true;
+    }
+    final generation = _customerGeneration;
     setState(() {
       _customerLoading = true;
       if (!more) _customerError = null;
     });
     try {
-      final page = await ref.read(visitIntentionRepositoryProvider).customerFollowUps(
-            cursor: more ? _customers?.nextCursor : null,
-          );
-      if (!mounted || generation != _generation) return;
+      final page = await ref
+          .read(visitIntentionRepositoryProvider)
+          .customerFollowUps(cursor: more ? _customers?.nextCursor : null);
+      if (!mounted || generation != _customerGeneration) return;
       setState(() {
         _customers = more && _customers != null
             ? FollowUpPage(
@@ -134,7 +193,7 @@ class _FollowUpsScreenState extends ConsumerState<FollowUpsScreen> {
         _customerLoading = false;
       });
     } catch (error) {
-      if (!mounted || generation != _generation) return;
+      if (!mounted || generation != _customerGeneration) return;
       setState(() {
         _customerError = error;
         _customerLoading = false;
@@ -143,16 +202,19 @@ class _FollowUpsScreenState extends ConsumerState<FollowUpsScreen> {
   }
 
   Future<void> _loadVip({bool more = false}) async {
-    final generation = _generation;
+    if (!more) {
+      _vipRequested = true;
+    }
+    final generation = _vipGeneration;
     setState(() {
       _vipLoading = true;
       if (!more) _vipError = null;
     });
     try {
-      final page = await ref.read(visitIntentionRepositoryProvider).vipFollowUps(
-            cursor: more ? _vip?.nextCursor : null,
-          );
-      if (!mounted || generation != _generation) return;
+      final page = await ref
+          .read(visitIntentionRepositoryProvider)
+          .vipFollowUps(cursor: more ? _vip?.nextCursor : null);
+      if (!mounted || generation != _vipGeneration) return;
       setState(() {
         _vip = more && _vip != null
             ? FollowUpPage(
@@ -165,7 +227,7 @@ class _FollowUpsScreenState extends ConsumerState<FollowUpsScreen> {
         _vipLoading = false;
       });
     } catch (error) {
-      if (!mounted || generation != _generation) return;
+      if (!mounted || generation != _vipGeneration) return;
       setState(() {
         _vipError = error;
         _vipLoading = false;
@@ -173,9 +235,14 @@ class _FollowUpsScreenState extends ConsumerState<FollowUpsScreen> {
     }
   }
 
-  Future<void> _refresh() async {
-    _generation += 1;
-    await Future.wait([_loadCustomers(), _loadVip()]);
+  Future<void> _refreshVisible() async {
+    if (_visibleTab == FollowUpsTab.vip) {
+      _vipGeneration += 1;
+      await _loadVip();
+    } else {
+      _customerGeneration += 1;
+      await _loadCustomers();
+    }
   }
 
   Future<void> _act(FollowUpItem item) async {
@@ -189,7 +256,7 @@ class _FollowUpsScreenState extends ConsumerState<FollowUpsScreen> {
           identityDisclosure: item.identityDisclosure,
         ),
       );
-      if (recorded == true) await _refresh();
+      if (recorded == true) await _refreshVisible();
       return;
     }
     final customerId = item.customerId;
@@ -200,49 +267,48 @@ class _FollowUpsScreenState extends ConsumerState<FollowUpsScreen> {
           ? RecordVisitLink(commitment: _commitmentStub(item))
           : RecordVisitLink(visitIntentionId: item.id),
     );
-    if (recorded == true) await _refresh();
+    if (recorded == true) await _refreshVisible();
   }
 
   @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 2,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text(AppStrings.followUpsTitle),
-          bottom: const TabBar(
-            tabs: [
-              Tab(text: AppStrings.followUpsCustomersTab),
-              Tab(text: AppStrings.followUpsVipTab),
-            ],
-          ),
-        ),
-        body: TabBarView(
-          children: [
-            _FollowUpList(
-              page: _customers,
-              error: _customerError,
-              loading: _customerLoading,
-              empty: AppStrings.followUpsCustomersEmpty,
-              onRefresh: _refresh,
-              onRetry: _loadCustomers,
-              onMore: () => _loadCustomers(more: true),
-              onAct: _act,
-              vip: false,
-            ),
-            _FollowUpList(
-              page: _vip,
-              error: _vipError,
-              loading: _vipLoading,
-              empty: AppStrings.followUpsVipEmpty,
-              onRefresh: _refresh,
-              onRetry: _loadVip,
-              onMore: () => _loadVip(more: true),
-              onAct: _act,
-              vip: true,
-            ),
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text(AppStrings.followUpsTitle),
+        bottom: TabBar(
+          controller: _tabs,
+          tabs: const [
+            Tab(text: AppStrings.followUpsCustomersTab),
+            Tab(text: AppStrings.followUpsVipTab),
           ],
         ),
+      ),
+      body: TabBarView(
+        controller: _tabs,
+        children: [
+          _FollowUpList(
+            page: _customers,
+            error: _customerError,
+            loading: _customerLoading || !_customersRequested,
+            empty: AppStrings.followUpsCustomersEmpty,
+            onRefresh: _refreshVisible,
+            onRetry: _loadCustomers,
+            onMore: () => _loadCustomers(more: true),
+            onAct: _act,
+            vip: false,
+          ),
+          _FollowUpList(
+            page: _vip,
+            error: _vipError,
+            loading: _vipLoading || !_vipRequested,
+            empty: AppStrings.followUpsVipEmpty,
+            onRefresh: _refreshVisible,
+            onRetry: _loadVip,
+            onMore: () => _loadVip(more: true),
+            onAct: _act,
+            vip: true,
+          ),
+        ],
       ),
     );
   }
@@ -298,7 +364,9 @@ class _FollowUpList extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Text(
-                        vip ? _vipTitle(item) : (item.customerDisplayName ?? ''),
+                        vip
+                            ? _vipTitle(item)
+                            : (item.customerDisplayName ?? ''),
                         style: Theme.of(context).textTheme.titleMedium,
                       ),
                       if (vip) Text(AppStrings.vipReportedOrigin),
@@ -324,7 +392,8 @@ class _FollowUpList extends StatelessWidget {
                   ),
                 ),
               ),
-          if (error != null) ErrorView(message: friendlyError(error!), onRetry: onRetry),
+          if (error != null)
+            ErrorView(message: friendlyError(error!), onRetry: onRetry),
           if (page?.hasMore == true)
             TextButton(
               onPressed: loading ? null : onMore,
@@ -347,10 +416,12 @@ class VisitIntentionFormScreen extends ConsumerStatefulWidget {
   final bool vipRequest;
 
   @override
-  ConsumerState<VisitIntentionFormScreen> createState() => _VisitIntentionFormScreenState();
+  ConsumerState<VisitIntentionFormScreen> createState() =>
+      _VisitIntentionFormScreenState();
 }
 
-class _VisitIntentionFormScreenState extends ConsumerState<VisitIntentionFormScreen> {
+class _VisitIntentionFormScreenState
+    extends ConsumerState<VisitIntentionFormScreen> {
   String _precision = 'UNKNOWN';
   Jalali? _date;
   TimeOfDay? _time;
@@ -409,10 +480,9 @@ class _VisitIntentionFormScreenState extends ConsumerState<VisitIntentionFormScr
       }
     });
     try {
-      final page = await ref.read(visitIntentionRepositoryProvider).listForVipRequest(
-            widget.targetId,
-            cursor: cursor,
-          );
+      final page = await ref
+          .read(visitIntentionRepositoryProvider)
+          .listForVipRequest(widget.targetId, cursor: cursor);
       if (!mounted || generation != _listGeneration) return;
       setState(() {
         if (more) {
@@ -531,7 +601,10 @@ class _VisitIntentionFormScreenState extends ConsumerState<VisitIntentionFormScr
             if (_listLoaded && _listError == null && _existing.isEmpty)
               const Text(AppStrings.vipRequestIntentionsEmpty),
             for (final item in _existing) ...[
-              Text(_intentionContactTitle(item), key: Key('vip-intention-${item.id}')),
+              Text(
+                _intentionContactTitle(item),
+                key: Key('vip-intention-${item.id}'),
+              ),
               if (item.identityDisclosure == 'WITHHELD')
                 const Text(AppStrings.vipIdentityWithheld),
               if (item.identityDisclosure == 'ADMIN_AUTHORIZED')
@@ -552,7 +625,11 @@ class _VisitIntentionFormScreenState extends ConsumerState<VisitIntentionFormScr
               ),
               if (!item.operationallyOpen &&
                   (item.vipAcquisitionByVisit || item.existingCustomerReturn))
-                Text(item.saleRecorded ? AppStrings.visitWithSale : AppStrings.visitWithoutSale),
+                Text(
+                  item.saleRecorded
+                      ? AppStrings.visitWithSale
+                      : AppStrings.visitWithoutSale,
+                ),
               Text(_precisionLabel(item.timePrecision)),
               if (item.operationallyOpen)
                 Align(
@@ -581,7 +658,8 @@ class _VisitIntentionFormScreenState extends ConsumerState<VisitIntentionFormScr
               Align(
                 alignment: AlignmentDirectional.centerStart,
                 child: TextButton(
-                  onPressed: () => _loadExisting(more: _existing.isNotEmpty && _hasMore),
+                  onPressed: () =>
+                      _loadExisting(more: _existing.isNotEmpty && _hasMore),
                   child: const Text(AppStrings.retry),
                 ),
               ),
@@ -589,7 +667,9 @@ class _VisitIntentionFormScreenState extends ConsumerState<VisitIntentionFormScr
             if (_hasMore && _listError == null)
               TextButton(
                 key: const Key('vip-request-intentions-more'),
-                onPressed: _listLoading || _listLoadingMore ? null : () => _loadExisting(more: true),
+                onPressed: _listLoading || _listLoadingMore
+                    ? null
+                    : () => _loadExisting(more: true),
                 child: _listLoadingMore
                     ? const SizedBox(
                         width: 18,
@@ -598,25 +678,43 @@ class _VisitIntentionFormScreenState extends ConsumerState<VisitIntentionFormScr
                       )
                     : const Text(AppStrings.loadMore),
               ),
-            if (_listLoaded && _listError == null && _existing.isNotEmpty && !_hasMore && !_listLoadingMore)
+            if (_listLoaded &&
+                _listError == null &&
+                _existing.isNotEmpty &&
+                !_hasMore &&
+                !_listLoadingMore)
               const Text(AppStrings.vipRequestIntentionsEnd),
           ],
           const Text(AppStrings.visitIntentionTitle),
           const SizedBox(height: AppTokens.space8),
           SegmentedButton<String>(
             segments: const [
-              ButtonSegment(value: 'UNKNOWN', label: Text(AppStrings.timeUnknown)),
-              ButtonSegment(value: 'DATE', label: Text(AppStrings.timeDateOnly)),
-              ButtonSegment(value: 'INSTANT', label: Text(AppStrings.timeInstant)),
+              ButtonSegment(
+                value: 'UNKNOWN',
+                label: Text(AppStrings.timeUnknown),
+              ),
+              ButtonSegment(
+                value: 'DATE',
+                label: Text(AppStrings.timeDateOnly),
+              ),
+              ButtonSegment(
+                value: 'INSTANT',
+                label: Text(AppStrings.timeInstant),
+              ),
             ],
             selected: {_precision},
-            onSelectionChanged: (value) => setState(() => _precision = value.first),
+            onSelectionChanged: (value) =>
+                setState(() => _precision = value.first),
           ),
           if (_precision != 'UNKNOWN') ...[
             const SizedBox(height: AppTokens.space12),
             OutlinedButton(
               onPressed: _pickDate,
-              child: Text(_date == null ? AppStrings.timeDateOnly : formatJalaliDate(jalaliWithTimeToLocal(_date!, 12, 0))),
+              child: Text(
+                _date == null
+                    ? AppStrings.timeDateOnly
+                    : formatJalaliDate(jalaliWithTimeToLocal(_date!, 12, 0)),
+              ),
             ),
           ],
           if (_precision == 'INSTANT') ...[
@@ -629,7 +727,9 @@ class _VisitIntentionFormScreenState extends ConsumerState<VisitIntentionFormScr
                 );
                 if (picked != null) setState(() => _time = picked);
               },
-              child: Text(_time == null ? AppStrings.timeInstant : _time!.format(context)),
+              child: Text(
+                _time == null ? AppStrings.timeInstant : _time!.format(context),
+              ),
             ),
           ],
           if (widget.vipRequest) ...[
@@ -638,13 +738,17 @@ class _VisitIntentionFormScreenState extends ConsumerState<VisitIntentionFormScr
             TextField(
               key: const Key('vip-disclosed-name'),
               controller: _name,
-              decoration: const InputDecoration(labelText: AppStrings.firstName),
+              decoration: const InputDecoration(
+                labelText: AppStrings.firstName,
+              ),
             ),
             TextField(
               key: const Key('vip-disclosed-phone'),
               controller: _phone,
               keyboardType: TextInputType.phone,
-              decoration: const InputDecoration(labelText: AppStrings.phoneNumber),
+              decoration: const InputDecoration(
+                labelText: AppStrings.phoneNumber,
+              ),
             ),
           ],
           if (_error != null) ...[
@@ -670,10 +774,12 @@ class CustomerIntentionsScreen extends ConsumerStatefulWidget {
   final String customerId;
 
   @override
-  ConsumerState<CustomerIntentionsScreen> createState() => _CustomerIntentionsScreenState();
+  ConsumerState<CustomerIntentionsScreen> createState() =>
+      _CustomerIntentionsScreenState();
 }
 
-class _CustomerIntentionsScreenState extends ConsumerState<CustomerIntentionsScreen> {
+class _CustomerIntentionsScreenState
+    extends ConsumerState<CustomerIntentionsScreen> {
   ItemPage<VisitIntention>? _page;
   Object? _error;
   bool _loading = true;
@@ -690,7 +796,9 @@ class _CustomerIntentionsScreenState extends ConsumerState<CustomerIntentionsScr
       _error = null;
     });
     try {
-      final page = await ref.read(visitIntentionRepositoryProvider).listForCustomer(widget.customerId);
+      final page = await ref
+          .read(visitIntentionRepositoryProvider)
+          .listForCustomer(widget.customerId);
       if (!mounted) return;
       setState(() {
         _page = page;
@@ -712,45 +820,47 @@ class _CustomerIntentionsScreenState extends ConsumerState<CustomerIntentionsScr
       body: _loading
           ? const LoadingSkeleton(lines: 3)
           : _error != null
-              ? ErrorView(message: friendlyError(_error!), onRetry: _load)
-              : RefreshIndicator(
-                  onRefresh: _load,
-                  child: ListView(
-                    padding: const EdgeInsets.all(AppTokens.space16),
-                    children: [
-                      if (_page!.items.isEmpty)
-                        const EmptyStateView(
-                          title: AppStrings.customerVisitIntentionsEmpty,
-                          body: AppStrings.visitIntentionTitle,
+          ? ErrorView(message: friendlyError(_error!), onRetry: _load)
+          : RefreshIndicator(
+              onRefresh: _load,
+              child: ListView(
+                padding: const EdgeInsets.all(AppTokens.space16),
+                children: [
+                  if (_page!.items.isEmpty)
+                    const EmptyStateView(
+                      title: AppStrings.customerVisitIntentionsEmpty,
+                      body: AppStrings.visitIntentionTitle,
+                    ),
+                  for (final item in _page!.items)
+                    ListTile(
+                      title: Text(
+                        visitOutcomeLabel(
+                          operationallyOpen: item.operationallyOpen,
+                          saleRecorded: item.saleRecorded,
+                          existingCustomerReturn: item.existingCustomerReturn,
+                          vipAcquisitionByVisit: item.vipAcquisitionByVisit,
                         ),
-                      for (final item in _page!.items)
-                        ListTile(
-                          title: Text(
-                            visitOutcomeLabel(
-                              operationallyOpen: item.operationallyOpen,
-                              saleRecorded: item.saleRecorded,
-                              existingCustomerReturn: item.existingCustomerReturn,
-                              vipAcquisitionByVisit: item.vipAcquisitionByVisit,
-                            ),
-                          ),
-                          subtitle: Text(_intentionTime(item)),
-                          trailing: item.operationallyOpen
-                              ? TextButton(
-                                  key: ValueKey('arrive-${item.id}'),
-                                  onPressed: () async {
-                                    final recorded = await context.push<bool>(
-                                      '/customers/${widget.customerId}/record-visit',
-                                      extra: RecordVisitLink(visitIntentionId: item.id),
-                                    );
-                                    if (recorded == true) await _load();
-                                  },
-                                  child: const Text(AppStrings.markVisited),
-                                )
-                              : null,
-                        ),
-                    ],
-                  ),
-                ),
+                      ),
+                      subtitle: Text(_intentionTime(item)),
+                      trailing: item.operationallyOpen
+                          ? TextButton(
+                              key: ValueKey('arrive-${item.id}'),
+                              onPressed: () async {
+                                final recorded = await context.push<bool>(
+                                  '/customers/${widget.customerId}/record-visit',
+                                  extra: RecordVisitLink(
+                                    visitIntentionId: item.id,
+                                  ),
+                                );
+                                if (recorded == true) await _load();
+                              },
+                              child: const Text(AppStrings.markVisited),
+                            )
+                          : null,
+                    ),
+                ],
+              ),
+            ),
     );
   }
 }
@@ -768,10 +878,12 @@ class VipArrivalCustomerScreen extends ConsumerStatefulWidget {
   final String initialQuery;
 
   @override
-  ConsumerState<VipArrivalCustomerScreen> createState() => _VipArrivalCustomerScreenState();
+  ConsumerState<VipArrivalCustomerScreen> createState() =>
+      _VipArrivalCustomerScreenState();
 }
 
-class _VipArrivalCustomerScreenState extends ConsumerState<VipArrivalCustomerScreen> {
+class _VipArrivalCustomerScreenState
+    extends ConsumerState<VipArrivalCustomerScreen> {
   late final TextEditingController _search;
   ItemPage<Customer>? _page;
   String _activeQuery = '';
@@ -801,7 +913,9 @@ class _VipArrivalCustomerScreenState extends ConsumerState<VipArrivalCustomerScr
       _error = null;
     });
     try {
-      final page = await ref.read(customerRepositoryProvider).list(query: query);
+      final page = await ref
+          .read(customerRepositoryProvider)
+          .list(query: query);
       if (!mounted || requestId != _requestId) return;
       setState(() {
         _page = page;
@@ -825,10 +939,9 @@ class _VipArrivalCustomerScreenState extends ConsumerState<VipArrivalCustomerScr
     final query = _activeQuery;
     setState(() => _loadingMore = true);
     try {
-      final next = await ref.read(customerRepositoryProvider).list(
-            query: query,
-            cursor: cursor,
-          );
+      final next = await ref
+          .read(customerRepositoryProvider)
+          .list(query: query, cursor: cursor);
       if (!mounted || requestId != _requestId) return;
       setState(() {
         _page = ItemPage(
@@ -856,7 +969,8 @@ class _VipArrivalCustomerScreenState extends ConsumerState<VipArrivalCustomerScr
   }
 
   Future<void> _recordNewCustomer() async {
-    final link = widget.link ?? RecordVisitLink(visitIntentionId: widget.intentionId);
+    final link =
+        widget.link ?? RecordVisitLink(visitIntentionId: widget.intentionId);
     final recorded = await context.push<bool>(
       '/visit-intentions/${widget.intentionId}/record-visit',
       extra: RecordVisitLink(
@@ -878,60 +992,61 @@ class _VipArrivalCustomerScreenState extends ConsumerState<VipArrivalCustomerScr
       body: _loading && _page == null
           ? const LoadingSkeleton(lines: 4)
           : _error != null && _page == null
-              ? ErrorView(message: friendlyError(_error!), onRetry: _load)
-              : RefreshIndicator(
-                  onRefresh: _load,
-                  child: ListView(
-                    padding: const EdgeInsets.all(AppTokens.space16),
-                    children: [
-                      const Text(AppStrings.chooseCustomerHint),
-                      const SizedBox(height: AppTokens.space8),
-                      const Text(AppStrings.vipReportedOrigin),
-                      TextField(
-                        controller: _search,
-                        textInputAction: TextInputAction.search,
-                        decoration: const InputDecoration(
-                          labelText: AppStrings.searchCustomers,
-                        ),
-                        onSubmitted: (_) => _load(),
-                      ),
-                      Align(
-                        alignment: AlignmentDirectional.centerStart,
-                        child: TextButton(
-                          onPressed: _loading ? null : _load,
-                          child: const Text(AppStrings.searchCustomers),
-                        ),
-                      ),
-                      OutlinedButton(
-                        key: const Key('record-new-customer'),
-                        onPressed: _recordNewCustomer,
-                        child: const Text(AppStrings.recordVisitForNewCustomer),
-                      ),
-                      if (!_loading && items.isEmpty)
-                        EmptyStateView(
-                          title: _activeQuery.isEmpty
-                              ? AppStrings.noCustomers
-                              : AppStrings.noMatchingCustomers,
-                          body: _activeQuery.isEmpty
-                              ? AppStrings.chooseCustomerHint
-                              : AppStrings.changeCustomerSearch,
-                        ),
-                      for (final customer in items)
-                        ListTile(
-                          key: ValueKey('customer-${customer.id}'),
-                          title: Text(customer.fullName),
-                          subtitle: LtrText(customer.phoneNumber),
-                          onTap: () => _choose(customer),
-                        ),
-                      if (_error != null) ErrorView(message: friendlyError(_error!), onRetry: _load),
-                      if (_page?.hasMore == true)
-                        TextButton(
-                          onPressed: _loading || _loadingMore ? null : _loadMore,
-                          child: const Text(AppStrings.loadMore),
-                        ),
-                    ],
+          ? ErrorView(message: friendlyError(_error!), onRetry: _load)
+          : RefreshIndicator(
+              onRefresh: _load,
+              child: ListView(
+                padding: const EdgeInsets.all(AppTokens.space16),
+                children: [
+                  const Text(AppStrings.chooseCustomerHint),
+                  const SizedBox(height: AppTokens.space8),
+                  const Text(AppStrings.vipReportedOrigin),
+                  TextField(
+                    controller: _search,
+                    textInputAction: TextInputAction.search,
+                    decoration: const InputDecoration(
+                      labelText: AppStrings.searchCustomers,
+                    ),
+                    onSubmitted: (_) => _load(),
                   ),
-                ),
+                  Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: TextButton(
+                      onPressed: _loading ? null : _load,
+                      child: const Text(AppStrings.searchCustomers),
+                    ),
+                  ),
+                  OutlinedButton(
+                    key: const Key('record-new-customer'),
+                    onPressed: _recordNewCustomer,
+                    child: const Text(AppStrings.recordVisitForNewCustomer),
+                  ),
+                  if (!_loading && items.isEmpty)
+                    EmptyStateView(
+                      title: _activeQuery.isEmpty
+                          ? AppStrings.noCustomers
+                          : AppStrings.noMatchingCustomers,
+                      body: _activeQuery.isEmpty
+                          ? AppStrings.chooseCustomerHint
+                          : AppStrings.changeCustomerSearch,
+                    ),
+                  for (final customer in items)
+                    ListTile(
+                      key: ValueKey('customer-${customer.id}'),
+                      title: Text(customer.fullName),
+                      subtitle: LtrText(customer.phoneNumber),
+                      onTap: () => _choose(customer),
+                    ),
+                  if (_error != null)
+                    ErrorView(message: friendlyError(_error!), onRetry: _load),
+                  if (_page?.hasMore == true)
+                    TextButton(
+                      onPressed: _loading || _loadingMore ? null : _loadMore,
+                      child: const Text(AppStrings.loadMore),
+                    ),
+                ],
+              ),
+            ),
     );
   }
 }
@@ -987,23 +1102,29 @@ String _reporter(FollowUpItem item) {
 }
 
 String _time(FollowUpItem item) {
-  if (item.timePrecision == 'UNKNOWN' || !item.timeKnown && item.agreedDate == null && item.agreedInstant == null) {
+  if (item.timePrecision == 'UNKNOWN' ||
+      !item.timeKnown &&
+          item.agreedDate == null &&
+          item.agreedInstant == null) {
     return AppStrings.visitIntentionUnknownTime;
   }
   if (item.timePrecision == 'DATE' && item.agreedDate != null) {
     final parts = item.agreedDate!.split('-');
     if (parts.length == 3) {
-      final shown = formatJalaliDate(DateTime(
-        int.parse(parts[0]),
-        int.parse(parts[1]),
-        int.parse(parts[2]),
-        12,
-      ));
+      final shown = formatJalaliDate(
+        DateTime(
+          int.parse(parts[0]),
+          int.parse(parts[1]),
+          int.parse(parts[2]),
+          12,
+        ),
+      );
       return '${AppStrings.visitIntentionTitle}: $shown';
     }
   }
   if (item.agreedInstant != null) {
-    final label = '${AppStrings.visitIntentionTitle}: ${formatJalaliDateTime(item.agreedInstant!)}';
+    final label =
+        '${AppStrings.visitIntentionTitle}: ${formatJalaliDateTime(item.agreedInstant!)}';
     if (item.timeKnown && item.agreedTimePassed) {
       return '$label — ${AppStrings.visitIntentionTimePassed}';
     }

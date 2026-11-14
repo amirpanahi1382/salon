@@ -20,6 +20,7 @@ import '../../features/customers/customer_import_screen.dart';
 import '../../features/customers/customer_screens.dart';
 import '../../features/dashboard/dashboard_screen.dart';
 import '../../features/followups/follow_ups_screen.dart';
+import '../../features/followups/follow_ups_tab.dart';
 import '../../features/opportunities/opportunities_screen.dart';
 import '../../features/recovery/open_agreed_returns_screen.dart';
 import '../../features/profile/profile_screen.dart';
@@ -209,8 +210,12 @@ final routerProvider = Provider<GoRouter>((ref) {
             builder: (context, state) => const OpenAgreedReturnsScreen(),
           ),
           GoRoute(
-            path: '/follow-ups',
-            builder: (context, state) => const FollowUpsScreen(),
+            path: FollowUpsTab.path,
+            builder: (context, state) => FollowUpsScreen(
+              initialTab: FollowUpsTab.parse(
+                state.uri.queryParameters[FollowUpsTab.queryName],
+              ),
+            ),
           ),
           GoRoute(
             path: '/profile/support',

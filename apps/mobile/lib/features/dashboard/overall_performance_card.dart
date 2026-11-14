@@ -10,11 +10,13 @@ class OverallPerformanceCard extends StatelessWidget {
   const OverallPerformanceCard({
     super.key,
     required this.performance,
-    this.onResultsTap,
+    this.onSalonMessageResultsTap,
+    this.onVipMessageResultsTap,
   });
 
   final SalonOverallPerformance performance;
-  final VoidCallback? onResultsTap;
+  final VoidCallback? onSalonMessageResultsTap;
+  final VoidCallback? onVipMessageResultsTap;
 
   @override
   Widget build(BuildContext context) {
@@ -27,7 +29,8 @@ class OverallPerformanceCard extends StatelessWidget {
         const SizedBox(height: AppTokens.space16),
         _MessageResultsPanel(
           performance: performance,
-          onResultsTap: onResultsTap,
+          onSalonMessageResultsTap: onSalonMessageResultsTap,
+          onVipMessageResultsTap: onVipMessageResultsTap,
         ),
       ],
     );
@@ -301,11 +304,13 @@ class _MetricTile extends StatelessWidget {
 class _MessageResultsPanel extends StatelessWidget {
   const _MessageResultsPanel({
     required this.performance,
-    this.onResultsTap,
+    this.onSalonMessageResultsTap,
+    this.onVipMessageResultsTap,
   });
 
   final SalonOverallPerformance performance;
-  final VoidCallback? onResultsTap;
+  final VoidCallback? onSalonMessageResultsTap;
+  final VoidCallback? onVipMessageResultsTap;
 
   @override
   Widget build(BuildContext context) {
@@ -346,12 +351,13 @@ class _MessageResultsPanel extends StatelessWidget {
             child: Column(
               children: [
                 _MessageResultRow(
+                  key: const Key('dashboard-salon-message-results'),
                   icon: Icons.mail_outline_rounded,
                   title: AppStrings.dashboardSalonMessages,
                   sent: performance.salonCustomerSentMessageCount,
                   requested: performance.salonCustomerMessageRequestCount,
                   accent: DashboardAccent.copper,
-                  onTap: onResultsTap,
+                  onTap: onSalonMessageResultsTap,
                 ),
                 Divider(
                   height: 1,
@@ -359,12 +365,13 @@ class _MessageResultsPanel extends StatelessWidget {
                   color: AppTokens.line.withValues(alpha: 0.58),
                 ),
                 _MessageResultRow(
+                  key: const Key('dashboard-vip-message-results'),
                   icon: Icons.workspace_premium_outlined,
                   title: AppStrings.dashboardVipMessages,
                   sent: performance.vipSentMessageCount,
                   requested: performance.vipMessageRequestCount,
                   accent: DashboardAccent.green,
-                  onTap: onResultsTap,
+                  onTap: onVipMessageResultsTap,
                 ),
               ],
             ),
@@ -377,6 +384,7 @@ class _MessageResultsPanel extends StatelessWidget {
 
 class _MessageResultRow extends StatelessWidget {
   const _MessageResultRow({
+    super.key,
     required this.icon,
     required this.title,
     required this.sent,

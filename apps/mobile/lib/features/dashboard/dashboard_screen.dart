@@ -7,6 +7,7 @@ import '../../core/theme/app_tokens.dart';
 import '../../core/widgets/app_widgets.dart';
 import '../../shared/labels.dart';
 import '../../shared/models/models.dart';
+import '../followups/follow_ups_tab.dart';
 import '../recovery/open_agreed_returns_screen.dart';
 import 'dashboard_widgets.dart';
 import 'overall_performance_card.dart';
@@ -118,11 +119,14 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                       const SizedBox(height: AppTokens.space20),
                       OverallPerformanceCard(
                         performance: performance,
-                        onResultsTap: () => context.push('/follow-ups'),
+                        onSalonMessageResultsTap: () =>
+                            context.push(FollowUpsTab.customers.route),
+                        onVipMessageResultsTap: () =>
+                            context.push(FollowUpsTab.vip.route),
                       ),
                       const SizedBox(height: AppTokens.space16),
                       _FirstActionCard(
-                        onTap: () => context.push('/follow-ups'),
+                        onTap: () => context.push(FollowUpsTab.defaultRoute),
                       ),
                       if (isStaff) ...[
                         const SizedBox(height: AppTokens.space16),
