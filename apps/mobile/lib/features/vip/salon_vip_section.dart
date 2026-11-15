@@ -804,7 +804,7 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _history(capability, hideRequestId: hideFromHistoryId),
+        if (!awaiting) _history(capability, hideRequestId: hideFromHistoryId),
         Text('${AppStrings.vipListNameLabel}: ${current.listName}'),
         Text(AppStrings.vipRequestedRecipientCount(current.requestedCount)),
         const SizedBox(height: 8),
