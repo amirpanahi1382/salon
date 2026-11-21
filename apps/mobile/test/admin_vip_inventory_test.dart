@@ -29,6 +29,7 @@ VipTargetList _list(
   String? regionName,
   int contactCount = 2,
   int liveRequestCount = 0,
+  int roundRemainingSlots = 5,
   List<VipContact> contacts = const [],
 }) => VipTargetList(
   id: id,
@@ -42,6 +43,7 @@ VipTargetList _list(
   totalRequestCount: total,
   openRequestCount: open,
   liveRequestCount: liveRequestCount,
+  roundRemainingSlots: roundRemainingSlots,
   contacts: contacts,
 );
 
@@ -370,6 +372,7 @@ void main() {
             total: 1,
             open: 1,
             liveRequestCount: 1,
+            roundRemainingSlots: 0,
           ),
         ],
         listCount: 3,
@@ -406,7 +409,7 @@ void main() {
     expect(
       find.descendant(
         of: find.byKey(const ValueKey('vip-availability-inuse-1')),
-        matching: find.text(AppStrings.vipInUse),
+        matching: find.text(AppStrings.adminVipCapacityFull),
       ),
       findsOneWidget,
     );
@@ -447,7 +450,7 @@ void main() {
     expect(find.byKey(const ValueKey('vip-reopen-list')), findsOneWidget);
     expect(
       tester.widget<FilledButton>(find.byKey(const ValueKey('vip-activate-list'))).onPressed,
-      isNull,
+      isNotNull,
     );
     expect(
       tester.widget<FilledButton>(find.byKey(const ValueKey('vip-deactivate-list'))).onPressed,

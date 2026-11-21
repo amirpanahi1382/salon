@@ -3,6 +3,7 @@ import { Prisma, expireStaleVipReservations, type VipReservationExpiryScope } fr
 import {
   VIP_ACTIVE_DRAFT_STATUS,
   VIP_IN_PROGRESS_STATUSES,
+  VIP_LIST_ROUND_SLOT_CAPACITY,
   VIP_QUOTA_WINDOW_DAYS,
   VIP_REGION_CODES,
   VIP_REGIONS,
@@ -10,8 +11,10 @@ import {
 } from '@salon/shared';
 import { PrismaService } from '../infrastructure/database/prisma.service';
 import {
-  vipListBlockingRequestSql,
   vipListEffectivelyAvailableSql,
+  vipListRoundOccupiedCountSql,
+  vipRequestOccupyingSql,
+  vipRequestUnresolvedForSalonSql,
 } from './vip-list-request-counts';
 import {
   VIP_RECIPIENT_PROGRESS_COUNTS,
@@ -32,6 +35,7 @@ const LIST_SUMMARY_SELECT = {
   catalogMembership: true,
   contactCount: true,
   nextReservationOpen: true,
+  reservationRound: true,
   reservedBySalonId: true,
   reservedBySalon: { select: { name: true } },
   createdAt: true,
@@ -296,12 +300,110 @@ export class VipRepository {
     return Number(rows[0]?.used ?? 0);
   }
 
+  async classifyReserveFailure(
+    tx: Db,
+    listId: string,
+    salonId: string,
+    now: Date,
+    excludeRequestId?: string,
+  ): Promise<'OWN_UNRESOLVED' | 'CAPACITY' | 'ADMIN_DISABLED' | 'UNAVAILABLE'> {
+    const list = await tx.vipTargetList.findUnique({
+      where: { id: listId },
+      select: {
+        status: true,
+        catalogMembership: true,
+        regionCode: true,
+        reservationRound: true,
+      },
+    });
+    if (!list) {
+      return 'UNAVAILABLE';
+    }
+    if (list.status === 'INACTIVE' || list.status === 'PENDING') {
+      return 'ADMIN_DISABLED';
+    }
+    const unresolved = await tx.$queryRaw<Array<{ ok: boolean }>>`
+      SELECT ${vipRequestUnresolvedForSalonSql(Prisma.sql`${listId}::uuid`, salonId, now, excludeRequestId)} AS ok
+    `;
+    if (unresolved[0]?.ok) {
+      return 'OWN_UNRESOLVED';
+    }
+    const occupied = await tx.$queryRaw<Array<{ count: number }>>`
+      SELECT ${vipListRoundOccupiedCountSql(
+        Prisma.sql`${listId}::uuid`,
+        Prisma.sql`${list.reservationRound}`,
+        now,
+      )} AS count
+    `;
+    if (Number(occupied[0]?.count ?? 0) >= VIP_LIST_ROUND_SLOT_CAPACITY) {
+      return 'CAPACITY';
+    }
+    return 'UNAVAILABLE';
+  }
+
+  /**
+   * Atomically take one round slot and mark the list occupied.
+   * Caller must lock the list row and create the VipRequest with the same id.
+   */
   async tryReserveList(
     tx: Prisma.TransactionClient,
     listId: string,
     salonId: string,
+    requestId: string,
     now: Date,
   ): Promise<boolean> {
+    const slotted = await tx.$queryRaw<Array<{ slotNo: number }>>`
+      INSERT INTO vip_list_round_slots (
+        list_id, reservation_round, slot_no, salon_id, vip_request_id, created_at
+      )
+      SELECT
+        ${listId}::uuid,
+        l.reservation_round,
+        n.slot_no,
+        ${salonId}::uuid,
+        ${requestId}::uuid,
+        ${now}
+      FROM vip_target_lists l
+      INNER JOIN LATERAL (
+        SELECT s.n AS slot_no
+        FROM generate_series(1, ${VIP_LIST_ROUND_SLOT_CAPACITY}) AS s(n)
+        WHERE NOT EXISTS (
+          SELECT 1
+          FROM vip_list_round_slots taken
+          WHERE taken.list_id = l.id
+            AND taken.reservation_round = l.reservation_round
+            AND taken.slot_no = s.n
+        )
+        ORDER BY s.n
+        LIMIT 1
+      ) n ON true
+      WHERE l.id = ${listId}::uuid
+        AND l.catalog_membership = 'ORIGINAL_TEHRAN'::"VipCatalogMembership"
+        AND l.region_code IN (${Prisma.join([...VIP_REGION_CODES].map((code) => Prisma.sql`${code}`))})
+        AND l.status IN ('ACTIVE'::"VipTargetListStatus", 'IN_USE'::"VipTargetListStatus")
+        AND NOT ${vipRequestUnresolvedForSalonSql(Prisma.sql`${listId}::uuid`, salonId, now, requestId)}
+        AND ${vipListRoundOccupiedCountSql(
+          Prisma.sql`l.id`,
+          Prisma.sql`l.reservation_round`,
+          now,
+        )} < ${VIP_LIST_ROUND_SLOT_CAPACITY}
+        AND NOT EXISTS (
+          SELECT 1
+          FROM vip_list_round_slots slot
+          INNER JOIN vip_requests r
+            ON r.id = slot.vip_request_id
+           AND r.salon_id = slot.salon_id
+          WHERE slot.list_id = l.id
+            AND slot.salon_id = ${salonId}::uuid
+            AND slot.reservation_round = l.reservation_round
+            AND slot.vip_request_id <> ${requestId}::uuid
+            AND ${vipRequestOccupyingSql('r', now)}
+        )
+      RETURNING slot_no AS "slotNo"
+    `;
+    if (slotted.length !== 1) {
+      return false;
+    }
     const updated = await tx.$queryRaw<Array<{ id: string }>>`
       UPDATE vip_target_lists
       SET
@@ -314,42 +416,15 @@ export class VipRepository {
         AND catalog_membership = 'ORIGINAL_TEHRAN'::"VipCatalogMembership"
         AND region_code IN (${Prisma.join([...VIP_REGION_CODES].map((code) => Prisma.sql`${code}`))})
         AND status IN ('ACTIVE'::"VipTargetListStatus", 'IN_USE'::"VipTargetListStatus")
-        AND NOT EXISTS (
-          SELECT 1 FROM vip_requests own
-          WHERE own.list_id = ${listId}::uuid
-            AND own.salon_id = ${salonId}::uuid
-            AND (
-              own.status IN (
-                'SUBMITTED'::"VipRequestStatus",
-                'MANUAL_QUEUED'::"VipRequestStatus",
-                'BALE_NOT_IMPLEMENTED'::"VipRequestStatus"
-              )
-              OR (
-                own.status = 'AWAITING_SAMPLE_WORK'::"VipRequestStatus"
-                AND own.reserved_until >= ${now}
-              )
-            )
-        )
-        AND (
-          (
-            NOT ${vipListBlockingRequestSql(Prisma.sql`${listId}::uuid`, now)}
-            AND (
-              (status = 'ACTIVE'::"VipTargetListStatus" AND reserved_by_salon_id IS NULL)
-              OR status = 'IN_USE'::"VipTargetListStatus"
-            )
-          )
-          OR next_reservation_open = true
-        )
       RETURNING id
     `;
     return updated.length === 1;
   }
 
   /**
-   * Activate only if the list is still unreserved. Does not clear reservation fields.
-   * A canonical region already stored on the row is kept. A different canonical region
-   * matches no row, so a write that started from a stale pre-read cannot replace it.
-   * Returns false when the list is IN_USE, reserved, missing, region-locked, or not activatable.
+   * Turn admin availability on. Occupied IN_USE rows stay IN_USE with their
+   * reserver pointer. Existing requests are not cancelled. A canonical region
+   * already stored on the row is kept.
    */
   async tryActivateUnreservedList(
     tx: Prisma.TransactionClient,
@@ -360,7 +435,10 @@ export class VipRepository {
     const updated = await tx.$queryRaw<Array<{ id: string }>>`
       UPDATE vip_target_lists
       SET
-        status = 'ACTIVE',
+        status = CASE
+          WHEN reserved_by_salon_id IS NOT NULL THEN 'IN_USE'::"VipTargetListStatus"
+          ELSE 'ACTIVE'::"VipTargetListStatus"
+        END,
         region_code = CASE
           WHEN region_code IN (${canonicalRegions()}) THEN region_code
           ELSE ${input.regionCode}
@@ -369,8 +447,7 @@ export class VipRepository {
         ${input.name ? Prisma.sql`name = ${input.name},` : Prisma.sql``}
         updated_at = ${input.now}
       WHERE id = ${input.id}::uuid
-        AND status IN ('PENDING', 'INACTIVE', 'ACTIVE')
-        AND reserved_by_salon_id IS NULL
+        AND status IN ('PENDING', 'INACTIVE', 'ACTIVE', 'IN_USE')
         AND (
           region_code IS NULL
           OR region_code NOT IN (${canonicalRegions()})
@@ -381,10 +458,29 @@ export class VipRepository {
     return updated.length === 1;
   }
 
+  /** Delete slot rows whose requests no longer occupy (resolved, cancelled, expired). */
+  async releaseResolvedRoundSlots(
+    tx: Prisma.TransactionClient,
+    now: Date,
+    listId?: string,
+  ): Promise<number> {
+    const listFilter = listId ? Prisma.sql`AND slot.list_id = ${listId}::uuid` : Prisma.empty;
+    const deleted = await tx.$executeRaw`
+      DELETE FROM vip_list_round_slots slot
+      USING vip_requests r
+      WHERE slot.vip_request_id = r.id
+        AND slot.salon_id = r.salon_id
+        AND slot.list_id = r.list_id
+        ${listFilter}
+        AND NOT ${vipRequestOccupyingSql('r', now)}
+    `;
+    return Number(deleted);
+  }
+
   /**
-   * One explicit opening for the next reservation. Does not clear the current
-   * reserver or change existing requests. A second call while the flag is
-   * already true matches no row.
+   * Start a new reservation round. Existing requests and slots stay on the
+   * previous round. Occupied or exhausted lists may be opened; empty unused
+   * lists are left unchanged.
    */
   async tryOpenNextReservation(
     tx: Prisma.TransactionClient,
@@ -393,14 +489,25 @@ export class VipRepository {
   ): Promise<boolean> {
     const updated = await tx.$queryRaw<Array<{ id: string }>>`
       UPDATE vip_target_lists
-      SET next_reservation_open = true,
+      SET reservation_round = reservation_round + 1,
+          next_reservation_open = false,
           updated_at = ${now}
       WHERE id = ${listId}::uuid
-        AND next_reservation_open = false
         AND catalog_membership = 'ORIGINAL_TEHRAN'::"VipCatalogMembership"
         AND region_code IN (${Prisma.join([...VIP_REGION_CODES].map((code) => Prisma.sql`${code}`))})
         AND status IN ('ACTIVE'::"VipTargetListStatus", 'IN_USE'::"VipTargetListStatus")
-        AND ${vipListBlockingRequestSql(Prisma.sql`${listId}::uuid`, now)}
+        AND (
+          ${vipListRoundOccupiedCountSql(
+            Prisma.sql`${listId}::uuid`,
+            Prisma.sql`vip_target_lists.reservation_round`,
+            now,
+          )} > 0
+          OR EXISTS (
+            SELECT 1 FROM vip_list_round_slots slot
+            WHERE slot.list_id = ${listId}::uuid
+              AND slot.reservation_round = vip_target_lists.reservation_round
+          )
+        )
       RETURNING id
     `;
     return updated.length === 1;

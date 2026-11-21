@@ -262,13 +262,16 @@ class AppStrings {
       'منطقهٔ کانونی ثبت نشده است. تا انتخاب یکی از مناطق ۰۱ تا ۱۴ و تأیید فعال‌سازی، سالن این لیست را نمی‌بیند.';
   static const adminVipNeedsActivationConfirm =
       'منطقه ثبت شده، ولی فعال‌سازی هنوز کامل نیست. با تأیید فعال‌سازی، سالن‌های دارای دسترسی VIP در همین منطقه می‌توانند آن را ببینند و رزرو کنند.';
+  static const adminVipCapacityFull = 'ظرفیت تکمیل';
   static const adminVipInUseReason =
-      'این لیست درخواست فعال دارد. «در دسترس کردن» یک رزرو بعدی را برای سالن دیگر باز می‌کند و درخواست‌های فعلی را تغییر نمی‌دهد.';
-  static const adminVipReopenList = 'در دسترس کردن';
+      'این لیست در دور جاری ظرفیت خالی ندارد. «دور جدید» یک دور رزرو تازه باز می‌کند و درخواست‌های فعلی را تغییر نمی‌دهد.';
+  static const adminVipReopenList = 'دور جدید';
   static const adminVipReopenListConfirm =
-      'این لیست برای یک رزرو بعدی در دسترس سالن‌های دیگر قرار می‌گیرد. درخواست‌های فعلی باقی می‌مانند.';
+      'یک دور رزرو تازه برای سالن‌های دیگر باز می‌شود. درخواست‌های فعلی باقی می‌مانند.';
   static const adminVipReopenAlreadyOpen =
-      'این لیست همین حالا برای یک رزرو بعدی باز است.';
+      'این دور هنوز ظرفیت خالی دارد.';
+  static String adminVipRoundCapacity(int remaining, int capacity) =>
+      'ظرفیت باقی‌مانده: ${toPersianDigits(remaining.toString())} از ${toPersianDigits(capacity.toString())}';
   static const adminVipInUseCannotChange =
       'این لیست برای یک درخواست رزرو شده است. تا آزاد شدن رزرو نمی‌توان آن را فعال یا غیرفعال کرد.';
   static const adminVipActivateList = 'فعال کردن لیست';
@@ -590,8 +593,10 @@ class AppStrings {
       '${toPersianDigits(amount)}٪';
   static String vipSummaryRialValue(String amount) =>
       '${toPersianDigits(amount)} ریال';
-  static const vipListUnavailable =
-      'این لیست دیگر در دسترس نیست. فهرست محدوده به‌روز شد.';
+  static const vipListUnavailable = 'فهرست را به‌روز کنید.';
+  static const vipListOwnUnresolved = 'این لیست درخواست باز دارد.';
+  static const vipListCapacityExhausted = 'ظرفیت این لیست تکمیل شد.';
+  static const vipListAdminDisabled = 'این لیست در دسترس نیست.';
   static const vipContactCountLabel = 'تعداد مخاطب';
   static const vipGrant = 'فعال‌سازی VIP سالن';
   static const vipImportExcel = 'ورود لیست از اکسل';
@@ -874,8 +879,12 @@ String localizeUserFacingMessage(String message) {
     'At most 3 sample-work images are allowed': AppStrings.vipMaxSamples,
     'Bale is not available for VIP outreach': AppStrings.vipBaleNotImplemented,
     'This VIP list is not available': AppStrings.vipListUnavailable,
-    'This VIP list does not have enough contacts':
-        AppStrings.vipListUnavailable,
+    'This VIP list does not have enough contacts': AppStrings.vipListUnavailable,
+    'This salon already has an unresolved request for this VIP list':
+        AppStrings.vipListOwnUnresolved,
+    'This VIP list has no remaining reservation slots':
+        AppStrings.vipListCapacityExhausted,
+    'This VIP list is disabled': AppStrings.vipListAdminDisabled,
     'This VIP request reservation has expired':
         'مهلت رزرو این درخواست VIP تمام شده است.',
     'Service not found': 'این خدمت پیدا نشد.',

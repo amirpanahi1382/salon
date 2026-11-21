@@ -173,8 +173,26 @@ export class VipTargetListSummaryDto {
   @ApiProperty()
   contactCount!: number;
 
-  @ApiProperty({ description: 'True when an admin reopening is waiting for the next reservation.' })
+  @ApiProperty({
+    description:
+      'Legacy one-slot grant. Always false; round remaining slots are roundRemainingSlots.',
+  })
   nextReservationOpen!: boolean;
+
+  @ApiProperty({ description: 'Current reservation round for this list.' })
+  reservationRound!: number;
+
+  @ApiProperty({ description: 'Maximum distinct salons per reservation round.' })
+  roundSlotCapacity!: number;
+
+  @ApiProperty({
+    description:
+      'Distinct occupying salons in the current round (unresolved drafts and in-flight recipient work).',
+  })
+  roundOccupiedCount!: number;
+
+  @ApiProperty({ description: 'Remaining slots in the current reservation round.' })
+  roundRemainingSlots!: number;
 
   @ApiProperty({ nullable: true, type: String })
   reservedBySalonId!: string | null;
@@ -197,7 +215,7 @@ export class VipTargetListSummaryDto {
 
   @ApiProperty({
     description:
-      'True when this list is effectively requestable: canonical region 01–14, ORIGINAL_TEHRAN, and no live draft or submitted/processing request. Stored IN_USE with only an expired draft is included. Status remains the stored value. A true read is not a reservation.',
+      'True when this list is effectively requestable: canonical region 01–14, ORIGINAL_TEHRAN, admin-enabled ACTIVE/IN_USE, and fewer than five occupying salons in the current round. Capacity exhaustion does not persist INACTIVE. A true read is not a reservation.',
   })
   requestableBySalons!: boolean;
 

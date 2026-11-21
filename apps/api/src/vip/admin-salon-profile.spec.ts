@@ -22,7 +22,7 @@ describe('admin salon VIP profile counting rules', () => {
     expect(sent.status === 'SENT' && sent.submittedAt != null).toBe(true);
   });
 
-  it('marks a list requestable only when ACTIVE, unreserved, ORIGINAL_TEHRAN, and a canonical region', () => {
+  it('marks a list requestable when admin-enabled, ORIGINAL_TEHRAN, canonical region, and round capacity remains', () => {
     const now = new Date('2026-10-31T12:00:00.000Z');
     expect(sampleReservationBlocksReuse('AWAITING_SAMPLE_WORK', now, now)).toBe(true);
     expect(
@@ -41,101 +41,65 @@ describe('admin salon VIP profile counting rules', () => {
     expect(
       isVipListRequestableBySalons({
         status: 'ACTIVE',
-        reservedBySalonId: null,
         catalogMembership: 'ORIGINAL_TEHRAN',
         regionCode: '03',
-        blockedByLiveRequest: false,
+        roundOccupiedCount: 0,
       }),
     ).toBe(true);
-    expect(
-      isVipListRequestableBySalons({
-        status: 'ACTIVE',
-        reservedBySalonId: null,
-        catalogMembership: 'ORIGINAL_TEHRAN',
-        regionCode: '03',
-        blockedByLiveRequest: true,
-      }),
-    ).toBe(false);
-    expect(
-      isVipListRequestableBySalons({
-        status: 'ACTIVE',
-        reservedBySalonId: 'salon-1',
-        catalogMembership: 'ORIGINAL_TEHRAN',
-        regionCode: '03',
-        blockedByLiveRequest: false,
-      }),
-    ).toBe(false);
     expect(
       isVipListRequestableBySalons({
         status: 'IN_USE',
-        reservedBySalonId: 'salon-1',
         catalogMembership: 'ORIGINAL_TEHRAN',
         regionCode: '03',
-        blockedByLiveRequest: false,
+        roundOccupiedCount: 4,
       }),
     ).toBe(true);
     expect(
       isVipListRequestableBySalons({
+        status: 'IN_USE',
+        catalogMembership: 'ORIGINAL_TEHRAN',
+        regionCode: '03',
+        roundOccupiedCount: 5,
+      }),
+    ).toBe(false);
+    expect(
+      isVipListRequestableBySalons({
         status: 'ACTIVE',
-        reservedBySalonId: null,
         catalogMembership: 'ORIGINAL_TEHRAN',
         regionCode: null,
-        blockedByLiveRequest: false,
+        roundOccupiedCount: 0,
       }),
     ).toBe(false);
     expect(
       isVipListRequestableBySalons({
         status: 'ACTIVE',
-        reservedBySalonId: null,
         catalogMembership: 'ORIGINAL_TEHRAN',
         regionCode: '99',
-        blockedByLiveRequest: false,
+        roundOccupiedCount: 0,
       }),
     ).toBe(false);
     expect(
       isVipListRequestableBySalons({
         status: 'ACTIVE',
-        reservedBySalonId: null,
         catalogMembership: null,
         regionCode: '03',
-        blockedByLiveRequest: false,
+        roundOccupiedCount: 0,
       }),
     ).toBe(false);
-    expect(
-      isVipListRequestableBySalons({
-        status: 'IN_USE',
-        reservedBySalonId: 'salon-1',
-        catalogMembership: 'ORIGINAL_TEHRAN',
-        regionCode: '03',
-        blockedByLiveRequest: true,
-      }),
-    ).toBe(false);
-    expect(
-      isVipListRequestableBySalons({
-        status: 'IN_USE',
-        reservedBySalonId: 'salon-1',
-        catalogMembership: 'ORIGINAL_TEHRAN',
-        regionCode: '03',
-        blockedByLiveRequest: true,
-        nextReservationOpen: true,
-      }),
-    ).toBe(true);
     expect(
       isVipListRequestableBySalons({
         status: 'INACTIVE',
-        reservedBySalonId: null,
         catalogMembership: 'ORIGINAL_TEHRAN',
         regionCode: '03',
-        blockedByLiveRequest: false,
+        roundOccupiedCount: 0,
       }),
     ).toBe(false);
     expect(
       isVipListRequestableBySalons({
         status: 'PENDING',
-        reservedBySalonId: null,
         catalogMembership: 'ORIGINAL_TEHRAN',
         regionCode: '03',
-        blockedByLiveRequest: false,
+        roundOccupiedCount: 0,
       }),
     ).toBe(false);
   });

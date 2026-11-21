@@ -289,6 +289,18 @@ class _AdminVipScreenState extends ConsumerState<AdminVipScreen> {
                     icon: Icons.autorenew_rounded,
                     color: AppTokens.accentSecondary,
                   ),
+                if (list.status == 'ACTIVE' || list.status == 'IN_USE')
+                  _VipInventoryTag(
+                    key: ValueKey('vip-round-capacity-${list.id}'),
+                    label: AppStrings.adminVipRoundCapacity(
+                      list.roundRemainingSlots,
+                      list.roundSlotCapacity,
+                    ),
+                    icon: Icons.event_seat_outlined,
+                    color: list.roundRemainingSlots == 0
+                        ? AppTokens.warning
+                        : AppTokens.textSecondary,
+                  ),
                 if (attention)
                   const _VipInventoryTag(
                     label: AppStrings.vipNeedsReview,
@@ -310,6 +322,14 @@ class _AdminVipScreenState extends ConsumerState<AdminVipScreen> {
       label: AppStrings.vipActive,
       icon: Icons.check_circle_outline_rounded,
       color: AppTokens.success,
+    );
+  }
+  if (list.roundRemainingSlots == 0 &&
+      (list.status == 'IN_USE' || list.status == 'ACTIVE')) {
+    return (
+      label: AppStrings.adminVipCapacityFull,
+      icon: Icons.event_busy_outlined,
+      color: AppTokens.warning,
     );
   }
   if (list.status == 'IN_USE') {
@@ -389,6 +409,10 @@ String adminVipAvailabilityLabel(VipTargetList list) {
   if (list.requestableBySalons) {
     return AppStrings.vipActive;
   }
+  if (list.roundRemainingSlots == 0 &&
+      (list.status == 'IN_USE' || list.status == 'ACTIVE')) {
+    return AppStrings.adminVipCapacityFull;
+  }
   if (list.status == 'IN_USE') {
     return AppStrings.vipInUse;
   }
@@ -405,7 +429,8 @@ String? adminVipUnavailabilityReason(VipTargetList list) {
   if (list.requestableBySalons) {
     return null;
   }
-  if (list.status == 'IN_USE') {
+  if (list.roundRemainingSlots == 0 &&
+      (list.status == 'IN_USE' || list.status == 'ACTIVE')) {
     return AppStrings.adminVipInUseReason;
   }
   if (list.status == 'PENDING') {
@@ -624,7 +649,7 @@ class _AdminVipListDetailScreenState extends ConsumerState<AdminVipListDetailScr
                                 ),
                               ),
                             ),
-                            onPressed: _busy || list.status == 'IN_USE' || list.requestableBySalons
+                            onPressed: _busy || list.requestableBySalons
                                 ? null
                                 : () => _confirmAvailability(list, 'ACTIVE'),
                             icon: const Icon(Icons.check_circle_outline_rounded, size: 18),
@@ -650,8 +675,7 @@ class _AdminVipListDetailScreenState extends ConsumerState<AdminVipListDetailScr
                             label: const Text('غیرفعال‌سازی'),
                           ),
                           if ((list.status == 'ACTIVE' || list.status == 'IN_USE') &&
-                              list.liveRequestCount > 0 &&
-                              !list.nextReservationOpen)
+                              list.roundRemainingSlots == 0)
                             FilledButton.tonalIcon(
                               key: const ValueKey('vip-reopen-list'),
                               style: const ButtonStyle(
@@ -706,10 +730,21 @@ class _AdminVipListDetailScreenState extends ConsumerState<AdminVipListDetailScr
                       ),
                     ),
                   ),
-                if (list.nextReservationOpen)
+                Padding(
+                  key: const ValueKey('vip-round-capacity'),
+                  padding: const EdgeInsets.only(top: AppTokens.space12),
+                  child: Text(
+                    AppStrings.adminVipRoundCapacity(
+                      list.roundRemainingSlots,
+                      list.roundSlotCapacity,
+                    ),
+                  ),
+                ),
+                if (list.roundRemainingSlots > 0 &&
+                    (list.status == 'ACTIVE' || list.status == 'IN_USE'))
                   Padding(
                     key: const ValueKey('vip-reopen-open'),
-                    padding: const EdgeInsets.only(top: AppTokens.space12),
+                    padding: const EdgeInsets.only(top: AppTokens.space8),
                     child: Text(AppStrings.adminVipReopenAlreadyOpen),
                   ),
                 if (list.needsAttention) ...[

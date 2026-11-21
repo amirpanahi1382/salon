@@ -11,6 +11,7 @@ import {
   nearestVipPackageGroup,
   VIP_QUOTA_EXCEEDED_MESSAGE,
   VIP_QUOTA_MAX,
+  VIP_LIST_ROUND_SLOT_CAPACITY,
   VIP_QUOTA_WINDOW_DAYS,
   VIP_REGION_CATALOG,
   VIP_REGION_CODES,
@@ -43,6 +44,7 @@ describe('VIP shared rules', () => {
 
   it('keeps the rolling seven-day quota and one-draft rule as shared policy', () => {
     expect(VIP_QUOTA_MAX).toBe(500);
+    expect(VIP_LIST_ROUND_SLOT_CAPACITY).toBe(5);
     expect(VIP_QUOTA_WINDOW_DAYS).toBe(7);
     expect(VIP_IN_PROGRESS_STATUSES).toEqual([
       'SUBMITTED',

@@ -21,7 +21,25 @@ import {
   VIP_REGION_CODES,
 } from '@salon/shared';
 
-const describeIfDb = process.env.DATABASE_URL ? describe : describe.skip;
+const databaseUrl = process.env.DATABASE_URL;
+const dedicatedUrl = process.env.VIP_E2E_DISPOSABLE_DATABASE_URL;
+const REFUSED_SYSIDS = new Set(['7700113693112733735', '7683163620851879970']);
+const FORBIDDEN_PORTS = new Set(['5432', '15442', '15490']);
+const FORBIDDEN_NAMES = new Set(['salon', 'salon_preview', 'salon-db', 'phone_first_product', 'postgres']);
+const disposableTarget = (() => {
+  if (!databaseUrl || !dedicatedUrl || databaseUrl !== dedicatedUrl) return null;
+  if (process.env.OTPY_API_KEY || process.env.BALE_SAFIR_API_ACCESS_KEY) return null;
+  try {
+    const parsed = new URL(databaseUrl);
+    const name = decodeURIComponent(parsed.pathname.replace(/^\//, ''));
+    if (parsed.hostname !== '127.0.0.1' || !parsed.port || FORBIDDEN_PORTS.has(parsed.port)) return null;
+    if (FORBIDDEN_NAMES.has(name) || !/^salon_vip_e2e_[a-z0-9]+$/.test(name)) return null;
+    return { name, token: name.slice('salon_vip_e2e_'.length), port: parsed.port };
+  } catch {
+    return null;
+  }
+})();
+const describeIfDb = disposableTarget ? describe : describe.skip;
 const password = 'correct-horse-battery';
 const adminPassword = 'platform-admin-pass';
 
@@ -67,6 +85,24 @@ describeIfDb('VIP outreach (e2e)', () => {
     app.useGlobalFilters(new HttpExceptionFilter());
     await app.init();
     prisma = app.get(PrismaService);
+    const identity = await prisma.client.$queryRaw<
+      Array<{ name: string; comment: string | null; sysid: string }>
+    >`
+      SELECT current_database() AS name,
+             shobj_description(oid, 'pg_database') AS comment,
+             (SELECT system_identifier::text FROM pg_control_system()) AS sysid
+      FROM pg_database
+      WHERE datname = current_database()
+    `;
+    const row = identity[0];
+    if (
+      !disposableTarget ||
+      row?.name !== disposableTarget.name ||
+      row.comment !== `vip-e2e-disposable:${disposableTarget.token}` ||
+      REFUSED_SYSIDS.has(row.sysid ?? '')
+    ) {
+      throw new Error('Refusing VIP e2e without this run’s disposable database');
+    }
     jwt = app.get(JwtService);
 
     const adminEmail = `vip-platform-${Date.now()}@example.test`;
@@ -645,9 +681,9 @@ describeIfDb('VIP outreach (e2e)', () => {
           .send({ listId, requestedCount: 30, geographicRange: 'سعادت‌آباد' }),
       ),
     );
-    expect(responses.filter((res) => res.status === 201)).toHaveLength(1);
-    expect(responses.filter((res) => res.status === 409)).toHaveLength(3);
-    expect(responses.every((res) => res.status === 201 || res.status === 409)).toBe(true);
+    expect(responses.filter((res) => res.status === 201)).toHaveLength(4);
+    expect(responses.filter((res) => res.status === 409)).toHaveLength(0);
+    expect(responses.every((res) => res.status === 201)).toBe(true);
   });
 
   it('replays identical VIP request idempotency keys without duplicating quota', async () => {
@@ -866,8 +902,8 @@ describeIfDb('VIP outreach (e2e)', () => {
           .send({ listId, requestedCount: 30, geographicRange: 'سعادت‌آباد' }),
       ),
     );
-    expect(responses.filter((res) => res.status === 201)).toHaveLength(1);
-    expect(responses.filter((res) => res.status === 409)).toHaveLength(9);
+    expect(responses.filter((res) => res.status === 201)).toHaveLength(5);
+    expect(responses.filter((res) => res.status === 409)).toHaveLength(5);
     expect(responses.every((res) => res.status === 201 || res.status === 409)).toBe(true);
     const holders = await prisma.client.vipTargetList.findUniqueOrThrow({ where: { id: listId } });
     expect(holders.status).toBe('IN_USE');
@@ -906,7 +942,7 @@ describeIfDb('VIP outreach (e2e)', () => {
     const expired = await prisma.client.vipRequest.findUniqueOrThrow({
       where: { id: created.body.id as string },
     });
-    expect(expired.status).toBe('AWAITING_SAMPLE_WORK');
+    expect(expired.status).toBe('CANCELLED');
     await prisma.client.vipRequest.update({
       where: { id: created.body.id as string },
       data: { reservedUntil: new Date(Date.now() - 120_000) },
@@ -1399,7 +1435,7 @@ describeIfDb('VIP outreach (e2e)', () => {
     expect(ids01).toEqual(expect.arrayContaining([region01Active, region01Other]));
     expect(ids01).not.toContain(region02Active);
     expect(ids01).not.toContain(unnamedHistorical);
-    expect(ids01).not.toContain(inUseRegional);
+    expect(ids01).toContain(inUseRegional);
     expect(ids01).not.toContain(inactiveRegional);
     expect(ids01).not.toContain(region11Pending);
     expect(ids01).not.toContain(unclassifiedActive);
@@ -1417,7 +1453,7 @@ describeIfDb('VIP outreach (e2e)', () => {
         regionCode: '01',
         regionName: VIP_REGION_CATALOG['01'],
         contactCount: expect.any(Number),
-        status: 'ACTIVE',
+        status: expect.stringMatching(/^(ACTIVE|IN_USE)$/),
         createdAt: expect.any(String),
       }),
     );
@@ -1513,12 +1549,12 @@ describeIfDb('VIP outreach (e2e)', () => {
       .set('Authorization', `Bearer ${other.token}`)
       .set('Idempotency-Key', `stale-${randomUUID()}`)
       .send({
-        listId: region01Active,
-        requestedCount: tooBig.body.details.effectiveRequestedCount,
+        listId: inactiveRegional,
+        requestedCount: 30,
         geographicRange: 'ونک',
       })
       .expect(409);
-    expect(stale.body.message).toBe('This VIP list is not available');
+    expect(stale.body.error).toBe('VIP_LIST_ADMIN_DISABLED');
 
     const afterBrowse = {
       lists: await prisma.client.vipTargetList.count(),

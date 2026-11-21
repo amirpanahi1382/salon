@@ -175,7 +175,7 @@ export class AdminVipController {
   @ApiHeader({ name: 'Idempotency-Key', required: true })
   @ApiOperation({
     summary:
-      'Open an occupied VIP list for one later reservation by another salon. Existing requests stay. Replaying this key does not grant another opening.',
+      'Start a new five-salon reservation round on an occupied or exhausted list. Existing requests stay. Replaying this key does not increment again.',
   })
   reopen(
     @CurrentPlatformAdmin() admin: PlatformAdminPrincipal,

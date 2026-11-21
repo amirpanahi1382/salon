@@ -86,6 +86,8 @@ export function vipRegionName(code: VipRegionCode): string {
 export const VIP_LIST_MAX_CONTACTS = 100;
 /** Temporary product limit for easier testing. Rolling window, not a calendar week. */
 export const VIP_QUOTA_MAX = 500;
+/** Distinct salons that may occupy one list reservation round. */
+export const VIP_LIST_ROUND_SLOT_CAPACITY = 5;
 export const VIP_QUOTA_WINDOW_DAYS = 7;
 export const VIP_QUOTA_EXCEEDED_MESSAGE = 'VIP rolling-window quota would be exceeded';
 /** The salon must finish or let this draft expire before starting another. */

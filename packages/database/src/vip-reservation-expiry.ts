@@ -17,7 +17,7 @@ export type VipReservationExpiryScope =
   | { mode: 'platform'; limit: number }
   | { mode: 'salon'; salonId: string; listId?: string };
 
-type ExpiryDb = Pick<Prisma.TransactionClient, '$queryRaw'>;
+type ExpiryDb = Pick<Prisma.TransactionClient, '$queryRaw' | '$executeRaw'>;
 
 const LIVE_REQUEST_SQL = Prisma.sql`
   live.status IN (
@@ -69,6 +69,70 @@ export async function expireStaleVipReservations(
       AND r.status = 'AWAITING_SAMPLE_WORK'::"VipRequestStatus"
       AND r.reserved_until < ${now}
     RETURNING r.id
+  `;
+
+  if (cancelled.length > 0) {
+    await db.$executeRaw`
+      DELETE FROM vip_list_round_slots
+      WHERE vip_request_id IN (${Prisma.join(cancelled.map((row) => Prisma.sql`${row.id}::uuid`))})
+    `;
+  }
+
+  const resolvedSlotScope = scope.mode === 'platform'
+    ? Prisma.sql`TRUE`
+    : scope.listId
+      ? Prisma.sql`(slot.list_id = ${scope.listId}::uuid OR r.salon_id = ${scope.salonId}::uuid)`
+      : Prisma.sql`r.salon_id = ${scope.salonId}::uuid`;
+  await db.$executeRaw`
+    DELETE FROM vip_list_round_slots slot
+    USING vip_requests r
+    WHERE slot.vip_request_id = r.id
+      AND slot.salon_id = r.salon_id
+      AND slot.list_id = r.list_id
+      AND ${resolvedSlotScope}
+      AND NOT (
+        (
+          r.status = 'AWAITING_SAMPLE_WORK'::"VipRequestStatus"
+          AND r.reserved_until >= ${now}
+        )
+        OR (
+          r.status IN (
+            'SUBMITTED'::"VipRequestStatus",
+            'MANUAL_QUEUED'::"VipRequestStatus",
+            'BALE_NOT_IMPLEMENTED'::"VipRequestStatus"
+          )
+          AND EXISTS (
+            SELECT 1
+            FROM vip_request_recipients rec
+            LEFT JOIN message_requests mr
+              ON mr.id = rec.message_request_id
+             AND mr.salon_id = rec.salon_id
+            LEFT JOIN message_deliveries d
+              ON d.message_request_id = mr.id
+             AND d.salon_id = rec.salon_id
+            LEFT JOIN LATERAL (
+              SELECT o.id
+              FROM message_global_stop_outcomes o
+              WHERE o.vip_request_recipient_id = rec.id
+                 OR (rec.message_request_id IS NOT NULL AND o.message_request_id = rec.message_request_id)
+              LIMIT 1
+            ) stop_out ON true
+            WHERE rec.vip_request_id = r.id
+              AND rec.salon_id = r.salon_id
+              AND (
+                CASE
+                  WHEN d.status = 'SENT' AND d.submitted_at IS NOT NULL THEN 'SENT'
+                  WHEN stop_out.id IS NOT NULL THEN 'GLOBALLY_STOPPED'
+                  WHEN rec.message_request_id IS NULL THEN 'NOT_YET_QUEUED'
+                  WHEN mr.status = 'CANCELLED' THEN 'CANCELLED'
+                  WHEN mr.status = 'FAILED' OR d.status = 'FAILED' THEN 'FAILED'
+                  WHEN mr.status = 'DISPATCHED' OR d.status IN ('PENDING', 'PROCESSING') THEN 'IN_PIPELINE'
+                  ELSE 'QUEUED'
+                END
+              ) IN ('NOT_YET_QUEUED', 'QUEUED', 'IN_PIPELINE')
+          )
+        )
+      )
   `;
 
   const released = await db.$queryRaw<Array<{ id: string }>>`

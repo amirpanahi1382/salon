@@ -1027,6 +1027,10 @@ class VipTargetList {
     this.catalogMembership,
     this.requestableBySalons = false,
     this.nextReservationOpen = false,
+    this.reservationRound = 1,
+    this.roundSlotCapacity = 5,
+    this.roundOccupiedCount = 0,
+    this.roundRemainingSlots = 5,
     this.totalRequestCount = 0,
     this.openRequestCount = 0,
     this.liveRequestCount = 0,
@@ -1048,6 +1052,10 @@ class VipTargetList {
   final String? catalogMembership;
   final bool requestableBySalons;
   final bool nextReservationOpen;
+  final int reservationRound;
+  final int roundSlotCapacity;
+  final int roundOccupiedCount;
+  final int roundRemainingSlots;
   final int totalRequestCount;
   final int openRequestCount;
   final int liveRequestCount;
@@ -1078,6 +1086,10 @@ class VipTargetList {
       catalogMembership: json['catalogMembership'] as String?,
       requestableBySalons: json['requestableBySalons'] as bool? ?? false,
       nextReservationOpen: json['nextReservationOpen'] as bool? ?? false,
+      reservationRound: json['reservationRound'] as int? ?? 1,
+      roundSlotCapacity: json['roundSlotCapacity'] as int? ?? 5,
+      roundOccupiedCount: json['roundOccupiedCount'] as int? ?? 0,
+      roundRemainingSlots: json['roundRemainingSlots'] as int? ?? 5,
       totalRequestCount: json['totalRequestCount'] as int? ?? 0,
       openRequestCount: json['openRequestCount'] as int? ?? 0,
       liveRequestCount: json['liveRequestCount'] as int? ?? 0,

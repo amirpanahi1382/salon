@@ -346,10 +346,18 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
     } catch (error) {
       if (error is ApiException && error.details?['effectiveRequestedCount'] is int) {
         _snack(AppStrings.vipQuantityChanged);
+        await _load();
+      } else if (error is ApiException &&
+          (error.code == 'VIP_LIST_OWN_UNRESOLVED' ||
+              error.code == 'VIP_LIST_CAPACITY_EXHAUSTED' ||
+              error.code == 'VIP_LIST_ADMIN_DISABLED' ||
+              error.code == 'VIP_LIST_UNAVAILABLE')) {
+        _snack(friendlyError(error));
+        await _loadLists();
       } else {
         _snack(friendlyError(error));
+        await _load();
       }
-      await _load();
     } finally {
       if (mounted) {
         setState(() => _busy = false);

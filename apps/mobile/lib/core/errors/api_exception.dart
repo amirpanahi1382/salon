@@ -111,6 +111,18 @@ class ApiException implements Exception {
     if (code == 'CUSTOMER_PHONE_EXISTS') {
       return AppStrings.customerPhoneExists;
     }
+    if (code == 'VIP_LIST_OWN_UNRESOLVED') {
+      return AppStrings.vipListOwnUnresolved;
+    }
+    if (code == 'VIP_LIST_CAPACITY_EXHAUSTED') {
+      return AppStrings.vipListCapacityExhausted;
+    }
+    if (code == 'VIP_LIST_ADMIN_DISABLED') {
+      return AppStrings.vipListAdminDisabled;
+    }
+    if (code == 'VIP_LIST_UNAVAILABLE') {
+      return AppStrings.vipListUnavailable;
+    }
     if (message.trim().isNotEmpty) {
       return localizeUserFacingMessage(message);
     }

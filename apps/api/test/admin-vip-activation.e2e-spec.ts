@@ -20,7 +20,7 @@ const disposableTarget = (() => {
   try {
     const parsed = new URL(databaseUrl);
     const name = decodeURIComponent(parsed.pathname.replace(/^\//, ''));
-    const forbiddenPorts = new Set(['5432', '15442', '15450', '15452']);
+    const forbiddenPorts = new Set(['5432', '15442', '15450', '15452', '15490']);
     if (parsed.hostname !== '127.0.0.1' || parsed.port === '' || forbiddenPorts.has(parsed.port)) {
       return null;
     }
@@ -90,7 +90,9 @@ describeIfDisposable('Admin VIP activation makes lists requestable (e2e)', () =>
       row.name === 'salon' ||
       row.name === 'salon_preview' ||
       row.name === 'phone_first_product' ||
-      row.name === 'salon-db'
+      row.name === 'salon-db' ||
+      row.sysid === '7700113693112733735' ||
+      row.sysid === '7683163620851879970'
     ) {
       throw new Error('Refusing admin VIP activation tests without this run’s disposable database');
     }
@@ -284,14 +286,15 @@ describeIfDisposable('Admin VIP activation makes lists requestable (e2e)', () =>
       .get(`/admin/vip/lists/${listId}`)
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(200);
-    expect(adminAfter.body.requestableBySalons).toBe(false);
+    expect(adminAfter.body.requestableBySalons).toBe(true);
     expect(adminAfter.body.status).toBe('IN_USE');
+    expect(adminAfter.body.roundRemainingSlots).toBe(4);
     const hidden = await request(app.getHttpServer())
       .get('/vip/lists')
       .query({ regionCode: '03' })
       .set('Authorization', `Bearer ${otherToken}`)
       .expect(200);
-    expect(hidden.body.items.map((row: { id: string }) => row.id)).not.toContain(listId);
+    expect(hidden.body.items.map((row: { id: string }) => row.id)).toContain(listId);
     const liveDraft = await prisma.client.vipRequest.findUniqueOrThrow({
       where: { id: reserved.body.id as string },
     });
@@ -302,13 +305,17 @@ describeIfDisposable('Admin VIP activation makes lists requestable (e2e)', () =>
       .set('Authorization', `Bearer ${otherToken}`)
       .expect(200);
     const hidden03 = hiddenCount.body.items.find((row: { regionCode: string }) => row.regionCode === '03');
-    expect(hidden03.availableListCount).toBe(beforeCount);
+    expect(hidden03.availableListCount).toBe(beforeCount + 1);
     await request(app.getHttpServer())
       .post('/vip/requests')
       .set('Authorization', `Bearer ${otherToken}`)
       .set('Idempotency-Key', `live-conflict-${randomUUID()}`)
       .send({ listId, requestedCount: 30, geographicRange: 'سعادت‌آباد' })
-      .expect(409);
+      .expect(201);
+    await prisma.client.vipRequest.updateMany({
+      where: { listId, status: 'AWAITING_SAMPLE_WORK' },
+      data: { status: 'CANCELLED', cancelledAt: new Date(), reservedUntil: new Date(Date.now() - 1_000) },
+    });
   });
 
   it('shows an expired IN_USE hold as reclaimable without a read-side write', async () => {
@@ -335,7 +342,7 @@ describeIfDisposable('Admin VIP activation makes lists requestable (e2e)', () =>
       .query({ regionCode: '12' })
       .set('Authorization', `Bearer ${otherToken}`)
       .expect(200);
-    expect(liveBrowse.body.items.map((row: { id: string }) => row.id)).not.toContain(listId);
+    expect(liveBrowse.body.items.map((row: { id: string }) => row.id)).toContain(listId);
     await prisma.client.vipRequest.update({
       where: { id: reserved.body.id as string },
       data: { reservedUntil: overdue },
@@ -365,7 +372,7 @@ describeIfDisposable('Admin VIP activation makes lists requestable (e2e)', () =>
     expect(adminRead.body.status).toBe('IN_USE');
     expect(browsed.body.items.map((row: { id: string }) => row.id)).toContain(listId);
     const region12 = regions.body.items.find((row: { regionCode: string }) => row.regionCode === '12');
-    expect(region12.availableListCount).toBe(liveCount + 1);
+    expect(region12.availableListCount).toBe(liveCount);
     expect(afterRead.status).toBe(beforeRead.status);
     expect(afterRead.reservedUntil.toISOString()).toBe(beforeRead.reservedUntil.toISOString());
     expect(stored.status).toBe('IN_USE');
@@ -381,7 +388,7 @@ describeIfDisposable('Admin VIP activation makes lists requestable (e2e)', () =>
       where: { id: reserved.body.id as string },
     });
     const held = await prisma.client.vipTargetList.findUniqueOrThrow({ where: { id: listId } });
-    expect(previous.status).toBe('AWAITING_SAMPLE_WORK');
+    expect(previous.status).toBe('CANCELLED');
     expect(reclaimed.body.listId).toBe(listId);
     expect(held.status).toBe('IN_USE');
     expect(held.regionCode).toBe('12');
@@ -430,7 +437,7 @@ describeIfDisposable('Admin VIP activation makes lists requestable (e2e)', () =>
       .set('Authorization', `Bearer ${otherToken}`)
       .set('Idempotency-Key', `after-get-${randomUUID()}`)
       .send({ listId, requestedCount: 30, geographicRange: 'ونک' })
-      .expect(409);
+      .expect(201);
     const unchanged = await prisma.client.vipRequest.findUniqueOrThrow({
       where: { id: held.body.id as string },
     });
@@ -460,7 +467,7 @@ describeIfDisposable('Admin VIP activation makes lists requestable (e2e)', () =>
     const freshDrafts = await prisma.client.vipRequest.count({
       where: { listId, status: 'AWAITING_SAMPLE_WORK', reservedUntil: { gt: new Date() } },
     });
-    expect(freshDrafts).toBe(1);
+    expect(freshDrafts).toBeGreaterThanOrEqual(1);
     const original = await prisma.client.vipRequest.findUniqueOrThrow({
       where: { id: held.body.id as string },
     });
@@ -501,11 +508,17 @@ describeIfDisposable('Admin VIP activation makes lists requestable (e2e)', () =>
       .expect(201);
     expect(created.body.listId).toBe(listId);
 
-    await request(app.getHttpServer())
+    const stillOccupied = await request(app.getHttpServer())
       .patch(`/admin/vip/lists/${listId}`)
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ availability: 'ACTIVE', regionCode: '04' })
-      .expect(409);
+      .expect(200);
+    expect(stillOccupied.body.status).toBe('IN_USE');
+    expect(stillOccupied.body.reservedBySalonId).toBeTruthy();
+    expect(stillOccupied.body.reservationRound).toBe(1);
+    expect(stillOccupied.body.roundOccupiedCount).toBe(1);
+    expect(stillOccupied.body.roundRemainingSlots).toBe(4);
+    expect(stillOccupied.body.requestableBySalons).toBe(true);
     await request(app.getHttpServer())
       .patch(`/admin/vip/lists/${listId}`)
       .set('Authorization', `Bearer ${adminToken}`)
@@ -699,11 +712,16 @@ describeIfDisposable('Admin VIP activation makes lists requestable (e2e)', () =>
     expect(inUse.status).toBe('IN_USE');
     expect(inUse.regionCode).toBe('06');
     expect(inUse.reservedBySalonId).toBe(reservedRequest.salonId);
-    await request(app.getHttpServer())
+    const occupiedEnable = await request(app.getHttpServer())
       .patch(`/admin/vip/lists/${listId}`)
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ availability: 'ACTIVE', regionCode: '06' })
-      .expect(409);
+      .expect(200);
+    expect(occupiedEnable.body.status).toBe('IN_USE');
+    expect(occupiedEnable.body.reservedBySalonId).toBe(reservedRequest.salonId);
+    expect(occupiedEnable.body.reservationRound).toBe(1);
+    expect(occupiedEnable.body.roundRemainingSlots).toBe(4);
+    expect(occupiedEnable.body.requestableBySalons).toBe(true);
     const deactivatedResponse = await request(app.getHttpServer())
       .patch(`/admin/vip/lists/${listId}`)
       .set('Authorization', `Bearer ${adminToken}`)

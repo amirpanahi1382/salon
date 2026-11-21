@@ -2,6 +2,7 @@ import {
   deriveVipRequestProgress,
   isVipRegionCode,
   parseVipConfirmedOffer,
+  VIP_LIST_ROUND_SLOT_CAPACITY,
   vipRegionName,
   type VipProgressFacts,
   type VipRequestProgress,
@@ -17,6 +18,7 @@ export function toListSummary(
     catalogMembership: VipTargetListSummaryDto['catalogMembership'];
     contactCount: number;
     nextReservationOpen?: boolean;
+    reservationRound?: number;
     reservedBySalonId: string | null;
     reservedBySalon: { name: string } | null;
     createdAt: Date;
@@ -25,6 +27,7 @@ export function toListSummary(
   },
   requestCounts?: { totalRequestCount: number; openRequestCount: number; liveRequestCount?: number },
   effectivelyRequestable = false,
+  round?: { reservationRound: number; roundOccupiedCount: number; roundRemainingSlots: number },
 ): VipTargetListSummaryDto {
   const regionCode = row.regionCode && isVipRegionCode(row.regionCode) ? row.regionCode : null;
   const requestableBySalons = effectivelyRequestable;
@@ -36,7 +39,11 @@ export function toListSummary(
     status: row.status,
     catalogMembership: row.catalogMembership,
     contactCount: row.contactCount,
-    nextReservationOpen: row.nextReservationOpen === true,
+    nextReservationOpen: false,
+    reservationRound: round?.reservationRound ?? row.reservationRound ?? 1,
+    roundSlotCapacity: VIP_LIST_ROUND_SLOT_CAPACITY,
+    roundOccupiedCount: round?.roundOccupiedCount ?? 0,
+    roundRemainingSlots: round?.roundRemainingSlots ?? 5,
     reservedBySalonId: row.reservedBySalonId,
     reservedBySalonName: row.reservedBySalon?.name ?? null,
     createdAt: row.createdAt.toISOString(),

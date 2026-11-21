@@ -31,7 +31,7 @@ const disposableTarget = (() => {
   try {
     const parsed = new URL(databaseUrl);
     const name = decodeURIComponent(parsed.pathname.replace(/^\//, ''));
-    const forbiddenPorts = new Set(['5432', '15442']);
+    const forbiddenPorts = new Set(['5432', '15442', '15490']);
     if (parsed.hostname !== '127.0.0.1' || parsed.port === '' || forbiddenPorts.has(parsed.port)) return null;
     if (name === 'salon' || name === 'salon_preview') return null;
     if (!/^salon_vip_multi_[a-z0-9]+$/.test(name)) return null;
@@ -314,7 +314,7 @@ describeIfDb('VIP multiple requests and rolling quota (e2e)', () => {
     await submitRequest(owner, created.body.id as string);
     const sameList = await createRequest(owner, firstList, 100);
     expect(sameList.status).toBe(409);
-    expect(sameList.body.message).toBe('This salon already has an active request for this VIP list');
+    expect(sameList.body.error).toBe('VIP_LIST_OWN_UNRESOLVED');
     const capability = await request(app.getHttpServer())
       .get('/vip/capability')
       .set('Authorization', `Bearer ${owner.token}`)
@@ -700,8 +700,8 @@ describeIfDb('VIP multiple requests and rolling quota (e2e)', () => {
       createRequest(winner, shared, 30),
       createRequest(loser, shared, 30),
     ]);
-    expect([a.status, b.status].sort()).toEqual([201, 409]);
-    expect(await prisma.client.vipRequest.count({ where: { listId: shared } })).toBe(1);
+    expect([a.status, b.status].sort()).toEqual([201, 201]);
+    expect(await prisma.client.vipRequest.count({ where: { listId: shared } })).toBe(2);
   });
 
   it('keeps entitlement revocation, tenant isolation, and historical non-original reads', async () => {
@@ -954,59 +954,19 @@ describeIfDb('VIP multiple requests and rolling quota (e2e)', () => {
       .query({ regionCode: '03', packageGroup: 30 })
       .set('Authorization', `Bearer ${second.token}`)
       .expect(200);
-    expect(before.body.items.map((item: { id: string }) => item.id)).not.toContain(shared);
-    const reopenKey = `reopen-${randomUUID()}`;
-    const opened = await request(app.getHttpServer())
-      .post(`/admin/vip/lists/${shared}/reopen`)
-      .set('Authorization', `Bearer ${adminToken}`)
-      .set('Idempotency-Key', reopenKey)
-      .expect(200);
-    expect(opened.body.nextReservationOpen).toBe(true);
-    expect(opened.body.liveRequestCount).toBe(1);
-    const replayedOpen = await request(app.getHttpServer())
-      .post(`/admin/vip/lists/${shared}/reopen`)
-      .set('Authorization', `Bearer ${adminToken}`)
-      .set('Idempotency-Key', reopenKey)
-      .expect(200);
-    expect(replayedOpen.body.nextReservationOpen).toBe(true);
-    expect(await prisma.client.auditLog.count({
-      where: { resourceId: shared, action: 'VIP_LIST_REOPENED', result: 'SUCCESS' },
-    })).toBe(1);
+    expect(before.body.items.map((item: { id: string }) => item.id)).toContain(shared);
     const ownView = await request(app.getHttpServer())
       .get('/vip/lists')
       .query({ regionCode: '03', packageGroup: 30 })
       .set('Authorization', `Bearer ${first.token}`)
       .expect(200);
     expect(ownView.body.items.map((item: { id: string }) => item.id)).not.toContain(shared);
-    const [left, right] = await Promise.all([
-      createRequest(second, shared, 30),
-      createRequest(third, shared, 30),
-    ]);
-    expect([left.status, right.status].sort()).toEqual([201, 409]);
-    const winner = [left, right].find((item) => item.status === 201)!;
-    const loser = [left, right].find((item) => item.status === 409)!;
-    expect(await prisma.client.vipRequest.findUniqueOrThrow({
-      where: { id: held.body.id as string },
-    })).toMatchObject({ status: 'AWAITING_SAMPLE_WORK', requestedCount: 30 });
+    const secondHeld = await createRequest(second, shared, 30);
+    expect(secondHeld.status).toBe(201);
     expect(await prisma.client.vipTargetList.findUniqueOrThrow({ where: { id: shared } })).toMatchObject({
       nextReservationOpen: false,
       status: 'IN_USE',
     });
-    const openedAgain = await request(app.getHttpServer())
-      .post(`/admin/vip/lists/${shared}/reopen`)
-      .set('Authorization', `Bearer ${adminToken}`)
-      .set('Idempotency-Key', `reopen-again-${randomUUID()}`)
-      .expect(200);
-    expect(openedAgain.body.nextReservationOpen).toBe(true);
-    const thirdTry = await createRequest(
-      loser === left ? second : third,
-      shared,
-      30,
-    );
-    expect(thirdTry.status).toBe(201);
-    expect(await prisma.client.vipRequest.count({
-      where: { listId: shared, status: 'AWAITING_SAMPLE_WORK' },
-    })).toBe(3);
     await prisma.client.vipRequest.update({
       where: { id: held.body.id as string },
       data: { reservedUntil: new Date(Date.now() - 60_000) },
@@ -1018,9 +978,6 @@ describeIfDb('VIP multiple requests and rolling quota (e2e)', () => {
     expect((await prisma.client.vipRequest.findUniqueOrThrow({
       where: { id: held.body.id as string },
     })).status).toBe('CANCELLED');
-    expect(await prisma.client.vipRequest.count({
-      where: { listId: shared, status: 'AWAITING_SAMPLE_WORK' },
-    })).toBe(2);
     expect((await prisma.client.vipTargetList.findUniqueOrThrow({ where: { id: shared } })).status).toBe('IN_USE');
     await request(app.getHttpServer())
       .patch(`/admin/vip/lists/${shared}`)
@@ -1029,13 +986,13 @@ describeIfDb('VIP multiple requests and rolling quota (e2e)', () => {
       .expect(200);
     expect(await prisma.client.vipRequest.count({
       where: { listId: shared, status: 'AWAITING_SAMPLE_WORK' },
-    })).toBe(2);
+    })).toBe(1);
     await request(app.getHttpServer())
       .post(`/admin/vip/lists/${shared}/reopen`)
       .set('Authorization', `Bearer ${adminToken}`)
       .set('Idempotency-Key', `reopen-inactive-${randomUUID()}`)
       .expect(409);
-    expect(winner.body.requestedCount).toBe(30);
+    expect(secondHeld.body.requestedCount).toBe(30);
   });
 
   it('deactivates an occupied list, restores it, and reopens one reservation', async () => {
@@ -1049,12 +1006,6 @@ describeIfDb('VIP multiple requests and rolling quota (e2e)', () => {
     const held = await createRequest(first, listId, 30);
     expect(held.status).toBe(201);
     await submitRequest(first, held.body.id as string);
-    const opened = await request(app.getHttpServer())
-      .post(`/admin/vip/lists/${listId}/reopen`)
-      .set('Authorization', `Bearer ${adminToken}`)
-      .set('Idempotency-Key', `round-open-${randomUUID()}`)
-      .expect(200);
-    expect(opened.body.nextReservationOpen).toBe(true);
     const secondHeld = await createRequest(second, listId, 30);
     expect(secondHeld.status).toBe(201);
     const before = {
@@ -1120,19 +1071,10 @@ describeIfDb('VIP multiple requests and rolling quota (e2e)', () => {
     expect(activated.body).toMatchObject({
       status: 'ACTIVE',
       nextReservationOpen: false,
-      requestableBySalons: false,
+      requestableBySalons: true,
       liveRequestCount: 2,
     });
-    const stillBlocked = await createRequest(third, listId, 30);
-    expect(stillBlocked.status).toBe(409);
     expect(await prisma.client.vipRequest.count({ where: { listId } })).toBe(2);
-
-    const reopened = await request(app.getHttpServer())
-      .post(`/admin/vip/lists/${listId}/reopen`)
-      .set('Authorization', `Bearer ${adminToken}`)
-      .set('Idempotency-Key', `round-reopen-${randomUUID()}`)
-      .expect(200);
-    expect(reopened.body.nextReservationOpen).toBe(true);
     const admitted = await createRequest(third, listId, 30);
     expect(admitted.status).toBe(201);
     expect(admitted.body.requestedCount).toBe(30);
@@ -1333,11 +1275,6 @@ describeIfDb('VIP multiple requests and rolling quota (e2e)', () => {
     const firstKey = `expire-first-${randomUUID()}`;
     const created = await createRequest(owner, listId, 30, firstKey);
     expect(created.status).toBe(201);
-    await request(app.getHttpServer())
-      .post(`/admin/vip/lists/${listId}/reopen`)
-      .set('Authorization', `Bearer ${adminToken}`)
-      .set('Idempotency-Key', `expire-open-${randomUUID()}`)
-      .expect(200);
     const otherHeld = await createRequest(other, listId, 30);
     expect(otherHeld.status).toBe(201);
     const boundary = new Date();

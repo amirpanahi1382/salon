@@ -4,6 +4,10 @@ export type AppErrorCode =
   | 'FORBIDDEN'
   | 'NOT_FOUND'
   | 'CONFLICT'
+  | 'VIP_LIST_OWN_UNRESOLVED'
+  | 'VIP_LIST_CAPACITY_EXHAUSTED'
+  | 'VIP_LIST_ADMIN_DISABLED'
+  | 'VIP_LIST_UNAVAILABLE'
   | 'CUSTOMER_PHONE_EXISTS'
   | 'MESSAGE_DAILY_LIMIT_REACHED'
   | 'GLOBAL_MESSAGE_STOP'
@@ -82,8 +86,8 @@ export class NotFoundError extends AppError {
 }
 
 export class ConflictError extends AppError {
-  constructor(message: string, details?: unknown) {
-    super('CONFLICT', message, 409, details);
+  constructor(message: string, details?: unknown, code: AppErrorCode = 'CONFLICT') {
+    super(code, message, 409, details);
     this.name = 'ConflictError';
   }
 }

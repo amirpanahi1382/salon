@@ -189,14 +189,16 @@ describeIfDisposable('VIP outreach constraints', () => {
     ).rejects.toThrow(/vip_requests_count_positive/);
   });
 
-  it('allows two salons one active request each on the same list and rejects a second active request from the same salon', async () => {
+  it('allows two salons one request each and rejects a second round slot from the same salon', async () => {
     const a = await seedAdminAndSalon();
     const b = await seedAdminAndSalon();
     const listId = await createList(a.adminId);
     const now = new Date();
+    const firstId = randomUUID();
+    const secondSameSalonId = randomUUID();
     await prisma.vipRequest.create({
       data: {
-        id: randomUUID(),
+        id: firstId,
         salonId: a.salonId,
         listId,
         createdByUserId: a.userId,
@@ -221,21 +223,40 @@ describeIfDisposable('VIP outreach constraints', () => {
         updatedAt: now,
       },
     });
+    await prisma.vipRequest.create({
+      data: {
+        id: secondSameSalonId,
+        salonId: a.salonId,
+        listId,
+        createdByUserId: a.userId,
+        requestedCount: 10,
+        geographicRange: 'ونک',
+        status: 'SUBMITTED',
+        reservedUntil: now,
+        submittedAt: now,
+        updatedAt: now,
+      },
+    });
+    await prisma.vipListRoundSlot.create({
+      data: {
+        listId,
+        reservationRound: 1,
+        slotNo: 1,
+        salonId: a.salonId,
+        vipRequestId: firstId,
+      },
+    });
     await expect(
-      prisma.vipRequest.create({
+      prisma.vipListRoundSlot.create({
         data: {
-          id: randomUUID(),
-          salonId: a.salonId,
           listId,
-          createdByUserId: a.userId,
-          requestedCount: 10,
-          geographicRange: 'ونک',
-          status: 'AWAITING_SAMPLE_WORK',
-          reservedUntil: now,
-          updatedAt: now,
+          reservationRound: 1,
+          slotNo: 2,
+          salonId: a.salonId,
+          vipRequestId: secondSameSalonId,
         },
       }),
-    ).rejects.toThrow(/vip_requests_one_active_per_salon_list|Unique constraint failed/);
+    ).rejects.toThrow(/vip_list_round_slots_salon_round_key|Unique constraint failed/);
   });
 
   it('rejects more than 3 sample-work positions', async () => {

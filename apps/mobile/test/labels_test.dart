@@ -116,6 +116,12 @@ void main() {
       localizeUserFacingMessage('This VIP list is not available'),
       AppStrings.vipListUnavailable,
     );
+    expect(AppStrings.vipListUnavailable, 'فهرست را به‌روز کنید.');
+    expect(AppStrings.vipListOwnUnresolved, 'این لیست درخواست باز دارد.');
+    expect(AppStrings.vipListCapacityExhausted, 'ظرفیت این لیست تکمیل شد.');
+    expect(AppStrings.vipListAdminDisabled, 'این لیست در دسترس نیست.');
+    expect(AppStrings.adminVipReopenList, 'دور جدید');
+    expect(AppStrings.adminVipCapacityFull, 'ظرفیت تکمیل');
     expect(
       localizeUserFacingMessage(
         'An open visit intention already exists for this customer',

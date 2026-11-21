@@ -40,7 +40,11 @@ import {
 } from '../infrastructure/http/idempotency';
 import { decodeCursor, encodeCursor, parseCursorInstant, parseCursorUuid, toListPage } from '../infrastructure/http/list-page';
 import type { ListAdminSalonsQueryDto } from './vip.dto';
-import { loadEffectivelyRequestableListIds, loadVipListRequestCounts } from './vip-list-request-counts';
+import {
+  loadEffectivelyRequestableListIds,
+  loadVipListRequestCounts,
+  loadVipListRoundFacts,
+} from './vip-list-request-counts';
 import { mapPrismaError } from '../infrastructure/http/prisma-error';
 import { OBJECT_STORAGE, type ObjectStorage } from '../infrastructure/storage/object-storage';
 import { Inject } from '@nestjs/common';
@@ -265,8 +269,11 @@ export class ImportVipListUseCase {
     if (!list) {
       throw new NotFoundError('VIP list not found');
     }
-    const requestable = await loadEffectivelyRequestableListIds(this.prisma, [id], new Date());
-    return toListSummary(list, undefined, requestable.has(id));
+    const [requestable, rounds] = await Promise.all([
+      loadEffectivelyRequestableListIds(this.prisma, [id], now),
+      loadVipListRoundFacts(this.prisma, [id], now),
+    ]);
+    return toListSummary(list, undefined, requestable.has(id), rounds.get(id));
   }
 }
 
@@ -297,12 +304,15 @@ export class ListVipListsUseCase {
     );
     const now = new Date();
     const pageIds = page.items.map((row) => row.id);
-    const [requestCounts, requestable] = await Promise.all([
+    const [requestCounts, requestable, rounds] = await Promise.all([
       loadVipListRequestCounts(this.prisma, pageIds),
       loadEffectivelyRequestableListIds(this.prisma, pageIds, now),
+      loadVipListRoundFacts(this.prisma, pageIds, now),
     ]);
     return {
-      items: page.items.map((row) => toListSummary(row, requestCounts.get(row.id), requestable.has(row.id))),
+      items: page.items.map((row) =>
+        toListSummary(row, requestCounts.get(row.id), requestable.has(row.id), rounds.get(row.id)),
+      ),
       hasMore: page.hasMore,
       nextCursor: page.nextCursor,
       listCount: summary.listCount,
@@ -350,7 +360,7 @@ export class GetVipListUseCase {
       throw new NotFoundError('VIP list not found');
     }
     const now = new Date();
-    const [latestRequest, requestCounts, requestable] = await Promise.all([
+    const [latestRequest, requestCounts, requestable, rounds] = await Promise.all([
       this.vip.client.vipRequest.findFirst({
         where: { listId: id, status: { not: 'CANCELLED' } },
         orderBy: { createdAt: 'desc' },
@@ -362,9 +372,10 @@ export class GetVipListUseCase {
       }),
       loadVipListRequestCounts(this.prisma, [id]),
       loadEffectivelyRequestableListIds(this.prisma, [id], now),
+      loadVipListRoundFacts(this.prisma, [id], now),
     ]);
     return {
-      ...toListSummary(list, requestCounts.get(id), requestable.has(id)),
+      ...toListSummary(list, requestCounts.get(id), requestable.has(id), rounds.get(id)),
       request: latestRequest
         ? await presentSalonVipRequest(this.vip, latestRequest.salonId, latestRequest, now)
         : null,
@@ -387,11 +398,6 @@ async function activationWriteConflict(
   if (!current) {
     return new NotFoundError('VIP list not found');
   }
-  if (current.status === 'IN_USE' || current.reservedBySalonId) {
-    return new ConflictError(
-      'An in-use VIP list cannot be activated again until it is released',
-    );
-  }
   if (
     current.regionCode &&
     isVipRegionCode(current.regionCode) &&
@@ -413,13 +419,6 @@ async function availabilityConflict(
   });
   if (!current) {
     return new NotFoundError('VIP list not found');
-  }
-  if (current.status === 'IN_USE' || current.reservedBySalonId) {
-    return new ConflictError(
-      availability === 'ACTIVE'
-        ? 'An in-use VIP list cannot be activated again until it is released'
-        : 'An in-use VIP list cannot be deactivated',
-    );
   }
   return new ConflictError(
     availability === 'ACTIVE' ? 'This VIP list cannot be activated' : 'This VIP list cannot be deactivated',
@@ -515,11 +514,12 @@ export class PatchVipListUseCase {
     if (!list) {
       throw new NotFoundError('VIP list not found');
     }
-    const [requestCounts, requestable] = await Promise.all([
+    const [requestCounts, requestable, rounds] = await Promise.all([
       loadVipListRequestCounts(this.prisma, [id]),
       loadEffectivelyRequestableListIds(this.prisma, [id], now),
+      loadVipListRoundFacts(this.prisma, [id], now),
     ]);
-    return toListSummary(list, requestCounts.get(id), requestable.has(id));
+    return toListSummary(list, requestCounts.get(id), requestable.has(id), rounds.get(id));
   }
 }
 
@@ -552,47 +552,25 @@ export class ReopenVipListUseCase {
           where: { id },
           select: {
             status: true,
-            nextReservationOpen: true,
             catalogMembership: true,
             regionCode: true,
+            reservationRound: true,
           },
         });
         if (!current) {
           throw new NotFoundError('VIP list not found');
         }
-        const occupied = await tx.$queryRaw<Array<{ id: string }>>`
-          SELECT id FROM vip_target_lists
-          WHERE id = ${id}::uuid
-            AND next_reservation_open = true
-            AND catalog_membership = 'ORIGINAL_TEHRAN'::"VipCatalogMembership"
-            AND region_code IN (${Prisma.join(['01','02','03','04','05','06','07','08','09','10','11','12','13','14'].map((code) => Prisma.sql`${code}`))})
-            AND status IN ('ACTIVE'::"VipTargetListStatus", 'IN_USE'::"VipTargetListStatus")
-            AND EXISTS (
-              SELECT 1 FROM vip_requests live
-              WHERE live.list_id = ${id}::uuid
-                AND (
-                  live.status IN (
-                    'SUBMITTED'::"VipRequestStatus",
-                    'MANUAL_QUEUED'::"VipRequestStatus",
-                    'BALE_NOT_IMPLEMENTED'::"VipRequestStatus"
-                  )
-                  OR (
-                    live.status = 'AWAITING_SAMPLE_WORK'::"VipRequestStatus"
-                    AND live.reserved_until >= ${now}
-                  )
-                )
-            )
-        `;
-        if (occupied.length === 1 && current.nextReservationOpen) {
-          return;
-        }
         throw new ConflictError('This VIP list cannot be opened for another reservation');
       }
+      const opened = await tx.vipTargetList.findUnique({
+        where: { id },
+        select: { reservationRound: true },
+      });
       await tx.outboxEvent.create({
         data: {
           id: createId(),
           eventType: DOMAIN_EVENT_TYPES.VipListReopened,
-          payload: { listId: id },
+          payload: { listId: id, reservationRound: opened?.reservationRound },
         },
       });
       await tx.auditLog.create({
@@ -603,7 +581,7 @@ export class ReopenVipListUseCase {
           resource: 'vip_target_list',
           resourceId: id,
           result: 'SUCCESS',
-          metadata: { listId: id },
+          metadata: { listId: id, reservationRound: opened?.reservationRound },
         },
       });
     });
@@ -611,11 +589,12 @@ export class ReopenVipListUseCase {
     if (!list) {
       throw new NotFoundError('VIP list not found');
     }
-    const [requestCounts, requestable] = await Promise.all([
+    const [requestCounts, requestable, rounds] = await Promise.all([
       loadVipListRequestCounts(this.prisma, [id], now),
       loadEffectivelyRequestableListIds(this.prisma, [id], now),
+      loadVipListRoundFacts(this.prisma, [id], now),
     ]);
-    return toListSummary(list, requestCounts.get(id), requestable.has(id));
+    return toListSummary(list, requestCounts.get(id), requestable.has(id), rounds.get(id));
   }
 }
 
@@ -976,13 +955,22 @@ export class CreateVipRequestUseCase {
           await this.vip.expireStaleReservations(now, tx, {
             mode: 'salon',
             salonId: principal.tenantId,
+            listId: body.listId,
           });
+          await this.vip.releaseResolvedRoundSlots(tx, now, body.listId);
           const entitlement = await this.vip.lockEntitlement(tx, principal.tenantId);
           if (!entitlement || entitlement.revoked_at) {
             throw new ForbiddenError('VIP outreach is not enabled for this salon');
           }
           const draft = await this.vip.findActiveDraft(principal.tenantId, tx);
           if (draft) {
+            if (draft.listId === body.listId) {
+              throw new ConflictError(
+                'This salon already has an unresolved request for this VIP list',
+                undefined,
+                'VIP_LIST_OWN_UNRESOLVED',
+              );
+            }
             throw new ConflictError(VIP_ONE_ACTIVE_DRAFT_MESSAGE);
           }
           const used = await this.vip.quotaUsedSince(
@@ -1029,30 +1017,6 @@ export class CreateVipRequestUseCase {
               await lockPlatformMessagePhone(tx, row.phoneNumber);
             }
           }
-          const reserved = await this.vip.tryReserveList(tx, body.listId, principal.tenantId, now);
-          if (!reserved) {
-            const ownLive = await tx.$queryRaw<Array<{ id: string }>>`
-              SELECT id FROM vip_requests
-              WHERE list_id = ${body.listId}::uuid
-                AND salon_id = ${principal.tenantId}::uuid
-                AND (
-                  status IN (
-                    'SUBMITTED'::"VipRequestStatus",
-                    'MANUAL_QUEUED'::"VipRequestStatus",
-                    'BALE_NOT_IMPLEMENTED'::"VipRequestStatus"
-                  )
-                  OR (
-                    status = 'AWAITING_SAMPLE_WORK'::"VipRequestStatus"
-                    AND reserved_until >= ${now}
-                  )
-                )
-              LIMIT 1
-            `;
-            if (ownLive.length === 1) {
-              throw new ConflictError('This salon already has an active request for this VIP list');
-            }
-            throw new ConflictError('This VIP list is not available');
-          }
           const contacts = await this.vip.selectContacts(body.listId, effective, tx);
           if (contacts.length !== effective) {
             throw new ConflictError('Confirm the refreshed VIP recipient quantity.', {
@@ -1061,6 +1025,13 @@ export class CreateVipRequestUseCase {
               effectiveRequestedCount: Math.min(contacts.length, remaining),
               packageGroup: nearestVipPackageGroup(contacts.length),
             });
+          }
+          const lockedList = await tx.vipTargetList.findUnique({
+            where: { id: body.listId },
+            select: { reservationRound: true, status: true },
+          });
+          if (!lockedList) {
+            throw new ConflictError('This VIP list is not available', undefined, 'VIP_LIST_UNAVAILABLE');
           }
           await tx.vipRequest.create({
             data: {
@@ -1073,6 +1044,7 @@ export class CreateVipRequestUseCase {
               discountKind: offer?.kind ?? null,
               discountAmount: offer ? offer.amount : null,
               status: 'AWAITING_SAMPLE_WORK',
+              reservationRound: lockedList.reservationRound,
               reservedUntil: this.vip.reservationDeadline(now),
               updatedAt: now,
               recipients: {
@@ -1087,6 +1059,44 @@ export class CreateVipRequestUseCase {
               },
             },
           });
+          const reserved = await this.vip.tryReserveList(
+            tx,
+            body.listId,
+            principal.tenantId,
+            requestId,
+            now,
+          );
+          if (!reserved) {
+            const reason = await this.vip.classifyReserveFailure(
+              tx,
+              body.listId,
+              principal.tenantId,
+              now,
+              requestId,
+            );
+            if (reason === 'OWN_UNRESOLVED') {
+              throw new ConflictError(
+                'This salon already has an unresolved request for this VIP list',
+                undefined,
+                'VIP_LIST_OWN_UNRESOLVED',
+              );
+            }
+            if (reason === 'CAPACITY') {
+              throw new ConflictError(
+                'This VIP list has no remaining reservation slots',
+                undefined,
+                'VIP_LIST_CAPACITY_EXHAUSTED',
+              );
+            }
+            if (reason === 'ADMIN_DISABLED') {
+              throw new ConflictError(
+                'This VIP list is disabled',
+                undefined,
+                'VIP_LIST_ADMIN_DISABLED',
+              );
+            }
+            throw new ConflictError('This VIP list is not available', undefined, 'VIP_LIST_UNAVAILABLE');
+          }
           await tx.outboxEvent.create({
             data: {
               id: createId(),
@@ -1122,7 +1132,7 @@ export class CreateVipRequestUseCase {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2010') {
         const meta = JSON.stringify(error.meta ?? {});
         if (meta.includes('40P01')) {
-          throw new ConflictError('This VIP list is not available');
+          throw new ConflictError('This VIP list is not available', undefined, 'VIP_LIST_UNAVAILABLE');
         }
       }
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
@@ -1130,9 +1140,41 @@ export class CreateVipRequestUseCase {
         if (target.includes('vip_requests_one_awaiting_draft_per_salon')) {
           throw new ConflictError(VIP_ONE_ACTIVE_DRAFT_MESSAGE);
         }
-        if (target.includes('vip_requests_one_active_per_salon_list')) {
-          throw new ConflictError('This salon already has an active request for this VIP list');
+        if (target.includes('vip_list_round_slots')) {
+          throw new ConflictError(
+            'This VIP list has no remaining reservation slots',
+            undefined,
+            'VIP_LIST_CAPACITY_EXHAUSTED',
+          );
         }
+        const reason = await this.vip.classifyReserveFailure(
+          this.prisma.client,
+          body.listId,
+          principal.tenantId,
+          now,
+        );
+        if (reason === 'OWN_UNRESOLVED') {
+          throw new ConflictError(
+            'This salon already has an unresolved request for this VIP list',
+            undefined,
+            'VIP_LIST_OWN_UNRESOLVED',
+          );
+        }
+        if (reason === 'CAPACITY') {
+          throw new ConflictError(
+            'This VIP list has no remaining reservation slots',
+            undefined,
+            'VIP_LIST_CAPACITY_EXHAUSTED',
+          );
+        }
+        if (reason === 'ADMIN_DISABLED') {
+          throw new ConflictError(
+            'This VIP list is disabled',
+            undefined,
+            'VIP_LIST_ADMIN_DISABLED',
+          );
+        }
+        throw new ConflictError('This VIP list is not available', undefined, 'VIP_LIST_UNAVAILABLE');
       }
       const mapped = mapPrismaError(error);
       if (mapped) {

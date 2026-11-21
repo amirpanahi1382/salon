@@ -181,6 +181,7 @@ model Salon {
   vipEntitlement      VipSalonEntitlement?
   vipRequests         VipRequest[]
   reservedVipLists    VipTargetList[]      @relation("VipListReservedBySalon")
+  vipListRoundSlots   VipListRoundSlot[]
   returnCommitments   ReturnCommitment[]
   supportConversations SupportConversation[]
   visitIntentions      VisitIntention[]
@@ -648,12 +649,15 @@ model VipTargetList {
   reservedBySalonId  String?             @map("reserved_by_salon_id") @db.Uuid
   reservedBySalon    Salon?              @relation("VipListReservedBySalon", fields: [reservedBySalonId], references: [id], onDelete: Restrict)
   reservedAt         DateTime?           @map("reserved_at") @db.Timestamptz(3)
-  /// One explicit admin grant for the next reservation while other requests remain.
+  /// Legacy one-slot grant. New capacity uses reservationRound + vip_list_round_slots.
   nextReservationOpen Boolean            @default(false) @map("next_reservation_open")
+  /// Current reservation round. Admin open-round increments this without erasing history.
+  reservationRound   Int                 @default(1) @map("reservation_round")
   createdAt          DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt          DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
   contacts           VipTargetContact[]
   requests           VipRequest[]
+  roundSlots         VipListRoundSlot[]
 
   @@index([status, createdAt, id])
   @@index([catalogMembership, createdAt, id])
@@ -709,6 +713,8 @@ model VipRequest {
   discountAmount     Decimal?          @map("discount_amount") @db.Decimal(19, 2)
   status             VipRequestStatus
   reservedUntil      DateTime          @map("reserved_until") @db.Timestamptz(3)
+  /// Round that consumed a list slot at reservation time.
+  reservationRound   Int               @default(1) @map("reservation_round")
   submittedAt        DateTime?         @map("submitted_at") @db.Timestamptz(3)
   cancelledAt        DateTime?         @map("cancelled_at") @db.Timestamptz(3)
   createdAt          DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
@@ -718,6 +724,7 @@ model VipRequest {
   sampleWorkUploads  VipSampleWorkUpload[]
   messageRequests    MessageRequest[]
   visitIntentions    VisitIntention[]
+  roundSlot          VipListRoundSlot?
 
   @@unique([id, salonId])
   @@index([salonId, createdAt, id])
@@ -727,7 +734,31 @@ model VipRequest {
   // (migration 20261007140000). Prisma cannot model a partial unique index.
   // A schema diff that omits it is not drift to drop: the index is the one-draft guarantee.
   // It includes only AWAITING_SAMPLE_WORK. Submitted and processing requests are unaffected.
+  // Occupying uniqueness is vip_list_round_slots (list, round, salon).
+  // Migration 20261121133000 drops vip_requests_one_occupying_per_salon_list_round
+  // so a resolved request does not block same-salon reuse in the same round.
   @@map("vip_requests")
+}
+
+/// One accepted or provisional reservation slot in a list round. At most five
+/// rows per (list, round). An expired unsubmitted draft's row is deleted on
+/// mutating expiry, not on GET.
+model VipListRoundSlot {
+  listId            String        @map("list_id") @db.Uuid
+  list              VipTargetList @relation(fields: [listId], references: [id], onDelete: Restrict)
+  reservationRound  Int           @map("reservation_round")
+  slotNo            Int           @map("slot_no")
+  salonId           String        @map("salon_id") @db.Uuid
+  salon             Salon         @relation(fields: [salonId], references: [id], onDelete: Restrict)
+  vipRequestId      String        @unique @map("vip_request_id") @db.Uuid
+  vipRequest        VipRequest    @relation(fields: [vipRequestId, salonId], references: [id, salonId], onDelete: Restrict)
+  createdAt         DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@id([listId, reservationRound, slotNo])
+  @@unique([listId, reservationRound, salonId])
+  @@unique([vipRequestId, salonId])
+  @@index([listId, reservationRound])
+  @@map("vip_list_round_slots")
 }
 
 /// Immutable snapshot of a selected VIP target at request time.
