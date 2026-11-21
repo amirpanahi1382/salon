@@ -11,6 +11,7 @@ import 'package:salon_mobile/core/storage/session_store.dart';
 import 'package:salon_mobile/features/vip/salon_vip_section.dart';
 import 'package:salon_mobile/features/vip/vip_progress_card.dart';
 import 'package:salon_mobile/features/vip/vip_progress_copy.dart';
+import 'package:salon_mobile/features/vip/vip_request_summary.dart';
 import 'package:salon_mobile/shared/labels.dart';
 import 'package:salon_mobile/shared/models/models.dart';
 
@@ -56,6 +57,8 @@ VipRequest _request({
   String listName = 'VIP-01-01',
   int requestedCount = 30,
   List<VipSampleWork> sampleWorks = const [],
+  DateTime? createdAt,
+  DateTime? submittedAt,
 }) {
   return VipRequest(
     id: id,
@@ -68,6 +71,28 @@ VipRequest _request({
     status: status,
     sampleWorks: sampleWorks,
     progress: progress,
+    createdAt: createdAt,
+    submittedAt: submittedAt,
+  );
+}
+
+VipRequestHistoryItem _historyItem(
+  VipRequest request, {
+  int manualRecordedSendCount = 0,
+  int? reportedIntentionCount = 0,
+  int? visitedRecipientCount = 0,
+  String metricsAvailability = 'AVAILABLE',
+}) {
+  return VipRequestHistoryItem(
+    request: request,
+    recordedSendCount: manualRecordedSendCount,
+    manualRecordedSendCount: manualRecordedSendCount,
+    stillQueuedOrInProgressCount: 0,
+    reportedIntentionCount: reportedIntentionCount,
+    visitedRecipientCount: visitedRecipientCount,
+    intentionRecipientCount: reportedIntentionCount,
+    recipientDenominator: request.requestedCount,
+    metricsAvailability: metricsAvailability,
   );
 }
 
@@ -76,17 +101,33 @@ class _ScriptedVipRepository extends VipRepository {
     this.capabilities, {
     this.submitResult,
     this.submitError,
+    this.historyItems = const [],
+    this.updateHistoryOnSubmit = true,
   }) : super(_client());
 
   final List<Future<VipCapability>> capabilities;
   final VipRequest? submitResult;
   final Object? submitError;
+  List<VipRequestHistoryItem> historyItems;
+  final bool updateHistoryOnSubmit;
   int index = 0;
   int submitCalls = 0;
+  int requestHistoryCalls = 0;
 
   @override
   Future<VipCapability> capability() {
     return capabilities[index++];
+  }
+
+  @override
+  Future<VipRequestHistoryPage> requestHistory({String? cursor}) async {
+    requestHistoryCalls += 1;
+    return VipRequestHistoryPage(
+      entitled: true,
+      explanation: '',
+      items: historyItems,
+      hasMore: false,
+    );
   }
 
   @override
@@ -98,7 +139,15 @@ class _ScriptedVipRepository extends VipRepository {
     if (submitError != null) {
       throw submitError!;
     }
-    return submitResult!;
+    final submitted = submitResult!;
+    if (updateHistoryOnSubmit) {
+      historyItems = [
+        _historyItem(submitted),
+        for (final item in historyItems)
+          if (item.request.id != submitted.id) item,
+      ];
+    }
+    return submitted;
   }
 }
 
@@ -285,9 +334,11 @@ void main() {
       ]),
     );
     expect(find.text('در انتظار ارسال نمونه‌کارهای شما'), findsOneWidget);
-    expect(find.text('${AppStrings.vipListNameLabel}: ${draft.listName}'), findsOneWidget);
+    expect(find.text(draft.listName), findsOneWidget);
+    expect(find.text('${AppStrings.vipHistoryRequested}: 0'), findsOneWidget);
     expect(find.text(AppStrings.vipRequestedRecipientCount(draft.requestedCount)), findsOneWidget);
-    expect(find.textContaining('نه اینکه پیامی در حال ارسال باشد'), findsOneWidget);
+    expect(find.text(AppStrings.vipSampleProgress(0)), findsOneWidget);
+    expect(find.textContaining('نه اینکه پیامی در حال ارسال باشد'), findsNothing);
     expect(find.text(AppStrings.vipAddSample), findsOneWidget);
     expect(find.text(AppStrings.vipSubmit), findsOneWidget);
   });
@@ -299,68 +350,80 @@ void main() {
       id: 'submitted',
       status: 'SUBMITTED',
       listName: 'فهرست ثبت',
-      progress: _progress(
-        headline: 'درخواست شما ثبت شد، به محض تأیید ادمین ارسال می‌شود',
-        explanation: 'درخواست منتظر تأیید ادمین است.',
-        nextActor: 'PLATFORM_ADMIN',
-        nextActorLabel: 'ادامهٔ کار با تأیید ادمین است',
-        countLines: const [
-          VipProgressCountLine(key: 'notYetQueued', label: 'هنوز به صف پیام نرسیده', count: 30),
-        ],
-      ),
+      requestedCount: 30,
+      createdAt: DateTime.utc(2026, 11, 21, 12),
+      submittedAt: DateTime.utc(2026, 11, 21, 12, 1),
     );
     final manual = _request(
       id: 'manual',
       status: 'MANUAL_QUEUED',
       listName: 'فهرست دستی',
-      progress: _progress(
-        headline: 'درخواست شما در حال رسیدگی است؛ وضعیت هر گیرنده را پایین ببینید',
-        explanation: 'کل درخواست ارسال‌شده نیست.',
-        nextActor: 'PLATFORM_ADMIN',
-        nextActorLabel: 'ادامهٔ کار با تأیید ادمین است',
-        countLines: const [
-          VipProgressCountLine(key: 'durablySkipped', label: 'برای این درخواست دیگر پیام نمی‌گیرد', count: 2),
-        ],
-        activeStopNote: 'توقف فعال جدا از ارسال‌نشدن همین درخواست است.',
-      ),
+      requestedCount: 30,
+      createdAt: DateTime.utc(2026, 11, 20, 12),
+      submittedAt: DateTime.utc(2026, 11, 20, 12, 1),
     );
     final cancelled = _request(
       id: 'cancelled',
       status: 'CANCELLED',
       listName: 'فهرست لغوشده',
-      progress: _progress(
-        headline: 'اتمام مهلت ارسال درخواست',
-        explanation: 'این پایان مهلت پیش‌نویس است، نه ناموفق بودن یک ارسال.',
-        nextActor: 'NONE',
-        nextActorLabel: 'برای این پیش‌نویس کار دیگری نمانده است',
-      ),
+      createdAt: DateTime.utc(2026, 11, 19, 12),
     );
     await _pumpSalon(
       tester,
-      _ScriptedVipRepository([
-        Future.value(VipCapability(
-          entitled: true,
-          remainingQuota: 400,
-          usedQuota: 100,
-          inProgressRequests: [submitted, manual],
-          latestCancelledRequest: cancelled,
-        )),
-      ]),
+      _ScriptedVipRepository(
+        [
+          Future.value(VipCapability(
+            entitled: true,
+            remainingQuota: 400,
+            usedQuota: 100,
+            inProgressRequests: [submitted, manual],
+            latestCancelledRequest: cancelled,
+          )),
+        ],
+        historyItems: [
+          _historyItem(submitted, reportedIntentionCount: 1, visitedRecipientCount: 0),
+          _historyItem(manual, manualRecordedSendCount: 2),
+          _historyItem(
+            cancelled,
+            reportedIntentionCount: null,
+            visitedRecipientCount: null,
+            metricsAvailability: 'UNAVAILABLE',
+          ),
+        ],
+      ),
     );
-    expect(find.text('درخواست شما ثبت شد، به محض تأیید ادمین ارسال می‌شود'), findsOneWidget);
-    expect(find.text('درخواست شما در حال رسیدگی است؛ وضعیت هر گیرنده را پایین ببینید'), findsOneWidget);
-    expect(find.text('هنوز به صف پیام نرسیده: ۳۰'), findsOneWidget);
-    expect(find.text('برای این درخواست دیگر پیام نمی‌گیرد: ۲'), findsOneWidget);
-    expect(find.textContaining('توقف فعال جدا'), findsOneWidget);
-    expect(find.text('اتمام مهلت ارسال درخواست'), findsOneWidget);
-    expect(find.text('${AppStrings.vipListNameLabel}: فهرست ثبت'), findsOneWidget);
-    expect(find.text('${AppStrings.vipListNameLabel}: فهرست دستی'), findsOneWidget);
-    expect(find.text('${AppStrings.vipListNameLabel}: فهرست لغوشده'), findsOneWidget);
-    expect(find.text('رسیدگی دستی شروع شده'), findsNothing);
-    expect(find.text('ارسال با بله در دسترس نیست'), findsNothing);
+    expect(find.text('فهرست ثبت'), findsOneWidget);
+    expect(find.text('فهرست دستی'), findsOneWidget);
+    expect(find.text('فهرست لغوشده'), findsOneWidget);
+    expect(find.text('${AppStrings.vipHistoryRequested}: 30'), findsNWidgets(2));
+    expect(find.text('${AppStrings.vipHistoryRequested}: 0'), findsOneWidget);
+    expect(find.text('${AppStrings.vipHistoryIntentions}: 1'), findsOneWidget);
+    expect(find.text('${AppStrings.vipHistoryRecordedSends}: 2'), findsOneWidget);
+    expect(find.text('${AppStrings.vipHistoryIntentions}: —'), findsOneWidget);
+    expect(find.text('${AppStrings.vipHistoryVisited}: —'), findsOneWidget);
+    expect(find.text('درخواست شما ثبت شد، به محض تأیید ادمین ارسال می‌شود'), findsNothing);
+    expect(find.text('هنوز به صف پیام نرسیده: ۳۰'), findsNothing);
+    expect(find.textContaining('توقف فعال جدا'), findsNothing);
+    expect(find.text('اتمام مهلت ارسال درخواست'), findsNothing);
+    expect(find.text(AppStrings.vipDesiredRegion), findsOneWidget);
     expect(find.text(AppStrings.vipAddSample), findsNothing);
     expect(find.textContaining('09120000000'), findsNothing);
     expect(find.textContaining('متن محرمانه'), findsNothing);
+    expect(
+      tester.getTopLeft(find.text('فهرست ثبت')).dy <
+          tester.getTopLeft(find.text('فهرست دستی')).dy,
+      isTrue,
+    );
+    expect(
+      tester.getTopLeft(find.text('فهرست دستی')).dy <
+          tester.getTopLeft(find.text('فهرست لغوشده')).dy,
+      isTrue,
+    );
+    expect(
+      tester.getTopLeft(find.text(AppStrings.vipDesiredRegion)).dy <
+          tester.getTopLeft(find.text('فهرست ثبت')).dy,
+      isTrue,
+    );
   });
 
   testWidgets('a stale salon capability cannot replace the newer progress', (tester) async {
@@ -379,45 +442,21 @@ void main() {
     await tester.pump();
     final indicator = tester.widget<RefreshIndicator>(find.byType(RefreshIndicator));
     final newerLoad = indicator.onRefresh();
-    newer.complete(VipCapability(
+    newer.complete(const VipCapability(
       entitled: true,
-      remainingQuota: 500,
-      usedQuota: 0,
-      inProgressRequests: [
-        _request(
-          id: 'new',
-          status: 'SUBMITTED',
-          progress: _progress(
-            headline: 'تازه',
-            explanation: 'جدید',
-            nextActor: 'PLATFORM_ADMIN',
-            nextActorLabel: 'اقدام بعدی با پلتفرم است',
-          ),
-        ),
-      ],
+      remainingQuota: 370,
+      usedQuota: 130,
     ));
     await newerLoad;
     await tester.pumpAndSettle();
-    older.complete(VipCapability(
+    older.complete(const VipCapability(
       entitled: true,
       remainingQuota: 500,
       usedQuota: 0,
-      inProgressRequests: [
-        _request(
-          id: 'old',
-          status: 'SUBMITTED',
-          progress: _progress(
-            headline: 'کهنه',
-            explanation: 'قدیمی',
-            nextActor: 'PLATFORM_ADMIN',
-            nextActorLabel: 'اقدام بعدی با پلتفرم است',
-          ),
-        ),
-      ],
     ));
     await tester.pumpAndSettle();
-    expect(find.text('تازه'), findsOneWidget);
-    expect(find.text('کهنه'), findsNothing);
+    expect(find.text(AppStrings.vipRemainingQuota(370)), findsOneWidget);
+    expect(find.text(AppStrings.vipRemainingQuota(500)), findsNothing);
   });
 
   testWidgets('a cancelled-only history still shows the expiry card with its list', (tester) async {
@@ -434,21 +473,37 @@ void main() {
     );
     await _pumpSalon(
       tester,
-      _ScriptedVipRepository([
-        Future.value(VipCapability(
-          entitled: true,
-          remainingQuota: 500,
-          usedQuota: 0,
-          inProgressRequests: const [],
-          latestCancelledRequest: cancelled,
-        )),
-      ]),
+      _ScriptedVipRepository(
+        [
+          Future.value(const VipCapability(
+            entitled: true,
+            remainingQuota: 500,
+            usedQuota: 0,
+            inProgressRequests: [],
+          )),
+        ],
+        historyItems: [
+          _historyItem(
+            cancelled,
+            reportedIntentionCount: null,
+            visitedRecipientCount: null,
+            metricsAvailability: 'UNAVAILABLE',
+          ),
+        ],
+      ),
     );
     expect(find.text(AppStrings.vipInProgressRequests), findsNothing);
-    expect(find.text('اتمام مهلت ارسال درخواست'), findsOneWidget);
-    expect(find.text('${AppStrings.vipListNameLabel}: فهرست منقضی'), findsOneWidget);
-    expect(find.text(AppStrings.vipRequestedRecipientCount(30)), findsOneWidget);
+    expect(find.text('فهرست منقضی'), findsOneWidget);
+    expect(find.text('${AppStrings.vipHistoryRequested}: 0'), findsOneWidget);
+    expect(find.text('${AppStrings.vipHistoryIntentions}: —'), findsOneWidget);
+    expect(find.text('${AppStrings.vipHistoryVisited}: —'), findsOneWidget);
+    expect(find.text('اتمام مهلت ارسال درخواست'), findsNothing);
     expect(find.text(AppStrings.vipDesiredRegion), findsOneWidget);
+    expect(
+      tester.getTopLeft(find.text(AppStrings.vipDesiredRegion)).dy <
+          tester.getTopLeft(find.text('فهرست منقضی')).dy,
+      isTrue,
+    );
   });
 
   testWidgets('successful submit shows progress without the creation form', (
@@ -479,6 +534,8 @@ void main() {
       id: 'draft',
       status: 'SUBMITTED',
       requestedCount: 100,
+      createdAt: DateTime.utc(2026, 11, 21, 10, 6, 59),
+      submittedAt: DateTime.utc(2026, 11, 21, 10, 7, 6),
       progress: _progress(
         headline: 'درخواست شما ثبت شد، به محض تأیید ادمین ارسال می‌شود',
         explanation: explanation,
@@ -515,12 +572,12 @@ void main() {
     await tester.tap(find.text(AppStrings.vipSubmit));
     await tester.pumpAndSettle();
     expect(repo.submitCalls, 1);
-    expect(
-      find.text('درخواست شما ثبت شد، به محض تأیید ادمین ارسال می‌شود'),
-      findsOneWidget,
-    );
-    expect(find.text('ادامهٔ کار با تأیید ادمین است'), findsOneWidget);
-    expect(find.text('هنوز به صف پیام نرسیده: ۱۰۰'), findsOneWidget);
+    expect(find.text('VIP-01-01'), findsOneWidget);
+    expect(find.text('${AppStrings.vipHistoryRequested}: 100'), findsOneWidget);
+    expect(find.text('${AppStrings.vipHistoryRecordedSends}: 0'), findsOneWidget);
+    expect(find.text('درخواست شما ثبت شد، به محض تأیید ادمین ارسال می‌شود'), findsNothing);
+    expect(find.text('ادامهٔ کار با تأیید ادمین است'), findsNothing);
+    expect(find.text('هنوز به صف پیام نرسیده: ۱۰۰'), findsNothing);
     expect(find.text(explanation), findsNothing);
     expect(find.textContaining('به معنای ارسال یا تحویل پیام نیست'), findsNothing);
     expect(find.text(AppStrings.vipDesiredRegion), findsNothing);
@@ -529,15 +586,18 @@ void main() {
     expect(find.byKey(const Key('vip-submit')), findsNothing);
     expect(find.text(AppStrings.vipAddSample), findsNothing);
     expect(find.text(AppStrings.vipStartNewRequest), findsOneWidget);
+    expect(find.text(AppStrings.recordVisitIntention), findsOneWidget);
 
     await tester.tap(find.text(AppStrings.vipStartNewRequest));
     await tester.pumpAndSettle();
     expect(find.text(AppStrings.vipDesiredRegion), findsOneWidget);
     expect(find.text(AppStrings.vipOrderSummary), findsOneWidget);
     expect(find.byKey(const Key('vip-submit')), findsOneWidget);
+    expect(find.text('${AppStrings.vipHistoryRequested}: 100'), findsOneWidget);
     expect(
-      find.text('درخواست شما ثبت شد، به محض تأیید ادمین ارسال می‌شود'),
-      findsOneWidget,
+      tester.getTopLeft(find.text(AppStrings.vipDesiredRegion)).dy <
+          tester.getTopLeft(find.text('${AppStrings.vipHistoryRequested}: 100')).dy,
+      isTrue,
     );
   });
 

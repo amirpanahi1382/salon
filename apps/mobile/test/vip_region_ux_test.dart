@@ -30,6 +30,7 @@ class _FakeVipRepository extends VipRepository {
     this.createError,
     this.capabilityValue,
     this.capabilityImpl,
+    this.historyItems = const [],
   }) : super(_client());
 
   final bool entitled;
@@ -39,8 +40,10 @@ class _FakeVipRepository extends VipRepository {
   final Object? createError;
   final VipCapability? capabilityValue;
   final Future<VipCapability> Function()? capabilityImpl;
+  final List<VipRequestHistoryItem> historyItems;
   final List<String> listRequests = [];
   final List<Map<String, Object>> createCalls = [];
+  int requestHistoryCalls = 0;
 
   @override
   Future<VipCapability> capability() {
@@ -54,6 +57,17 @@ class _FakeVipRepository extends VipRepository {
             remainingQuota: 100,
             usedQuota: 0,
           ),
+    );
+  }
+
+  @override
+  Future<VipRequestHistoryPage> requestHistory({String? cursor}) async {
+    requestHistoryCalls += 1;
+    return VipRequestHistoryPage(
+      entitled: entitled,
+      explanation: '',
+      items: historyItems,
+      hasMore: false,
     );
   }
 
@@ -373,6 +387,13 @@ void main() {
   });
 
   testWidgets('submitted history stays visible beside the region form', (tester) async {
+    final submitted = _request(
+      status: 'SUBMITTED',
+      listName: 'VIP-03-01',
+      requestedCount: 100,
+      submittedAt: DateTime.utc(2026, 11, 8),
+      createdAt: DateTime.utc(2026, 11, 8),
+    );
     final repo = _FakeVipRepository(
       regionItems: _regions(),
       capabilityValue: VipCapability(
@@ -381,19 +402,22 @@ void main() {
         usedQuota: 100,
         quotaMax: 500,
         quotaWindowDays: 7,
-        inProgressRequests: [
-          _request(status: 'SUBMITTED', listName: 'VIP-03-01', requestedCount: 100),
-        ],
+        inProgressRequests: [submitted],
       ),
+      historyItems: [_historyItem(submitted)],
     );
     await _pump(tester, repo);
-    expect(find.text(AppStrings.vipInProgressRequests), findsOneWidget);
-    expect(find.text('${AppStrings.vipListNameLabel}: VIP-03-01'), findsOneWidget);
-    expect(find.text('${AppStrings.vipNeedsReview} · 100'), findsOneWidget);
+    expect(find.text('VIP-03-01'), findsOneWidget);
+    expect(find.text('${AppStrings.vipHistoryRequested}: 100'), findsOneWidget);
     expect(find.textContaining('SUBMITTED'), findsNothing);
     expect(find.text(AppStrings.vipRemainingQuota(400)), findsOneWidget);
     expect(find.text(AppStrings.vipDesiredRegion), findsOneWidget);
     expect(find.text(AppStrings.vipAddSample), findsNothing);
+    expect(
+      tester.getTopLeft(find.text(AppStrings.vipDesiredRegion)).dy <
+          tester.getTopLeft(find.text('VIP-03-01')).dy,
+      isTrue,
+    );
   });
 
   testWidgets('an active draft shows the sample workflow', (tester) async {
@@ -414,7 +438,9 @@ void main() {
     expect(find.text(AppStrings.vipAddSample), findsOneWidget);
     expect(find.text(AppStrings.vipSubmit), findsOneWidget);
     expect(find.text(AppStrings.vipDesiredRegion), findsNothing);
-    expect(find.text('${AppStrings.vipPending} · 50'), findsOneWidget);
+    expect(find.text('VIP-04-01'), findsOneWidget);
+    expect(find.text('${AppStrings.vipHistoryRequested}: 0'), findsOneWidget);
+    expect(find.text(AppStrings.vipRequestedRecipientCount(50)), findsOneWidget);
     expect(find.textContaining('AWAITING_SAMPLE_WORK'), findsNothing);
   });
 
@@ -464,13 +490,10 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(seconds: 1));
     second.complete(
-      VipCapability(
+      const VipCapability(
         entitled: true,
         remainingQuota: 400,
         usedQuota: 100,
-        inProgressRequests: [
-          _request(status: 'SUBMITTED', listName: 'VIP-03-01', requestedCount: 100),
-        ],
       ),
     );
     await tester.pump();
@@ -489,7 +512,7 @@ void main() {
     await tester.pump();
     expect(calls, 2);
     expect(find.text(AppStrings.vipDesiredRegion), findsOneWidget);
-    expect(find.text('${AppStrings.vipListNameLabel}: VIP-03-01'), findsOneWidget);
+    expect(find.text(AppStrings.vipRemainingQuota(400)), findsOneWidget);
     expect(find.text(AppStrings.vipAddSample), findsNothing);
   });
 
@@ -511,25 +534,51 @@ void main() {
   });
 
   testWidgets('history statuses use Persian labels', (tester) async {
+    final submitted = _request(
+      status: 'SUBMITTED',
+      listName: 'VIP-03-01',
+      requestedCount: 100,
+      createdAt: DateTime.utc(2026, 11, 21),
+      submittedAt: DateTime.utc(2026, 11, 21),
+    );
+    final queued = _request(
+      status: 'MANUAL_QUEUED',
+      listName: 'VIP-04-01',
+      requestedCount: 50,
+      createdAt: DateTime.utc(2026, 11, 20),
+      submittedAt: DateTime.utc(2026, 11, 20),
+    );
+    final bale = _request(
+      status: 'BALE_NOT_IMPLEMENTED',
+      listName: 'VIP-05-01',
+      requestedCount: 30,
+      createdAt: DateTime.utc(2026, 11, 19),
+      submittedAt: DateTime.utc(2026, 11, 19),
+    );
     final repo = _FakeVipRepository(
       regionItems: _regions(),
       capabilityValue: VipCapability(
         entitled: true,
         remainingQuota: 400,
         usedQuota: 100,
-        inProgressRequests: [
-          _request(status: 'SUBMITTED', listName: 'VIP-03-01', requestedCount: 100),
-          _request(status: 'MANUAL_QUEUED', listName: 'VIP-04-01', requestedCount: 50),
-          _request(status: 'BALE_NOT_IMPLEMENTED', listName: 'VIP-05-01', requestedCount: 30),
-        ],
+        inProgressRequests: [submitted, queued, bale],
       ),
+      historyItems: [
+        _historyItem(submitted),
+        _historyItem(queued),
+        _historyItem(bale),
+      ],
     );
     await _pump(tester, repo);
-    expect(find.text('${AppStrings.vipNeedsReview} · 100'), findsOneWidget);
-    expect(find.text('${AppStrings.outreachStatusQueued} · 50'), findsOneWidget);
-    expect(find.text('${AppStrings.vipBaleNotImplemented} · 30'), findsOneWidget);
+    expect(find.text('VIP-03-01'), findsOneWidget);
+    expect(find.text('VIP-04-01'), findsOneWidget);
+    expect(find.text('VIP-05-01'), findsOneWidget);
+    expect(find.text('${AppStrings.vipHistoryRequested}: 100'), findsOneWidget);
+    expect(find.text('${AppStrings.vipHistoryRequested}: 50'), findsOneWidget);
+    expect(find.text('${AppStrings.vipHistoryRequested}: 30'), findsOneWidget);
     expect(find.textContaining('MANUAL_QUEUED'), findsNothing);
     expect(find.textContaining('BALE_NOT_IMPLEMENTED'), findsNothing);
+    expect(find.textContaining('SUBMITTED'), findsNothing);
   });
 
   testWidgets('a refreshed lower quota caps the planned recipient quantity', (tester) async {
@@ -580,6 +629,13 @@ void main() {
   });
 
   testWidgets('more than ten in-progress requests explains the truncated summary', (tester) async {
+    final submitted = _request(
+      status: 'SUBMITTED',
+      listName: 'VIP-03-01',
+      requestedCount: 30,
+      submittedAt: DateTime.utc(2026, 11, 21),
+      createdAt: DateTime.utc(2026, 11, 21),
+    );
     final repo = _FakeVipRepository(
       regionItems: _regions(),
       capabilityValue: VipCapability(
@@ -587,18 +643,24 @@ void main() {
         remainingQuota: 170,
         usedQuota: 330,
         inProgressRequestsHasMore: true,
-        inProgressRequests: [
-          _request(status: 'SUBMITTED', listName: 'VIP-03-01', requestedCount: 30),
-        ],
+        inProgressRequests: [submitted],
       ),
+      historyItems: [_historyItem(submitted)],
     );
     await _pump(tester, repo);
-    expect(find.text(AppStrings.vipInProgressRequestsTruncated), findsOneWidget);
-    expect(find.text('${AppStrings.vipListNameLabel}: VIP-03-01'), findsOneWidget);
+    expect(find.text(AppStrings.vipInProgressRequestsTruncated), findsNothing);
+    expect(find.text('VIP-03-01'), findsOneWidget);
     expect(find.text(AppStrings.vipDesiredRegion), findsOneWidget);
   });
 
   testWidgets('a complete in-progress summary does not show the truncation notice', (tester) async {
+    final submitted = _request(
+      status: 'SUBMITTED',
+      listName: 'VIP-03-01',
+      requestedCount: 100,
+      submittedAt: DateTime.utc(2026, 11, 21),
+      createdAt: DateTime.utc(2026, 11, 21),
+    );
     final repo = _FakeVipRepository(
       regionItems: _regions(),
       capabilityValue: VipCapability(
@@ -606,14 +668,13 @@ void main() {
         remainingQuota: 400,
         usedQuota: 100,
         inProgressRequestsHasMore: false,
-        inProgressRequests: [
-          _request(status: 'SUBMITTED', listName: 'VIP-03-01', requestedCount: 100),
-        ],
+        inProgressRequests: [submitted],
       ),
+      historyItems: [_historyItem(submitted)],
     );
     await _pump(tester, repo);
-    expect(find.text(AppStrings.vipInProgressRequests), findsOneWidget);
-    expect(find.text('${AppStrings.vipListNameLabel}: VIP-03-01'), findsOneWidget);
+    expect(find.text(AppStrings.vipInProgressRequests), findsNothing);
+    expect(find.text('VIP-03-01'), findsOneWidget);
     expect(find.text(AppStrings.vipInProgressRequestsTruncated), findsNothing);
   });
 
@@ -715,6 +776,8 @@ VipRequest _request({
   required String status,
   required String listName,
   required int requestedCount,
+  DateTime? createdAt,
+  DateTime? submittedAt,
 }) {
   return VipRequest(
     id: 'request-$listName',
@@ -725,5 +788,21 @@ VipRequest _request({
     status: status,
     geographicRange: 'شمال‌غرب؛ سعادت‌آباد، پونک و جنت‌آباد',
     requestedCount: requestedCount,
+    createdAt: createdAt,
+    submittedAt: submittedAt,
+  );
+}
+
+VipRequestHistoryItem _historyItem(VipRequest request) {
+  final unsubmitted = request.submittedAt == null;
+  return VipRequestHistoryItem(
+    request: request,
+    recordedSendCount: 0,
+    manualRecordedSendCount: 0,
+    stillQueuedOrInProgressCount: 0,
+    reportedIntentionCount: unsubmitted && request.status == 'CANCELLED' ? null : 0,
+    visitedRecipientCount: unsubmitted && request.status == 'CANCELLED' ? null : 0,
+    metricsAvailability:
+        unsubmitted && request.status == 'CANCELLED' ? 'UNAVAILABLE' : 'AVAILABLE',
   );
 }

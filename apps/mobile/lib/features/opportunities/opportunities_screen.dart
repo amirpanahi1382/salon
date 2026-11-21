@@ -11,6 +11,7 @@ import '../outreach/manual_outreach_selection.dart';
 import '../outreach/manual_outreach_state.dart';
 import '../outreach/outreach_message_composer.dart';
 import '../vip/salon_vip_section.dart';
+import '../vip/vip_request_summary.dart';
 
 enum _OpportunitiesSection { revenueDrop, vip, ordinary }
 
@@ -458,7 +459,14 @@ class _OpportunitiesScreenState extends ConsumerState<OpportunitiesScreen> {
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ),
-          for (final item in _vipItems) _VipHistoryTile(item: item),
+          for (final item in _vipItems)
+            Padding(
+              padding: const EdgeInsets.only(bottom: AppTokens.space12),
+              child: VipRequestSummaryCard(
+                key: Key('vip-summary-${item.request.id}'),
+                item: item,
+              ),
+            ),
         ];
       case _OpportunitiesSection.ordinary:
         if (_ordinaryItems.isEmpty) {
@@ -571,51 +579,6 @@ class _RevenueDropTile extends StatelessWidget {
                 child: const Text(AppStrings.createSuitableMessage),
               ),
             ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _VipHistoryTile extends StatelessWidget {
-  const _VipHistoryTile({required this.item});
-
-  final VipRequestHistoryItem item;
-
-  @override
-  Widget build(BuildContext context) {
-    final request = item.request;
-    return Card(
-      margin: const EdgeInsets.only(bottom: AppTokens.space12),
-      child: Padding(
-        padding: const EdgeInsets.all(AppTokens.space12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              request.listName,
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              '${AppStrings.vipHistoryRequested}: ${request.submittedAt == null ? 0 : request.requestedCount}',
-            ),
-            if (!item.metricsAvailable)
-              const Text('${AppStrings.vipHistoryIntentions}: —')
-            else
-              Text(
-                '${AppStrings.vipHistoryIntentions}: ${item.reportedIntentionCount ?? 0}',
-              ),
-            Text(
-              '${AppStrings.vipHistoryRecordedSends}: ${item.manualRecordedSendCount}',
-            ),
-            if (!item.metricsAvailable)
-              const Text('${AppStrings.vipHistoryVisited}: —')
-            else
-              Text(
-                '${AppStrings.vipHistoryVisited}: ${item.visitedRecipientCount ?? 0}',
-              ),
           ],
         ),
       ),

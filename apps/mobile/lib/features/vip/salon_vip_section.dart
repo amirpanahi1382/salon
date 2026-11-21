@@ -12,8 +12,9 @@ import '../../shared/jalali.dart';
 import '../../shared/labels.dart';
 import '../../shared/models/models.dart';
 import 'vip_discount.dart';
-import 'vip_progress_card.dart';
+import 'vip_progress_copy.dart';
 import 'vip_request_form_widgets.dart';
+import 'vip_request_summary.dart';
 
 class VipSelectedCount extends Notifier<int?> {
   @override
@@ -92,6 +93,7 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
   int _listGeneration = 0;
   VipRequest? _justSubmitted;
   bool _startingAnotherRequest = false;
+  List<VipRequestHistoryItem> _historyItems = const [];
 
   @override
   void initState() {
@@ -143,16 +145,24 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
       _error = null;
     });
     try {
-      final capability = await ref.read(vipRepositoryProvider).capability();
+      final vip = ref.read(vipRepositoryProvider);
+      final capability = await vip.capability();
       final regions = capability.entitled
-          ? await ref.read(vipRepositoryProvider).regions()
+          ? await vip.regions()
           : <VipRegion>[];
+      var historyItems = _historyItems;
+      try {
+        historyItems = (await vip.requestHistory()).items;
+      } catch (_) {
+        // Keep the last successful page; capability still drives the form.
+      }
       if (!mounted || generation != _loadGeneration) {
         return;
       }
       setState(() {
         _capability = capability;
         _regions = regions;
+        _historyItems = historyItems;
         _loading = false;
       });
       final previewSelectedRegion = widget.previewSeed?.regionCode != null;
@@ -537,8 +547,8 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
         Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _history(capability),
             EmptyStateView(title: message, body: message),
+            _historySection(),
           ],
         ),
       );
@@ -566,7 +576,6 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
       Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (count == null) _history(capability),
           VipQuotaCard(remaining: capability.remainingQuota),
           const SizedBox(height: AppTokens.space16),
           const SectionHeader(AppStrings.vipDesiredRegion),
@@ -695,6 +704,7 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
             busy: _busy,
             onPressed: _submit,
           ),
+          _historySection(),
         ],
       ),
     );
@@ -717,63 +727,67 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
     );
   }
 
-  Widget _history(VipCapability capability, {String? hideRequestId}) {
-    final cancelled = capability.latestCancelledRequest;
-    final visibleInProgress = [
-      for (final request in capability.inProgressRequests)
-        if (request.id != hideRequestId) request,
-    ];
-    final hasInProgress =
-        visibleInProgress.isNotEmpty || capability.inProgressRequestsHasMore;
-    if (!hasInProgress && cancelled == null) {
+  List<VipRequestHistoryItem> _orderedHistory({String? hideRequestId}) {
+    return orderedVipRequestHistory(
+      page: _historyItems,
+      extra: _justSubmitted,
+      hideRequestId: hideRequestId,
+    );
+  }
+
+  Widget _historySection({String? hideRequestId}) {
+    final items = _orderedHistory(hideRequestId: hideRequestId);
+    if (items.isEmpty) {
       return const SizedBox.shrink();
     }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (hasInProgress) ...[
-          Text(
-            AppStrings.vipInProgressRequests,
-            style: Theme.of(context).textTheme.titleMedium,
+        const SizedBox(height: AppTokens.space16),
+        for (final item in items) ...[
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: VipRequestSummaryCard(
+              key: Key('vip-summary-${item.request.id}'),
+              item: item,
+              footer: _intentionFooter(item.request),
+            ),
           ),
-          const SizedBox(height: 8),
-          for (final request in visibleInProgress)
-            _associatedRequest(request),
-          if (capability.inProgressRequestsHasMore) ...[
-            const SizedBox(height: 4),
-            const Text(AppStrings.vipInProgressRequestsTruncated),
-          ],
         ],
-        if (cancelled != null) _associatedRequest(cancelled, intention: false),
-        const SizedBox(height: 16),
       ],
     );
   }
 
-  Widget _associatedRequest(VipRequest request, {bool intention = true}) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text('${AppStrings.vipListNameLabel}: ${request.listName}'),
-          Text(AppStrings.vipRequestedRecipientCount(request.requestedCount)),
-          const SizedBox(height: 8),
-          if (request.progress != null)
-            VipProgressCard(progress: request.progress!)
-          else
-            Text('${vipRequestStatusLabel(request.status)} · ${request.requestedCount}'),
-          if (intention)
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton(
-                onPressed: () => context.push('/vip/requests/${request.id}/visit-intention'),
-                child: const Text(AppStrings.recordVisitIntention),
-              ),
-            ),
-        ],
+  Widget? _intentionFooter(VipRequest request) {
+    if (!vipRequestAllowsIntention(request)) {
+      return null;
+    }
+    return Align(
+      alignment: Alignment.centerRight,
+      child: TextButton(
+        onPressed: () => context.push('/vip/requests/${request.id}/visit-intention'),
+        child: const Text(AppStrings.recordVisitIntention),
       ),
     );
+  }
+
+  List<String> _draftGuidance(VipRequest current, bool awaiting) {
+    final progress = current.progress;
+    final lines = <String>[
+      AppStrings.vipRequestedRecipientCount(current.requestedCount),
+    ];
+    if (progress != null) {
+      if (progress.headline.trim().isNotEmpty) {
+        lines.add(progress.headline);
+      }
+      if (shouldDisplayVipProgressExplanation(progress.explanation)) {
+        lines.add(progress.explanation);
+      }
+    }
+    if (awaiting) {
+      lines.add(AppStrings.vipSampleProgress(current.sampleWorks.length));
+    }
+    return lines;
   }
 
   Widget _currentRequestView(
@@ -785,11 +799,10 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
     final awaiting = current.progress == null
         ? current.status == 'AWAITING_SAMPLE_WORK'
         : current.progress!.reservationStillValid;
+    final isDraft = current.status == 'AWAITING_SAMPLE_WORK';
     final sampleActions = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(AppStrings.vipSampleProgress(current.sampleWorks.length)),
-        const SizedBox(height: 12),
         FilledButton(
           onPressed: _busy ? null : () => _addSample(current),
           child: const Text(AppStrings.vipAddSample),
@@ -801,20 +814,34 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
         ),
       ],
     );
+    Widget? footer;
+    if (isDraft && awaiting) {
+      footer = sampleActions;
+    } else if (vipRequestAllowsIntention(current) || showStartAnother) {
+      footer = Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (vipRequestAllowsIntention(current)) _intentionFooter(current)!,
+          if (showStartAnother) ...[
+            if (vipRequestAllowsIntention(current)) const SizedBox(height: 8),
+            OutlinedButton(
+              key: const Key('vip-start-another'),
+              onPressed: _busy ? null : _startAnotherRequest,
+              child: const Text(AppStrings.vipStartNewRequest),
+            ),
+          ],
+        ],
+      );
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (!awaiting) _history(capability, hideRequestId: hideFromHistoryId),
-        Text('${AppStrings.vipListNameLabel}: ${current.listName}'),
-        Text(AppStrings.vipRequestedRecipientCount(current.requestedCount)),
-        const SizedBox(height: 8),
-        if (current.progress != null)
-          VipProgressCard(
-            progress: current.progress!,
-            action: awaiting ? sampleActions : null,
-          )
-        else
-          Text('${vipRequestStatusLabel(current.status)} · ${current.requestedCount}'),
+        VipRequestSummaryCard(
+          key: Key('vip-summary-${current.id}'),
+          item: vipSummaryItemForRequest(current, _historyItems),
+          guidance: isDraft ? _draftGuidance(current, awaiting) : const [],
+          footer: footer,
+        ),
         if (capability.remainingQuota == 0) ...[
           const SizedBox(height: 8),
           Text(
@@ -822,18 +849,7 @@ class _SalonVipSectionState extends ConsumerState<SalonVipSection> {
             style: TextStyle(color: Theme.of(context).colorScheme.error),
           ),
         ],
-        if (current.progress == null && awaiting) ...[
-          const SizedBox(height: 12),
-          sampleActions,
-        ],
-        if (showStartAnother) ...[
-          const SizedBox(height: 12),
-          OutlinedButton(
-            key: const Key('vip-start-another'),
-            onPressed: _busy ? null : _startAnotherRequest,
-            child: const Text(AppStrings.vipStartNewRequest),
-          ),
-        ],
+        _historySection(hideRequestId: hideFromHistoryId ?? current.id),
       ],
     );
   }
