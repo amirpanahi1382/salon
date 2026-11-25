@@ -273,6 +273,11 @@ describeIfDisposable('VIP list reservation rounds (e2e)', () => {
     expect(duplicate.status).toBe(409);
     expect(duplicate.body.error).toBe('VIP_LIST_OWN_UNRESOLVED');
     await submitRequest(owner, created.body.id as string);
+    const beforeSettlement = await request(app.getHttpServer())
+      .get(`/admin/vip/lists/${listId}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    expect(beforeSettlement.body.unresolvedRequestCount).toBe(1);
     const stillOpen = await createRequest(owner, listId);
     expect(stillOpen.status).toBe(409);
     expect(stillOpen.body.error).toBe('VIP_LIST_OWN_UNRESOLVED');
@@ -313,6 +318,18 @@ describeIfDisposable('VIP list reservation rounds (e2e)', () => {
       WHERE vip_request_id = ${created.body.id as string}::uuid
         AND salon_id = ${owner.tenantId}::uuid
     `;
+    const settledList = await request(app.getHttpServer())
+      .get(`/admin/vip/lists/${listId}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    expect(settledList.body.openRequestCount).toBe(1);
+    expect(settledList.body.unresolvedRequestCount).toBe(0);
+    const settledProfile = await request(app.getHttpServer())
+      .get(`/admin/vip/salons/${owner.tenantId}/profile`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    expect(settledProfile.body.counts.vipOpenRequestCount).toBe(1);
+    expect(settledProfile.body.counts.vipUnresolvedRequestCount).toBe(0);
     const rejoin = await createRequest(owner, listId);
     expect(rejoin.status).toBe(201);
     const otherJoin = await createRequest(other, listId);
@@ -459,6 +476,33 @@ describeIfDisposable('VIP list reservation rounds (e2e)', () => {
       .send({ availability: 'ACTIVE', regionCode: '03' })
       .expect(200);
     expect((await createRequest(second, listId)).status).toBe(201);
+  });
+
+  it('rejects a slot that points to a different list or reservation round', async () => {
+    const owner = await createOwner('slot-identity');
+    await grantVip(owner.tenantId);
+    const listId = await readyList();
+    const otherListId = await readyList();
+    const created = await createRequest(owner, listId);
+    expect(created.status).toBe(201);
+    const requestId = created.body.id as string;
+
+    await expect(prisma.client.$executeRaw`
+      UPDATE vip_list_round_slots
+      SET list_id = ${otherListId}::uuid
+      WHERE vip_request_id = ${requestId}::uuid
+    `).rejects.toThrow();
+    await expect(prisma.client.$executeRaw`
+      UPDATE vip_list_round_slots
+      SET reservation_round = reservation_round + 1
+      WHERE vip_request_id = ${requestId}::uuid
+    `).rejects.toThrow();
+
+    const slot = await prisma.client.vipListRoundSlot.findUniqueOrThrow({
+      where: { vipRequestId: requestId },
+    });
+    expect(slot.listId).toBe(listId);
+    expect(slot.reservationRound).toBe(1);
   });
 
   it('uses indexes for requestability and unresolved recipient predicates', async () => {

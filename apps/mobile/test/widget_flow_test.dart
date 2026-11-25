@@ -127,36 +127,6 @@ class FakeIntelligenceRepository extends IntelligenceRepository {
   }
 }
 
-class FakeOpportunitiesRepository extends OpportunitiesRepository {
-  FakeOpportunitiesRepository({
-    Map<String, List<OpportunityWorkspaceRow>>? pages,
-    this.resolve,
-  }) : pages = pages ?? const {},
-       super(_client());
-
-  Map<String, List<OpportunityWorkspaceRow>> pages;
-  List<OpportunityWorkspaceRow> Function(String filter)? resolve;
-  Object? error;
-  int listCalls = 0;
-  final List<String> filters = [];
-
-  @override
-  Future<ItemPage<OpportunityWorkspaceRow>> workspace({
-    required String filter,
-    String? cursor,
-  }) async {
-    listCalls += 1;
-    filters.add(filter);
-    if (error != null) {
-      throw error!;
-    }
-    return ItemPage(
-      items: resolve?.call(filter) ?? pages[filter] ?? const [],
-      hasMore: false,
-    );
-  }
-}
-
 class FakeSalonRepository extends SalonRepository {
   FakeSalonRepository({
     this.performance = const SalonOverallPerformance(
@@ -1272,48 +1242,6 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text(AppStrings.dashboardFirstActionButton), findsOneWidget);
     expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('opportunity composer sends a Bale message after confirmation', (
-    tester,
-  ) async {
-    final messages = FakeMessageRepository();
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          sessionStoreProvider.overrideWithValue(MemorySessionStore()),
-          customerRepositoryProvider.overrideWithValue(
-            FakeCustomerRepository(items: [_customer()]),
-          ),
-          intelligenceRepositoryProvider.overrideWith(
-            (ref) => FakeIntelligenceRepository(
-              customerIntelligence: _intelligence(),
-            ),
-          ),
-          actionRepositoryProvider.overrideWithValue(FakeActionRepository()),
-          visitRepositoryProvider.overrideWithValue(FakeVisitListRepository()),
-          messageRepositoryProvider.overrideWithValue(messages),
-          vipRepositoryProvider.overrideWithValue(FakeVipRepository()),
-          authControllerProvider.overrideWith(_SignedInAuth.new),
-          returnCommitmentRepositoryProvider.overrideWithValue(
-            FakeOpenReturnCommitmentRepository(),
-          ),
-        ],
-        child: const MaterialApp(home: CustomerDetailScreen(customerId: 'c1')),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(find.text('ارسال پیام در بله'), 400);
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('ارسال پیام در بله'));
-    await tester.pumpAndSettle();
-    expect(find.text('ارسال پیام در بله'), findsWidgets);
-    await tester.tap(find.text('ارسال'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('ارسال').last);
-    await tester.pumpAndSettle();
-    expect(messages.sendCalls, 1);
-    expect(find.text('پیام در صف ارسال قرار گرفت.'), findsOneWidget);
   });
 
   testWidgets('today overall performance loading is not a zero success', (

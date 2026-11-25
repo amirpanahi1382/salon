@@ -53,6 +53,7 @@ AdminSalonProfile _profile({
   int distinct = 0,
   int vipTotal = 0,
   int vipOpen = 0,
+  int? vipUnresolved,
   int ordinary = 0,
   int vipSends = 0,
   int ordinarySends = 0,
@@ -67,6 +68,7 @@ AdminSalonProfile _profile({
       distinctVipListsRequested: distinct,
       vipRequestCount: vipTotal,
       vipOpenRequestCount: vipOpen,
+      vipUnresolvedRequestCount: vipUnresolved ?? vipOpen,
       ordinaryMessageRequestCount: ordinary,
       vipRecordedSendCount: vipSends,
       ordinaryRecordedSendCount: ordinarySends,
@@ -103,6 +105,27 @@ void main() {
     expect(find.text(AppStrings.adminVipDisable), findsNothing);
     expect(find.text(AppStrings.adminVipDistinctLists), findsOneWidget);
     expect(find.text('0'), findsWidgets);
+  });
+
+  testWidgets('profile in-progress value follows unfinished work', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          vipRepositoryProvider.overrideWithValue(
+            _Repo(profile: _profile(entitled: true, vipOpen: 1, vipUnresolved: 0)),
+          ),
+        ],
+        child: const MaterialApp(home: AdminVipSalonProfileScreen(salonId: 's1')),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('admin-vip-profile-vip-open')),
+        matching: find.text('0'),
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('enable asks for confirmation before granting', (tester) async {

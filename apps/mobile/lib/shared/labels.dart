@@ -244,7 +244,7 @@ class AppStrings {
       'شمارش زنده از ردیف‌های ذخیره‌شده است؛ صف ارسال، تحویل قطعی یا مراجعه نیست.';
   static const adminVipDistinctLists = 'لیست‌های VIP درخواست‌شده (متمایز)';
   static const adminVipRequestTotal = 'کل درخواست‌های VIP (شامل لغو)';
-  static const adminVipRequestOpen = 'درخواست VIP باز / در جریان';
+  static const adminVipRequestOpen = 'درخواست VIP در جریان';
   static const adminVipOrdinaryRequests = 'درخواست پیام عادی (غیر VIP)';
   static const adminVipRecordedSends = 'ارسال ثبت‌شده VIP';
   static const adminVipOrdinaryRecordedSends = 'ارسال ثبت‌شده عادی';

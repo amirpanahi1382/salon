@@ -632,26 +632,6 @@ class MessageRepository {
   }
 }
 
-class OpportunitiesRepository {
-  OpportunitiesRepository(this._api);
-
-  final ApiClient _api;
-
-  Future<ItemPage<OpportunityWorkspaceRow>> workspace({
-    required String filter,
-    String? cursor,
-  }) async {
-    final data = await _api.get(
-      '/opportunities/workspace',
-      query: {
-        'filter': filter,
-        if (cursor != null && cursor.isNotEmpty) 'cursor': cursor,
-      },
-    );
-    return parseItemPage(data, OpportunityWorkspaceRow.fromJson);
-  }
-}
-
 class ReturnCommitmentRepository {
   ReturnCommitmentRepository(this._api);
 

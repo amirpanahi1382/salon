@@ -150,7 +150,7 @@ class _AdminVipSalonProfileScreenState
                       _CountTile(
                         key: const ValueKey('admin-vip-profile-vip-open'),
                         label: AppStrings.adminVipRequestOpen,
-                        value: profile.vipOpenRequestCount,
+                        value: profile.vipUnresolvedRequestCount,
                       ),
                       _CountTile(
                         key: const ValueKey('admin-vip-profile-ordinary'),

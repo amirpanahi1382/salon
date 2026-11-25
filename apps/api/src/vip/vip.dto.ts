@@ -236,6 +236,11 @@ export class VipTargetListSummaryDto {
       'Live requests for this list: unexpired AWAITING_SAMPLE_WORK plus SUBMITTED, MANUAL_QUEUED, and BALE_NOT_IMPLEMENTED.',
   })
   liveRequestCount!: number;
+
+  @ApiProperty({
+    description: 'Requests with unresolved work: an unexpired draft or a submitted request with a recipient not yet queued, queued, or in pipeline. Independent of stored list status and reservation round.',
+  })
+  unresolvedRequestCount!: number;
 }
 
 export class VipTargetContactDto {

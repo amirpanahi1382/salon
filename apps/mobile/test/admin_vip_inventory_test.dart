@@ -23,6 +23,7 @@ VipTargetList _list(
   bool requestable = false,
   int total = 0,
   int open = 0,
+  int? unresolved,
   String status = 'ACTIVE',
   String? catalogMembership,
   String? regionCode,
@@ -42,6 +43,7 @@ VipTargetList _list(
   requestableBySalons: requestable,
   totalRequestCount: total,
   openRequestCount: open,
+  unresolvedRequestCount: unresolved ?? open,
   liveRequestCount: liveRequestCount,
   roundRemainingSlots: roundRemainingSlots,
   contacts: contacts,
@@ -127,6 +129,7 @@ class _Inventory extends VipRepository {
                     regionName: regionCode != null ? 'منطقه $regionCode' : item.regionName,
                     total: item.totalRequestCount,
                     open: item.openRequestCount,
+                    unresolved: item.unresolvedRequestCount,
                     contactCount: item.contactCount,
                   )
                 : item,
@@ -221,6 +224,17 @@ void main() {
     expect(find.text('۳ درخواست'), findsOneWidget);
     expect(find.text('۱ در جریان'), findsOneWidget);
     expect(find.textContaining(AppStrings.adminVipListRequestTotal), findsNothing);
+  });
+
+  testWidgets('settled requests keep history without a misleading in-progress tag', (tester) async {
+    final repository = _Inventory()
+      ..page = _page(items: [
+        _list('settled-1', 'لیست بسته‌شده', total: 1, open: 1, unresolved: 0),
+      ]);
+    await _pump(tester, repository);
+    await tester.pumpAndSettle();
+    expect(find.text('۱ درخواست'), findsOneWidget);
+    expect(find.text('۱ در جریان'), findsNothing);
   });
 
   testWidgets('paginates the full inventory', (tester) async {

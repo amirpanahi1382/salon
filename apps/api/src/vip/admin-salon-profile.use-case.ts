@@ -2,14 +2,9 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@salon/database';
 import { NotFoundError } from '@salon/shared';
 import { PrismaService } from '../infrastructure/database/prisma.service';
+import { VIP_OPEN_REQUEST_STATUSES, vipRequestOccupyingSql } from './vip-list-request-counts';
 
-/** VipRequest rows that are still open work, not CANCELLED. */
-export const VIP_OPEN_REQUEST_STATUSES = [
-  'AWAITING_SAMPLE_WORK',
-  'SUBMITTED',
-  'MANUAL_QUEUED',
-  'BALE_NOT_IMPLEMENTED',
-] as const;
+export { VIP_OPEN_REQUEST_STATUSES } from './vip-list-request-counts';
 
 /**
  * Canonical recorded send: one MessageDelivery per MessageRequest
@@ -30,6 +25,7 @@ type ProfileRow = {
   distinctVipListCount: number;
   vipRequestCount: number;
   vipOpenRequestCount: number;
+  vipUnresolvedRequestCount: number;
   ordinaryMessageRequestCount: number;
   vipRecordedSendCount: number;
   ordinaryRecordedSendCount: number;
@@ -63,6 +59,12 @@ export class GetAdminSalonProfileUseCase {
           WHERE r.salon_id = s.id
             AND r.status::text IN (${Prisma.join([...VIP_OPEN_REQUEST_STATUSES])})
         ) AS "vipOpenRequestCount",
+        (
+          SELECT COUNT(*)::int
+          FROM vip_requests r
+          WHERE r.salon_id = s.id
+            AND ${vipRequestOccupyingSql('r', asOf)}
+        ) AS "vipUnresolvedRequestCount",
         (
           SELECT COUNT(*)::int
           FROM message_requests m
@@ -103,11 +105,12 @@ export class GetAdminSalonProfileUseCase {
       asOf: asOf.toISOString(),
       consistency: 'LIVE_READ' as const,
       explanation:
-        'شمارش زنده از ردیف‌های ذخیره‌شده است، نه عکس ثابت. درخواست VIP همهٔ وضعیت‌ها از جمله لغو را می‌شمارد؛ درخواست باز شامل پیش‌نویس و در جریان است و لغو را ندارد. پیام عادی یعنی MessageRequest بدون vip_request_id. ارسال ثبت‌شده یعنی MessageDelivery با SENT و submittedAt؛ صف ارسال نیست و تحویل یا مراجعه نیست. هر درخواست حداکثر یک ردیف تحویل دارد.',
+        'شمارش زنده از ردیف‌های ذخیره‌شده است. درخواست VIP کل تاریخچه را می‌شمارد؛ درخواست در جریان فقط کار حل‌نشده را. پیام عادی یعنی MessageRequest بدون vip_request_id. ارسال ثبت‌شده یعنی MessageDelivery با SENT و submittedAt؛ صف یا تحویل قطعی نیست.',
       counts: {
         distinctVipListsRequested: Number(row.distinctVipListCount),
         vipRequestCount: Number(row.vipRequestCount),
         vipOpenRequestCount: Number(row.vipOpenRequestCount),
+        vipUnresolvedRequestCount: Number(row.vipUnresolvedRequestCount),
         ordinaryMessageRequestCount: Number(row.ordinaryMessageRequestCount),
         vipRecordedSendCount: Number(row.vipRecordedSendCount),
         ordinaryRecordedSendCount: Number(row.ordinaryRecordedSendCount),
@@ -119,6 +122,8 @@ export class GetAdminSalonProfileUseCase {
           'COUNT(*) of vip_requests for this salon, including CANCELLED and AWAITING_SAMPLE_WORK.',
         vipOpenRequestCount:
           'vip_requests in AWAITING_SAMPLE_WORK, SUBMITTED, MANUAL_QUEUED, or BALE_NOT_IMPLEMENTED. CANCELLED excluded.',
+        vipUnresolvedRequestCount:
+          'Unexpired drafts plus submitted requests with at least one recipient in NOT_YET_QUEUED, QUEUED, or IN_PIPELINE.',
         ordinaryMessageRequestCount:
           'COUNT(*) of message_requests for this salon where vip_request_id IS NULL, every request status.',
         vipRecordedSendCount:

@@ -282,10 +282,10 @@ class _AdminVipScreenState extends ConsumerState<AdminVipScreen> {
                   icon: Icons.inbox_outlined,
                   color: list.totalRequestCount > 0 ? AppTokens.accent : AppTokens.textSecondary,
                 ),
-                if (list.openRequestCount > 0)
+                if (list.unresolvedRequestCount > 0)
                   _VipInventoryTag(
                     key: ValueKey('vip-open-requests-${list.id}'),
-                    label: '${toPersianDigits(list.openRequestCount.toString())} در جریان',
+                    label: '${toPersianDigits(list.unresolvedRequestCount.toString())} در جریان',
                     icon: Icons.autorenew_rounded,
                     color: AppTokens.accentSecondary,
                   ),
@@ -1100,9 +1100,9 @@ class _VipListDetailHero extends StatelessWidget {
                 icon: Icons.inbox_outlined,
                 color: list.totalRequestCount > 0 ? AppTokens.accent : AppTokens.textSecondary,
               ),
-              if (list.openRequestCount > 0)
+              if (list.unresolvedRequestCount > 0)
                 _VipInventoryTag(
-                  label: '${toPersianDigits(list.openRequestCount.toString())} در جریان',
+                  label: '${toPersianDigits(list.unresolvedRequestCount.toString())} در جریان',
                   icon: Icons.autorenew_rounded,
                   color: AppTokens.accentSecondary,
                 ),

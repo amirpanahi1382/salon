@@ -727,6 +727,7 @@ model VipRequest {
   roundSlot          VipListRoundSlot?
 
   @@unique([id, salonId])
+  @@unique([id, salonId, listId, reservationRound], map: "vip_requests_id_salon_list_round_key")
   @@index([salonId, createdAt, id])
   @@index([salonId, status])
   @@index([listId, status])
@@ -751,12 +752,13 @@ model VipListRoundSlot {
   salonId           String        @map("salon_id") @db.Uuid
   salon             Salon         @relation(fields: [salonId], references: [id], onDelete: Restrict)
   vipRequestId      String        @unique @map("vip_request_id") @db.Uuid
-  vipRequest        VipRequest    @relation(fields: [vipRequestId, salonId], references: [id, salonId], onDelete: Restrict)
+  vipRequest        VipRequest    @relation(fields: [vipRequestId, salonId, listId, reservationRound], references: [id, salonId, listId, reservationRound], onDelete: Restrict, onUpdate: Restrict, map: "vip_list_round_slots_request_identity_fkey")
   createdAt         DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
 
   @@id([listId, reservationRound, slotNo])
   @@unique([listId, reservationRound, salonId])
   @@unique([vipRequestId, salonId])
+  @@unique([vipRequestId, salonId, listId, reservationRound], map: "vip_list_round_slots_request_identity_key")
   @@index([listId, reservationRound])
   @@map("vip_list_round_slots")
 }

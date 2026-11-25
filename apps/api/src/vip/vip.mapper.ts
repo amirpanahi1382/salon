@@ -25,7 +25,7 @@ export function toListSummary(
     updatedAt: Date;
     requests: Array<{ id: string }>;
   },
-  requestCounts?: { totalRequestCount: number; openRequestCount: number; liveRequestCount?: number },
+  requestCounts?: { totalRequestCount: number; openRequestCount: number; liveRequestCount?: number; unresolvedRequestCount?: number },
   effectivelyRequestable = false,
   round?: { reservationRound: number; roundOccupiedCount: number; roundRemainingSlots: number },
 ): VipTargetListSummaryDto {
@@ -53,6 +53,7 @@ export function toListSummary(
     totalRequestCount: requestCounts?.totalRequestCount ?? 0,
     openRequestCount: requestCounts?.openRequestCount ?? 0,
     liveRequestCount: requestCounts?.liveRequestCount ?? 0,
+    unresolvedRequestCount: requestCounts?.unresolvedRequestCount ?? 0,
   };
 }
 

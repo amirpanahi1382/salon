@@ -1034,6 +1034,7 @@ class VipTargetList {
     this.totalRequestCount = 0,
     this.openRequestCount = 0,
     this.liveRequestCount = 0,
+    this.unresolvedRequestCount = 0,
     this.request,
     this.contacts = const [],
   });
@@ -1059,6 +1060,7 @@ class VipTargetList {
   final int totalRequestCount;
   final int openRequestCount;
   final int liveRequestCount;
+  final int unresolvedRequestCount;
   final VipRequest? request;
   final List<VipContact> contacts;
 
@@ -1093,6 +1095,7 @@ class VipTargetList {
       totalRequestCount: json['totalRequestCount'] as int? ?? 0,
       openRequestCount: json['openRequestCount'] as int? ?? 0,
       liveRequestCount: json['liveRequestCount'] as int? ?? 0,
+      unresolvedRequestCount: json['unresolvedRequestCount'] as int? ?? 0,
       request: json['request'] is Map
           ? VipRequest.fromJson(asJsonMap(json['request']))
           : null,
@@ -1631,6 +1634,7 @@ class AdminSalonProfile {
     required this.distinctVipListsRequested,
     required this.vipRequestCount,
     required this.vipOpenRequestCount,
+    this.vipUnresolvedRequestCount = 0,
     required this.ordinaryMessageRequestCount,
     required this.vipRecordedSendCount,
     required this.ordinaryRecordedSendCount,
@@ -1645,6 +1649,7 @@ class AdminSalonProfile {
   final int distinctVipListsRequested;
   final int vipRequestCount;
   final int vipOpenRequestCount;
+  final int vipUnresolvedRequestCount;
   final int ordinaryMessageRequestCount;
   final int vipRecordedSendCount;
   final int ordinaryRecordedSendCount;
@@ -1664,6 +1669,8 @@ class AdminSalonProfile {
           counts['distinctVipListsRequested'] as int? ?? 0,
       vipRequestCount: counts['vipRequestCount'] as int? ?? 0,
       vipOpenRequestCount: counts['vipOpenRequestCount'] as int? ?? 0,
+      vipUnresolvedRequestCount:
+          counts['vipUnresolvedRequestCount'] as int? ?? 0,
       ordinaryMessageRequestCount:
           counts['ordinaryMessageRequestCount'] as int? ?? 0,
       vipRecordedSendCount: counts['vipRecordedSendCount'] as int? ?? 0,
@@ -1908,58 +1915,6 @@ class AdminVipOutreachRequestPage {
     return AdminVipOutreachRequestPage(
       request: AdminVipOutreachRequest.fromJson(asJsonMap(map['request'])),
       page: parseItemPage(json, AdminVipOutreachRecipient.fromJson),
-    );
-  }
-}
-
-class OpportunityWorkspaceRow {
-  const OpportunityWorkspaceRow({
-    required this.rowKind,
-    required this.stableId,
-    required this.displayName,
-    this.customerId,
-    this.phoneNumber,
-    this.messageState,
-    this.deliveryMode,
-    this.messageRequestId,
-    this.requestedAt,
-    this.submittedAt,
-    this.commitmentExpectedAt,
-    this.returnEvidenceKind,
-    this.previousVisitAt,
-  });
-
-  final String rowKind;
-  final String stableId;
-  final String displayName;
-  final String? customerId;
-  final String? phoneNumber;
-  final String? messageState;
-  final String? deliveryMode;
-  final String? messageRequestId;
-  final DateTime? requestedAt;
-  final DateTime? submittedAt;
-  final DateTime? commitmentExpectedAt;
-  final String? returnEvidenceKind;
-  final DateTime? previousVisitAt;
-
-  bool get isVip => rowKind == 'VIP_RECIPIENT';
-
-  factory OpportunityWorkspaceRow.fromJson(Map<String, dynamic> json) {
-    return OpportunityWorkspaceRow(
-      rowKind: json['rowKind'] as String,
-      stableId: json['stableId'] as String,
-      displayName: json['displayName'] as String? ?? '',
-      customerId: json['customerId'] as String?,
-      phoneNumber: json['phoneNumber'] as String?,
-      messageState: json['messageState'] as String?,
-      deliveryMode: json['deliveryMode'] as String?,
-      messageRequestId: json['messageRequestId'] as String?,
-      requestedAt: _parseDate(json['requestedAt']),
-      submittedAt: _parseDate(json['submittedAt']),
-      commitmentExpectedAt: _parseDate(json['commitmentExpectedAt']),
-      returnEvidenceKind: json['returnEvidenceKind'] as String?,
-      previousVisitAt: _parseDate(json['previousVisitAt']),
     );
   }
 }

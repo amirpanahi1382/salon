@@ -1,13 +1,21 @@
 import { Prisma } from '@salon/database';
 import { isVipRegionCode, VIP_LIST_ROUND_SLOT_CAPACITY, VIP_REGION_CODES } from '@salon/shared';
 import { PrismaService } from '../infrastructure/database/prisma.service';
-import { VIP_OPEN_REQUEST_STATUSES } from './admin-salon-profile.use-case';
 import { VIP_RECIPIENT_EXECUTION_SQL, VIP_RECIPIENT_STOP_JOIN } from './vip-recipient-execution.sql';
+
+/** Historical status count retained in the API; unresolved work is a separate fact. */
+export const VIP_OPEN_REQUEST_STATUSES = [
+  'AWAITING_SAMPLE_WORK',
+  'SUBMITTED',
+  'MANUAL_QUEUED',
+  'BALE_NOT_IMPLEMENTED',
+] as const;
 
 export type VipListRequestCounts = {
   totalRequestCount: number;
   openRequestCount: number;
   liveRequestCount: number;
+  unresolvedRequestCount: number;
 };
 
 const BLOCKING_EXECUTION_STATUSES = ['SUBMITTED', 'MANUAL_QUEUED', 'BALE_NOT_IMPLEMENTED'] as const;
@@ -205,6 +213,7 @@ type CountRow = {
   totalRequestCount: number;
   openRequestCount: number;
   liveRequestCount: number;
+  unresolvedRequestCount: number;
 };
 
 export async function loadVipListRequestCounts(
@@ -229,7 +238,10 @@ export async function loadVipListRequestCounts(
             r.status::text = 'AWAITING_SAMPLE_WORK'
             AND r.reserved_until >= ${now}
           )
-      )::int AS "liveRequestCount"
+      )::int AS "liveRequestCount",
+      COUNT(*) FILTER (
+        WHERE ${vipRequestOccupyingSql('r', now)}
+      )::int AS "unresolvedRequestCount"
     FROM vip_requests r
     WHERE r.list_id IN (${Prisma.join(listIds.map((id) => Prisma.sql`${id}::uuid`))})
     GROUP BY r.list_id
@@ -239,6 +251,7 @@ export async function loadVipListRequestCounts(
       totalRequestCount: Number(row.totalRequestCount),
       openRequestCount: Number(row.openRequestCount),
       liveRequestCount: Number(row.liveRequestCount),
+      unresolvedRequestCount: Number(row.unresolvedRequestCount),
     });
   }
   return counts;
