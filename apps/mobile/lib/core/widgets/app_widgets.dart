@@ -1052,7 +1052,9 @@ String friendlyError(Object error) {
 }
 
 class PagedFooter extends StatelessWidget {
-  const PagedFooter({super.key, required this.loading});
+  const PagedFooter({super.key, required this.loading, this.onRetry});
+
+  final VoidCallback? onRetry;
 
   final bool loading;
 
@@ -1066,6 +1068,13 @@ class PagedFooter extends StatelessWidget {
                 height: 24,
                 width: 24,
                 child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : onRetry != null
+            ? TextButton(
+                onPressed: onRetry,
+                child: const Text(
+                  'دریافت ادامهٔ فهرست ناموفق بود · تلاش دوباره',
+                ),
               )
             : const SizedBox.shrink(),
       ),

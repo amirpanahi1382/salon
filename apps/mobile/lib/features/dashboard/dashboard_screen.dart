@@ -78,10 +78,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           children: [
             const Positioned.fill(child: DashboardBackdrop()),
             SafeArea(
-              child: ErrorView(
-                message: friendlyError(_error!),
-                onRetry: _load,
-              ),
+              child: ErrorView(message: friendlyError(_error!), onRetry: _load),
             ),
           ],
         ),
@@ -100,8 +97,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               onRefresh: _load,
               child: LayoutBuilder(
                 builder: (context, constraints) {
-                  final extra =
-                      constraints.maxWidth > AppTokens.contentMaxWidth
+                  final extra = constraints.maxWidth > AppTokens.contentMaxWidth
                       ? (constraints.maxWidth - AppTokens.contentMaxWidth) / 2
                       : AppTokens.space16;
                   final pad = extra.clamp(AppTokens.space16, 80.0);
@@ -116,6 +112,11 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                     ),
                     children: [
                       _DashboardHeader(name: displayName),
+                      if (_error != null)
+                        TextButton(
+                          onPressed: _load,
+                          child: const Text('به‌روزرسانی نشد · تلاش دوباره'),
+                        ),
                       const SizedBox(height: AppTokens.space20),
                       OverallPerformanceCard(
                         performance: performance,

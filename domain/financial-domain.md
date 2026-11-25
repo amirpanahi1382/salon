@@ -2,7 +2,7 @@
 
 **Status:** Implemented  
 **Currency:** IRR only  
-**Reporting time:** UTC calendar (not salon-local)  
+**Reporting time:** Asia/Tehran, Jalali calendar for monthly revenue
 **See also:** `domain/domain-model.md`, `architecture/data-model.md`
 
 Header vs line-item equality is application-validated and, for new financial writes after Phase 9 migration, database-enforced at commit. A valid transaction has at least one item and `transactions.amount = SUM(transaction_items.total_amount)` exactly. Each new/financially updated item has `total_amount = unit_price * quantity`. The database uses exact `NUMERIC`, not floating point. Both `COMPLETED` and `VOIDED` retain the same invariant; voiding changes status, not money.
@@ -86,7 +86,7 @@ Create/update service, create/void transaction: `OWNER`, `MANAGER` only.
 - `averageRevenuePerTransaction` — total / completed count (null if count is 0)  
 - `averageSpendPerVisit` — sum of completed amounts **with a visitId** / distinct linked visits (null if none; unlinked transactions are excluded)  
 - `lastRevenueAt` — max completed `occurredAt`  
-- `revenueTrend` — this UTC month vs previous UTC month when the previous month has ≥1 completed transaction; otherwise null (`INCREASING` / `DECREASING` / `STABLE`)
+- `revenueTrend` — current Jalali month to date vs the same elapsed period of the previous Jalali month when the comparison period has ≥1 completed transaction; otherwise null (`INCREASING` / `DECREASING` / `STABLE`)
 
 `HIGH_VALUE` / `GROWING_VALUE` are deferred.
 

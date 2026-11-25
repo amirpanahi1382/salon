@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/networking/api_client.dart';
+import '../../core/errors/api_exception.dart';
 import '../../core/state/providers.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/app_tokens.dart';
@@ -48,8 +49,10 @@ class OutreachMessageComposer extends ConsumerStatefulWidget {
       _OutreachMessageComposerState();
 }
 
-class _OutreachMessageComposerState extends ConsumerState<OutreachMessageComposer> {
-  late final String _idempotencyKey;
+class _OutreachMessageComposerState
+    extends ConsumerState<OutreachMessageComposer> {
+  late String _idempotencyKey;
+  String? _pendingText;
   final _customerName = TextEditingController();
   final _date = TextEditingController();
   final _time = TextEditingController();
@@ -83,13 +86,13 @@ class _OutreachMessageComposerState extends ConsumerState<OutreachMessageCompose
   }
 
   OutreachMessageDraft get _draft => OutreachMessageDraft(
-        customerName: _customerName.text,
-        dateLabel: _date.text,
-        time: _time.text,
-        discountThousands: _discount.text,
-        salonName: _salonName.text,
-        salonPhone: _salonPhone.text,
-      );
+    customerName: _customerName.text,
+    dateLabel: _date.text,
+    time: _time.text,
+    discountThousands: _discount.text,
+    salonName: _salonName.text,
+    salonPhone: _salonPhone.text,
+  );
 
   Future<void> _load() async {
     setState(() {
@@ -130,7 +133,9 @@ class _OutreachMessageComposerState extends ConsumerState<OutreachMessageCompose
 
   Future<void> _loadUpcoming() async {
     try {
-      final page = await ref.read(returnCommitmentRepositoryProvider).listUpcoming();
+      final page = await ref
+          .read(returnCommitmentRepositoryProvider)
+          .listUpcoming();
       if (!mounted) {
         return;
       }
@@ -186,10 +191,13 @@ class _OutreachMessageComposerState extends ConsumerState<OutreachMessageCompose
       _error = null;
       _status = AppStrings.messageSending;
     });
+    final text = _pendingText ?? _draft.composed;
     try {
-      final delivery = await ref.read(messageRepositoryProvider).sendManualOutreach(
+      final delivery = await ref
+          .read(messageRepositoryProvider)
+          .sendManualOutreach(
             customerId: widget.customerId,
-            text: _draft.composed,
+            text: text,
             idempotencyKey: _idempotencyKey,
           );
       if (!mounted) {
@@ -199,7 +207,9 @@ class _OutreachMessageComposerState extends ConsumerState<OutreachMessageCompose
         _busy = false;
         _status = messageStatusLabel(delivery.status);
       });
-      ref.read(manualOutreachSelectionProvider.notifier).markSubmitted(
+      ref
+          .read(manualOutreachSelectionProvider.notifier)
+          .markSubmitted(
             customerId: widget.customerId,
             messageRequestId: delivery.id,
             status: delivery.status,
@@ -212,7 +222,16 @@ class _OutreachMessageComposerState extends ConsumerState<OutreachMessageCompose
       setState(() {
         _busy = false;
         _status = null;
-        _error = error;
+        if (error is NetworkException ||
+            (error is ApiException &&
+                (error.statusCode >= 500 || error.statusCode == 408))) {
+          _pendingText = text;
+          _error = 'نتیجهٔ ثبت پیام مشخص نیست.';
+        } else {
+          _pendingText = null;
+          _idempotencyKey = createRequestId();
+          _error = error;
+        }
       });
     }
   }
@@ -245,7 +264,9 @@ class _OutreachMessageComposerState extends ConsumerState<OutreachMessageCompose
                         height: 4,
                         decoration: BoxDecoration(
                           color: AppTokens.line,
-                          borderRadius: BorderRadius.circular(AppTokens.radiusSm),
+                          borderRadius: BorderRadius.circular(
+                            AppTokens.radiusSm,
+                          ),
                         ),
                       ),
                     ),
@@ -264,21 +285,24 @@ class _OutreachMessageComposerState extends ConsumerState<OutreachMessageCompose
                       fieldKey: const Key('outreach-customer-name'),
                       label: AppStrings.outreachFieldCustomerName,
                       controller: _customerName,
-                      enabled: !_busy && _status == null,
+                      enabled:
+                          !_busy && _status == null && _pendingText == null,
                     ),
                     const _FixedLine('عزیز برای'),
                     _EditableChipField(
                       fieldKey: const Key('outreach-date'),
                       label: AppStrings.outreachFieldDate,
                       controller: _date,
-                      enabled: !_busy && _status == null,
+                      enabled:
+                          !_busy && _status == null && _pendingText == null,
                     ),
                     const _FixedLine('ساعت'),
                     _EditableChipField(
                       fieldKey: const Key('outreach-time'),
                       label: AppStrings.outreachFieldTime,
                       controller: _time,
-                      enabled: !_busy && _status == null,
+                      enabled:
+                          !_busy && _status == null && _pendingText == null,
                       keyboardType: TextInputType.datetime,
                       textDirection: TextDirection.ltr,
                     ),
@@ -287,7 +311,8 @@ class _OutreachMessageComposerState extends ConsumerState<OutreachMessageCompose
                       fieldKey: const Key('outreach-discount'),
                       label: AppStrings.outreachFieldDiscount,
                       controller: _discount,
-                      enabled: !_busy && _status == null,
+                      enabled:
+                          !_busy && _status == null && _pendingText == null,
                       keyboardType: TextInputType.number,
                       textDirection: TextDirection.ltr,
                       inputFormatters: [FilteringTextInputFormatter.digitsOnly],
@@ -297,14 +322,18 @@ class _OutreachMessageComposerState extends ConsumerState<OutreachMessageCompose
                       fieldKey: const Key('outreach-salon-name'),
                       label: AppStrings.outreachFieldSalonName,
                       controller: _salonName,
-                      enabled: !_busy && _status == null,
+                      enabled:
+                          !_busy && _status == null && _pendingText == null,
                     ),
-                    const _FixedLine('در خدمت شما باشیم! برای رزرو این وقت با شماره'),
+                    const _FixedLine(
+                      'در خدمت شما باشیم! برای رزرو این وقت با شماره',
+                    ),
                     _EditableChipField(
                       fieldKey: const Key('outreach-salon-phone'),
                       label: AppStrings.outreachFieldSalonPhone,
                       controller: _salonPhone,
-                      enabled: !_busy && _status == null,
+                      enabled:
+                          !_busy && _status == null && _pendingText == null,
                       keyboardType: TextInputType.phone,
                       textDirection: TextDirection.ltr,
                     ),
@@ -315,14 +344,22 @@ class _OutreachMessageComposerState extends ConsumerState<OutreachMessageCompose
                       height: AppTokens.buttonHeight,
                       child: FilledButton(
                         key: const Key('outreach-send'),
-                        onPressed: _busy || _status != null ? null : _confirmAndSend,
+                        onPressed: _busy || _status != null
+                            ? null
+                            : (_pendingText == null ? _confirmAndSend : _send),
                         child: _busy
                             ? const SizedBox(
                                 height: 18,
                                 width: 18,
-                                child: CircularProgressIndicator(strokeWidth: 2),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
                               )
-                            : const Text(AppStrings.sendMessageAction),
+                            : Text(
+                                _pendingText == null
+                                    ? AppStrings.sendMessageAction
+                                    : 'تلاش دوباره',
+                              ),
                       ),
                     ),
                     if (_status != null) ...[
@@ -332,7 +369,9 @@ class _OutreachMessageComposerState extends ConsumerState<OutreachMessageCompose
                     if (_error != null) ...[
                       const SizedBox(height: AppTokens.space8),
                       Text(
-                        _error is String ? _error as String : friendlyError(_error!),
+                        _error is String
+                            ? _error as String
+                            : friendlyError(_error!),
                         style: const TextStyle(color: AppColors.danger),
                       ),
                     ],

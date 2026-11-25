@@ -25,6 +25,7 @@ class _VisitsScreenState extends ConsumerState<VisitsScreen> {
   Object? _error;
   bool _loading = true;
   bool _loadingMore = false;
+  bool _pageFailed = false;
   bool _exporting = false;
 
   bool get _canDelete =>
@@ -42,6 +43,7 @@ class _VisitsScreenState extends ConsumerState<VisitsScreen> {
   Future<void> _load() async {
     setState(() {
       _loading = true;
+      _pageFailed = false;
       _error = null;
       _nextCursor = null;
       _hasMore = false;
@@ -74,13 +76,14 @@ class _VisitsScreenState extends ConsumerState<VisitsScreen> {
     if (_loading || _loadingMore || !_hasMore || _nextCursor == null) {
       return;
     }
-    setState(() => _loadingMore = true);
+    setState(() {
+      _loadingMore = true;
+      _pageFailed = false;
+    });
     try {
-      final page = await ref.read(visitRepositoryProvider).list(
-        customerId: _customer?.id,
-        day: _day,
-        cursor: _nextCursor,
-      );
+      final page = await ref
+          .read(visitRepositoryProvider)
+          .list(customerId: _customer?.id, day: _day, cursor: _nextCursor);
       if (!mounted) {
         return;
       }
@@ -94,7 +97,10 @@ class _VisitsScreenState extends ConsumerState<VisitsScreen> {
       if (!mounted) {
         return;
       }
-      setState(() => _loadingMore = false);
+      setState(() {
+        _loadingMore = false;
+        _pageFailed = true;
+      });
     }
   }
 
@@ -160,9 +166,8 @@ class _VisitsScreenState extends ConsumerState<VisitsScreen> {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(friendlyError(error))));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(friendlyError(error))));
     } finally {
       if (mounted) {
         setState(() => _exporting = false);
@@ -284,44 +289,49 @@ class _VisitsScreenState extends ConsumerState<VisitsScreen> {
                     onRefresh: _load,
                     child: PagedNotificationListener(
                       hasMore: _hasMore,
-                      loading: _loading || _loadingMore,
+                      loading: _loading || _loadingMore || _pageFailed,
                       onLoadMore: _loadMore,
                       child: _items.isEmpty
-                        ? ListView(
-                            primary: true,
-                            children: [
-                              const SizedBox(height: 48),
-                              EmptyStateView(
-                                title:
-                                    _day != null &&
-                                        _customer == null &&
-                                        _dateOnly(_day!) ==
-                                            _dateOnly(DateTime.now())
-                                    ? AppStrings.noVisitsToday
-                                    : AppStrings.noMatchingVisits,
-                                body: AppStrings.clearFilters,
-                              ),
-                            ],
-                          )
-                        : ListView.separated(
-                            primary: true,
-                            itemCount: _items.length + (_hasMore ? 1 : 0),
-                            separatorBuilder: (_, _) =>
-                                const Divider(height: 1),
-                            itemBuilder: (context, index) {
-                              if (index >= _items.length) {
-                                return PagedFooter(loading: _loadingMore);
-                              }
-                              final visit = _items[index];
-                              return _VisitEventRow(
-                                visit: visit,
-                                dateLabel: formatJalaliDateTime(visit.visitedAt),
-                                onDelete: _canDelete
-                                    ? () => _delete(visit)
-                                    : null,
-                              );
-                            },
-                          ),
+                          ? ListView(
+                              primary: true,
+                              children: [
+                                const SizedBox(height: 48),
+                                EmptyStateView(
+                                  title:
+                                      _day != null &&
+                                          _customer == null &&
+                                          _dateOnly(_day!) ==
+                                              _dateOnly(DateTime.now())
+                                      ? AppStrings.noVisitsToday
+                                      : AppStrings.noMatchingVisits,
+                                  body: AppStrings.clearFilters,
+                                ),
+                              ],
+                            )
+                          : ListView.separated(
+                              primary: true,
+                              itemCount: _items.length + (_hasMore ? 1 : 0),
+                              separatorBuilder: (_, _) =>
+                                  const Divider(height: 1),
+                              itemBuilder: (context, index) {
+                                if (index >= _items.length) {
+                                  return PagedFooter(
+                                    loading: _loadingMore,
+                                    onRetry: _pageFailed ? _loadMore : null,
+                                  );
+                                }
+                                final visit = _items[index];
+                                return _VisitEventRow(
+                                  visit: visit,
+                                  dateLabel: formatJalaliDateTime(
+                                    visit.visitedAt,
+                                  ),
+                                  onDelete: _canDelete
+                                      ? () => _delete(visit)
+                                      : null,
+                                );
+                              },
+                            ),
                     ),
                   ),
           ),
@@ -391,6 +401,7 @@ class _CustomerPickerDialogState extends ConsumerState<_CustomerPickerDialog> {
   bool _hasMore = false;
   bool _loading = true;
   bool _loadingMore = false;
+  bool _pageFailed = false;
 
   @override
   void initState() {
@@ -407,6 +418,7 @@ class _CustomerPickerDialogState extends ConsumerState<_CustomerPickerDialog> {
   Future<void> _load() async {
     setState(() {
       _loading = true;
+      _pageFailed = false;
       _nextCursor = null;
       _hasMore = false;
     });
@@ -435,7 +447,10 @@ class _CustomerPickerDialogState extends ConsumerState<_CustomerPickerDialog> {
     if (_loading || _loadingMore || !_hasMore || _nextCursor == null) {
       return;
     }
-    setState(() => _loadingMore = true);
+    setState(() {
+      _loadingMore = true;
+      _pageFailed = false;
+    });
     try {
       final page = await ref
           .read(customerRepositoryProvider)
@@ -453,7 +468,10 @@ class _CustomerPickerDialogState extends ConsumerState<_CustomerPickerDialog> {
       if (!mounted) {
         return;
       }
-      setState(() => _loadingMore = false);
+      setState(() {
+        _loadingMore = false;
+        _pageFailed = true;
+      });
     }
   }
 
@@ -479,25 +497,29 @@ class _CustomerPickerDialogState extends ConsumerState<_CustomerPickerDialog> {
                   ? const LoadingView()
                   : PagedNotificationListener(
                       hasMore: _hasMore,
-                      loading: _loading || _loadingMore,
+                      loading: _loading || _loadingMore || _pageFailed,
                       onLoadMore: _loadMore,
                       child: ListView(
-                      primary: true,
-                      children: [
-                        ListTile(
-                          title: const Text(AppStrings.allCustomers),
-                          onTap: () => Navigator.pop(context, 'all'),
-                        ),
-                        ..._items.map(
-                          (customer) => ListTile(
-                            title: Text(customer.fullName),
-                            subtitle: LtrText(customer.phoneNumber),
-                            onTap: () => Navigator.pop(context, customer),
+                        primary: true,
+                        children: [
+                          ListTile(
+                            title: const Text(AppStrings.allCustomers),
+                            onTap: () => Navigator.pop(context, 'all'),
                           ),
-                        ),
-                        if (_hasMore) PagedFooter(loading: _loadingMore),
-                      ],
-                    ),
+                          ..._items.map(
+                            (customer) => ListTile(
+                              title: Text(customer.fullName),
+                              subtitle: LtrText(customer.phoneNumber),
+                              onTap: () => Navigator.pop(context, customer),
+                            ),
+                          ),
+                          if (_hasMore)
+                            PagedFooter(
+                              loading: _loadingMore,
+                              onRetry: _pageFailed ? _loadMore : null,
+                            ),
+                        ],
+                      ),
                     ),
             ),
           ],

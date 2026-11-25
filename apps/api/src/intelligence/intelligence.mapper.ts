@@ -40,7 +40,7 @@ export function toRevenueDto(metrics: CustomerRevenueMetrics): CustomerRevenueDt
     revenueThisUtcMonth: formatMoneyString(metrics.thisUtcMonthMinor),
     revenuePreviousUtcMonth: formatMoneyString(metrics.previousUtcMonthMinor),
     revenueTrend: deriveRevenueTrend(metrics),
-    reportingTime: 'UTC',
+    reportingTime: 'Asia/Tehran',
   };
 }
 

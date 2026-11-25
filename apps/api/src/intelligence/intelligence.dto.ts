@@ -103,8 +103,8 @@ export class CustomerRevenueDto {
   @ApiProperty({ nullable: true, enum: ['INCREASING', 'DECREASING', 'STABLE'] })
   revenueTrend!: 'INCREASING' | 'DECREASING' | 'STABLE' | null;
 
-  @ApiProperty({ description: 'Reporting periods use UTC calendar boundaries, not salon-local time' })
-  reportingTime!: 'UTC';
+  @ApiProperty({ description: 'Comparable Jalali month-to-date windows in Asia/Tehran; UtcMonth field names are retained for compatibility' })
+  reportingTime!: 'Asia/Tehran';
 }
 
 export class CustomerIntelligenceResponseDto {
@@ -189,7 +189,7 @@ export class IntelligenceSummaryResponseDto {
   revenueDeclineOpportunities!: number;
 
   @ApiProperty()
-  reportingTime!: 'UTC';
+  reportingTime!: 'Asia/Tehran';
 }
 
 export class CustomerSegmentItemDto {

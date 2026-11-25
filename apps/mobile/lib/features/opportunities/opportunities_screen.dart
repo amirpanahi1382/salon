@@ -42,6 +42,7 @@ class _OpportunitiesScreenState extends ConsumerState<OpportunitiesScreen> {
 
   bool _loading = true;
   bool _loadingMore = false;
+  bool _pageFailed = false;
   Object? _error;
 
   /// Bumped on every section change, refresh, and VIP-screen return so late
@@ -63,6 +64,7 @@ class _OpportunitiesScreenState extends ConsumerState<OpportunitiesScreen> {
     final section = _section;
     setState(() {
       _loading = true;
+      _pageFailed = false;
       _error = null;
       _loadingMore = false;
       switch (section) {
@@ -126,7 +128,10 @@ class _OpportunitiesScreenState extends ConsumerState<OpportunitiesScreen> {
     if (_loading || _loadingMore) return;
     final generation = _loadGeneration;
     final section = _section;
-    setState(() => _loadingMore = true);
+    setState(() {
+      _loadingMore = true;
+      _pageFailed = false;
+    });
     try {
       switch (section) {
         case _OpportunitiesSection.revenueDrop:
@@ -186,7 +191,10 @@ class _OpportunitiesScreenState extends ConsumerState<OpportunitiesScreen> {
       }
     } catch (_) {
       if (!_isCurrentLoad(generation, section)) return;
-      setState(() => _loadingMore = false);
+      setState(() {
+        _loadingMore = false;
+        _pageFailed = true;
+      });
     }
   }
 
@@ -347,7 +355,7 @@ class _OpportunitiesScreenState extends ConsumerState<OpportunitiesScreen> {
                     onRefresh: _load,
                     child: PagedNotificationListener(
                       hasMore: _hasMore,
-                      loading: _loading || _loadingMore,
+                      loading: _loading || _loadingMore || _pageFailed,
                       onLoadMore: _loadMore,
                       child: ListView(
                         padding: const EdgeInsets.fromLTRB(
@@ -372,7 +380,11 @@ class _OpportunitiesScreenState extends ConsumerState<OpportunitiesScreen> {
                             const SizedBox(height: AppTokens.space16),
                           ],
                           ..._sectionBody(context, selecting, outreach),
-                          if (_hasMore) PagedFooter(loading: _loadingMore),
+                          if (_hasMore)
+                            PagedFooter(
+                              loading: _loadingMore,
+                              onRetry: _pageFailed ? _loadMore : null,
+                            ),
                         ],
                       ),
                     ),

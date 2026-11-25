@@ -250,7 +250,7 @@ describeIfDb('Services and transactions (e2e)', () => {
     expect(intel.body.revenue.transactionCount).toBe(4);
     expect(intel.body.revenue.averageSpendPerVisit).toBe('150000.00');
     expect(intel.body.revenue.averageRevenuePerTransaction).toBe('262500.00');
-    expect(intel.body.revenue.reportingTime).toBe('UTC');
+    expect(intel.body.revenue.reportingTime).toBe('Asia/Tehran');
 
     await request(app.getHttpServer())
       .post(`/transactions/${created.body.id}/void`)

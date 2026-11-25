@@ -310,6 +310,7 @@ class FakeMessageRepository extends MessageRepository {
   List<OrdinaryMessageHistoryItem> ordinaryHistory;
   Object? error;
   int sendCalls = 0;
+  final manualKeys = <String>[];
   int listManualCalls = 0;
   int listOrdinaryHistoryCalls = 0;
   String? lastText;
@@ -350,6 +351,7 @@ class FakeMessageRepository extends MessageRepository {
     required String text,
     required String idempotencyKey,
   }) async {
+    manualKeys.add(idempotencyKey);
     sendCalls += 1;
     lastText = text;
     if (error != null) {
@@ -3000,7 +3002,7 @@ void main() {
     tester.view.physicalSize = const Size(800, 1600);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
-    final messages = FakeMessageRepository();
+    final messages = FakeMessageRepository()..error = const NetworkException();
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
@@ -3031,6 +3033,17 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, 'ارسال پیام').last);
     await tester.pumpAndSettle();
     expect(messages.sendCalls, 1);
+    expect(
+      tester.widget<TextField>(find.widgetWithText(TextField, 'ساعت')).enabled,
+      false,
+    );
+    final firstText = messages.lastText;
+    messages.error = null;
+    await tester.tap(find.byKey(const Key('outreach-send')));
+    await tester.pumpAndSettle();
+    expect(messages.sendCalls, 2);
+    expect(messages.manualKeys.toSet(), hasLength(1));
+    expect(messages.lastText, firstText);
     expect(find.text('پیام در صف ارسال قرار گرفت.'), findsOneWidget);
     expect(messages.lastText, contains('18:00'));
   });

@@ -2,8 +2,7 @@ import { Prisma, type PrismaClient } from '@salon/database';
 import {
   emptyRevenueMetrics,
   parseMoneyString,
-  utcMonthStart,
-  utcNextMonth,
+  comparableJalaliMonthWindows,
   type CustomerRevenueMetrics,
 } from '@salon/shared';
 
@@ -67,9 +66,7 @@ export async function loadCustomerRevenueMap(
   customerIds?: readonly string[],
 ): Promise<Map<string, CustomerRevenueMetrics>> {
   if (customerIds?.length === 0) return new Map();
-  const monthStart = utcMonthStart(asOf);
-  const nextMonth = utcNextMonth(monthStart);
-  const previousStart = utcMonthStart(new Date(Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth() - 1, 1)));
+  const windows = comparableJalaliMonthWindows(asOf);
 
   const rows = await prisma.$queryRaw<RevenueSqlRow[]>(Prisma.sql`
     SELECT
@@ -80,13 +77,13 @@ export async function loadCustomerRevenueMap(
       COALESCE(SUM(amount) FILTER (WHERE status = 'COMPLETED' AND visit_id IS NOT NULL), 0)::text AS "linkedRevenue",
       MAX(occurred_at) FILTER (WHERE status = 'COMPLETED') AS "lastRevenueAt",
       COALESCE(SUM(amount) FILTER (
-        WHERE status = 'COMPLETED' AND occurred_at >= ${monthStart} AND occurred_at < ${nextMonth}
+        WHERE status = 'COMPLETED' AND occurred_at >= ${windows.currentStart} AND occurred_at <= ${windows.now}
       ), 0)::text AS "thisUtcMonth",
       COALESCE(SUM(amount) FILTER (
-        WHERE status = 'COMPLETED' AND occurred_at >= ${previousStart} AND occurred_at < ${monthStart}
+        WHERE status = 'COMPLETED' AND occurred_at >= ${windows.previousStart} AND occurred_at < ${windows.previousEndExclusive}
       ), 0)::text AS "previousUtcMonth",
       COUNT(*) FILTER (
-        WHERE status = 'COMPLETED' AND occurred_at >= ${previousStart} AND occurred_at < ${monthStart}
+        WHERE status = 'COMPLETED' AND occurred_at >= ${windows.previousStart} AND occurred_at < ${windows.previousEndExclusive}
       )::int AS "previousUtcMonthTransactionCount"
     FROM transactions
     WHERE salon_id = ${tenantId}::uuid
@@ -102,9 +99,7 @@ export async function loadSalonRevenueTotals(
   tenantId: string,
   asOf: Date,
 ): Promise<CustomerRevenueMetrics> {
-  const monthStart = utcMonthStart(asOf);
-  const nextMonth = utcNextMonth(monthStart);
-  const previousStart = utcMonthStart(new Date(Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth() - 1, 1)));
+  const windows = comparableJalaliMonthWindows(asOf);
 
   const rows = await prisma.$queryRaw<RevenueSqlRow[]>(Prisma.sql`
     SELECT
@@ -115,13 +110,13 @@ export async function loadSalonRevenueTotals(
       COALESCE(SUM(amount) FILTER (WHERE status = 'COMPLETED' AND visit_id IS NOT NULL), 0)::text AS "linkedRevenue",
       MAX(occurred_at) FILTER (WHERE status = 'COMPLETED') AS "lastRevenueAt",
       COALESCE(SUM(amount) FILTER (
-        WHERE status = 'COMPLETED' AND occurred_at >= ${monthStart} AND occurred_at < ${nextMonth}
+        WHERE status = 'COMPLETED' AND occurred_at >= ${windows.currentStart} AND occurred_at <= ${windows.now}
       ), 0)::text AS "thisUtcMonth",
       COALESCE(SUM(amount) FILTER (
-        WHERE status = 'COMPLETED' AND occurred_at >= ${previousStart} AND occurred_at < ${monthStart}
+        WHERE status = 'COMPLETED' AND occurred_at >= ${windows.previousStart} AND occurred_at < ${windows.previousEndExclusive}
       ), 0)::text AS "previousUtcMonth",
       COUNT(*) FILTER (
-        WHERE status = 'COMPLETED' AND occurred_at >= ${previousStart} AND occurred_at < ${monthStart}
+        WHERE status = 'COMPLETED' AND occurred_at >= ${windows.previousStart} AND occurred_at < ${windows.previousEndExclusive}
       )::int AS "previousUtcMonthTransactionCount"
     FROM transactions
     WHERE salon_id = ${tenantId}::uuid

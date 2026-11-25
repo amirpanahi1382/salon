@@ -29,7 +29,7 @@ export class IntelligenceController {
 
   @Get('summary')
   @ApiOperation({
-    summary: 'Visit-based status counts plus completed-transaction revenue (UTC calendar)',
+    summary: 'Visit-based status counts plus completed-transaction revenue (Jalali month to date, Asia/Tehran)',
   })
   summary(@CurrentUser() user: AuthenticatedPrincipal) {
     return this.getSummary.execute(user);

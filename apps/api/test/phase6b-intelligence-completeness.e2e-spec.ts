@@ -3,6 +3,7 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
+import { comparableJalaliMonthWindows } from '@salon/shared';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/infrastructure/database/prisma.service';
 import { HttpExceptionFilter } from '../src/infrastructure/http/http-exception.filter';
@@ -90,10 +91,8 @@ describeIfDb('Phase 6B intelligence completeness (disposable PostgreSQL)', () =>
     await db.client.visit.createMany({ data: exactIds.map((customerId) => ({
       id: randomUUID(), salonId: exactSalonId, customerId, visitedAt: daysAgo(75),
     })) });
-    const month = new Date();
-    const monthStart = new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth(), 1));
-    const previousMonthStart = new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth() - 1, 1));
-    const previousMonthEnd = new Date(monthStart.getTime() - 1);
+    const { currentStart: monthStart, previousStart: previousMonthStart, previousEndInclusive: previousMonthEnd } =
+      comparableJalaliMonthWindows(new Date());
     const serviceId = randomUUID(), exactServiceId = randomUUID();
     await db.client.service.createMany({ data: [
       { id: serviceId, salonId, name: 'Synthetic revenue' },

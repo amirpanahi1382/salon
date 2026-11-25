@@ -268,8 +268,7 @@ class AppStrings {
   static const adminVipReopenList = 'دور جدید';
   static const adminVipReopenListConfirm =
       'یک دور رزرو تازه برای سالن‌های دیگر باز می‌شود. درخواست‌های فعلی باقی می‌مانند.';
-  static const adminVipReopenAlreadyOpen =
-      'این دور هنوز ظرفیت خالی دارد.';
+  static const adminVipReopenAlreadyOpen = 'این دور هنوز ظرفیت خالی دارد.';
   static String adminVipRoundCapacity(int remaining, int capacity) =>
       'ظرفیت باقی‌مانده: ${toPersianDigits(remaining.toString())} از ${toPersianDigits(capacity.toString())}';
   static const adminVipInUseCannotChange =
@@ -879,7 +878,8 @@ String localizeUserFacingMessage(String message) {
     'At most 3 sample-work images are allowed': AppStrings.vipMaxSamples,
     'Bale is not available for VIP outreach': AppStrings.vipBaleNotImplemented,
     'This VIP list is not available': AppStrings.vipListUnavailable,
-    'This VIP list does not have enough contacts': AppStrings.vipListUnavailable,
+    'This VIP list does not have enough contacts':
+        AppStrings.vipListUnavailable,
     'This salon already has an unresolved request for this VIP list':
         AppStrings.vipListOwnUnresolved,
     'This VIP list has no remaining reservation slots':
@@ -986,7 +986,7 @@ String localizeIntelligenceCopy(String text) {
   }
 
   final revenue = RegExp(
-    r'^Completed revenue this UTC month is (.+) IRR versus (.+) IRR in the previous UTC month\.$',
+    r'^Completed revenue this (?:UTC month|Jalali month to date) is (.+) IRR versus (.+) IRR in the (?:previous UTC month|comparable previous Jalali period)\.$',
   );
   final drop = revenue.firstMatch(text);
   if (drop != null) {

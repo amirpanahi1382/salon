@@ -41,7 +41,7 @@ export class GetIntelligenceSummaryUseCase {
       revenuePreviousUtcMonth: formatMoneyString(salonRevenue.previousUtcMonthMinor),
       revenueTrend: deriveRevenueTrend(salonRevenue),
       revenueDeclineOpportunities: 0,
-      reportingTime: 'UTC',
+      reportingTime: 'Asia/Tehran',
     };
 
     let after: { createdAt: Date; id: string } | undefined;

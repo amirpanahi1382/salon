@@ -83,7 +83,7 @@ export function revenueOpportunities(metrics: CustomerRevenueMetrics): Retention
   return [
     {
       type,
-      reason: `Completed revenue this UTC month is ${formatMoneyString(metrics.thisUtcMonthMinor)} IRR versus ${formatMoneyString(metrics.previousUtcMonthMinor)} IRR in the previous UTC month.`,
+      reason: `Completed revenue this Jalali month to date is ${formatMoneyString(metrics.thisUtcMonthMinor)} IRR versus ${formatMoneyString(metrics.previousUtcMonthMinor)} IRR in the comparable previous Jalali period.`,
       recommendedAction: 'Review this customer’s recent decline.',
     },
   ];

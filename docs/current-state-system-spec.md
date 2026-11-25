@@ -128,7 +128,7 @@ Flutter: record visit, list, export, delete for non-STAFF.
 
 **Implemented:** `LedgerTransaction` + items; create; list; get; void (repeat void no-op); customer transactions list. Amount decimal strings. IRR. Complete-with-sale writes visit+tx+item atomically. Phase 9 database triggers now enforce item arithmetic and a nonempty exact item sum equal to the header at commit for new/financially changed rows, including VOIDED; existing historical discrepancies remain unvalidated until the read-only preflight and provenance review described in `domain/financial-domain.md`.
 
-Revenue metrics on intelligence summary/customer: completed only; UTC months; `REVENUE_DECLINE` when trend `DECREASING`. Details: `domain/financial-domain.md`.
+Revenue metrics on intelligence summary/customer: completed only; comparable Jalali month-to-date periods in Asia/Tehran (legacy JSON field names retained); `REVENUE_DECLINE` when trend `DECREASING`. Details: `domain/financial-domain.md`.
 
 Flutter sale path: complete-with-sale, not void UI (**Partial**).
 
@@ -142,7 +142,7 @@ APIs: `GET /intelligence/summary|opportunities|segments|customers/:id`.
 
 `GET /intelligence/summary` covers every customer in the authenticated salon, with complete derived status, signal, and unsuppressed opportunity counts and completed-transaction IRR totals. It scans customer/visit metrics in bounded 500-customer internal batches; the retained `hasMore` response field is always false because the summary is complete. `GET /intelligence/segments` and `/intelligence/opportunities` return up to 200 eligible results per page, globally ordered by days since last Visit descending, customer UUID descending, then opportunity type descending where applicable. Segment customers without Visits rank at −1; opportunity rows without Visits rank at 0. Filters are applied to qualifying outputs across the full tenant population. `hasMore=true` means another eligible result was found and always includes a usable `nextCursor`.
 
-New list cursors retain the evaluation instant, active status/type filter, and result sort tuple. A continued read uses the same retention and UTC revenue reporting instant; pre-existing two-part segment and three-part opportunity cursors remain accepted and use the current instant. These are live reads, not database snapshots: concurrent customer, visit, action, or transaction changes can affect later pages or a multi-query summary. Refresh to reconcile. Flutter **Today** and **Opportunities** use their newer serving paths; customer detail still uses `GET /intelligence/customers/:id`; there is no segments screen.
+New list cursors retain the evaluation instant, active status/type filter, and result sort tuple. A continued read uses the same retention and revenue reporting instant; pre-existing two-part segment and three-part opportunity cursors remain accepted and use the current instant. These are live reads, not database snapshots: concurrent customer, visit, action, or transaction changes can affect later pages or a multi-query summary. Refresh to reconcile. Flutter **Today** and **Opportunities** use their newer serving paths; customer detail still uses `GET /intelligence/customers/:id`; there is no segments screen.
 
 **Opportunities (Flutter «فرصت‌ها»)** **Implemented** as three domain sections composed in Flutter. Tenant from JWT on every read. No combined «همه» view. Live reads (not a multi-query snapshot); refresh to reconcile concurrent updates. Cursor pagination is bounded.
 
